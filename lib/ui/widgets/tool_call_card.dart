@@ -83,7 +83,24 @@ class _ToolCallCardState extends State<ToolCallCard> {
         insetPadding: const EdgeInsets.all(16),
         child: InteractiveViewer(
           maxScale: 5,
-          child: Image.file(File(path), fit: BoxFit.contain),
+          // errorBuilder so a deleted file shows a message instead of an
+          // unhandled image error.
+          child: Image.file(
+            File(path),
+            fit: BoxFit.contain,
+            errorBuilder:
+                (BuildContext context, Object error, StackTrace? stack) =>
+                    Padding(
+                      padding: const EdgeInsets.all(24),
+                      child: Text(
+                        stringsOf(context).screenshotUnavailable,
+                        style: const TextStyle(
+                          color: Colors.white70,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ),
+          ),
         ),
       ),
     );

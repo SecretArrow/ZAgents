@@ -64,6 +64,11 @@ class WebViewAutomation implements BrowserAutomation {
       'Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 '
       '(KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36';
 
+  /// Creates (once) and returns the headless WebView controller.
+  ///
+  /// If the WebView fails to start (missing Android System WebView,
+  /// renderer crash, ...), the broken instance is discarded so the next
+  /// call retries cleanly instead of handing out a dead controller.
   Future<InAppWebViewController> _ensure() async {
     if (_controller != null) {
       return _controller!;
@@ -95,7 +100,16 @@ class WebViewAutomation implements BrowserAutomation {
             }
           },
     );
-    await headless.run();
+    try {
+      await headless.run();
+    } catch (e) {
+      try {
+        headless.dispose();
+      } catch (_) {
+        // Ignore dispose failures on an already-broken instance.
+      }
+      throw StateError('Embedded browser failed to start: $e');
+    }
     _headless = headless;
     _controller = headless.webViewController;
     return _controller!;
@@ -107,32 +121,59 @@ class WebViewAutomation implements BrowserAutomation {
     Duration timeout = const Duration(seconds: 25),
   }) async {
     if (url.trim().isEmpty) {
-      return BrowserPageInfo(url: '', title: '', text: '', error: 'URL kosong');
+      return BrowserPageInfo(
+        url: '',
+        title: '',
+        text: '',
+        error: 'URL is empty',
+      );
     }
-    final controller = await _ensure();
     final normalized = url.trim().contains('://')
         ? url.trim()
         : 'https://${url.trim()}';
-    _navCompleter = Completer<WebUri?>();
-    await controller.loadUrl(urlRequest: URLRequest(url: WebUri(normalized)));
-
-    String? error;
     try {
-      final loaded = await _navCompleter!.future.timeout(timeout);
-      if (loaded == null) {
-        error = 'Halaman gagal dimuat (jaringan/timeout).';
+      final controller = await _ensure();
+      _navCompleter = Completer<WebUri?>();
+      try {
+        await controller.loadUrl(
+          urlRequest: URLRequest(url: WebUri(normalized)),
+        );
+      } catch (e) {
+        return BrowserPageInfo(
+          url: normalized,
+          title: '',
+          text: '',
+          error: 'Failed to load URL: $e',
+        );
       }
-    } on TimeoutException {
-      error = 'Halaman tidak selesai memuat dalam ${timeout.inSeconds}s.';
+
+      String? error;
+      try {
+        final loaded = await _navCompleter!.future.timeout(timeout);
+        if (loaded == null) {
+          error = 'Page failed to load (network or timeout).';
+        }
+      } on TimeoutException {
+        error = 'Page did not finish loading within ${timeout.inSeconds}s.';
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 400));
+      final info = await _pageInfo();
+      return BrowserPageInfo(
+        url: info['url']?.toString() ?? normalized,
+        title: info['title']?.toString() ?? '',
+        text: info['text']?.toString() ?? '',
+        error: error,
+      );
+    } catch (e) {
+      // Any unexpected platform error must degrade to a tool error message,
+      // never crash the app.
+      return BrowserPageInfo(
+        url: normalized,
+        title: '',
+        text: '',
+        error: 'Navigation failed: $e',
+      );
     }
-    await Future<void>.delayed(const Duration(milliseconds: 400));
-    final info = await _pageInfo();
-    return BrowserPageInfo(
-      url: info['url']?.toString() ?? normalized,
-      title: info['title']?.toString() ?? '',
-      text: info['text']?.toString() ?? '',
-      error: error,
-    );
   }
 
   Future<Map<String, dynamic>> _pageInfo() async {
@@ -153,12 +194,16 @@ class WebViewAutomation implements BrowserAutomation {
 
   @override
   Future<Map<String, dynamic>> click({String? selector, String? text}) async {
-    final controller = await _ensure();
-    final raw = await controller.evaluateJavascript(
-      source: _jsClick(jsonEncode(selector), jsonEncode(text)),
-    );
-    return _decodeMap(raw) ??
-        <String, dynamic>{'ok': false, 'error': 'Tidak ada hasil dari JS.'};
+    try {
+      final controller = await _ensure();
+      final raw = await controller.evaluateJavascript(
+        source: _jsClick(jsonEncode(selector), jsonEncode(text)),
+      );
+      return _decodeMap(raw) ??
+          <String, dynamic>{'ok': false, 'error': 'No result from JS.'};
+    } catch (e) {
+      return <String, dynamic>{'ok': false, 'error': 'Click failed: $e'};
+    }
   }
 
   String _jsClick(String selectorJson, String textJson) =>
@@ -194,12 +239,16 @@ class WebViewAutomation implements BrowserAutomation {
     String? selector,
     bool clear = true,
   }) async {
-    final controller = await _ensure();
-    final raw = await controller.evaluateJavascript(
-      source: _jsType(jsonEncode(text), jsonEncode(selector), clear),
-    );
-    return _decodeMap(raw) ??
-        <String, dynamic>{'ok': false, 'error': 'Tidak ada hasil dari JS.'};
+    try {
+      final controller = await _ensure();
+      final raw = await controller.evaluateJavascript(
+        source: _jsType(jsonEncode(text), jsonEncode(selector), clear),
+      );
+      return _decodeMap(raw) ??
+          <String, dynamic>{'ok': false, 'error': 'No result from JS.'};
+    } catch (e) {
+      return <String, dynamic>{'ok': false, 'error': 'Type failed: $e'};
+    }
   }
 
   String _jsType(String textJson, String selectorJson, bool clear) =>
@@ -238,54 +287,71 @@ class WebViewAutomation implements BrowserAutomation {
     String direction = 'down',
     int amount = 800,
   }) async {
-    final controller = await _ensure();
-    final dy = direction == 'up' ? -amount : amount;
-    final raw = await controller.evaluateJavascript(
-      source:
-          '(function(){ window.scrollBy(0, $dy); '
-          'return JSON.stringify({ok: true, scrollY: window.scrollY}); })()',
-    );
-    return _decodeMap(raw) ??
-        <String, dynamic>{'ok': false, 'error': 'Scroll gagal.'};
+    try {
+      final controller = await _ensure();
+      final dy = direction == 'up' ? -amount : amount;
+      final raw = await controller.evaluateJavascript(
+        source:
+            '(function(){ window.scrollBy(0, $dy); '
+            'return JSON.stringify({ok: true, scrollY: window.scrollY}); })()',
+      );
+      return _decodeMap(raw) ??
+          <String, dynamic>{'ok': false, 'error': 'Scroll failed.'};
+    } catch (e) {
+      return <String, dynamic>{'ok': false, 'error': 'Scroll failed: $e'};
+    }
   }
 
   @override
   Future<String> extractText({int maxLength = 8000}) async {
-    final controller = await _ensure();
-    final raw = await controller.evaluateJavascript(
-      source: 'JSON.stringify({text: ((document.body && document.body.innerText) || "")})',
-    );
-    final map = _decodeMap(raw) ?? <String, dynamic>{};
-    final text = map['text']?.toString() ?? '';
-    if (text.length <= maxLength) return text;
-    return '${text.substring(0, maxLength)}\n... [teks dipotong]';
+    try {
+      final controller = await _ensure();
+      final raw = await controller.evaluateJavascript(
+        source: 'JSON.stringify({text: ((document.body && document.body.innerText) || "")})',
+      );
+      final map = _decodeMap(raw) ?? <String, dynamic>{};
+      final text = map['text']?.toString() ?? '';
+      if (text.length <= maxLength) return text;
+      return '${text.substring(0, maxLength)}\n... [text truncated]';
+    } catch (e) {
+      return 'Extract text failed: $e';
+    }
   }
 
   @override
   Future<String> runJs(String code) async {
-    final controller = await _ensure();
-    final result = await controller.evaluateJavascript(source: code);
-    if (result == null) return 'null';
-    if (result is String) return result;
-    return jsonEncode(result);
+    try {
+      final controller = await _ensure();
+      final result = await controller.evaluateJavascript(source: code);
+      if (result == null) return 'null';
+      if (result is String) return result;
+      return jsonEncode(result);
+    } catch (e) {
+      return 'JS error: $e';
+    }
   }
 
   @override
   Future<String?> screenshot({required String saveDir}) async {
-    final controller = await _ensure();
-    final Uint8List? bytes;
+    Uint8List? bytes;
     try {
+      final controller = await _ensure();
       bytes = await controller.takeScreenshot();
     } catch (_) {
       return null;
     }
     if (bytes == null || bytes.isEmpty) return null;
-    final dir = Directory(saveDir);
-    if (!dir.existsSync()) dir.createSync(recursive: true);
-    final path =
-        '${dir.path}${Platform.pathSeparator}shot_${DateTime.now().millisecondsSinceEpoch}.png';
-    await File(path).writeAsBytes(bytes);
-    return path;
+    try {
+      final dir = Directory(saveDir);
+      if (!dir.existsSync()) dir.createSync(recursive: true);
+      final path =
+          '${dir.path}${Platform.pathSeparator}shot_${DateTime.now().millisecondsSinceEpoch}.png';
+      await File(path).writeAsBytes(bytes);
+      return path;
+    } catch (_) {
+      // Disk/permission failures must not crash the agent loop.
+      return null;
+    }
   }
 
   @override

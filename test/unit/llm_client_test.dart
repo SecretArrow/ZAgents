@@ -122,4 +122,124 @@ void main() {
     );
     expect(request.args, isEmpty);
   });
+
+  test(
+    'non-streaming tool call without name is skipped, not a crash',
+    () async {
+      // Some providers occasionally emit a tool_calls entry with a missing
+      // function name. The old code called .toString() on null.
+      final Map<String, dynamic> payload = <String, dynamic>{
+        'choices': <Map<String, dynamic>>[
+          <String, dynamic>{
+            'message': <String, dynamic>{
+              'role': 'assistant',
+              'content': 'Answer text',
+              'tool_calls': <Map<String, dynamic>>[
+                <String, dynamic>{
+                  'id': 'tc_1',
+                  'type': 'function',
+                  'function': <String, dynamic>{'name': null},
+                },
+                <String, dynamic>{
+                  'id': 'tc_2',
+                  'type': 'function',
+                  'function': <String, dynamic>{
+                    'name': 'write_file',
+                    'arguments': '{"path":"a.txt"}',
+                  },
+                },
+              ],
+            },
+          },
+        ],
+      };
+
+      final http.Client mockClient = MockClient(
+        (http.BaseRequest request) async => http.Response(
+          jsonEncode(payload),
+          200,
+          headers: <String, String>{'content-type': 'application/json'},
+        ),
+      );
+      final LlmClient client = LlmClient(client: mockClient);
+
+      final AssistantTurn turn = await client.complete(
+        config: _config,
+        messages: const <Map<String, dynamic>>[
+          <String, dynamic>{'role': 'user', 'content': 'hi'},
+        ],
+      );
+
+      expect(turn.content, 'Answer text');
+      expect(turn.toolCalls, hasLength(1));
+      expect(turn.toolCalls.single.name, 'write_file');
+    },
+  );
+
+  test(
+    'stream drop mid-content keeps partial text instead of crashing',
+    () async {
+      // SSE chunks then the socket dies without [DONE]; the generator
+      // guarantees the data chunk is delivered before the error.
+      Stream<List<int>> flakyStream() async* {
+        yield utf8.encode(
+          'data: {"choices":[{"delta":{"content":"Partial"}}]}\n\n',
+        );
+        throw Exception('connection reset');
+      }
+
+      final http.Client mockClient = MockClient.streaming(
+        (http.BaseRequest request, http.ByteStream bodyStream) async =>
+            http.StreamedResponse(
+              flakyStream(),
+              200,
+              headers: <String, String>{'content-type': 'text/event-stream'},
+            ),
+      );
+      final LlmClient client = LlmClient(client: mockClient);
+
+      final AssistantTurn turn = await client.complete(
+        config: _config,
+        messages: const <Map<String, dynamic>>[
+          <String, dynamic>{'role': 'user', 'content': 'hi'},
+        ],
+      );
+
+      expect(turn.content, 'Partial');
+      expect(turn.toolCalls, isEmpty);
+    },
+  );
+
+  test(
+    'stream drop mid-tool-call surfaces LlmException, not a crash',
+    () async {
+      // Tool call arguments partially received: unusable, must throw.
+      Stream<List<int>> flakyStream() async* {
+        yield utf8.encode(
+          'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"c1","function":{"name":"browser_navigate","arguments":"{\\"url\\":"}}]}}]}\n\n',
+        );
+        throw Exception('connection reset');
+      }
+
+      final http.Client mockClient = MockClient.streaming(
+        (http.BaseRequest request, http.ByteStream bodyStream) async =>
+            http.StreamedResponse(
+              flakyStream(),
+              200,
+              headers: <String, String>{'content-type': 'text/event-stream'},
+            ),
+      );
+      final LlmClient client = LlmClient(client: mockClient);
+
+      await expectLater(
+        client.complete(
+          config: _config,
+          messages: const <Map<String, dynamic>>[
+            <String, dynamic>{'role': 'user', 'content': 'hi'},
+          ],
+        ),
+        throwsA(isA<LlmException>()),
+      );
+    },
+  );
 }

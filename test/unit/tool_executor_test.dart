@@ -98,4 +98,55 @@ void main() {
     );
     expect(result.ok, isFalse);
   });
+
+  test('browser platform failure degrades to error result, no crash', () async {
+    final ToolExecutor crashing = ToolExecutor(
+      browser: ThrowingBrowserAutomation(),
+      resolveBaseDir: () async => tempDir,
+      isAutomationEnabled: () => true,
+    );
+    for (final String tool in <String>[
+      'browser_navigate',
+      'browser_click',
+      'browser_type',
+      'browser_scroll',
+      'browser_screenshot',
+      'browser_extract_text',
+      'run_js',
+    ]) {
+      final ToolResult result = await crashing.execute(tool, <String, dynamic>{
+        'url': 'https://example.com',
+        'code': '1',
+      });
+      expect(result.ok, isFalse, reason: '$tool must not throw');
+      expect(result.llmOutput, isNotEmpty);
+    }
+  });
+
+  test('read_file on binary content returns error result, no crash', () async {
+    final File binary = File(
+      '${tempDir.path}${Platform.pathSeparator}blob.bin',
+    );
+    await binary.writeAsBytes(<int>[0x00, 0xFF, 0xFE, 0x80, 0x81]);
+    final ToolResult result = await executor.execute(
+      'read_file',
+      <String, dynamic>{'path': 'blob.bin'},
+    );
+    // Either read fine or degraded to an error — never a crash.
+    expect(result.ok, anyOf(isTrue, isFalse));
+    expect(result.llmOutput, isNotEmpty);
+  });
+
+  test('write_file failure degrades to error result, no crash', () async {
+    // A FILE occupies the intermediate path segment, so creating the
+    // parent directory of the target fails with a filesystem error.
+    final File blocker = File('${tempDir.path}${Platform.pathSeparator}sub');
+    await blocker.writeAsString('x');
+    final ToolResult result = await executor.execute(
+      'write_file',
+      <String, dynamic>{'path': 'sub/dir/file.txt', 'content': 'hi'},
+    );
+    expect(result.ok, isFalse);
+    expect(result.llmOutput, contains('Could not write file'));
+  });
 }

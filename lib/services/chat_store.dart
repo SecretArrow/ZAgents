@@ -27,7 +27,7 @@ class ChatStore {
         out.add(
           ChatSummary(
             id: data['id'] as String,
-            title: (data['title'] as String?) ?? 'Tanpa judul',
+            title: (data['title'] as String?) ?? 'Untitled',
             updatedAt:
                 DateTime.tryParse(data['updatedAt'] as String? ?? '') ??
                 DateTime.fromMillisecondsSinceEpoch(0),

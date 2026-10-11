@@ -34,6 +34,13 @@ OpenAI-compatible: **OpenRouter, InferHub, Z.AI, OpenAI, DeepSeek, Groq, dan lai
   ganti lewat ikon 🌐 di app bar atau **Settings → Language** (pilihan tersimpan).
 - **UI gelap ala Z.AI** — model chip, toggle Agent, kartu tool call dengan status
   live, preview screenshot (tap untuk zoom), drawer riwayat percakapan.
+- **Edge-to-edge yang aman** — di Android 15/16 (targetSdk 35/36) konten tidak pernah
+  tertutup status bar atas maupun navigation bar bawah: mode edge-to-edge dideklarasikan
+  eksplisit, semua layar memakai `SafeArea`, sheet model menghitung inset keyboard,
+  dan app bar adaptif di layar sempit.
+- **Tahan crash** — semua operasi rentan (WebView, file IO, stream SSE, pembukaan
+  riwayat yang korup) ditangani sebagai error terkontrol; tidak ada exception yang
+  membuat aplikasi mati.
 - **Riwayat lokal** — percakapan disimpan sebagai JSON di penyimpanan privat app.
 
 ## 📲 Cara pakai

@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -37,14 +39,18 @@ class ModelChip extends ConsumerWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
-            ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 170),
-              child: Text(
-                model.isEmpty ? strings.pickModel : model,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
+            // Shrinks with ellipsis when the app bar runs out of width.
+            Flexible(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 170),
+                child: Text(
+                  model.isEmpty ? strings.pickModel : model,
+                  overflow: TextOverflow.ellipsis,
+                  maxLines: 1,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ),
             ),
@@ -177,12 +183,18 @@ class _ModelPickerSheetState extends ConsumerState<ModelPickerSheet> {
   @override
   Widget build(BuildContext context) {
     final AppStrings strings = stringsOf(context);
+    // The keyboard inset must come out of the sheet height, otherwise the
+    // sheet grows taller than the screen and its header collides with the
+    // status bar while the search field is focused.
+    final double keyboardInset = MediaQuery.of(context).viewInsets.bottom;
+    final double sheetHeight = math.max(
+      320.0,
+      MediaQuery.of(context).size.height * 0.85 - keyboardInset,
+    );
     return Padding(
-      padding: EdgeInsets.only(
-        bottom: MediaQuery.of(context).viewInsets.bottom,
-      ),
+      padding: EdgeInsets.only(bottom: keyboardInset),
       child: SizedBox(
-        height: MediaQuery.of(context).size.height * 0.85,
+        height: sheetHeight,
         child: SafeArea(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,

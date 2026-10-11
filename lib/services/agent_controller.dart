@@ -266,16 +266,33 @@ class ChatController extends Notifier<ChatState> {
 
   Future<void> openChat(ChatSummary summary) async {
     if (state.isRunning) return;
-    final messages = await ref.read(chatStoreProvider).load(summary.id);
-    state = ChatState(
-      sessionId: summary.id,
-      title: summary.title,
-      messages: messages ?? const <ChatMessage>[],
-    );
+    try {
+      final messages = await ref.read(chatStoreProvider).load(summary.id);
+      state = ChatState(
+        sessionId: summary.id,
+        title: summary.title,
+        messages: messages ?? const <ChatMessage>[],
+      );
+    } catch (_) {
+      // A corrupted history entry must never crash the app: open an empty
+      // session and tell the user what happened.
+      state = ChatState(
+        error: appStringsFor(ref.read(settingsProvider).languageCode)
+            .chatOpenError,
+      );
+    }
   }
 
   Future<void> deleteChat(String id) async {
-    await ref.read(chatStoreProvider).delete(id);
+    try {
+      await ref.read(chatStoreProvider).delete(id);
+    } catch (_) {
+      state = state.copyWith(
+        error: appStringsFor(ref.read(settingsProvider).languageCode)
+            .chatDeleteError,
+      );
+      return;
+    }
     if (state.sessionId == id) state = const ChatState();
     ref.invalidate(chatListProvider);
   }

@@ -136,6 +136,8 @@ abstract class AppStrings {
   String get missingApiKey;
   String get modelNotSet;
   String get stoppedMarkdown;
+  String get chatOpenError;
+  String get chatDeleteError;
 }
 
 /// English strings (default).
@@ -283,7 +285,7 @@ class AppStringsEn implements AppStrings {
   String get aboutSection => 'About';
   @override
   String get aboutBody =>
-      'ZAgents v1.2.0 — an Android clone of the chat.z.ai agent mode UI, '
+      'ZAgents v1.2.1 — an Android clone of the chat.z.ai agent mode UI, '
       'with custom OpenAI-compatible providers (OpenRouter, InferHub, '
       'Z.AI, OpenAI, DeepSeek, Groq, and more). Your API key is stored '
       'only on this device.';
@@ -297,6 +299,10 @@ class AppStringsEn implements AppStrings {
       'No model selected. Pick one in Settings or from the model menu.';
   @override
   String get stoppedMarkdown => '_(stopped)_';
+  @override
+  String get chatOpenError => 'Could not open this conversation.';
+  @override
+  String get chatDeleteError => 'Could not delete this conversation.';
 }
 
 /// Bahasa Indonesia strings.
@@ -445,7 +451,7 @@ class AppStringsId implements AppStrings {
   String get aboutSection => 'Tentang';
   @override
   String get aboutBody =>
-      'ZAgents v1.2.0 — klon UI agent mode chat.z.ai untuk Android, '
+      'ZAgents v1.2.1 — klon UI agent mode chat.z.ai untuk Android, '
       'dengan custom provider OpenAI-compatible (OpenRouter, InferHub, '
       'Z.AI, OpenAI, DeepSeek, Groq, dan lainnya). API key disimpan hanya '
       'di penyimpanan lokal perangkat.';
@@ -459,4 +465,8 @@ class AppStringsId implements AppStrings {
       'Model belum dipilih. Pilih di Pengaturan atau dari menu model.';
   @override
   String get stoppedMarkdown => '_(dihentikan)_';
+  @override
+  String get chatOpenError => 'Gagal membuka percakapan ini.';
+  @override
+  String get chatDeleteError => 'Gagal menghapus percakapan ini.';
 }

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter/services.dart';
 
 import 'di.dart';
 import 'l10n/app_strings.dart';
@@ -10,6 +11,25 @@ import 'ui/theme.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // Android 15+ (targetSdk 35/36) enforces edge-to-edge: declare it
+  // explicitly so system bars never overlap app content and the insets
+  // (status bar top, navigation bar bottom) are always reported to
+  // Scaffold/SafeArea.
+  try {
+    await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+    SystemChrome.setSystemUIOverlayStyle(
+      const SystemUiOverlayStyle(
+        statusBarColor: Colors.transparent,
+        statusBarIconBrightness: Brightness.light,
+        statusBarBrightness: Brightness.dark,
+        systemNavigationBarColor: Colors.transparent,
+        systemNavigationBarIconBrightness: Brightness.light,
+        systemNavigationBarContrastEnforced: false,
+      ),
+    );
+  } catch (_) {
+    // System UI channels are unavailable in some test environments.
+  }
   final PrefsSettingsRepository settingsRepo =
       await PrefsSettingsRepository.create();
   runApp(

@@ -26,6 +26,12 @@ class _HomeShellState extends ConsumerState<HomeShell> {
   @override
   Widget build(BuildContext context) {
     final AppStrings strings = stringsOf(context);
+    // Narrow screens: drop decorative elements (brand mark, quick language
+    // menu — still available in Settings) so the app bar can never overflow
+    // into the action icons or behind the status bar area.
+    final double width = MediaQuery.sizeOf(context).width;
+    final bool showBrand = width >= 340;
+    final bool showLanguageMenu = width >= 360;
     ref.listen<ChatState>(chatControllerProvider, (
       ChatState? prev,
       ChatState next,
@@ -49,14 +55,18 @@ class _HomeShellState extends ConsumerState<HomeShell> {
         titleSpacing: 0,
         title: Row(
           children: <Widget>[
-            const BrandMark(size: 28),
-            const SizedBox(width: 10),
-            const ModelChip(),
+            if (showBrand) ...<Widget>[
+              const BrandMark(size: 28),
+              const SizedBox(width: 10),
+            ],
+            // Flexible so a long model name shrinks (ellipsis) instead of
+            // overflowing the app bar into the action icons.
+            const Flexible(child: ModelChip()),
           ],
         ),
         actions: <Widget>[
           const AgentModeToggle(),
-          const _LanguageMenu(),
+          if (showLanguageMenu) const _LanguageMenu(),
           IconButton(
             icon: const Icon(Icons.settings_outlined),
             tooltip: strings.settings,

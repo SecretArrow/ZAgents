@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:zagents/di.dart';
 import 'package:zagents/models/models.dart';
 import 'package:zagents/services/browser_automation.dart';
+import 'package:zagents/services/chat_store.dart';
 import 'package:zagents/services/llm_client.dart';
 import 'package:zagents/services/settings_repository.dart';
 
@@ -120,6 +121,81 @@ class FakeBrowserAutomation implements BrowserAutomation {
     calls.add('run_js:$code');
     return '"ok"';
   }
+
+  @override
+  Future<void> resetSession() async {}
+
+  @override
+  void dispose() {}
+}
+
+/// ChatStore fake whose [load]/[delete] throw — proves the chat controller
+/// converts storage failures into localized error messages instead of
+/// crashing (these futures are invoked without await from the UI).
+class ThrowingChatStore implements ChatStore {
+  @override
+  Future<Directory> Function() get resolveBaseDir => _explode;
+
+  Future<Directory> _explode() async =>
+      throw const FileSystemException('disk exploded');
+
+  @override
+  Future<List<ChatSummary>> listSummaries() async => <ChatSummary>[];
+
+  @override
+  Future<void> save({
+    required String id,
+    required String title,
+    required List<ChatMessage> messages,
+  }) async {}
+
+  @override
+  Future<List<ChatMessage>?> load(String id) async =>
+      throw const FileSystemException('disk exploded');
+
+  @override
+  Future<void> delete(String id) async =>
+      throw const FileSystemException('disk exploded');
+}
+
+/// Browser fake whose every method throws — used to prove the tool
+/// executor degrades platform failures into error results instead of
+/// crashing the agent loop.
+class ThrowingBrowserAutomation implements BrowserAutomation {
+  @override
+  Future<BrowserPageInfo> navigate(
+    String url, {
+    Duration timeout = const Duration(seconds: 25),
+  }) async => throw const SocketException('browser exploded');
+
+  @override
+  Future<Map<String, dynamic>> click({String? selector, String? text}) async =>
+      throw const SocketException('browser exploded');
+
+  @override
+  Future<Map<String, dynamic>> type(
+    String text, {
+    String? selector,
+    bool clear = true,
+  }) async => throw const SocketException('browser exploded');
+
+  @override
+  Future<Map<String, dynamic>> scroll({
+    String direction = 'down',
+    int amount = 800,
+  }) async => throw const SocketException('browser exploded');
+
+  @override
+  Future<String?> screenshot({required String saveDir}) async =>
+      throw const SocketException('browser exploded');
+
+  @override
+  Future<String> extractText({int maxLength = 8000}) async =>
+      throw const SocketException('browser exploded');
+
+  @override
+  Future<String> runJs(String code) async =>
+      throw const SocketException('browser exploded');
 
   @override
   Future<void> resetSession() async {}

@@ -72,7 +72,9 @@ class ToolExecutor {
           return ToolResult(ok: false, llmOutput: 'Unknown tool: $name');
       }
     } catch (e) {
-      return ToolResult(ok: false, llmOutput: 'Tool $name gagal: $e');
+      // Never let a tool failure crash the agent loop: degrade to a result
+      // the model can read and retry around.
+      return ToolResult(ok: false, llmOutput: 'Tool $name failed: $e');
     }
   }
 
@@ -143,12 +145,12 @@ class ToolExecutor {
     if (path == null) {
       return const ToolResult(
         ok: false,
-        llmOutput: 'Screenshot gagal diambil.',
+        llmOutput: 'Screenshot could not be captured.',
       );
     }
     return ToolResult(
       ok: true,
-      llmOutput: 'Screenshot tersimpan di $path',
+      llmOutput: 'Screenshot saved at $path',
       screenshotPath: path,
       displayText: 'screenshot',
     );
@@ -163,7 +165,7 @@ class ToolExecutor {
     final text = await browser.extractText(maxLength: maxLength);
     return ToolResult(
       ok: true,
-      llmOutput: text.isEmpty ? '(halaman kosong)' : text,
+      llmOutput: text.isEmpty ? '(empty page)' : text,
     );
   }
 
@@ -172,7 +174,7 @@ class ToolExecutor {
     if (guard != null) return guard;
     final code = args['code']?.toString() ?? '';
     if (code.trim().isEmpty) {
-      return const ToolResult(ok: false, llmOutput: 'Parameter code kosong.');
+      return const ToolResult(ok: false, llmOutput: 'Parameter code is empty.');
     }
     final result = await browser.runJs(code);
     return ToolResult(ok: true, llmOutput: result);
@@ -199,17 +201,23 @@ class ToolExecutor {
     final base = await _safeBaseDir();
     final file = _resolveFile(base, args['path']?.toString() ?? '');
     if (file == null) {
-      return const ToolResult(ok: false, llmOutput: 'Path tidak valid.');
+      return const ToolResult(ok: false, llmOutput: 'Invalid path.');
     }
     if (!await file.exists()) {
+      return ToolResult(ok: false, llmOutput: 'File not found: ${file.path}');
+    }
+    String content;
+    try {
+      content = await file.readAsString();
+    } catch (e) {
+      // Binary or non-UTF8 file: report instead of crashing.
       return ToolResult(
         ok: false,
-        llmOutput: 'File tidak ditemukan: ${file.path}',
+        llmOutput: 'File could not be read as text: $e',
       );
     }
-    final content = await file.readAsString();
     final truncated = content.length > 20000
-        ? '${content.substring(0, 20000)}\n... [dipotong]'
+        ? '${content.substring(0, 20000)}\n... [truncated]'
         : content;
     return ToolResult(
       ok: true,
@@ -222,14 +230,18 @@ class ToolExecutor {
     final base = await _safeBaseDir();
     final file = _resolveFile(base, args['path']?.toString() ?? '');
     if (file == null) {
-      return const ToolResult(ok: false, llmOutput: 'Path tidak valid.');
+      return const ToolResult(ok: false, llmOutput: 'Invalid path.');
     }
     final content = args['content']?.toString() ?? '';
-    await file.parent.create(recursive: true);
-    await file.writeAsString(content);
+    try {
+      await file.parent.create(recursive: true);
+      await file.writeAsString(content);
+    } catch (e) {
+      return ToolResult(ok: false, llmOutput: 'Could not write file: $e');
+    }
     return ToolResult(
       ok: true,
-      llmOutput: 'Menulis ${content.length} karakter ke ${file.path}',
+      llmOutput: 'Wrote ${content.length} characters to ${file.path}',
       displayText: file.path.split(Platform.pathSeparator).last,
     );
   }

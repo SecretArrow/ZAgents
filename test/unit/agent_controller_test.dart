@@ -169,4 +169,77 @@ void main() {
     expect(state.isRunning, isFalse);
     expect(state.error, isNull);
   });
+
+  test('openChat on a corrupted session file never crashes', () async {
+    final ProviderContainer container = await _container(<AssistantTurn>[
+      AssistantTurn(content: 'ok'),
+    ], tempDir);
+    final Directory chatsDir = Directory(
+      '${tempDir.path}${Platform.pathSeparator}chats',
+    );
+    chatsDir.createSync(recursive: true);
+    await File('${chatsDir.path}${Platform.pathSeparator}corrupt.json')
+        .writeAsString('{not valid json!!');
+
+    // Must not throw, even though the file cannot be parsed.
+    await container
+        .read(chatControllerProvider.notifier)
+        .openChat(
+          ChatSummary(
+            id: 'corrupt',
+            title: 'Broken',
+            updatedAt: DateTime.fromMillisecondsSinceEpoch(0),
+          ),
+        );
+    final ChatState state = container.read(chatControllerProvider);
+    expect(state.sessionId, 'corrupt');
+    expect(state.messages, isEmpty);
+  });
+
+  test('openChat storage failure is converted to an error, no crash', () async {
+    final ProviderContainer container = ProviderContainer(
+      overrides: <Override>[
+        ...testOverrides(
+          llm: FakeLlmClient(<AssistantTurn>[AssistantTurn(content: 'ok')]),
+          dir: tempDir,
+          settings: AppSettings(apiKey: 'test-key'),
+        ),
+        chatStoreProvider.overrideWithValue(ThrowingChatStore()),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    await container
+        .read(chatControllerProvider.notifier)
+        .openChat(
+          ChatSummary(
+            id: 'any',
+            title: 'Any',
+            updatedAt: DateTime.fromMillisecondsSinceEpoch(0),
+          ),
+        );
+    final ChatState state = container.read(chatControllerProvider);
+    expect(state.error, 'Could not open this conversation.');
+  });
+
+  test(
+    'deleteChat storage failure is converted to an error, no crash',
+    () async {
+      final ProviderContainer container = ProviderContainer(
+        overrides: <Override>[
+          ...testOverrides(
+            llm: FakeLlmClient(<AssistantTurn>[AssistantTurn(content: 'ok')]),
+            dir: tempDir,
+            settings: AppSettings(apiKey: 'test-key'),
+          ),
+          chatStoreProvider.overrideWithValue(ThrowingChatStore()),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      await container.read(chatControllerProvider.notifier).deleteChat('x');
+      final ChatState state = container.read(chatControllerProvider);
+      expect(state.error, 'Could not delete this conversation.');
+    },
+  );
 }

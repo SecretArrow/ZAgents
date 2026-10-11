@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 const Color kBackgroundColor = Color(0xFF0D0E12);
 const Color kSurfaceColor = Color(0xFF161821);
@@ -29,6 +30,17 @@ ThemeData buildDarkTheme() {
       surfaceTintColor: Colors.transparent,
       elevation: 0,
       centerTitle: false,
+      // Dark app: transparent system bars + light icons so the status bar
+      // clock/battery and the gesture pill stay readable without a
+      // contrasting band behind them.
+      systemOverlayStyle: SystemUiOverlayStyle(
+        statusBarColor: Colors.transparent,
+        statusBarIconBrightness: Brightness.light,
+        statusBarBrightness: Brightness.dark,
+        systemNavigationBarColor: Colors.transparent,
+        systemNavigationBarIconBrightness: Brightness.light,
+        systemNavigationBarContrastEnforced: false,
+      ),
     ),
     dividerColor: kBorderColor,
     inputDecorationTheme: InputDecorationTheme(

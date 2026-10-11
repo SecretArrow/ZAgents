@@ -90,219 +90,232 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     final AppSettings settings = ref.watch(settingsProvider);
     return Scaffold(
       appBar: AppBar(title: Text(strings.settings)),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: <Widget>[
-          _sectionTitle(strings.providerSection),
-          _card(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                DropdownButtonFormField<String>(
-                  key: const Key('provider-dropdown'),
-                  initialValue: settings.providerName,
-                  decoration: InputDecoration(
-                    labelText: strings.providerPreset,
-                  ),
-                  items: <DropdownMenuItem<String>>[
-                    for (final String name in providerPresets.keys)
-                      DropdownMenuItem<String>(value: name, child: Text(name)),
-                  ],
-                  onChanged: (String? name) {
-                    if (name == null) return;
-                    final String? presetUrl = providerPresets[name];
-                    if (presetUrl != null && presetUrl.isNotEmpty) {
-                      _baseUrl.text = presetUrl;
-                    }
-                    // Switching providers: adopt the new provider's default
-                    // model when the current one is empty or is another
-                    // provider's default (avoids stale cross-provider ids).
-                    final String currentModel = _model.text.trim();
-                    final bool foreignDefault =
-                        providerDefaultModels.values.contains(currentModel) &&
-                        providerDefaultModels[name] != currentModel;
-                    if (currentModel.isEmpty || foreignDefault) {
-                      _model.text = providerDefaultModels[name] ?? '';
-                    }
-                    _commit(
-                      providerName: name,
-                      baseUrl: _baseUrl.text.trim(),
-                      model: _model.text.trim(),
-                    );
-                  },
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  key: const Key('base-url-field'),
-                  controller: _baseUrl,
-                  decoration: InputDecoration(
-                    labelText: strings.baseUrlLabel,
-                    hintText: 'https://openrouter.ai/api/v1',
-                  ),
-                  onSubmitted: (_) => _commit(),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  key: const Key('api-key-field'),
-                  controller: _apiKey,
-                  obscureText: _obscureKey,
-                  decoration: InputDecoration(
-                    labelText: strings.apiKeyLabel,
-                    helperText: strings.apiKeyStoredLocally,
-                    helperMaxLines: 2,
-                    suffixIcon: IconButton(
-                      icon: Icon(
-                        _obscureKey
-                            ? Icons.visibility_off_outlined
-                            : Icons.visibility_outlined,
-                      ),
-                      onPressed: () =>
-                          setState(() => _obscureKey = !_obscureKey),
+      body: SafeArea(
+        // top:false: the AppBar already reserves the status bar height;
+        // bottom keeps the last cards above the system navigation bar
+        // (edge-to-edge is enforced on Android 15+).
+        top: false,
+        child: ListView(
+          padding: const EdgeInsets.all(16),
+          children: <Widget>[
+            _sectionTitle(strings.providerSection),
+            _card(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  DropdownButtonFormField<String>(
+                    key: const Key('provider-dropdown'),
+                    initialValue: settings.providerName,
+                    decoration: InputDecoration(
+                      labelText: strings.providerPreset,
                     ),
-                  ),
-                  onSubmitted: (_) => _commit(),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  key: const Key('model-field'),
-                  controller: _model,
-                  decoration: InputDecoration(
-                    labelText: strings.modelLabel,
-                    hintText: strings.modelHint,
-                    helperText: strings.browseModelsHint,
-                    suffixIcon: IconButton(
-                      key: const Key('browse-models-button'),
-                      tooltip: strings.browseModels,
-                      icon: const Icon(Icons.manage_search_rounded),
-                      onPressed: _openModelPicker,
-                    ),
-                  ),
-                  onSubmitted: (_) => _commit(),
-                ),
-                const SizedBox(height: 8),
-                Wrap(
-                  spacing: 6,
-                  runSpacing: 6,
-                  children: <Widget>[
-                    for (final String model in suggestedModels)
-                      InputChip(
-                        label: Text(
-                          model,
-                          style: const TextStyle(fontSize: 11),
+                    items: <DropdownMenuItem<String>>[
+                      for (final String name in providerPresets.keys)
+                        DropdownMenuItem<String>(
+                          value: name,
+                          child: Text(name),
                         ),
-                        backgroundColor: kSurfaceColor,
-                        side: const BorderSide(color: kBorderColor),
-                        onPressed: () {
-                          _model.text = model;
-                          _commit(model: model);
-                        },
+                    ],
+                    onChanged: (String? name) {
+                      if (name == null) return;
+                      final String? presetUrl = providerPresets[name];
+                      if (presetUrl != null && presetUrl.isNotEmpty) {
+                        _baseUrl.text = presetUrl;
+                      }
+                      // Switching providers: adopt the new provider's default
+                      // model when the current one is empty or is another
+                      // provider's default (avoids stale cross-provider ids).
+                      final String currentModel = _model.text.trim();
+                      final bool foreignDefault =
+                          providerDefaultModels.values.contains(currentModel) &&
+                          providerDefaultModels[name] != currentModel;
+                      if (currentModel.isEmpty || foreignDefault) {
+                        _model.text = providerDefaultModels[name] ?? '';
+                      }
+                      _commit(
+                        providerName: name,
+                        baseUrl: _baseUrl.text.trim(),
+                        model: _model.text.trim(),
+                      );
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    key: const Key('base-url-field'),
+                    controller: _baseUrl,
+                    decoration: InputDecoration(
+                      labelText: strings.baseUrlLabel,
+                      hintText: 'https://openrouter.ai/api/v1',
+                    ),
+                    onSubmitted: (_) => _commit(),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    key: const Key('api-key-field'),
+                    controller: _apiKey,
+                    obscureText: _obscureKey,
+                    decoration: InputDecoration(
+                      labelText: strings.apiKeyLabel,
+                      helperText: strings.apiKeyStoredLocally,
+                      helperMaxLines: 2,
+                      suffixIcon: IconButton(
+                        icon: Icon(
+                          _obscureKey
+                              ? Icons.visibility_off_outlined
+                              : Icons.visibility_outlined,
+                        ),
+                        onPressed: () =>
+                            setState(() => _obscureKey = !_obscureKey),
                       ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 16),
-          _sectionTitle(strings.agentSection),
-          _card(
-            child: Column(
-              children: <Widget>[
-                SwitchListTile(
-                  key: const Key('agent-mode-switch'),
-                  contentPadding: EdgeInsets.zero,
-                  title: Text(strings.agentModeTitle),
-                  subtitle: Text(
-                    strings.agentModeSubtitle,
-                    style: const TextStyle(
-                      fontSize: 12,
-                      color: kMutedTextColor,
                     ),
+                    onSubmitted: (_) => _commit(),
                   ),
-                  value: settings.agentMode,
-                  onChanged: (bool value) => _commit(agentMode: value),
-                ),
-                SwitchListTile(
-                  key: const Key('automation-switch'),
-                  contentPadding: EdgeInsets.zero,
-                  title: Text(strings.automationTitle),
-                  subtitle: Text(
-                    strings.automationSubtitle,
-                    style: const TextStyle(
-                      fontSize: 12,
-                      color: kMutedTextColor,
+                  const SizedBox(height: 12),
+                  TextField(
+                    key: const Key('model-field'),
+                    controller: _model,
+                    decoration: InputDecoration(
+                      labelText: strings.modelLabel,
+                      hintText: strings.modelHint,
+                      helperText: strings.browseModelsHint,
+                      suffixIcon: IconButton(
+                        key: const Key('browse-models-button'),
+                        tooltip: strings.browseModels,
+                        icon: const Icon(Icons.manage_search_rounded),
+                        onPressed: _openModelPicker,
+                      ),
                     ),
+                    onSubmitted: (_) => _commit(),
                   ),
-                  value: settings.automationEnabled,
-                  onChanged: (bool value) => _commit(automationEnabled: value),
-                ),
-                ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: Text(strings.maxStepsTitle),
-                  subtitle: Slider(
-                    key: const Key('max-steps-slider'),
-                    min: 1,
-                    max: 12,
-                    divisions: 11,
-                    label: '${settings.maxSteps}',
-                    value: settings.maxSteps.toDouble(),
-                    onChanged: (double value) =>
-                        setState(() => _commit(maxSteps: value.round())),
-                  ),
-                  trailing: Text('${settings.maxSteps}'),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 16),
-          _sectionTitle(strings.languageSection),
-          _card(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Text(
-                  strings.languageSubtitle,
-                  style: const TextStyle(fontSize: 12, color: kMutedTextColor),
-                ),
-                RadioGroup<String>(
-                  groupValue: settings.languageCode,
-                  onChanged: (String? code) =>
-                      _commit(languageCode: code ?? 'en'),
-                  child: Column(
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 6,
                     children: <Widget>[
-                      RadioListTile<String>(
-                        key: const Key('lang-en'),
-                        contentPadding: EdgeInsets.zero,
-                        dense: true,
-                        title: Text(strings.englishOption),
-                        value: 'en',
-                      ),
-                      RadioListTile<String>(
-                        key: const Key('lang-id'),
-                        contentPadding: EdgeInsets.zero,
-                        dense: true,
-                        title: Text(strings.indonesianOption),
-                        value: 'id',
-                      ),
+                      for (final String model in suggestedModels)
+                        InputChip(
+                          label: Text(
+                            model,
+                            style: const TextStyle(fontSize: 11),
+                          ),
+                          backgroundColor: kSurfaceColor,
+                          side: const BorderSide(color: kBorderColor),
+                          onPressed: () {
+                            _model.text = model;
+                            _commit(model: model);
+                          },
+                        ),
                     ],
                   ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 16),
-          _sectionTitle(strings.aboutSection),
-          _card(
-            child: Text(
-              strings.aboutBody,
-              style: const TextStyle(
-                fontSize: 12.5,
-                color: kMutedTextColor,
-                height: 1.5,
+                ],
               ),
             ),
-          ),
-          const SizedBox(height: 24),
-        ],
+            const SizedBox(height: 16),
+            _sectionTitle(strings.agentSection),
+            _card(
+              child: Column(
+                children: <Widget>[
+                  SwitchListTile(
+                    key: const Key('agent-mode-switch'),
+                    contentPadding: EdgeInsets.zero,
+                    title: Text(strings.agentModeTitle),
+                    subtitle: Text(
+                      strings.agentModeSubtitle,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: kMutedTextColor,
+                      ),
+                    ),
+                    value: settings.agentMode,
+                    onChanged: (bool value) => _commit(agentMode: value),
+                  ),
+                  SwitchListTile(
+                    key: const Key('automation-switch'),
+                    contentPadding: EdgeInsets.zero,
+                    title: Text(strings.automationTitle),
+                    subtitle: Text(
+                      strings.automationSubtitle,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: kMutedTextColor,
+                      ),
+                    ),
+                    value: settings.automationEnabled,
+                    onChanged: (bool value) =>
+                        _commit(automationEnabled: value),
+                  ),
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: Text(strings.maxStepsTitle),
+                    subtitle: Slider(
+                      key: const Key('max-steps-slider'),
+                      min: 1,
+                      max: 12,
+                      divisions: 11,
+                      label: '${settings.maxSteps}',
+                      value: settings.maxSteps.toDouble(),
+                      onChanged: (double value) =>
+                          setState(() => _commit(maxSteps: value.round())),
+                    ),
+                    trailing: Text('${settings.maxSteps}'),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+            _sectionTitle(strings.languageSection),
+            _card(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Text(
+                    strings.languageSubtitle,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: kMutedTextColor,
+                    ),
+                  ),
+                  RadioGroup<String>(
+                    groupValue: settings.languageCode,
+                    onChanged: (String? code) =>
+                        _commit(languageCode: code ?? 'en'),
+                    child: Column(
+                      children: <Widget>[
+                        RadioListTile<String>(
+                          key: const Key('lang-en'),
+                          contentPadding: EdgeInsets.zero,
+                          dense: true,
+                          title: Text(strings.englishOption),
+                          value: 'en',
+                        ),
+                        RadioListTile<String>(
+                          key: const Key('lang-id'),
+                          contentPadding: EdgeInsets.zero,
+                          dense: true,
+                          title: Text(strings.indonesianOption),
+                          value: 'id',
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+            _sectionTitle(strings.aboutSection),
+            _card(
+              child: Text(
+                strings.aboutBody,
+                style: const TextStyle(
+                  fontSize: 12.5,
+                  color: kMutedTextColor,
+                  height: 1.5,
+                ),
+              ),
+            ),
+            const SizedBox(height: 24),
+          ],
+        ),
       ),
     );
   }

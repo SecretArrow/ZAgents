@@ -103,7 +103,7 @@ class LlmClient {
     try {
       response = await _client.send(request);
     } catch (e) {
-      throw LlmException('Gagal terhubung ke provider: $e');
+      throw LlmException('Could not connect to provider: $e');
     }
 
     if (response.statusCode != 200) {
@@ -119,7 +119,15 @@ class LlmClient {
       final raw = await response.stream.bytesToString();
       return _parseNonStreaming(raw);
     }
-    return _parseSse(response.stream, onDelta);
+    try {
+      return await _parseSse(response.stream, onDelta);
+    } on LlmException {
+      rethrow;
+    } catch (e) {
+      // Network drop mid-stream: keep whatever was streamed so far when it
+      // is usable text, otherwise surface a connection error.
+      throw LlmException('Connection lost while streaming: $e');
+    }
   }
 
   AssistantTurn _parseNonStreaming(String raw) {
@@ -135,13 +143,11 @@ class LlmClient {
           );
         }
       }
-      throw LlmException(
-        'Format respons tidak dikenal: ${_truncate(raw, 200)}',
-      );
+      throw LlmException('Unknown response format: ${_truncate(raw, 200)}');
     } on LlmException {
       rethrow;
     } catch (e) {
-      throw LlmException('Gagal membaca respons: $e');
+      throw LlmException('Failed to read response: $e');
     }
   }
 
@@ -154,69 +160,81 @@ class LlmClient {
     var lineBuffer = '';
     var done = false;
 
-    await for (final chunk in stream.transform(utf8.decoder)) {
-      lineBuffer += chunk;
-      while (true) {
-        final newlineIndex = lineBuffer.indexOf('\n');
-        if (newlineIndex < 0) break;
-        final line = lineBuffer.substring(0, newlineIndex).trim();
-        lineBuffer = lineBuffer.substring(newlineIndex + 1);
+    try {
+      await for (final chunk in stream.transform(utf8.decoder)) {
+        lineBuffer += chunk;
+        while (true) {
+          final newlineIndex = lineBuffer.indexOf('\n');
+          if (newlineIndex < 0) break;
+          final line = lineBuffer.substring(0, newlineIndex).trim();
+          lineBuffer = lineBuffer.substring(newlineIndex + 1);
 
-        if (line.isEmpty || line.startsWith(':')) continue;
-        if (!line.startsWith('data:')) continue;
-        final data = line.substring(5).trim();
-        if (data == '[DONE]') {
-          done = true;
-          break;
-        }
+          if (line.isEmpty || line.startsWith(':')) continue;
+          if (!line.startsWith('data:')) continue;
+          final data = line.substring(5).trim();
+          if (data == '[DONE]') {
+            done = true;
+            break;
+          }
 
-        Map<String, dynamic> event;
-        try {
-          final decoded = jsonDecode(data);
-          if (decoded is! Map<String, dynamic>) continue;
-          event = decoded;
-        } catch (_) {
-          continue;
-        }
+          Map<String, dynamic> event;
+          try {
+            final decoded = jsonDecode(data);
+            if (decoded is! Map<String, dynamic>) continue;
+            event = decoded;
+          } catch (_) {
+            continue;
+          }
 
-        final choices = event['choices'];
-        if (choices is! List || choices.isEmpty) continue;
-        final delta = choices.first['delta'];
-        if (delta is! Map<String, dynamic>) continue;
+          final choices = event['choices'];
+          if (choices is! List || choices.isEmpty) continue;
+          final delta = choices.first['delta'];
+          if (delta is! Map<String, dynamic>) continue;
 
-        final content = delta['content'];
-        if (content is String && content.isNotEmpty) {
-          contentBuffer.write(content);
-          onDelta?.call(content);
-        }
+          final content = delta['content'];
+          if (content is String && content.isNotEmpty) {
+            contentBuffer.write(content);
+            onDelta?.call(content);
+          }
 
-        final toolCalls = delta['tool_calls'];
-        if (toolCalls is List) {
-          for (final raw in toolCalls) {
-            if (raw is! Map<String, dynamic>) continue;
-            final index = (raw['index'] as int?) ?? toolAccumulators.length;
-            final acc = toolAccumulators.putIfAbsent(
-              index,
-              _ToolAccumulator.new,
-            );
-            if (raw['id'] is String && (acc.id == null || acc.id!.isEmpty)) {
-              acc.id = raw['id'] as String;
-            }
-            final function = raw['function'];
-            if (function is Map<String, dynamic>) {
-              final name = function['name'];
-              if (name is String &&
-                  name.isNotEmpty &&
-                  (acc.name == null || acc.name!.isEmpty)) {
-                acc.name = name;
+          final toolCalls = delta['tool_calls'];
+          if (toolCalls is List) {
+            for (final raw in toolCalls) {
+              if (raw is! Map<String, dynamic>) continue;
+              final index = (raw['index'] as int?) ?? toolAccumulators.length;
+              final acc = toolAccumulators.putIfAbsent(
+                index,
+                _ToolAccumulator.new,
+              );
+              if (raw['id'] is String && (acc.id == null || acc.id!.isEmpty)) {
+                acc.id = raw['id'] as String;
               }
-              final arguments = function['arguments'];
-              if (arguments is String) acc.arguments.write(arguments);
+              final function = raw['function'];
+              if (function is Map<String, dynamic>) {
+                final name = function['name'];
+                if (name is String &&
+                    name.isNotEmpty &&
+                    (acc.name == null || acc.name!.isEmpty)) {
+                  acc.name = name;
+                }
+                final arguments = function['arguments'];
+                if (arguments is String) acc.arguments.write(arguments);
+              }
             }
           }
         }
+        if (done) break;
       }
-      if (done) break;
+    } on LlmException {
+      rethrow;
+    } catch (e) {
+      // A dropped socket mid-stream must not crash the app: keep partial
+      // plain-text content, but never return half-received tool calls
+      // (their JSON arguments would be truncated and unusable).
+      if (toolAccumulators.isEmpty && contentBuffer.isNotEmpty) {
+        return AssistantTurn(content: contentBuffer.toString());
+      }
+      throw LlmException('Connection lost while streaming: $e');
     }
 
     final ordered = toolAccumulators.entries.toList()
@@ -232,18 +250,24 @@ class LlmClient {
 
   List<ToolCallRequest> _parseFullToolCalls(Object? rawToolCalls) {
     if (rawToolCalls is! List) return const <ToolCallRequest>[];
-    return <ToolCallRequest>[
-      for (final raw in rawToolCalls)
-        if (raw is Map<String, dynamic> &&
-            raw['function'] is Map<String, dynamic>)
-          ToolCallRequest(
-            id: raw['id']?.toString() ?? newCallId(),
-            name: (raw['function'] as Map<String, dynamic>)['name'].toString(),
-            argumentsJson:
-                ((raw['function'] as Map<String, dynamic>)['arguments'] ?? '')
-                    .toString(),
-          ),
-    ];
+    final out = <ToolCallRequest>[];
+    for (final raw in rawToolCalls) {
+      if (raw is! Map<String, dynamic>) continue;
+      final function = raw['function'];
+      if (function is! Map<String, dynamic>) continue;
+      final Object? name = function['name'];
+      // A provider glitch (missing name) must not crash the app: the entry
+      // is skipped instead of throwing on null.
+      if (name == null || name.toString().isEmpty) continue;
+      out.add(
+        ToolCallRequest(
+          id: raw['id']?.toString() ?? newCallId(),
+          name: name.toString(),
+          argumentsJson: (function['arguments'] ?? '').toString(),
+        ),
+      );
+    }
+    return out;
   }
 
   String _truncate(String text, int max) =>
