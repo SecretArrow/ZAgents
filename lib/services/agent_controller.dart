@@ -104,7 +104,8 @@ class ChatController extends Notifier<ChatState> {
     // Best-effort — on unsupported platforms this is a silent no-op.
     final AppStrings strings = appStringsFor(settings.languageCode);
     final BackgroundRun background = ref.read(backgroundRunServiceProvider);
-    if (settings.runInBackground) {
+    final bool holdStarted = settings.runInBackground;
+    if (holdStarted) {
       await background.start(
         title: strings.notifTitle,
         text: strings.notifProcessing,
@@ -202,8 +203,9 @@ class ChatController extends Notifier<ChatState> {
       await _persist(messages);
       return;
     } finally {
-      // Always release the background hold — success, error, or stop.
-      await background.stop();
+      // Always release the background hold — success, error, or stop —
+      // but never touch a hold this run did not start.
+      if (holdStarted) await background.stop();
     }
     state = state.copyWith(isRunning: false);
     await _persist(messages);
