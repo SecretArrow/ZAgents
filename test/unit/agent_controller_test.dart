@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zagents/di.dart';
+import 'package:zagents/l10n/app_strings.dart';
 import 'package:zagents/models/models.dart';
 import 'package:zagents/services/agent_controller.dart';
 import 'package:zagents/services/llm_client.dart';
@@ -242,4 +243,101 @@ void main() {
       expect(state.error, 'Could not delete this conversation.');
     },
   );
+
+  test('background hold starts and stops around the agent loop', () async {
+    final RecordingBackgroundRun background = RecordingBackgroundRun();
+    final ProviderContainer container = ProviderContainer(
+      overrides: <Override>[
+        ...testOverrides(
+          llm: FakeLlmClient(<AssistantTurn>[
+            AssistantTurn(
+              content: '',
+              toolCalls: <ToolCallRequest>[
+                ToolCallRequest(
+                  id: 't1',
+                  name: 'browser_navigate',
+                  argumentsJson: jsonEncode(<String, dynamic>{
+                    'url': 'https://example.com',
+                  }),
+                ),
+              ],
+            ),
+            AssistantTurn(content: 'done'),
+          ]),
+          dir: tempDir,
+          settings: AppSettings(apiKey: 'k'),
+        ),
+        backgroundRunServiceProvider.overrideWithValue(background),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    await container.read(chatControllerProvider.notifier).send('go');
+
+    // Started with the localized notification strings…
+    expect(background.calls.first, 'start:${appStringsFor('en').notifTitle}'
+        '|${appStringsFor('en').notifProcessing}');
+    // …received a live per-step update while the tool ran…
+    expect(
+      background.calls,
+      contains('update:${appStringsFor('en').notifStep(1, 'browser_navigate')}'),
+    );
+    // …and was always released, even on success.
+    expect(background.calls.last, 'stop');
+    expect(background.isActive, isFalse);
+  });
+
+  test('background hold is released even when the LLM throws', () async {
+    final RecordingBackgroundRun background = RecordingBackgroundRun();
+    final ProviderContainer container = ProviderContainer(
+      overrides: <Override>[
+        ...testOverrides(
+          llm: _ThrowingLlmClient(),
+          dir: tempDir,
+          settings: AppSettings(apiKey: 'k'),
+        ),
+        backgroundRunServiceProvider.overrideWithValue(background),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    await container.read(chatControllerProvider.notifier).send('boom');
+
+    final ChatState state = container.read(chatControllerProvider);
+    expect(state.isRunning, isFalse);
+    expect(state.error, isNotNull);
+    expect(background.calls.first, startsWith('start:'));
+    expect(background.calls.last, 'stop');
+  });
+
+  test('runInBackground=false never touches the background service',
+      () async {
+    final RecordingBackgroundRun background = RecordingBackgroundRun();
+    final ProviderContainer container = ProviderContainer(
+      overrides: <Override>[
+        ...testOverrides(
+          llm: FakeLlmClient(<AssistantTurn>[AssistantTurn(content: 'ok')]),
+          dir: tempDir,
+          settings: AppSettings(apiKey: 'k', runInBackground: false),
+        ),
+        backgroundRunServiceProvider.overrideWithValue(background),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    await container.read(chatControllerProvider.notifier).send('plain');
+    expect(background.calls, isEmpty);
+  });
+}
+
+/// LLM fake whose complete() always throws — proves the controller
+/// releases the background hold on the error path.
+class _ThrowingLlmClient implements LlmClient {
+  @override
+  Future<AssistantTurn> complete({
+    required LlmConfig config,
+    required List<Map<String, dynamic>> messages,
+    List<Map<String, dynamic>>? tools,
+    void Function(String delta)? onDelta,
+  }) async => throw const SocketException('provider unreachable');
 }

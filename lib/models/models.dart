@@ -175,6 +175,7 @@ class AppSettings {
     this.agentMode = true,
     this.automationEnabled = true,
     this.maxSteps = 6,
+    this.runInBackground = true,
     this.languageCode = defaultLanguageCode,
   });
 
@@ -185,6 +186,10 @@ class AppSettings {
   final bool agentMode;
   final bool automationEnabled;
   final int maxSteps;
+
+  /// Keep the agent task running when the user leaves the app (Android
+  /// foreground service + wake lock + progress notification).
+  final bool runInBackground;
 
   /// UI language: 'en' (default) or 'id'. See lib/l10n/app_strings.dart.
   final String languageCode;
@@ -197,6 +202,7 @@ class AppSettings {
     bool? agentMode,
     bool? automationEnabled,
     int? maxSteps,
+    bool? runInBackground,
     String? languageCode,
   }) => AppSettings(
     providerName: providerName ?? this.providerName,
@@ -206,6 +212,7 @@ class AppSettings {
     agentMode: agentMode ?? this.agentMode,
     automationEnabled: automationEnabled ?? this.automationEnabled,
     maxSteps: maxSteps ?? this.maxSteps,
+    runInBackground: runInBackground ?? this.runInBackground,
     languageCode: languageCode ?? this.languageCode,
   );
 
@@ -217,6 +224,7 @@ class AppSettings {
     'agentMode': agentMode,
     'automationEnabled': automationEnabled,
     'maxSteps': maxSteps,
+    'runInBackground': runInBackground,
     'languageCode': languageCode,
   };
 
@@ -228,6 +236,7 @@ class AppSettings {
     agentMode: json['agentMode'] as bool? ?? true,
     automationEnabled: json['automationEnabled'] as bool? ?? true,
     maxSteps: json['maxSteps'] as int? ?? 6,
+    runInBackground: json['runInBackground'] as bool? ?? true,
     languageCode: json['languageCode'] as String? ?? defaultLanguageCode,
   );
 }

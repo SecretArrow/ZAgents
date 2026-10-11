@@ -6,6 +6,7 @@ import '../di.dart';
 import '../l10n/app_strings.dart';
 import '../models/models.dart';
 import '../tools/tool_defs.dart';
+import 'background_service.dart';
 import 'llm_client.dart';
 
 /// Immutable UI state of the current chat session.
@@ -98,6 +99,18 @@ class ChatController extends Notifier<ChatState> {
     );
     final tools = settings.agentMode ? buildAgentTools() : null;
 
+    // Background hold: while a task runs, keep the process alive off-screen
+    // (Android foreground service + wake lock + progress notification).
+    // Best-effort — on unsupported platforms this is a silent no-op.
+    final AppStrings strings = appStringsFor(settings.languageCode);
+    final BackgroundRun background = ref.read(backgroundRunServiceProvider);
+    if (settings.runInBackground) {
+      await background.start(
+        title: strings.notifTitle,
+        text: strings.notifProcessing,
+      );
+    }
+
     try {
       for (var step = 0; step < settings.maxSteps; step++) {
         // 1. Stream one assistant turn.
@@ -156,6 +169,10 @@ class ChatController extends Notifier<ChatState> {
           if (_stopRequested) break;
           call.status = ToolStatus.running;
           _sync(messages);
+          // Live progress in the foreground-service notification.
+          await background.updateStatus(
+            strings.notifStep(step + 1, call.name),
+          );
 
           final result = await executor.execute(call.name, call.arguments);
           call.status = result.ok ? ToolStatus.success : ToolStatus.error;
@@ -186,6 +203,9 @@ class ChatController extends Notifier<ChatState> {
       state = state.copyWith(isRunning: false, error: e.toString());
       await _persist(messages);
       return;
+    } finally {
+      // Always release the background hold — success, error, or stop.
+      await background.stop();
     }
     state = state.copyWith(isRunning: false);
     await _persist(messages);

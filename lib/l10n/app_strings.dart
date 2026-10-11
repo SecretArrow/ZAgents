@@ -124,6 +124,8 @@ abstract class AppStrings {
   String get agentModeSubtitle;
   String get automationTitle;
   String get automationSubtitle;
+  String get runInBackgroundTitle;
+  String get runInBackgroundSubtitle;
   String get maxStepsTitle;
   String get languageSection;
   String get languageSubtitle;
@@ -138,6 +140,11 @@ abstract class AppStrings {
   String get stoppedMarkdown;
   String get chatOpenError;
   String get chatDeleteError;
+
+  // -- Background service notification (no BuildContext available) -----
+  String get notifTitle;
+  String get notifProcessing;
+  String notifStep(int step, String tool);
 }
 
 /// English strings (default).
@@ -272,6 +279,12 @@ class AppStringsEn implements AppStrings {
   String get automationSubtitle =>
       'Let the agent control the embedded browser.';
   @override
+  String get runInBackgroundTitle => 'Run in background';
+  @override
+  String get runInBackgroundSubtitle =>
+      'Keep the agent working when you leave the app '
+      '(shows a progress notification).';
+  @override
   String get maxStepsTitle => 'Max agent steps';
   @override
   String get languageSection => 'Language';
@@ -285,10 +298,11 @@ class AppStringsEn implements AppStrings {
   String get aboutSection => 'About';
   @override
   String get aboutBody =>
-      'ZAgents v1.2.1 — an Android clone of the chat.z.ai agent mode UI, '
+      'ZAgents v1.3.0 — an Android clone of the chat.z.ai agent mode UI, '
       'with custom OpenAI-compatible providers (OpenRouter, InferHub, '
-      'Z.AI, OpenAI, DeepSeek, Groq, and more). Your API key is stored '
-      'only on this device.';
+      'Z.AI, OpenAI, DeepSeek, Groq, and more). Agent tasks can keep '
+      'running in the background. Your API key is stored only on this '
+      'device.';
 
   // -- Controller messages ----------------------------------------------
   @override
@@ -303,6 +317,14 @@ class AppStringsEn implements AppStrings {
   String get chatOpenError => 'Could not open this conversation.';
   @override
   String get chatDeleteError => 'Could not delete this conversation.';
+
+  // -- Background service notification ----------------------------------
+  @override
+  String get notifTitle => 'ZAgents agent is running';
+  @override
+  String get notifProcessing => 'Processing your request…';
+  @override
+  String notifStep(int step, String tool) => 'Step $step · $tool';
 }
 
 /// Bahasa Indonesia strings.
@@ -438,6 +460,12 @@ class AppStringsId implements AppStrings {
   String get automationSubtitle =>
       'Izinkan agent mengendalikan browser tersemat.';
   @override
+  String get runInBackgroundTitle => 'Jalankan di latar belakang';
+  @override
+  String get runInBackgroundSubtitle =>
+      'Agent tetap bekerja saat keluar dari aplikasi '
+      '(menampilkan notifikasi progres).';
+  @override
   String get maxStepsTitle => 'Maks. langkah agent';
   @override
   String get languageSection => 'Bahasa';
@@ -451,10 +479,11 @@ class AppStringsId implements AppStrings {
   String get aboutSection => 'Tentang';
   @override
   String get aboutBody =>
-      'ZAgents v1.2.1 — klon UI agent mode chat.z.ai untuk Android, '
+      'ZAgents v1.3.0 — klon UI agent mode chat.z.ai untuk Android, '
       'dengan custom provider OpenAI-compatible (OpenRouter, InferHub, '
-      'Z.AI, OpenAI, DeepSeek, Groq, dan lainnya). API key disimpan hanya '
-      'di penyimpanan lokal perangkat.';
+      'Z.AI, OpenAI, DeepSeek, Groq, dan lainnya). Tugas agent dapat '
+      'tetap berjalan di latar belakang. API key disimpan hanya di '
+      'penyimpanan lokal perangkat.';
 
   // -- Controller messages ----------------------------------------------
   @override
@@ -469,4 +498,12 @@ class AppStringsId implements AppStrings {
   String get chatOpenError => 'Gagal membuka percakapan ini.';
   @override
   String get chatDeleteError => 'Gagal menghapus percakapan ini.';
+
+  // -- Background service notification ----------------------------------
+  @override
+  String get notifTitle => 'Agent ZAgents sedang berjalan';
+  @override
+  String get notifProcessing => 'Memproses permintaan Anda…';
+  @override
+  String notifStep(int step, String tool) => 'Langkah $step · $tool';
 }

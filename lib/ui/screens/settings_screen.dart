@@ -46,6 +46,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     String? model,
     bool? agentMode,
     bool? automationEnabled,
+    bool? runInBackground,
     int? maxSteps,
     String? languageCode,
   }) {
@@ -60,6 +61,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             model: model ?? _model.text.trim(),
             agentMode: agentMode,
             automationEnabled: automationEnabled,
+            runInBackground: runInBackground,
             maxSteps: maxSteps,
             languageCode: languageCode,
           ),
@@ -243,6 +245,21 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     value: settings.automationEnabled,
                     onChanged: (bool value) =>
                         _commit(automationEnabled: value),
+                  ),
+                  SwitchListTile(
+                    key: const Key('background-switch'),
+                    contentPadding: EdgeInsets.zero,
+                    title: Text(strings.runInBackgroundTitle),
+                    subtitle: Text(
+                      strings.runInBackgroundSubtitle,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: kMutedTextColor,
+                      ),
+                    ),
+                    value: settings.runInBackground,
+                    onChanged: (bool value) =>
+                        _commit(runInBackground: value),
                   ),
                   ListTile(
                     contentPadding: EdgeInsets.zero,

@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:zagents/di.dart';
 import 'package:zagents/models/models.dart';
+import 'package:zagents/services/background_service.dart';
 import 'package:zagents/services/browser_automation.dart';
 import 'package:zagents/services/chat_store.dart';
 import 'package:zagents/services/llm_client.dart';
@@ -202,6 +203,34 @@ class ThrowingBrowserAutomation implements BrowserAutomation {
 
   @override
   void dispose() {}
+}
+
+/// Recording fake for the background-run hold: captures every call so
+/// tests can assert the foreground service is started/stopped around the
+/// agent loop and receives per-step progress updates.
+class RecordingBackgroundRun implements BackgroundRun {
+  final List<String> calls = <String>[];
+  bool _active = false;
+
+  @override
+  bool get isActive => _active;
+
+  @override
+  Future<void> start({required String title, required String text}) async {
+    calls.add('start:$title|$text');
+    _active = true;
+  }
+
+  @override
+  Future<void> updateStatus(String text) async {
+    calls.add('update:$text');
+  }
+
+  @override
+  Future<void> stop() async {
+    calls.add('stop');
+    _active = false;
+  }
 }
 
 /// Standard test overrides for the app's provider scope.
