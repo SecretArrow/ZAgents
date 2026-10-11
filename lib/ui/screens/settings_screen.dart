@@ -2,11 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../di.dart';
+import '../../l10n/app_strings.dart';
 import '../../models/models.dart';
 import '../theme.dart';
 
-/// Provider & agent configuration screen. Every change is persisted
-/// immediately via [SettingsController].
+/// Provider, agent and language configuration screen. Every change is
+/// persisted immediately via [SettingsController].
 class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
 
@@ -45,6 +46,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     bool? agentMode,
     bool? automationEnabled,
     int? maxSteps,
+    String? languageCode,
   }) {
     final AppSettings current = ref.read(settingsProvider);
     ref
@@ -58,19 +60,21 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             agentMode: agentMode,
             automationEnabled: automationEnabled,
             maxSteps: maxSteps,
+            languageCode: languageCode,
           ),
         );
   }
 
   @override
   Widget build(BuildContext context) {
+    final AppStrings strings = stringsOf(context);
     final AppSettings settings = ref.watch(settingsProvider);
     return Scaffold(
-      appBar: AppBar(title: const Text('Pengaturan')),
+      appBar: AppBar(title: Text(strings.settings)),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: <Widget>[
-          _sectionTitle('Provider AI'),
+          _sectionTitle(strings.providerSection),
           _card(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -78,8 +82,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 DropdownButtonFormField<String>(
                   key: const Key('provider-dropdown'),
                   initialValue: settings.providerName,
-                  decoration: const InputDecoration(
-                    labelText: 'Preset provider',
+                  decoration: InputDecoration(
+                    labelText: strings.providerPreset,
                   ),
                   items: <DropdownMenuItem<String>>[
                     for (final String name in providerPresets.keys)
@@ -98,8 +102,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 TextField(
                   key: const Key('base-url-field'),
                   controller: _baseUrl,
-                  decoration: const InputDecoration(
-                    labelText: 'Base URL (OpenAI-compatible)',
+                  decoration: InputDecoration(
+                    labelText: strings.baseUrlLabel,
                     hintText: 'https://openrouter.ai/api/v1',
                   ),
                   onSubmitted: (_) => _commit(),
@@ -110,7 +114,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   controller: _apiKey,
                   obscureText: _obscureKey,
                   decoration: InputDecoration(
-                    labelText: 'API key',
+                    labelText: strings.apiKeyLabel,
                     suffixIcon: IconButton(
                       icon: Icon(
                         _obscureKey
@@ -127,10 +131,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 TextField(
                   key: const Key('model-field'),
                   controller: _model,
-                  decoration: const InputDecoration(
-                    labelText: 'Model',
-                    hintText:
-                        'mis. z-ai/glm-4.6 atau anthropic/claude-sonnet-4.5',
+                  decoration: InputDecoration(
+                    labelText: strings.modelLabel,
+                    hintText: strings.modelHint,
                   ),
                   onSubmitted: (_) => _commit(),
                 ),
@@ -158,18 +161,20 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             ),
           ),
           const SizedBox(height: 16),
-          _sectionTitle('Agent'),
+          _sectionTitle(strings.agentSection),
           _card(
             child: Column(
               children: <Widget>[
                 SwitchListTile(
                   key: const Key('agent-mode-switch'),
                   contentPadding: EdgeInsets.zero,
-                  title: const Text('Mode Agent'),
-                  subtitle: const Text(
-                    'Aktifkan tool calling: browsing, screenshot, file. '
-                    'Matikan untuk chat biasa.',
-                    style: TextStyle(fontSize: 12, color: kMutedTextColor),
+                  title: Text(strings.agentModeTitle),
+                  subtitle: Text(
+                    strings.agentModeSubtitle,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: kMutedTextColor,
+                    ),
                   ),
                   value: settings.agentMode,
                   onChanged: (bool value) => _commit(agentMode: value),
@@ -177,17 +182,20 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 SwitchListTile(
                   key: const Key('automation-switch'),
                   contentPadding: EdgeInsets.zero,
-                  title: const Text('Otomasi browser'),
-                  subtitle: const Text(
-                    'Izinkan agent mengendalikan browser tersemat.',
-                    style: TextStyle(fontSize: 12, color: kMutedTextColor),
+                  title: Text(strings.automationTitle),
+                  subtitle: Text(
+                    strings.automationSubtitle,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: kMutedTextColor,
+                    ),
                   ),
                   value: settings.automationEnabled,
                   onChanged: (bool value) => _commit(automationEnabled: value),
                 ),
                 ListTile(
                   contentPadding: EdgeInsets.zero,
-                  title: const Text('Maks. langkah agent'),
+                  title: Text(strings.maxStepsTitle),
                   subtitle: Slider(
                     key: const Key('max-steps-slider'),
                     min: 1,
@@ -204,14 +212,47 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             ),
           ),
           const SizedBox(height: 16),
-          _sectionTitle('Tentang'),
+          _sectionTitle(strings.languageSection),
           _card(
-            child: const Text(
-              'ZAgents v1.0.0 — klon UI agent mode chat.z.ai untuk Android, '
-              'dengan custom provider OpenAI-compatible (OpenRouter, Z.AI, '
-              'OpenAI, DeepSeek, Groq, dan lainnya). API key disimpan hanya '
-              'di penyimpanan lokal perangkat.',
-              style: TextStyle(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(
+                  strings.languageSubtitle,
+                  style: const TextStyle(fontSize: 12, color: kMutedTextColor),
+                ),
+                RadioGroup<String>(
+                  groupValue: settings.languageCode,
+                  onChanged: (String? code) =>
+                      _commit(languageCode: code ?? 'en'),
+                  child: Column(
+                    children: <Widget>[
+                      RadioListTile<String>(
+                        key: const Key('lang-en'),
+                        contentPadding: EdgeInsets.zero,
+                        dense: true,
+                        title: Text(strings.englishOption),
+                        value: 'en',
+                      ),
+                      RadioListTile<String>(
+                        key: const Key('lang-id'),
+                        contentPadding: EdgeInsets.zero,
+                        dense: true,
+                        title: Text(strings.indonesianOption),
+                        value: 'id',
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          _sectionTitle(strings.aboutSection),
+          _card(
+            child: Text(
+              strings.aboutBody,
+              style: const TextStyle(
                 fontSize: 12.5,
                 color: kMutedTextColor,
                 height: 1.5,

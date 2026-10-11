@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 
+import '../../l10n/app_strings.dart';
 import '../../models/models.dart';
 import '../theme.dart';
 import 'tool_call_card.dart';
@@ -14,6 +15,7 @@ class MessageBubble extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final AppStrings strings = stringsOf(context);
     if (message.role == Role.user) {
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: 4),
@@ -115,20 +117,23 @@ class MessageBubble extends StatelessWidget {
                   ),
                 ),
               if (message.isStreaming)
-                const Padding(
-                  padding: EdgeInsets.only(top: 6),
+                Padding(
+                  padding: const EdgeInsets.only(top: 6),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: <Widget>[
-                      SizedBox(
+                      const SizedBox(
                         width: 12,
                         height: 12,
                         child: CircularProgressIndicator(strokeWidth: 2),
                       ),
-                      SizedBox(width: 8),
+                      const SizedBox(width: 8),
                       Text(
-                        'berpikir…',
-                        style: TextStyle(color: kMutedTextColor, fontSize: 12),
+                        strings.thinking,
+                        style: const TextStyle(
+                          color: kMutedTextColor,
+                          fontSize: 12,
+                        ),
                       ),
                     ],
                   ),

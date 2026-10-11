@@ -2,21 +2,16 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../di.dart';
+import '../../l10n/app_strings.dart';
 import '../theme.dart';
 
 /// Empty state with brand + suggestion chips (Z.AI style).
 class EmptyState extends ConsumerWidget {
   const EmptyState({super.key});
 
-  static const List<String> _suggestions = <String>[
-    'Buka wikipedia.org lalu rangkum halaman utamanya',
-    'Cari harga Bitcoin hari ini dan ambil screenshot',
-    'Buat file catatan.txt berisi rencana harian',
-    'Jelaskan cara kerja tool calling pada LLM',
-  ];
-
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final AppStrings strings = stringsOf(context);
     return Center(
       child: SingleChildScrollView(
         padding: const EdgeInsets.all(24),
@@ -31,7 +26,7 @@ class EmptyState extends ConsumerWidget {
             ),
             const SizedBox(height: 8),
             Text(
-              'Agent AI di perangkat Anda — browsing, screenshot,\ndan kelola file langsung dari chat.',
+              strings.emptySubtitle,
               textAlign: TextAlign.center,
               style: const TextStyle(color: kMutedTextColor, height: 1.5),
             ),
@@ -41,7 +36,7 @@ class EmptyState extends ConsumerWidget {
               runSpacing: 8,
               alignment: WrapAlignment.center,
               children: <Widget>[
-                for (final String suggestion in _suggestions)
+                for (final String suggestion in strings.suggestions)
                   ActionChip(
                     label: Text(
                       suggestion,

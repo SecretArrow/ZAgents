@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../di.dart';
+import '../../l10n/app_strings.dart';
 import '../theme.dart';
 
 /// Bottom composer: rounded input + gradient send button / stop button.
@@ -31,6 +32,7 @@ class _ComposerState extends ConsumerState<Composer> {
 
   @override
   Widget build(BuildContext context) {
+    final AppStrings strings = stringsOf(context);
     final bool isRunning = ref.watch(
       chatControllerProvider.select((s) => s.isRunning),
     );
@@ -46,7 +48,7 @@ class _ComposerState extends ConsumerState<Composer> {
               minLines: 1,
               maxLines: 5,
               textCapitalization: TextCapitalization.sentences,
-              decoration: const InputDecoration(hintText: 'Tanya apa saja…'),
+              decoration: InputDecoration(hintText: strings.askAnything),
             ),
           ),
           const SizedBox(width: 8),
@@ -65,7 +67,7 @@ class _ComposerState extends ConsumerState<Composer> {
                 isRunning ? Icons.stop_rounded : Icons.arrow_upward_rounded,
                 color: Colors.white,
               ),
-              tooltip: isRunning ? 'Hentikan' : 'Kirim',
+              tooltip: isRunning ? strings.stop : strings.send,
             ),
           ),
         ],

@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../di.dart';
+import '../l10n/app_strings.dart';
 import '../models/models.dart';
 import '../tools/tool_defs.dart';
 import 'llm_client.dart';
@@ -58,7 +59,7 @@ class ChatController extends Notifier<ChatState> {
     final settings = ref.read(settingsProvider);
     if (settings.apiKey.trim().isEmpty) {
       state = state.copyWith(
-        error: 'API key belum diisi. Buka Pengaturan untuk mengatur provider.',
+        error: appStringsFor(settings.languageCode).missingApiKey,
       );
       return;
     }
@@ -168,8 +169,10 @@ class ChatController extends Notifier<ChatState> {
       if (_stopRequested && messages.isNotEmpty) {
         final last = messages.last;
         if (last.role == Role.assistant && last.isStreaming) {
+          final stopped = appStringsFor(ref.read(settingsProvider).languageCode)
+              .stoppedMarkdown;
           messages[messages.length - 1] = ChatMessage.assistant(
-            '${last.content}\n\n_(dihentikan)_',
+            '${last.content}\n\n$stopped',
           );
         }
       }

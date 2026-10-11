@@ -23,6 +23,8 @@ OpenAI-compatible: **OpenRouter, Z.AI, OpenAI, DeepSeek, Groq, dan lainnya**.
   | `run_js` | Eksekusi JavaScript di konteks halaman |
   | `read_file` / `write_file` | Baca/tulis file di folder dokumen aplikasi |
 - **Custom provider** — cukup ganti Base URL + API key + model (preset tersedia).
+- **Dwibahasa** — antarmuka **English (default)** dan **Bahasa Indonesia**;
+  ganti lewat ikon 🌐 di app bar atau **Settings → Language** (pilihan tersimpan).
 - **UI gelap ala Z.AI** — model chip, toggle Agent, kartu tool call dengan status
   live, preview screenshot (tap untuk zoom), drawer riwayat percakapan.
 - **Riwayat lokal** — percakapan disimpan sebagai JSON di penyimpanan privat app.
@@ -31,10 +33,11 @@ OpenAI-compatible: **OpenRouter, Z.AI, OpenAI, DeepSeek, Groq, dan lainnya**.
 
 1. Unduh APK terbaru dari halaman [**Releases**](https://github.com/SecretArrow/ZAgents/releases).
 2. Instal (izinkan instal dari sumber tidak dikenal bila diminta).
-3. Buka **Pengaturan** → pilih preset provider (mis. OpenRouter) → isi **API key**
+3. Buka **Settings/Pengaturan** → pilih preset provider (mis. OpenRouter) → isi **API key**
    → pilih **model yang mendukung tool calling** (Claude, GPT, Gemini, DeepSeek,
    Qwen, GLM, dll).
-4. Kembali ke chat, aktifkan pill **Agent**, dan mulai bertanya.
+4. (Opsional) **Settings → Language**: default **English**, tersedia **Bahasa Indonesia**.
+5. Kembali ke chat, aktifkan pill **Agent**, dan mulai bertanya.
 
 > ⚠️ API key hanya disimpan di penyimpanan lokal perangkat (SharedPreferences)
 > dan tidak pernah dikirim ke mana pun selain provider yang Anda pilih.
@@ -45,6 +48,7 @@ OpenAI-compatible: **OpenRouter, Z.AI, OpenAI, DeepSeek, Groq, dan lainnya**.
 lib/
 ├── main.dart                  # entry point (override settings repo)
 ├── di.dart                    # riverpod providers (DI)
+├── l10n/app_strings.dart      # string EN (default) + ID + delegate
 ├── models/models.dart         # ChatMessage, ToolCall, AppSettings, presets
 ├── services/
 │   ├── llm_client.dart        # klien OpenAI-compatible (SSE + tool deltas)

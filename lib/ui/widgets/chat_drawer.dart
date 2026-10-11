@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../di.dart';
+import '../../l10n/app_strings.dart';
 import '../../models/models.dart';
 import '../screens/settings_screen.dart';
 import '../theme.dart';
@@ -15,20 +16,21 @@ class ChatDrawer extends ConsumerWidget {
     WidgetRef ref,
     String id,
   ) async {
+    final AppStrings strings = stringsOf(context);
     final bool? confirmed = await showDialog<bool>(
       context: context,
       builder: (BuildContext dialogContext) => AlertDialog(
         backgroundColor: kSurfaceColor,
-        title: const Text('Hapus percakapan?'),
-        content: const Text('Percakapan ini akan dihapus permanen.'),
+        title: Text(strings.deleteChatTitle),
+        content: Text(strings.deleteChatBody),
         actions: <Widget>[
           TextButton(
             onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: const Text('Batal'),
+            child: Text(strings.cancel),
           ),
           TextButton(
             onPressed: () => Navigator.of(dialogContext).pop(true),
-            child: const Text('Hapus'),
+            child: Text(strings.delete),
           ),
         ],
       ),
@@ -40,6 +42,7 @@ class ChatDrawer extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final AppStrings strings = stringsOf(context);
     final AsyncValue<List<ChatSummary>> history = ref.watch(chatListProvider);
     return Drawer(
       backgroundColor: kSurfaceColor,
@@ -54,14 +57,14 @@ class ChatDrawer extends ConsumerWidget {
                 gradient: kBrandGradient,
                 borderRadius: BorderRadius.circular(16),
               ),
-              child: const Row(
+              child: Row(
                 children: <Widget>[
-                  BrandMark(size: 36),
-                  SizedBox(width: 12),
+                  const BrandMark(size: 36),
+                  const SizedBox(width: 12),
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: <Widget>[
-                      Text(
+                      const Text(
                         'ZAgents',
                         style: TextStyle(
                           color: Colors.white,
@@ -70,8 +73,11 @@ class ChatDrawer extends ConsumerWidget {
                         ),
                       ),
                       Text(
-                        'AI Agent · Flutter',
-                        style: TextStyle(color: Colors.white70, fontSize: 12),
+                        strings.agentTagline,
+                        style: const TextStyle(
+                          color: Colors.white70,
+                          fontSize: 12,
+                        ),
                       ),
                     ],
                   ),
@@ -87,14 +93,14 @@ class ChatDrawer extends ConsumerWidget {
                   Navigator.of(context).pop();
                 },
                 icon: const Icon(Icons.add_rounded),
-                label: const Text('Percakapan baru'),
+                label: Text(strings.newChat),
               ),
             ),
-            const Padding(
-              padding: EdgeInsets.fromLTRB(20, 16, 20, 6),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 6),
               child: Text(
-                'RIWAYAT',
-                style: TextStyle(
+                strings.historyTitle.toUpperCase(),
+                style: const TextStyle(
                   fontSize: 11,
                   letterSpacing: 1.2,
                   color: kMutedTextColor,
@@ -107,20 +113,26 @@ class ChatDrawer extends ConsumerWidget {
                 loading: () => const Center(
                   child: CircularProgressIndicator(strokeWidth: 2),
                 ),
-                error: (Object error, StackTrace stack) => const Padding(
-                  padding: EdgeInsets.all(16),
+                error: (Object error, StackTrace stack) => Padding(
+                  padding: const EdgeInsets.all(16),
                   child: Text(
-                    'Gagal memuat riwayat.',
-                    style: TextStyle(color: kMutedTextColor, fontSize: 13),
+                    strings.historyLoadFailed,
+                    style: const TextStyle(
+                      color: kMutedTextColor,
+                      fontSize: 13,
+                    ),
                   ),
                 ),
                 data: (List<ChatSummary> items) {
                   if (items.isEmpty) {
-                    return const Padding(
-                      padding: EdgeInsets.all(16),
+                    return Padding(
+                      padding: const EdgeInsets.all(16),
                       child: Text(
-                        'Belum ada percakapan.',
-                        style: TextStyle(color: kMutedTextColor, fontSize: 13),
+                        strings.noChats,
+                        style: const TextStyle(
+                          color: kMutedTextColor,
+                          fontSize: 13,
+                        ),
                       ),
                     );
                   }
@@ -172,7 +184,7 @@ class ChatDrawer extends ConsumerWidget {
             const Divider(height: 1),
             ListTile(
               leading: const Icon(Icons.settings_outlined),
-              title: const Text('Pengaturan'),
+              title: Text(strings.settings),
               onTap: () {
                 Navigator.of(context).pop();
                 Navigator.of(context).push(

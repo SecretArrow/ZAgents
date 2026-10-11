@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 
+import '../../l10n/app_strings.dart';
 import '../../models/models.dart';
 import '../theme.dart';
 
@@ -90,7 +91,16 @@ class _ToolCallCardState extends State<ToolCallCard> {
 
   @override
   Widget build(BuildContext context) {
+    final AppStrings strings = stringsOf(context);
     final ToolCall call = widget.call;
+    // Language-neutral summary from the model layer gets a localized label
+    // for tools whose arguments are not user-readable.
+    final String summary = call.argsSummary.isEmpty
+        ? switch (call.name) {
+            'browser_extract_text' => strings.readPageText,
+            _ => '',
+          }
+        : call.argsSummary;
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.all(10),
@@ -121,11 +131,11 @@ class _ToolCallCardState extends State<ToolCallCard> {
               _statusWidget,
             ],
           ),
-          if (call.argsSummary.isNotEmpty)
+          if (summary.isNotEmpty)
             Padding(
               padding: const EdgeInsets.only(top: 4),
               child: Text(
-                call.argsSummary,
+                summary,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(fontSize: 11.5, color: kMutedTextColor),
@@ -152,9 +162,9 @@ class _ToolCallCardState extends State<ToolCallCard> {
                           ) => Container(
                             padding: const EdgeInsets.all(12),
                             color: kBackgroundColor,
-                            child: const Text(
-                              'screenshot tidak tersedia',
-                              style: TextStyle(
+                            child: Text(
+                              strings.screenshotUnavailable,
+                              style: const TextStyle(
                                 fontSize: 12,
                                 color: kMutedTextColor,
                               ),
@@ -181,8 +191,8 @@ class _ToolCallCardState extends State<ToolCallCard> {
                     children: <Widget>[
                       Text(
                         call.status == ToolStatus.error
-                            ? 'hasil (error)'
-                            : 'hasil',
+                            ? strings.resultError
+                            : strings.result,
                         style: TextStyle(
                           fontSize: 11,
                           color: call.status == ToolStatus.error

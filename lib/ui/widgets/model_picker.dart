@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../di.dart';
+import '../../l10n/app_strings.dart';
 import '../../models/models.dart';
 import '../theme.dart';
 
@@ -11,6 +12,7 @@ class ModelChip extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final AppStrings strings = stringsOf(context);
     final String model = ref.watch(settingsProvider.select((s) => s.model));
     return InkWell(
       key: const Key('model-chip'),
@@ -37,7 +39,7 @@ class ModelChip extends ConsumerWidget {
             ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 170),
               child: Text(
-                model.isEmpty ? 'Pilih model' : model,
+                model.isEmpty ? strings.pickModel : model,
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(
                   fontSize: 13,
@@ -90,6 +92,7 @@ class _ModelPickerSheetState extends ConsumerState<ModelPickerSheet> {
 
   @override
   Widget build(BuildContext context) {
+    final AppStrings strings = stringsOf(context);
     final AppSettings settings = ref.watch(settingsProvider);
     return SafeArea(
       child: Padding(
@@ -100,11 +103,14 @@ class _ModelPickerSheetState extends ConsumerState<ModelPickerSheet> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
-            const Padding(
-              padding: EdgeInsets.fromLTRB(20, 16, 20, 8),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
               child: Text(
-                'Pilih model',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                strings.pickModel,
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                ),
               ),
             ),
             ...suggestedModels.map(
@@ -132,7 +138,7 @@ class _ModelPickerSheetState extends ConsumerState<ModelPickerSheet> {
               child: TextField(
                 controller: _customController,
                 decoration: InputDecoration(
-                  hintText: 'Model kustom (mis. openai/gpt-4o-mini)',
+                  hintText: strings.customModelHint,
                   suffixIcon: IconButton(
                     icon: const Icon(Icons.check_rounded),
                     onPressed: () => _select(_customController.text.trim()),

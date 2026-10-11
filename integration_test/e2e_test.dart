@@ -100,6 +100,30 @@ void main() {
       'e2e-key-2',
     );
 
+    // 5. Language option: English is the default, Bahasa Indonesia switches
+    // the whole UI and the choice persists in settings.
+    await tester.dragUntilVisible(
+      find.byKey(const Key('lang-id')),
+      find.byType(ListView),
+      const Offset(0, -250),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Settings'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('lang-id')));
+    await tester.pumpAndSettle();
+    expect(find.text('Pengaturan'), findsOneWidget);
+    expect(
+      ProviderScope.containerOf(context).read(settingsProvider).languageCode,
+      'id',
+    );
+    await tester.tap(find.byKey(const Key('lang-en')));
+    await tester.pumpAndSettle();
+    expect(find.text('Settings'), findsOneWidget);
+    expect(
+      ProviderScope.containerOf(context).read(settingsProvider).languageCode,
+      'en',
+    );
+
     try {
       await tester.runAsync(() => tempDir.delete(recursive: true));
     } catch (_) {}

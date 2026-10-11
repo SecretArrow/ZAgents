@@ -1,5 +1,7 @@
 import 'package:uuid/uuid.dart';
 
+import '../l10n/app_strings.dart' show defaultLanguageCode;
+
 /// Role of a chat message (OpenAI-compatible subset).
 enum Role { system, user, assistant, tool }
 
@@ -41,7 +43,8 @@ class ToolCall {
         return '${arguments['direction'] ?? 'down'} ${arguments['amount'] ?? ''}'
             .trim();
       case 'browser_extract_text':
-        return 'baca teks halaman';
+        // Language-neutral: UI adds a localized label when this is empty.
+        return arguments['selector']?.toString() ?? '';
       case 'run_js':
         return arguments['code']?.toString() ?? '';
       case 'read_file':
@@ -172,6 +175,7 @@ class AppSettings {
     this.agentMode = true,
     this.automationEnabled = true,
     this.maxSteps = 6,
+    this.languageCode = defaultLanguageCode,
   });
 
   final String providerName;
@@ -182,6 +186,9 @@ class AppSettings {
   final bool automationEnabled;
   final int maxSteps;
 
+  /// UI language: 'en' (default) or 'id'. See lib/l10n/app_strings.dart.
+  final String languageCode;
+
   AppSettings copyWith({
     String? providerName,
     String? baseUrl,
@@ -190,6 +197,7 @@ class AppSettings {
     bool? agentMode,
     bool? automationEnabled,
     int? maxSteps,
+    String? languageCode,
   }) => AppSettings(
     providerName: providerName ?? this.providerName,
     baseUrl: baseUrl ?? this.baseUrl,
@@ -198,6 +206,7 @@ class AppSettings {
     agentMode: agentMode ?? this.agentMode,
     automationEnabled: automationEnabled ?? this.automationEnabled,
     maxSteps: maxSteps ?? this.maxSteps,
+    languageCode: languageCode ?? this.languageCode,
   );
 
   Map<String, dynamic> toJson() => <String, dynamic>{
@@ -208,6 +217,7 @@ class AppSettings {
     'agentMode': agentMode,
     'automationEnabled': automationEnabled,
     'maxSteps': maxSteps,
+    'languageCode': languageCode,
   };
 
   factory AppSettings.fromJson(Map<String, dynamic> json) => AppSettings(
@@ -218,6 +228,7 @@ class AppSettings {
     agentMode: json['agentMode'] as bool? ?? true,
     automationEnabled: json['automationEnabled'] as bool? ?? true,
     maxSteps: json['maxSteps'] as int? ?? 6,
+    languageCode: json['languageCode'] as String? ?? defaultLanguageCode,
   );
 }
 
