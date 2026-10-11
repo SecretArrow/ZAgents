@@ -7,6 +7,7 @@ import 'package:zagents/di.dart';
 import 'package:zagents/l10n/app_strings.dart';
 import 'package:zagents/models/models.dart';
 import 'package:zagents/services/agent_controller.dart';
+import 'package:zagents/services/background_service.dart';
 import 'package:zagents/services/llm_client.dart';
 
 import '../fakes/fakes.dart';

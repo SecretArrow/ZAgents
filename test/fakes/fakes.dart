@@ -248,6 +248,11 @@ List<Override> testOverrides({
   ),
   documentsDirProvider.overrideWithValue(() async => dir),
   if (llm != null) llmClientProvider.overrideWithValue(llm),
+  // Widget tests run in a fake-async zone: awaiting the real method
+  // channel would hang forever (the engine reply never arrives inside
+  // the zone). Always plug in the recording fake instead; tests that
+  // assert on the background hold override it again explicitly.
+  backgroundRunServiceProvider.overrideWithValue(RecordingBackgroundRun()),
   browserAutomationProvider.overrideWithValue(
     FakeBrowserAutomation(
       '${dir.path}${Platform.pathSeparator}shots',
