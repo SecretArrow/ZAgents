@@ -42,8 +42,6 @@ void main() {
     expect(find.byKey(const Key('base-url-field')), findsOneWidget);
     expect(find.byKey(const Key('api-key-field')), findsOneWidget);
     expect(find.byKey(const Key('model-field')), findsOneWidget);
-    expect(find.byKey(const Key('agent-mode-switch')), findsOneWidget);
-    expect(find.byKey(const Key('automation-switch')), findsOneWidget);
 
     // Type an API key; state must be persisted into the controller.
     await tester.enterText(
@@ -73,5 +71,20 @@ void main() {
       const Duration(seconds: 15),
     );
     expect(container.read(settingsProvider).model, 'openai/gpt-4o-mini');
+
+    // The agent section sits below the fold (the provider card grew with
+    // helper texts): scroll the settings list before asserting its controls.
+    await tester.dragUntilVisible(
+      find.byKey(const Key('agent-mode-switch')),
+      find.byType(ListView),
+      const Offset(0, -120),
+    );
+    await tester.pumpAndSettle(
+      const Duration(milliseconds: 100),
+      EnginePhase.sendSemanticsUpdate,
+      const Duration(seconds: 15),
+    );
+    expect(find.byKey(const Key('agent-mode-switch')), findsOneWidget);
+    expect(find.byKey(const Key('automation-switch')), findsOneWidget);
   });
 }

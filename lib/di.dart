@@ -8,6 +8,7 @@ import 'services/agent_controller.dart';
 import 'services/browser_automation.dart';
 import 'services/chat_store.dart';
 import 'services/llm_client.dart';
+import 'services/model_catalog.dart';
 import 'services/settings_repository.dart';
 import 'services/tool_executor.dart';
 
@@ -31,6 +32,10 @@ final documentsDirProvider = Provider<DocumentsDirResolver>(
 );
 
 final llmClientProvider = Provider<LlmClient>((ref) => LlmClient());
+
+final modelCatalogProvider = Provider<ModelCatalogClient>(
+  (ref) => ModelCatalogClient(),
+);
 
 final browserAutomationProvider = Provider<BrowserAutomation>((ref) {
   final automation = WebViewAutomation();

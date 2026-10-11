@@ -90,6 +90,23 @@ abstract class AppStrings {
   String get deleteChatBody;
   String get pickModel;
   String get customModelHint;
+  String get searchModelsHint;
+  String get filterAll;
+  String get filterTools;
+  String get filterFree;
+  String get refreshCatalog;
+  String get modelsRetry;
+  String get modelsLoadError;
+  String get modelsEmpty;
+  String get modelsEmptyHint;
+  String get modelsApiKeyHint;
+  String get suggestedFallback;
+  String get suggestedFallbackBody;
+  String get toolsBadge;
+  String get freeBadge;
+  String get browseModels;
+  String get browseModelsHint;
+  String pageIndicator(int current, int total);
   String get agentTagline;
   String get emptySubtitle;
   List<String> get suggestions;
@@ -99,6 +116,7 @@ abstract class AppStrings {
   String get providerPreset;
   String get baseUrlLabel;
   String get apiKeyLabel;
+  String get apiKeyStoredLocally;
   String get modelLabel;
   String get modelHint;
   String get agentSection;
@@ -116,6 +134,7 @@ abstract class AppStrings {
 
   // -- Controller messages (no BuildContext available) -----------------
   String get missingApiKey;
+  String get modelNotSet;
   String get stoppedMarkdown;
 }
 
@@ -167,6 +186,47 @@ class AppStringsEn implements AppStrings {
   @override
   String get customModelHint => 'Custom model (e.g. openai/gpt-4o-mini)';
   @override
+  String get searchModelsHint => 'Search models…';
+  @override
+  String get filterAll => 'All';
+  @override
+  String get filterTools => 'Tools';
+  @override
+  String get filterFree => 'Free';
+  @override
+  String get refreshCatalog => 'Refresh catalog';
+  @override
+  String get modelsRetry => 'Retry';
+  @override
+  String get modelsLoadError => 'Failed to load the model list.';
+  @override
+  String get modelsEmpty => 'No models match';
+  @override
+  String get modelsEmptyHint =>
+      'Try another keyword or filter — some providers do not advertise '
+      'tool support.';
+  @override
+  String get modelsApiKeyHint =>
+      'Enter your API key in Settings to browse the full model catalog '
+      'of your provider.';
+  @override
+  String get suggestedFallback => 'SUGGESTED MODELS';
+  @override
+  String get suggestedFallbackBody =>
+      'Showing suggested models instead. Check your connection or the '
+      'Base URL, then retry.';
+  @override
+  String get toolsBadge => 'tools';
+  @override
+  String get freeBadge => 'FREE';
+  @override
+  String get browseModels => 'Browse models';
+  @override
+  String get browseModelsHint =>
+      'Tap the search icon to browse the live model catalog.';
+  @override
+  String pageIndicator(int current, int total) => 'Page $current of $total';
+  @override
   String get agentTagline => 'AI Agent · Flutter';
   @override
   String get emptySubtitle =>
@@ -189,6 +249,9 @@ class AppStringsEn implements AppStrings {
   String get baseUrlLabel => 'Base URL (OpenAI-compatible)';
   @override
   String get apiKeyLabel => 'API key';
+  @override
+  String get apiKeyStoredLocally =>
+      'Stored only on this device. InferHub keys look like sk-airo-…';
   @override
   String get modelLabel => 'Model';
   @override
@@ -220,15 +283,18 @@ class AppStringsEn implements AppStrings {
   String get aboutSection => 'About';
   @override
   String get aboutBody =>
-      'ZAgents v1.1.0 — an Android clone of the chat.z.ai agent mode UI, '
-      'with custom OpenAI-compatible providers (OpenRouter, Z.AI, OpenAI, '
-      'DeepSeek, Groq, and more). Your API key is stored only on this '
-      'device.';
+      'ZAgents v1.2.0 — an Android clone of the chat.z.ai agent mode UI, '
+      'with custom OpenAI-compatible providers (OpenRouter, InferHub, '
+      'Z.AI, OpenAI, DeepSeek, Groq, and more). Your API key is stored '
+      'only on this device.';
 
   // -- Controller messages ----------------------------------------------
   @override
   String get missingApiKey =>
       'API key is not set. Open Settings to configure your provider.';
+  @override
+  String get modelNotSet =>
+      'No model selected. Pick one in Settings or from the model menu.';
   @override
   String get stoppedMarkdown => '_(stopped)_';
 }
@@ -281,6 +347,48 @@ class AppStringsId implements AppStrings {
   @override
   String get customModelHint => 'Model kustom (mis. openai/gpt-4o-mini)';
   @override
+  String get searchModelsHint => 'Cari model…';
+  @override
+  String get filterAll => 'Semua';
+  @override
+  String get filterTools => 'Tools';
+  @override
+  String get filterFree => 'Gratis';
+  @override
+  String get refreshCatalog => 'Segarkan katalog';
+  @override
+  String get modelsRetry => 'Coba lagi';
+  @override
+  String get modelsLoadError => 'Gagal memuat daftar model.';
+  @override
+  String get modelsEmpty => 'Tidak ada model yang cocok';
+  @override
+  String get modelsEmptyHint =>
+      'Coba kata kunci atau filter lain — sebagian provider tidak '
+      'mengiklankan dukungan tools.';
+  @override
+  String get modelsApiKeyHint =>
+      'Masukkan API key di Pengaturan untuk melihat katalog model '
+      'lengkap dari provider Anda.';
+  @override
+  String get suggestedFallback => 'MODEL YANG DISARANKAN';
+  @override
+  String get suggestedFallbackBody =>
+      'Menampilkan model yang disarankan. Periksa koneksi atau Base URL, '
+      'lalu coba lagi.';
+  @override
+  String get toolsBadge => 'tools';
+  @override
+  String get freeBadge => 'GRATIS';
+  @override
+  String get browseModels => 'Lihat daftar model';
+  @override
+  String get browseModelsHint =>
+      'Ketuk ikon pencarian untuk melihat katalog model langsung.';
+  @override
+  String pageIndicator(int current, int total) =>
+      'Halaman $current dari $total';
+  @override
   String get agentTagline => 'AI Agent · Flutter';
   @override
   String get emptySubtitle =>
@@ -303,6 +411,9 @@ class AppStringsId implements AppStrings {
   String get baseUrlLabel => 'Base URL (OpenAI-compatible)';
   @override
   String get apiKeyLabel => 'API key';
+  @override
+  String get apiKeyStoredLocally =>
+      'Disimpan hanya di perangkat ini. Key InferHub berformat sk-airo-…';
   @override
   String get modelLabel => 'Model';
   @override
@@ -334,15 +445,18 @@ class AppStringsId implements AppStrings {
   String get aboutSection => 'Tentang';
   @override
   String get aboutBody =>
-      'ZAgents v1.1.0 — klon UI agent mode chat.z.ai untuk Android, '
-      'dengan custom provider OpenAI-compatible (OpenRouter, Z.AI, OpenAI, '
-      'DeepSeek, Groq, dan lainnya). API key disimpan hanya di penyimpanan '
-      'lokal perangkat.';
+      'ZAgents v1.2.0 — klon UI agent mode chat.z.ai untuk Android, '
+      'dengan custom provider OpenAI-compatible (OpenRouter, InferHub, '
+      'Z.AI, OpenAI, DeepSeek, Groq, dan lainnya). API key disimpan hanya '
+      'di penyimpanan lokal perangkat.';
 
   // -- Controller messages ----------------------------------------------
   @override
   String get missingApiKey =>
       'API key belum diisi. Buka Pengaturan untuk mengatur provider.';
+  @override
+  String get modelNotSet =>
+      'Model belum dipilih. Pilih di Pengaturan atau dari menu model.';
   @override
   String get stoppedMarkdown => '_(dihentikan)_';
 }

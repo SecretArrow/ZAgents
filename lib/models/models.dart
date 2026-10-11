@@ -233,8 +233,12 @@ class AppSettings {
 }
 
 /// Base URL presets for well-known OpenAI-compatible providers.
+///
+/// InferHub (https://inferhub.dev) exposes an OpenAI-compatible inference
+/// API at api.inferhub.dev with keys of the form `sk-airo-…`.
 const Map<String, String> providerPresets = <String, String>{
   'OpenRouter': 'https://openrouter.ai/api/v1',
+  'InferHub': 'https://api.inferhub.dev/v1',
   'Z.AI': 'https://api.z.ai/api/paas/v4',
   'OpenAI': 'https://api.openai.com/v1',
   'DeepSeek': 'https://api.deepseek.com/v1',
@@ -242,7 +246,22 @@ const Map<String, String> providerPresets = <String, String>{
   'Custom': '',
 };
 
-/// Model suggestions (OpenRouter-style slugs). Users may type any model id.
+/// Default model applied when switching provider presets and the current
+/// model is empty or belongs to another provider's default. Providers whose
+/// catalogs must be fetched (InferHub) map to null — the user picks from
+/// the live model list instead.
+const Map<String, String?> providerDefaultModels = <String, String?>{
+  'OpenRouter': 'z-ai/glm-4.6',
+  'InferHub': null,
+  'Z.AI': 'glm-4.6',
+  'OpenAI': 'gpt-4.1',
+  'DeepSeek': 'deepseek-chat',
+  'Groq': 'llama-3.3-70b-versatile',
+  'Custom': null,
+};
+
+/// Model suggestions (OpenRouter-style slugs) used as offline fallback when
+/// the live catalog cannot be fetched. Users may type any model id.
 const List<String> suggestedModels = <String>[
   'z-ai/glm-4.6',
   'anthropic/claude-sonnet-4.5',
@@ -251,3 +270,6 @@ const List<String> suggestedModels = <String>[
   'deepseek/deepseek-chat-v3.1',
   'qwen/qwen3-max',
 ];
+
+/// Page size of the model picker list.
+const int modelPickerPageSize = 20;

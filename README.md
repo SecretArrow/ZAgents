@@ -6,7 +6,7 @@
 **ZAgents** adalah aplikasi Android (Flutter) bergaya **agent mode chat.z.ai** —
 chat AI dengan kemampuan **otomasi browser tersemat** (buka halaman, klik, ketik,
 scroll, screenshot) dan **kelola file**, mendukung **custom provider**
-OpenAI-compatible: **OpenRouter, Z.AI, OpenAI, DeepSeek, Groq, dan lainnya**.
+OpenAI-compatible: **OpenRouter, InferHub, Z.AI, OpenAI, DeepSeek, Groq, dan lainnya**.
 
 ## ✨ Fitur
 
@@ -22,7 +22,14 @@ OpenAI-compatible: **OpenRouter, Z.AI, OpenAI, DeepSeek, Groq, dan lainnya**.
   | `browser_extract_text` | Ambil teks halaman untuk dianalisis |
   | `run_js` | Eksekusi JavaScript di konteks halaman |
   | `read_file` / `write_file` | Baca/tulis file di folder dokumen aplikasi |
-- **Custom provider** — cukup ganti Base URL + API key + model (preset tersedia).
+- **Custom provider** — cukup ganti Base URL + API key + model (preset tersedia:
+  OpenRouter, **InferHub** `sk-airo-…`, Z.AI, OpenAI, DeepSeek, Groq, atau Custom).
+- **Katalog model live** — pemilih model mengambil daftar langsung dari
+  `GET {baseUrl}/models` provider aktif, lengkap dengan:
+  - 🔍 **kolom pencarian** (by id atau nama),
+  - 🏷️ **filter chip** (Semua / Tools / Gratis — termasuk model `:free` OpenRouter),
+  - 📄 **paging** (20 model per halaman) dengan navigasi first/prev/next/last,
+  - badge info (konteks, tools, gratis) + tombol refresh + fallback saran offline.
 - **Dwibahasa** — antarmuka **English (default)** dan **Bahasa Indonesia**;
   ganti lewat ikon 🌐 di app bar atau **Settings → Language** (pilihan tersimpan).
 - **UI gelap ala Z.AI** — model chip, toggle Agent, kartu tool call dengan status
@@ -33,9 +40,9 @@ OpenAI-compatible: **OpenRouter, Z.AI, OpenAI, DeepSeek, Groq, dan lainnya**.
 
 1. Unduh APK terbaru dari halaman [**Releases**](https://github.com/SecretArrow/ZAgents/releases).
 2. Instal (izinkan instal dari sumber tidak dikenal bila diminta).
-3. Buka **Settings/Pengaturan** → pilih preset provider (mis. OpenRouter) → isi **API key**
-   → pilih **model yang mendukung tool calling** (Claude, GPT, Gemini, DeepSeek,
-   Qwen, GLM, dll).
+3. Buka **Settings/Pengaturan** → pilih preset provider (mis. OpenRouter / **InferHub**) → isi **API key**
+   → ketuk ikon pencarian di kolom Model untuk **membrowse katalog model live**
+   (pilih yang mendukung tool calling: Claude, GPT, Gemini, DeepSeek, Qwen, GLM, dll).
 4. (Opsional) **Settings → Language**: default **English**, tersedia **Bahasa Indonesia**.
 5. Kembali ke chat, aktifkan pill **Agent**, dan mulai bertanya.
 

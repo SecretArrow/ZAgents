@@ -5,6 +5,7 @@ import '../../di.dart';
 import '../../l10n/app_strings.dart';
 import '../../models/models.dart';
 import '../theme.dart';
+import '../widgets/model_picker.dart';
 
 /// Provider, agent and language configuration screen. Every change is
 /// persisted immediately via [SettingsController].
@@ -65,6 +66,24 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         );
   }
 
+  /// Opens the shared model picker sheet; after it closes the model field
+  /// is synced with whatever the user picked there.
+  Future<void> _openModelPicker() async {
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: kSurfaceColor,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      isScrollControlled: true,
+      builder: (_) => const ModelPickerSheet(),
+    );
+    if (!mounted) return;
+    setState(() {
+      _model.text = ref.read(settingsProvider).model;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final AppStrings strings = stringsOf(context);
@@ -92,10 +111,24 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   onChanged: (String? name) {
                     if (name == null) return;
                     final String? presetUrl = providerPresets[name];
-                    _baseUrl.text = (presetUrl == null || presetUrl.isEmpty)
-                        ? _baseUrl.text
-                        : presetUrl;
-                    _commit(providerName: name, baseUrl: _baseUrl.text.trim());
+                    if (presetUrl != null && presetUrl.isNotEmpty) {
+                      _baseUrl.text = presetUrl;
+                    }
+                    // Switching providers: adopt the new provider's default
+                    // model when the current one is empty or is another
+                    // provider's default (avoids stale cross-provider ids).
+                    final String currentModel = _model.text.trim();
+                    final bool foreignDefault =
+                        providerDefaultModels.values.contains(currentModel) &&
+                        providerDefaultModels[name] != currentModel;
+                    if (currentModel.isEmpty || foreignDefault) {
+                      _model.text = providerDefaultModels[name] ?? '';
+                    }
+                    _commit(
+                      providerName: name,
+                      baseUrl: _baseUrl.text.trim(),
+                      model: _model.text.trim(),
+                    );
                   },
                 ),
                 const SizedBox(height: 12),
@@ -115,6 +148,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   obscureText: _obscureKey,
                   decoration: InputDecoration(
                     labelText: strings.apiKeyLabel,
+                    helperText: strings.apiKeyStoredLocally,
+                    helperMaxLines: 2,
                     suffixIcon: IconButton(
                       icon: Icon(
                         _obscureKey
@@ -134,6 +169,13 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   decoration: InputDecoration(
                     labelText: strings.modelLabel,
                     hintText: strings.modelHint,
+                    helperText: strings.browseModelsHint,
+                    suffixIcon: IconButton(
+                      key: const Key('browse-models-button'),
+                      tooltip: strings.browseModels,
+                      icon: const Icon(Icons.manage_search_rounded),
+                      onPressed: _openModelPicker,
+                    ),
                   ),
                   onSubmitted: (_) => _commit(),
                 ),

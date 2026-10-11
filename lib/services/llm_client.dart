@@ -94,6 +94,9 @@ class LlmClient {
       ..headers['Authorization'] = 'Bearer ${config.apiKey}'
       ..headers['Content-Type'] = 'application/json'
       ..headers['Accept'] = 'text/event-stream'
+      // OpenRouter attribution (ignored by other providers).
+      ..headers['HTTP-Referer'] = 'https://github.com/SecretArrow/ZAgents'
+      ..headers['X-Title'] = 'ZAgents'
       ..body = jsonEncode(requestBody);
 
     final http.StreamedResponse response;

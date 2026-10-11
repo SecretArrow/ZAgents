@@ -63,6 +63,12 @@ class ChatController extends Notifier<ChatState> {
       );
       return;
     }
+    if (settings.model.trim().isEmpty) {
+      state = state.copyWith(
+        error: appStringsFor(settings.languageCode).modelNotSet,
+      );
+      return;
+    }
 
     final messages = [...state.messages];
     var sessionId = state.sessionId;
