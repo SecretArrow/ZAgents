@@ -275,12 +275,17 @@ void main() {
     await container.read(chatControllerProvider.notifier).send('go');
 
     // Started with the localized notification strings…
-    expect(background.calls.first, 'start:${appStringsFor('en').notifTitle}'
-        '|${appStringsFor('en').notifProcessing}');
+    expect(
+      background.calls.first,
+      'start:${appStringsFor('en').notifTitle}'
+      '|${appStringsFor('en').notifProcessing}',
+    );
     // …received a live per-step update while the tool ran…
     expect(
       background.calls,
-      contains('update:${appStringsFor('en').notifStep(1, 'browser_navigate')}'),
+      contains(
+        'update:${appStringsFor('en').notifStep(1, 'browser_navigate')}',
+      ),
     );
     // …and was always released, even on success.
     expect(background.calls.last, 'stop');
@@ -310,8 +315,7 @@ void main() {
     expect(background.calls.last, 'stop');
   });
 
-  test('runInBackground=false never touches the background service',
-      () async {
+  test('runInBackground=false never touches the background service', () async {
     final RecordingBackgroundRun background = RecordingBackgroundRun();
     final ProviderContainer container = ProviderContainer(
       overrides: <Override>[

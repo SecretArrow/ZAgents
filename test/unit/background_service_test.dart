@@ -20,9 +20,9 @@ void main() {
     final List<MethodCall> calls = <MethodCall>[];
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(channel, (MethodCall call) async {
-      calls.add(call);
-      return true;
-    });
+          calls.add(call);
+          return true;
+        });
 
     final BackgroundRunService service = BackgroundRunService();
     expect(service.isActive, isFalse);
@@ -44,14 +44,13 @@ void main() {
     expect(calls.last.method, 'stop');
   });
 
-  test('updateStatus is skipped while inactive (no channel traffic)',
-      () async {
+  test('updateStatus is skipped while inactive (no channel traffic)', () async {
     final List<MethodCall> calls = <MethodCall>[];
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(channel, (MethodCall call) async {
-      calls.add(call);
-      return true;
-    });
+          calls.add(call);
+          return true;
+        });
 
     final BackgroundRunService service = BackgroundRunService();
     await service.updateStatus('Step 1 · browser_click');
@@ -73,14 +72,13 @@ void main() {
     expect(service.isActive, isFalse);
   });
 
-  test('platform returning null / throwing keeps the Dart side safe',
-      () async {
+  test('platform returning null / throwing keeps the Dart side safe', () async {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(channel, (MethodCall call) async {
-      if (call.method == 'start') return null; // ambiguous platform answer
-      if (call.method == 'update') throw PlatformException(code: 'boom');
-      return true;
-    });
+          if (call.method == 'start') return null; // ambiguous platform answer
+          if (call.method == 'update') throw PlatformException(code: 'boom');
+          return true;
+        });
 
     final BackgroundRunService service = BackgroundRunService();
     await service.start(title: 't', text: 'x');

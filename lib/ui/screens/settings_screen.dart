@@ -258,8 +258,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                       ),
                     ),
                     value: settings.runInBackground,
-                    onChanged: (bool value) =>
-                        _commit(runInBackground: value),
+                    onChanged: (bool value) => _commit(runInBackground: value),
                   ),
                   ListTile(
                     contentPadding: EdgeInsets.zero,
