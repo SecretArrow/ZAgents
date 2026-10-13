@@ -305,4 +305,123 @@ void main() {
       findsOneWidget,
     );
   });
+
+  testWidgets('header is scoped to the provider set in settings', (
+    WidgetTester tester,
+  ) async {
+    final ProviderContainer localContainer = await openSheet(
+      tester,
+      catalog: FakeModelCatalog(models: <RemoteModel>[m('inferhub/model-1')]),
+      settings: AppSettings(
+        providerName: 'InferHub',
+        baseUrl: 'https://api.inferhub.dev/v1',
+        apiKey: 'sk-airo-x',
+        model: 'default/model-x',
+      ),
+    );
+
+    // The picker shows which provider (and host) the list comes from.
+    expect(inSheet(find.textContaining('InferHub')), findsOneWidget);
+    expect(inSheet(find.textContaining('api.inferhub.dev')), findsOneWidget);
+
+    // The catalog client receives THAT provider's credentials.
+    final AppSettings settings = localContainer.read(settingsProvider);
+    expect(settings.providerName, 'InferHub');
+  });
+
+  testWidgets('a successful fetch is cached on the active preset', (
+    WidgetTester tester,
+  ) async {
+    final ProviderContainer localContainer = await openSheet(
+      tester,
+      catalog: FakeModelCatalog(
+        models: <RemoteModel>[m('vendor/fresh-1'), m('vendor/fresh-2')],
+      ),
+    );
+
+    expect(localContainer.read(settingsProvider).model, 'default/model-x');
+    // Pick a model so the sheet closes; the cache must be persisted.
+    await tester.tap(inSheet(find.text('vendor/fresh-1')));
+    await tester.pumpAndSettle(
+      const Duration(milliseconds: 100),
+      EnginePhase.sendSemanticsUpdate,
+      const Duration(seconds: 15),
+    );
+
+    final AppSettings settings = localContainer.read(settingsProvider);
+    expect(settings.model, 'vendor/fresh-1');
+    final ProviderPreset? active = settings.activePreset;
+    expect(active, isNotNull);
+    expect(
+      active!.modelsCache,
+      containsAll(<String>['vendor/fresh-1', 'vendor/fresh-2']),
+    );
+  });
+
+  testWidgets('when the fetch fails, the cached provider list is shown', (
+    WidgetTester tester,
+  ) async {
+    final FakeModelCatalog catalog = FakeModelCatalog(
+      error: ModelCatalogException('Offline.'),
+    );
+    await openSheet(
+      tester,
+      catalog: catalog,
+      settings: AppSettings(
+        apiKey: 'sk-test',
+        model: 'default/model-x',
+        presets: <ProviderPreset>[
+          const ProviderPreset(
+            id: 'p-openrouter',
+            name: 'OpenRouter',
+            baseUrl: 'https://openrouter.ai/api/v1',
+            apiKey: 'sk-test',
+            modelsCache: <String>['cached/model-a', 'cached/model-b'],
+          ),
+        ],
+      ),
+    );
+
+    // The offline note is shown instead of the hard error card, and the
+    // cached models of THIS provider are selectable.
+    expect(inSheet(find.textContaining('last fetched list')), findsOneWidget);
+    expect(inSheet(find.text('cached/model-a')), findsOneWidget);
+    expect(inSheet(find.text('cached/model-b')), findsOneWidget);
+    expect(inSheet(find.text('z-ai/glm-4.6')), findsNothing);
+
+    // Search filters the cached list too.
+    await tester.enterText(
+      find.byKey(const Key('model-search-field')),
+      'model-b',
+    );
+    await tester.pumpAndSettle(
+      const Duration(milliseconds: 100),
+      EnginePhase.sendSemanticsUpdate,
+      const Duration(seconds: 15),
+    );
+    expect(inSheet(find.text('cached/model-b')), findsOneWidget);
+    expect(inSheet(find.text('cached/model-a')), findsNothing);
+  });
+
+  testWidgets('without a key the search still filters the suggestions', (
+    WidgetTester tester,
+  ) async {
+    await openSheet(
+      tester,
+      catalog: FakeModelCatalog(),
+      settings: AppSettings(apiKey: '', model: 'default/model-x'),
+    );
+
+    await tester.enterText(
+      find.byKey(const Key('model-search-field')),
+      'gemini',
+    );
+    await tester.pumpAndSettle(
+      const Duration(milliseconds: 100),
+      EnginePhase.sendSemanticsUpdate,
+      const Duration(seconds: 15),
+    );
+    expect(inSheet(find.text('google/gemini-2.5-pro')), findsOneWidget);
+    expect(inSheet(find.text('z-ai/glm-4.6')), findsNothing);
+  });
 }

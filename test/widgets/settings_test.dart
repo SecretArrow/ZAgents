@@ -6,6 +6,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:zagents/di.dart';
 import 'package:zagents/main.dart';
 import 'package:zagents/models/models.dart';
+import 'package:zagents/ui/screens/preset_editor_screen.dart';
+import 'package:zagents/ui/screens/providers_screen.dart';
 import 'package:zagents/ui/screens/settings_screen.dart';
 
 import '../../test/fakes/fakes.dart';
@@ -21,60 +23,59 @@ void main() {
     if (await tempDir.exists()) await tempDir.delete(recursive: true);
   });
 
-  testWidgets('settings screen: fields render and edits update state', (
-    WidgetTester tester,
-  ) async {
+  Future<ProviderContainer> openSettings(WidgetTester tester) async {
+    late ProviderContainer container;
     await tester.pumpWidget(
       ProviderScope(
-        overrides: testOverrides(dir: tempDir),
-        child: const ZAgentsApp(),
+        overrides: <Override>[...testOverrides(dir: tempDir)],
+        child: Builder(
+          builder: (BuildContext context) {
+            container = ProviderScope.containerOf(context);
+            return const ZAgentsApp();
+          },
+        ),
       ),
     );
     await tester.pump();
-
     await tester.tap(find.byIcon(Icons.settings_outlined));
     await tester.pumpAndSettle(
       const Duration(milliseconds: 100),
       EnginePhase.sendSemanticsUpdate,
       const Duration(seconds: 15),
     );
-
     expect(find.byType(SettingsScreen), findsOneWidget);
-    expect(find.byKey(const Key('base-url-field')), findsOneWidget);
-    expect(find.byKey(const Key('api-key-field')), findsOneWidget);
-    expect(find.byKey(const Key('model-field')), findsOneWidget);
+    return container;
+  }
 
-    // Type an API key; state must be persisted into the controller.
-    await tester.enterText(
-      find.byKey(const Key('api-key-field')),
-      'sk-test-123',
-    );
-    await tester.testTextInput.receiveAction(TextInputAction.done);
+  Future<void> openProviders(WidgetTester tester) async {
+    await tester.tap(find.byKey(const Key('providers-tile')));
     await tester.pumpAndSettle(
       const Duration(milliseconds: 100),
       EnginePhase.sendSemanticsUpdate,
       const Duration(seconds: 15),
     );
+    expect(find.byType(ProvidersScreen), findsOneWidget);
+  }
 
-    final BuildContext context = tester.element(find.byType(SettingsScreen));
-    final ProviderContainer container = ProviderScope.containerOf(context);
-    expect(container.read(settingsProvider).apiKey, 'sk-test-123');
+  testWidgets('settings shows a compact provider tile (no cramped fields)', (
+    WidgetTester tester,
+  ) async {
+    await openSettings(tester);
 
-    // Type a custom model.
-    await tester.enterText(
-      find.byKey(const Key('model-field')),
-      'openai/gpt-4o-mini',
-    );
-    await tester.testTextInput.receiveAction(TextInputAction.done);
-    await tester.pumpAndSettle(
-      const Duration(milliseconds: 100),
-      EnginePhase.sendSemanticsUpdate,
-      const Duration(seconds: 15),
-    );
-    expect(container.read(settingsProvider).model, 'openai/gpt-4o-mini');
+    expect(find.byKey(const Key('providers-tile')), findsOneWidget);
+    // The old inline connection fields are gone — CRUD moved to the
+    // full-screen providers manager.
+    expect(find.byKey(const Key('base-url-field')), findsNothing);
+    expect(find.byKey(const Key('api-key-field')), findsNothing);
+    expect(find.byKey(const Key('model-field')), findsNothing);
+  });
 
-    // The agent section sits below the fold (the provider card grew with
-    // helper texts): scroll the settings list before asserting its controls.
+  testWidgets('agent controls keep working (switches + max steps)', (
+    WidgetTester tester,
+  ) async {
+    final ProviderContainer container = await openSettings(tester);
+
+    // The agent section sits below the fold: scroll before asserting.
     await tester.dragUntilVisible(
       find.byKey(const Key('agent-mode-switch')),
       find.byType(ListView),
@@ -87,65 +88,6 @@ void main() {
     );
     expect(find.byKey(const Key('agent-mode-switch')), findsOneWidget);
     expect(find.byKey(const Key('automation-switch')), findsOneWidget);
-  });
-
-  testWidgets('theme picker switches light/dark/system and persists', (
-    WidgetTester tester,
-  ) async {
-    await tester.pumpWidget(
-      ProviderScope(
-        overrides: testOverrides(dir: tempDir),
-        child: const ZAgentsApp(),
-      ),
-    );
-    await tester.pump();
-    await tester.tap(find.byIcon(Icons.settings_outlined));
-    await tester.pumpAndSettle(
-      const Duration(milliseconds: 100),
-      EnginePhase.sendSemanticsUpdate,
-      const Duration(seconds: 15),
-    );
-
-    // Dark is the default (v1.3.0 look preserved).
-    final BuildContext context = tester.element(find.byType(SettingsScreen));
-    final ProviderContainer container = ProviderScope.containerOf(context);
-    expect(container.read(settingsProvider).themeMode, ThemeModeSetting.dark);
-
-    // Switch to light (segments are identified by their icons —
-    // ButtonSegment does not expose a key parameter).
-    await tester.tap(find.byIcon(Icons.light_mode_outlined));
-    await tester.pumpAndSettle(
-      const Duration(milliseconds: 100),
-      EnginePhase.sendSemanticsUpdate,
-      const Duration(seconds: 15),
-    );
-    expect(container.read(settingsProvider).themeMode, ThemeModeSetting.light);
-    // Switch to system.
-    await tester.tap(find.byIcon(Icons.settings_suggest_outlined));
-    await tester.pumpAndSettle(
-      const Duration(milliseconds: 100),
-      EnginePhase.sendSemanticsUpdate,
-      const Duration(seconds: 15),
-    );
-    expect(container.read(settingsProvider).themeMode, ThemeModeSetting.system);
-  });
-
-  testWidgets('max steps accepts a custom typed value (clamped 1-100)', (
-    WidgetTester tester,
-  ) async {
-    await tester.pumpWidget(
-      ProviderScope(
-        overrides: testOverrides(dir: tempDir),
-        child: const ZAgentsApp(),
-      ),
-    );
-    await tester.pump();
-    await tester.tap(find.byIcon(Icons.settings_outlined));
-    await tester.pumpAndSettle(
-      const Duration(milliseconds: 100),
-      EnginePhase.sendSemanticsUpdate,
-      const Duration(seconds: 15),
-    );
 
     await tester.dragUntilVisible(
       find.byKey(const Key('max-steps-field')),
@@ -157,9 +99,6 @@ void main() {
       EnginePhase.sendSemanticsUpdate,
       const Duration(seconds: 15),
     );
-
-    final BuildContext context = tester.element(find.byType(SettingsScreen));
-    final ProviderContainer container = ProviderScope.containerOf(context);
 
     await tester.enterText(find.byKey(const Key('max-steps-field')), '55');
     await tester.testTextInput.receiveAction(TextInputAction.done);
@@ -181,31 +120,44 @@ void main() {
     expect(container.read(settingsProvider).maxSteps, 100);
   });
 
-  testWidgets('presets are listed with key status and the active marker', (
+  testWidgets('theme picker switches light/dark/system and persists', (
     WidgetTester tester,
   ) async {
-    await tester.pumpWidget(
-      ProviderScope(
-        overrides: testOverrides(dir: tempDir),
-        child: const ZAgentsApp(),
-      ),
-    );
-    await tester.pump();
-    await tester.tap(find.byIcon(Icons.settings_outlined));
+    final ProviderContainer container = await openSettings(tester);
+
+    // Dark is the default (v1.3.0 look preserved).
+    expect(container.read(settingsProvider).themeMode, ThemeModeSetting.dark);
+
+    // Switch to light (segments are identified by their icons —
+    // ButtonSegment does not expose a key parameter).
+    await tester.tap(find.byIcon(Icons.light_mode_outlined));
     await tester.pumpAndSettle(
       const Duration(milliseconds: 100),
       EnginePhase.sendSemanticsUpdate,
       const Duration(seconds: 15),
     );
+    expect(container.read(settingsProvider).themeMode, ThemeModeSetting.light);
+    // Switch to system.
+    await tester.tap(find.byIcon(Icons.settings_suggest_outlined));
+    await tester.pumpAndSettle(
+      const Duration(milliseconds: 100),
+      EnginePhase.sendSemanticsUpdate,
+      const Duration(seconds: 15),
+    );
+    expect(container.read(settingsProvider).themeMode, ThemeModeSetting.system);
+  });
 
-    // Built-in presets render as tiles.
-    expect(find.byKey(const Key('preset-OpenRouter')), findsOneWidget);
-    expect(find.byKey(const Key('preset-InferHub')), findsOneWidget);
+  testWidgets('providers screen lists presets; activating a preset copies '
+      'its stored values into the connection', (WidgetTester tester) async {
+    final ProviderContainer container = await openSettings(tester);
+    await openProviders(tester);
 
-    // Applying a preset copies its stored values into the active fields.
-    final BuildContext context = tester.element(find.byType(SettingsScreen));
-    final ProviderContainer container = ProviderScope.containerOf(context);
-    await tester.tap(find.byKey(const Key('preset-Z.AI')));
+    // Built-in presets render as cards.
+    expect(find.byKey(const Key('provider-OpenRouter')), findsOneWidget);
+    expect(find.byKey(const Key('provider-InferHub')), findsOneWidget);
+
+    // Activating a provider copies its stored values into the connection.
+    await tester.tap(find.byKey(const Key('use-provider-Z.AI')));
     await tester.pumpAndSettle(
       const Duration(milliseconds: 100),
       EnginePhase.sendSemanticsUpdate,
@@ -215,6 +167,285 @@ void main() {
     expect(
       container.read(settingsProvider).baseUrl,
       'https://api.z.ai/api/paas/v4',
+    );
+  });
+
+  testWidgets('editing an existing provider: API key is saved per provider '
+      'via the explicit save button', (WidgetTester tester) async {
+    final ProviderContainer container = await openSettings(tester);
+    await openProviders(tester);
+
+    // Open the full-screen editor for InferHub.
+    await tester.tap(find.byKey(const Key('provider-InferHub')));
+    await tester.pumpAndSettle(
+      const Duration(milliseconds: 100),
+      EnginePhase.sendSemanticsUpdate,
+      const Duration(seconds: 15),
+    );
+    expect(find.byType(PresetEditorScreen), findsOneWidget);
+    expect(find.byKey(const Key('editor-name-field')), findsOneWidget);
+    expect(find.byKey(const Key('editor-api-key-field')), findsOneWidget);
+
+    // The editor must NOT be a modal dialog: it fills the screen.
+    final Finder editorFinder = find.byType(PresetEditorScreen);
+    final Size size = tester.getSize(editorFinder);
+    expect(size.height, greaterThan(400));
+
+    await tester.enterText(
+      find.byKey(const Key('editor-api-key-field')),
+      'sk-airo-test-123',
+    );
+    // Explicit per-provider key save (no keyboard-done action needed).
+    await tester.tap(find.byKey(const Key('editor-save-api-key-button')));
+    await tester.pumpAndSettle(
+      const Duration(milliseconds: 100),
+      EnginePhase.sendSemanticsUpdate,
+      const Duration(seconds: 15),
+    );
+
+    final AppSettings settings = container.read(settingsProvider);
+    final ProviderPreset inferhub = settings.presets.firstWhere(
+      (ProviderPreset p) => p.name == 'InferHub',
+    );
+    expect(inferhub.apiKey, 'sk-airo-test-123');
+    // Not activated — the connection must not change.
+    expect(settings.providerName, 'OpenRouter');
+    expect(settings.apiKey, isNot('sk-airo-test-123'));
+
+    // Editor stays open after a key-only save.
+    expect(find.byType(PresetEditorScreen), findsOneWidget);
+  });
+
+  testWidgets('new provider is created through the full-screen editor', (
+    WidgetTester tester,
+  ) async {
+    final ProviderContainer container = await openSettings(tester);
+    await openProviders(tester);
+
+    await tester.tap(find.byKey(const Key('add-provider-button')));
+    await tester.pumpAndSettle(
+      const Duration(milliseconds: 100),
+      EnginePhase.sendSemanticsUpdate,
+      const Duration(seconds: 15),
+    );
+    expect(find.byType(PresetEditorScreen), findsOneWidget);
+
+    await tester.enterText(
+      find.byKey(const Key('editor-name-field')),
+      'My Provider',
+    );
+    await tester.enterText(
+      find.byKey(const Key('editor-base-url-field')),
+      'https://api.example.com/v1',
+    );
+    await tester.enterText(
+      find.byKey(const Key('editor-api-key-field')),
+      'sk-mine',
+    );
+    // AppBar save action is always visible (no scrolling required).
+    await tester.tap(find.byKey(const Key('editor-save-appbar')));
+    await tester.pumpAndSettle(
+      const Duration(milliseconds: 100),
+      EnginePhase.sendSemanticsUpdate,
+      const Duration(seconds: 15),
+    );
+
+    // Back on the providers screen with the preset persisted.
+    expect(find.byType(ProvidersScreen), findsOneWidget);
+    final AppSettings settings = container.read(settingsProvider);
+    expect(
+      settings.presets.any((ProviderPreset p) => p.name == 'My Provider'),
+      isTrue,
+    );
+    // A new preset is not auto-activated.
+    expect(settings.providerName, 'OpenRouter');
+
+    // The new card renders at the bottom of the list — reveal it.
+    await tester.dragUntilVisible(
+      find.byKey(const Key('provider-My Provider')),
+      find.byType(ListView),
+      const Offset(0, -140),
+    );
+    await tester.pumpAndSettle(
+      const Duration(milliseconds: 100),
+      EnginePhase.sendSemanticsUpdate,
+      const Duration(seconds: 15),
+    );
+    expect(find.byKey(const Key('provider-My Provider')), findsOneWidget);
+  });
+
+  testWidgets('saving the active provider keeps the connection in sync', (
+    WidgetTester tester,
+  ) async {
+    final ProviderContainer container = await openSettings(tester);
+    await openProviders(tester);
+
+    // Activate Z.AI first.
+    await tester.tap(find.byKey(const Key('use-provider-Z.AI')));
+    await tester.pumpAndSettle(
+      const Duration(milliseconds: 100),
+      EnginePhase.sendSemanticsUpdate,
+      const Duration(seconds: 15),
+    );
+
+    // Edit the active provider's key through the editor.
+    await tester.tap(find.byKey(const Key('provider-Z.AI')));
+    await tester.pumpAndSettle(
+      const Duration(milliseconds: 100),
+      EnginePhase.sendSemanticsUpdate,
+      const Duration(seconds: 15),
+    );
+    await tester.enterText(
+      find.byKey(const Key('editor-api-key-field')),
+      'sk-zai-live',
+    );
+    await tester.tap(find.byKey(const Key('editor-save-api-key-button')));
+    await tester.pumpAndSettle(
+      const Duration(milliseconds: 100),
+      EnginePhase.sendSemanticsUpdate,
+      const Duration(seconds: 15),
+    );
+    // Active connection picked up the new key immediately.
+    expect(container.read(settingsProvider).apiKey, 'sk-zai-live');
+
+    // Now save the whole form with a new model value (AppBar save).
+    await tester.enterText(
+      find.byKey(const Key('editor-model-field')),
+      'glm-4.6',
+    );
+    await tester.tap(find.byKey(const Key('editor-save-appbar')));
+    await tester.pumpAndSettle(
+      const Duration(milliseconds: 100),
+      EnginePhase.sendSemanticsUpdate,
+      const Duration(seconds: 15),
+    );
+    expect(find.byType(PresetEditorScreen), findsNothing);
+    expect(container.read(settingsProvider).model, 'glm-4.6');
+    expect(container.read(settingsProvider).apiKey, 'sk-zai-live');
+  });
+
+  testWidgets('validation: empty name and duplicate names are rejected', (
+    WidgetTester tester,
+  ) async {
+    final ProviderContainer container = await openSettings(tester);
+    await openProviders(tester);
+
+    await tester.tap(find.byKey(const Key('add-provider-button')));
+    await tester.pumpAndSettle(
+      const Duration(milliseconds: 100),
+      EnginePhase.sendSemanticsUpdate,
+      const Duration(seconds: 15),
+    );
+
+    // Save without a name -> validation error, editor stays open
+    // (AppBar save = same full-save path, always hittable).
+    await tester.enterText(
+      find.byKey(const Key('editor-base-url-field')),
+      'https://api.example.com/v1',
+    );
+    await tester.tap(find.byKey(const Key('editor-save-appbar')));
+    await tester.pumpAndSettle(
+      const Duration(milliseconds: 100),
+      EnginePhase.sendSemanticsUpdate,
+      const Duration(seconds: 15),
+    );
+    expect(find.byType(PresetEditorScreen), findsOneWidget);
+    expect(find.text('Name is required.'), findsOneWidget);
+
+    // Duplicate built-in name -> duplicate error.
+    await tester.enterText(find.byKey(const Key('editor-name-field')), 'Groq');
+    await tester.tap(find.byKey(const Key('editor-save-appbar')));
+    await tester.pumpAndSettle(
+      const Duration(milliseconds: 100),
+      EnginePhase.sendSemanticsUpdate,
+      const Duration(seconds: 15),
+    );
+    expect(find.byType(PresetEditorScreen), findsOneWidget);
+    expect(
+      find.text('A provider with this name already exists.'),
+      findsOneWidget,
+    );
+    expect(container.read(settingsProvider).presets.length, 7);
+  });
+
+  testWidgets('a provider can be deleted from the editor', (
+    WidgetTester tester,
+  ) async {
+    final ProviderContainer container = await openSettings(tester);
+    await openProviders(tester);
+
+    // Create a disposable provider first.
+    await tester.tap(find.byKey(const Key('add-provider-button')));
+    await tester.pumpAndSettle(
+      const Duration(milliseconds: 100),
+      EnginePhase.sendSemanticsUpdate,
+      const Duration(seconds: 15),
+    );
+    await tester.enterText(
+      find.byKey(const Key('editor-name-field')),
+      'Throwaway',
+    );
+    await tester.enterText(
+      find.byKey(const Key('editor-base-url-field')),
+      'https://throw.example.com/v1',
+    );
+    await tester.tap(find.byKey(const Key('editor-save-appbar')));
+    await tester.pumpAndSettle(
+      const Duration(milliseconds: 100),
+      EnginePhase.sendSemanticsUpdate,
+      const Duration(seconds: 15),
+    );
+    // The new card sits at the bottom of the list — reveal it first.
+    await tester.dragUntilVisible(
+      find.byKey(const Key('provider-Throwaway')),
+      find.byType(ListView),
+      const Offset(0, -140),
+    );
+    await tester.pumpAndSettle(
+      const Duration(milliseconds: 100),
+      EnginePhase.sendSemanticsUpdate,
+      const Duration(seconds: 15),
+    );
+    expect(find.byKey(const Key('provider-Throwaway')), findsOneWidget);
+
+    // Open it and delete it (scroll the danger zone into view first).
+    await tester.tap(find.byKey(const Key('provider-Throwaway')));
+    await tester.pumpAndSettle(
+      const Duration(milliseconds: 100),
+      EnginePhase.sendSemanticsUpdate,
+      const Duration(seconds: 15),
+    );
+    await tester.dragUntilVisible(
+      find.byKey(const Key('editor-delete-button')),
+      find.byType(ListView),
+      const Offset(0, -140),
+    );
+    await tester.pumpAndSettle(
+      const Duration(milliseconds: 100),
+      EnginePhase.sendSemanticsUpdate,
+      const Duration(seconds: 15),
+    );
+    await tester.tap(find.byKey(const Key('editor-delete-button')));
+    await tester.pumpAndSettle(
+      const Duration(milliseconds: 100),
+      EnginePhase.sendSemanticsUpdate,
+      const Duration(seconds: 15),
+    );
+    // Confirm dialog.
+    await tester.tap(find.text('Delete').last);
+    await tester.pumpAndSettle(
+      const Duration(milliseconds: 100),
+      EnginePhase.sendSemanticsUpdate,
+      const Duration(seconds: 15),
+    );
+
+    expect(find.byKey(const Key('provider-Throwaway')), findsNothing);
+    expect(
+      container
+          .read(settingsProvider)
+          .presets
+          .any((ProviderPreset p) => p.name == 'Throwaway'),
+      isFalse,
     );
   });
 }

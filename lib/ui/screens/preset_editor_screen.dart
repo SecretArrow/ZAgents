@@ -1,0 +1,625 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../../di.dart';
+import '../../l10n/app_strings.dart';
+import '../../models/models.dart';
+import '../../services/model_catalog.dart';
+import '../theme.dart';
+
+/// Full-screen editor for one provider preset (replaces the old modal
+/// dialog, which overflowed under the keyboard and made the Save button
+/// impossible to reach on phones).
+///
+/// From here the user can:
+/// * edit name / base URL / API key of one provider,
+/// * save the API key on its own with a dedicated button,
+/// * fetch the models the provider actually exposes
+///   (`GET {baseUrl}/models`) and pick one,
+/// * save the preset (syncing the active connection when it is the active
+///   provider) or delete it.
+class PresetEditorScreen extends ConsumerStatefulWidget {
+  const PresetEditorScreen({super.key, required this.preset});
+
+  /// The preset to edit. Pass a fresh [ProviderPreset] (empty name) to
+  /// create a new provider.
+  final ProviderPreset preset;
+
+  @override
+  ConsumerState<PresetEditorScreen> createState() => _PresetEditorScreenState();
+}
+
+class _PresetEditorScreenState extends ConsumerState<PresetEditorScreen> {
+  late final TextEditingController _name;
+  late final TextEditingController _baseUrl;
+  late final TextEditingController _apiKey;
+  late final TextEditingController _model;
+  late final TextEditingController _modelSearch;
+
+  /// Last known persisted snapshot of this preset. Field edits stay local
+  /// until an explicit save; [_stored] is what the settings list holds.
+  late ProviderPreset _stored;
+
+  bool _obscureKey = true;
+  bool _fetching = false;
+  String? _fetchError;
+  String? _validationError;
+  List<RemoteModel> _models = const <RemoteModel>[];
+  String _modelQuery = '';
+
+  bool get _isNew => _stored.name.isEmpty;
+
+  AppStrings get _strings => stringsOf(context);
+
+  @override
+  void initState() {
+    super.initState();
+    _stored = widget.preset;
+    _name = TextEditingController(text: widget.preset.name);
+    _baseUrl = TextEditingController(text: widget.preset.baseUrl);
+    _apiKey = TextEditingController(text: widget.preset.apiKey);
+    _model = TextEditingController(text: widget.preset.model);
+    _modelSearch = TextEditingController();
+    _models = <RemoteModel>[
+      for (final String id in widget.preset.modelsCache)
+        RemoteModel(id: id, name: id),
+    ];
+  }
+
+  @override
+  void dispose() {
+    _name.dispose();
+    _baseUrl.dispose();
+    _apiKey.dispose();
+    _model.dispose();
+    _modelSearch.dispose();
+    super.dispose();
+  }
+
+  void _snack(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  /// Shared validation. Returns the first problem, or null when OK.
+  String? _validate({required bool requireUrl}) {
+    if (_name.text.trim().isEmpty) return _strings.nameRequiredError;
+    if (requireUrl && _baseUrl.text.trim().isEmpty) {
+      return _strings.urlRequiredError;
+    }
+    final AppSettings settings = ref.read(settingsProvider);
+    final String name = _name.text.trim();
+    final bool duplicate = settings.presets.any(
+      (ProviderPreset p) => p.id != widget.preset.id && p.name == name,
+    );
+    if (duplicate) return _strings.duplicateNameError;
+    return null;
+  }
+
+  /// Upserts [updated] into the preset list. When this preset is the
+  /// active provider the live connection is synced as well, so chats
+  /// immediately use the saved values. [syncModel] controls whether the
+  /// active model follows the preset (key-only saves must not clobber a
+  /// model picked from the picker).
+  AppSettings _upsert(ProviderPreset updated, {required bool syncModel}) {
+    final AppSettings settings = ref.read(settingsProvider);
+    final bool exists = settings.presets.any(
+      (ProviderPreset p) => p.id == updated.id,
+    );
+    final List<ProviderPreset> presets = exists
+        ? <ProviderPreset>[
+            for (final ProviderPreset p in settings.presets)
+              if (p.id == updated.id) updated else p,
+          ]
+        : <ProviderPreset>[...settings.presets, updated];
+    if (settings.providerName == _stored.name) {
+      return settings.copyWith(
+        providerName: updated.name,
+        baseUrl: updated.baseUrl,
+        apiKey: updated.apiKey,
+        model: syncModel ? updated.model : null,
+        presets: presets,
+      );
+    }
+    return settings.copyWith(presets: presets);
+  }
+
+  /// Persists the whole form and closes the screen.
+  Future<void> _saveAll() async {
+    final String? error = _validate(requireUrl: true);
+    if (error != null) {
+      setState(() => _validationError = error);
+      return;
+    }
+    _stored = ProviderPreset(
+      id: widget.preset.id,
+      name: _name.text.trim(),
+      baseUrl: _baseUrl.text.trim(),
+      apiKey: _apiKey.text,
+      model: _model.text.trim(),
+      modelsCache: <String>[for (final RemoteModel m in _models) m.id],
+    );
+    await ref
+        .read(settingsProvider.notifier)
+        .update(_upsert(_stored, syncModel: true));
+    if (!mounted) return;
+    _snack(_strings.providerSavedSnack);
+    Navigator.of(context).pop();
+  }
+
+  /// Persists just the API key (plus name/URL so the key has a home)
+  /// without leaving the screen. This is the explicit per-provider key
+  /// save the settings screen never had.
+  Future<void> _saveApiKey() async {
+    final String? error = _validate(requireUrl: false);
+    if (error != null) {
+      setState(() => _validationError = error);
+      return;
+    }
+    _stored = _stored.copyWith(
+      name: _name.text.trim(),
+      baseUrl: _baseUrl.text.trim(),
+      apiKey: _apiKey.text,
+    );
+    await ref
+        .read(settingsProvider.notifier)
+        .update(_upsert(_stored, syncModel: false));
+    _snack(_strings.apiKeySavedSnack);
+    if (mounted) setState(() => _validationError = null);
+  }
+
+  /// Fetches the models this provider exposes, caches them into the
+  /// stored preset and shows them for selection.
+  Future<void> _fetchModels() async {
+    if (_fetching) return;
+    if (_baseUrl.text.trim().isEmpty) {
+      setState(() => _fetchError = _strings.urlRequiredError);
+      return;
+    }
+    setState(() {
+      _fetching = true;
+      _fetchError = null;
+    });
+    final List<RemoteModel> models;
+    try {
+      models = await ref
+          .read(modelCatalogProvider)
+          .fetchModels(
+            baseUrl: _baseUrl.text.trim(),
+            apiKey: _apiKey.text.trim(),
+          );
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _fetching = false;
+          _fetchError = e.toString();
+        });
+      }
+      return;
+    }
+    if (!mounted) return;
+    setState(() {
+      _fetching = false;
+      _models = models;
+      _modelQuery = '';
+      _modelSearch.clear();
+    });
+    // Cache the ids into the stored preset so the model picker (and the
+    // next editor visit) can show them without refetching. New presets
+    // are not written yet — the cache persists with the first save.
+    final AppSettings settings = ref.read(settingsProvider);
+    if (settings.presets.any((ProviderPreset p) => p.id == _stored.id)) {
+      final ProviderPreset withCache = _stored.copyWith(
+        modelsCache: <String>[for (final RemoteModel m in models) m.id],
+      );
+      _stored = withCache;
+      await ref
+          .read(settingsProvider.notifier)
+          .update(_upsert(withCache, syncModel: false));
+    }
+    _snack(_strings.modelsFetchedSnack(models.length));
+  }
+
+  Future<void> _delete() async {
+    final AppStrings strings = _strings;
+    final bool? confirmed = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext dialogContext) => AlertDialog(
+        backgroundColor: context.zSurface,
+        title: Text(strings.deletePresetTitle),
+        content: Text(strings.deletePresetBody),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: Text(strings.cancel),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: Text(
+              strings.delete,
+              style: const TextStyle(color: Colors.redAccent),
+            ),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    final AppSettings settings = ref.read(settingsProvider);
+    final List<ProviderPreset> remaining = settings.presets
+        .where((ProviderPreset p) => p.id != widget.preset.id)
+        .toList();
+    AppSettings next;
+    if (settings.providerName == _stored.name) {
+      // Deleting the active provider falls back to the first remaining
+      // preset (or a fresh OpenRouter default) so the app always has a
+      // usable connection shape.
+      final ProviderPreset fallback = remaining.isNotEmpty
+          ? remaining.first
+          : ProviderPreset(
+              id: newId(),
+              name: 'OpenRouter',
+              baseUrl: providerPresets['OpenRouter'] ?? '',
+            );
+      next = settings.copyWith(
+        providerName: fallback.name,
+        baseUrl: fallback.baseUrl,
+        apiKey: fallback.apiKey,
+        model: fallback.model,
+        presets: remaining.isEmpty ? <ProviderPreset>[fallback] : remaining,
+      );
+    } else {
+      next = settings.copyWith(presets: remaining);
+    }
+    await ref.read(settingsProvider.notifier).update(next);
+    if (!mounted) return;
+    _snack(_strings.providerDeletedSnack);
+    Navigator.of(context).pop();
+  }
+
+  List<RemoteModel> get _filteredModels {
+    final String q = _modelQuery.trim().toLowerCase();
+    if (q.isEmpty) return _models;
+    return _models
+        .where(
+          (RemoteModel m) =>
+              m.id.toLowerCase().contains(q) ||
+              m.name.toLowerCase().contains(q),
+        )
+        .toList();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final AppStrings strings = _strings;
+    final ZPalette palette = context.palette;
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(_isNew ? strings.newProviderTitle : strings.editPreset),
+        actions: <Widget>[
+          IconButton(
+            key: const Key('editor-save-appbar'),
+            tooltip: strings.save,
+            icon: const Icon(Icons.check_rounded),
+            onPressed: _saveAll,
+          ),
+        ],
+      ),
+      body: SafeArea(
+        child: ListView(
+          padding: const EdgeInsets.all(16),
+          children: <Widget>[
+            _card(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  TextField(
+                    key: const Key('editor-name-field'),
+                    controller: _name,
+                    decoration: InputDecoration(
+                      labelText: strings.presetNameLabel,
+                      hintText: 'My provider',
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    key: const Key('editor-base-url-field'),
+                    controller: _baseUrl,
+                    keyboardType: TextInputType.url,
+                    decoration: InputDecoration(
+                      labelText: strings.baseUrlLabel,
+                      hintText: 'https://openrouter.ai/api/v1',
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    key: const Key('editor-api-key-field'),
+                    controller: _apiKey,
+                    obscureText: _obscureKey,
+                    decoration: InputDecoration(
+                      labelText: strings.apiKeyLabel,
+                      helperText: strings.apiKeyStoredLocally,
+                      helperMaxLines: 3,
+                      suffixIcon: IconButton(
+                        icon: Icon(
+                          _obscureKey
+                              ? Icons.visibility_off_outlined
+                              : Icons.visibility_outlined,
+                        ),
+                        onPressed: () =>
+                            setState(() => _obscureKey = !_obscureKey),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  // Explicit per-provider API key save: persists instantly
+                  // without leaving the editor.
+                  OutlinedButton.icon(
+                    key: const Key('editor-save-api-key-button'),
+                    icon: const Icon(Icons.key_rounded, size: 18),
+                    label: Text(strings.saveApiKey),
+                    onPressed: _saveApiKey,
+                  ),
+                  if (_validationError != null) ...<Widget>[
+                    const SizedBox(height: 8),
+                    Row(
+                      children: <Widget>[
+                        Icon(
+                          Icons.error_outline_rounded,
+                          size: 16,
+                          color: Colors.redAccent,
+                        ),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            _validationError!,
+                            style: const TextStyle(
+                              fontSize: 12.5,
+                              color: Colors.redAccent,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+            _sectionTitle(strings.modelLabel),
+            _card(child: _modelsSection(strings, palette)),
+            if (!_isNew) ...<Widget>[
+              const SizedBox(height: 16),
+              _sectionTitle(strings.keyStatusSection),
+              _card(
+                child: Row(
+                  children: <Widget>[
+                    Icon(
+                      _stored.hasKey
+                          ? Icons.verified_rounded
+                          : Icons.key_off_rounded,
+                      size: 18,
+                      color: _stored.hasKey
+                          ? Colors.green.shade400
+                          : palette.muted,
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      _stored.hasKey
+                          ? strings.presetHasKey
+                          : strings.presetNoKey,
+                      style: TextStyle(fontSize: 13, color: palette.muted),
+                    ),
+                    const Spacer(),
+                    TextButton.icon(
+                      key: const Key('editor-delete-button'),
+                      icon: const Icon(
+                        Icons.delete_outline_rounded,
+                        size: 18,
+                        color: Colors.redAccent,
+                      ),
+                      label: Text(
+                        strings.delete,
+                        style: const TextStyle(color: Colors.redAccent),
+                      ),
+                      onPressed: _delete,
+                    ),
+                  ],
+                ),
+              ),
+            ],
+            const SizedBox(height: 16),
+            FilledButton.icon(
+              key: const Key('editor-save-button'),
+              style: FilledButton.styleFrom(
+                minimumSize: const Size.fromHeight(48),
+              ),
+              icon: const Icon(Icons.save_rounded),
+              label: Text(strings.save),
+              onPressed: _saveAll,
+            ),
+            const SizedBox(height: 24),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _modelsSection(AppStrings strings, ZPalette palette) {
+    final List<RemoteModel> filtered = _filteredModels;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        TextField(
+          key: const Key('editor-model-field'),
+          controller: _model,
+          decoration: InputDecoration(
+            labelText: strings.modelLabel,
+            hintText: strings.modelHint,
+            suffixIcon: _model.text.isEmpty
+                ? null
+                : IconButton(
+                    icon: const Icon(Icons.close_rounded, size: 18),
+                    onPressed: () => setState(() => _model.clear()),
+                  ),
+          ),
+          onChanged: (_) => setState(() {}),
+        ),
+        const SizedBox(height: 12),
+        Row(
+          children: <Widget>[
+            FilledButton.tonalIcon(
+              key: const Key('editor-fetch-models-button'),
+              icon: _fetching
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.cloud_download_rounded, size: 18),
+              label: Text(
+                _fetching ? strings.fetchingModels : strings.fetchModels,
+              ),
+              onPressed: _fetching ? null : _fetchModels,
+            ),
+            const Spacer(),
+            if (_models.isNotEmpty)
+              Text(
+                strings.modelsCachedCount(_models.length),
+                style: TextStyle(fontSize: 11.5, color: palette.muted),
+              ),
+          ],
+        ),
+        if (_fetchError != null) ...<Widget>[
+          const SizedBox(height: 10),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: context.zSurfaceAlt,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: context.zBorder),
+            ),
+            child: Row(
+              children: <Widget>[
+                const Icon(
+                  Icons.cloud_off_rounded,
+                  size: 16,
+                  color: Colors.redAccent,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    _fetchError!,
+                    maxLines: 4,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 11.5,
+                      color: Colors.redAccent,
+                      fontFamily: 'monospace',
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+        if (_models.isEmpty && !_fetching && _fetchError == null)
+          Padding(
+            padding: const EdgeInsets.only(top: 10),
+            child: Text(
+              strings.noModelsYet,
+              style: TextStyle(fontSize: 12, color: palette.muted),
+            ),
+          ),
+        if (_models.isNotEmpty) ...<Widget>[
+          const SizedBox(height: 12),
+          TextField(
+            key: const Key('editor-model-search-field'),
+            controller: _modelSearch,
+            onChanged: (String value) => setState(() => _modelQuery = value),
+            decoration: InputDecoration(
+              hintText: strings.searchModelsHint,
+              prefixIcon: const Icon(Icons.search_rounded, size: 20),
+              isDense: true,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Container(
+            key: const Key('editor-model-list'),
+            constraints: const BoxConstraints(maxHeight: 240),
+            decoration: BoxDecoration(
+              color: context.zSurfaceAlt,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: context.zBorder),
+            ),
+            child: filtered.isEmpty
+                ? Padding(
+                    padding: const EdgeInsets.all(14),
+                    child: Text(
+                      strings.modelsEmpty,
+                      style: TextStyle(fontSize: 12, color: palette.muted),
+                    ),
+                  )
+                : ListView.builder(
+                    shrinkWrap: true,
+                    itemCount: filtered.length,
+                    itemBuilder: (BuildContext context, int index) {
+                      final RemoteModel m = filtered[index];
+                      final bool selected = m.id == _model.text;
+                      return ListTile(
+                        dense: true,
+                        visualDensity: VisualDensity.compact,
+                        leading: Icon(
+                          selected
+                              ? Icons.check_circle_rounded
+                              : Icons.circle_outlined,
+                          size: 16,
+                          color: selected ? kAccentColor : palette.muted,
+                        ),
+                        title: Text(
+                          m.id,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 12.5,
+                            fontFamily: 'monospace',
+                          ),
+                        ),
+                        onTap: () => setState(() => _model.text = m.id),
+                      );
+                    },
+                  ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _sectionTitle(String text) => Padding(
+    padding: const EdgeInsets.only(bottom: 8, left: 4),
+    child: Text(
+      text.toUpperCase(),
+      style: const TextStyle(
+        fontSize: 11,
+        letterSpacing: 1.2,
+        fontWeight: FontWeight.w700,
+        color: kMutedTextColor,
+      ),
+    ),
+  );
+
+  Widget _card({required Widget child}) => Container(
+    width: double.infinity,
+    decoration: BoxDecoration(
+      color: context.zSurface,
+      borderRadius: BorderRadius.circular(16),
+      border: Border.all(color: context.zBorder),
+    ),
+    child: Material(
+      type: MaterialType.transparency,
+      child: Padding(padding: const EdgeInsets.all(16), child: child),
+    ),
+  );
+}

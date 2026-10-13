@@ -194,6 +194,31 @@ abstract class AppStrings {
   String get deletePresetBody;
   String get presetHasKey;
   String get presetNoKey;
+
+  // -- Providers management (v1.5.0) -----------------------------------
+  String get providersTileSubtitle;
+  String get providersTitle;
+  String get providersHint;
+  String get addProvider;
+  String get newProviderTitle;
+  String get activeBadge;
+  String get useProviderTooltip;
+  String providerActivatedSnack(String name);
+  String get saveApiKey;
+  String get apiKeySavedSnack;
+  String get fetchModels;
+  String get fetchingModels;
+  String modelsFetchedSnack(int n);
+  String get modelsCachedNote;
+  String modelsCachedCount(int n);
+  String get noModelsYet;
+  String get nameRequiredError;
+  String get urlRequiredError;
+  String get duplicateNameError;
+  String get providerSavedSnack;
+  String get providerDeletedSnack;
+  String get keyStatusSection;
+
   String get maxStepsTitle;
   String get maxStepsHint;
   String get agentSection;
@@ -502,6 +527,58 @@ class AppStringsEn implements AppStrings {
   String get presetHasKey => 'key saved';
   @override
   String get presetNoKey => 'no key';
+
+  // -- Providers management (v1.5.0) -----------------------------------
+  @override
+  String get providersTileSubtitle => 'Manage providers, API keys and models';
+  @override
+  String get providersTitle => 'Providers';
+  @override
+  String get providersHint =>
+      'Tap a provider to edit it. Each provider stores its own API key '
+      'and model list.';
+  @override
+  String get addProvider => 'Add provider';
+  @override
+  String get newProviderTitle => 'New provider';
+  @override
+  String get activeBadge => 'ACTIVE';
+  @override
+  String get useProviderTooltip => 'Use this provider';
+  @override
+  String providerActivatedSnack(String name) => 'Connected to $name';
+  @override
+  String get saveApiKey => 'Save API key';
+  @override
+  String get apiKeySavedSnack => 'API key saved for this provider';
+  @override
+  String get fetchModels => 'Fetch models';
+  @override
+  String get fetchingModels => 'Fetching…';
+  @override
+  String modelsFetchedSnack(int n) => '$n models available';
+  @override
+  String get modelsCachedNote =>
+      'Showing the last fetched list for this provider.';
+  @override
+  String modelsCachedCount(int n) => '$n models cached';
+  @override
+  String get noModelsYet =>
+      'No models fetched yet — tap “Fetch models” to load the list from '
+      'this provider.';
+  @override
+  String get nameRequiredError => 'Name is required.';
+  @override
+  String get urlRequiredError => 'Base URL is required.';
+  @override
+  String get duplicateNameError => 'A provider with this name already exists.';
+  @override
+  String get providerSavedSnack => 'Provider saved';
+  @override
+  String get providerDeletedSnack => 'Provider deleted';
+  @override
+  String get keyStatusSection => 'Key status';
+
   @override
   String get maxStepsTitle => 'Max agent steps';
   @override
@@ -857,6 +934,59 @@ class AppStringsId implements AppStrings {
   String get presetHasKey => 'key tersimpan';
   @override
   String get presetNoKey => 'tanpa key';
+
+  // -- Providers management (v1.5.0) -----------------------------------
+  @override
+  String get providersTileSubtitle =>
+      'Kelola provider, API key, dan daftar model';
+  @override
+  String get providersTitle => 'Provider';
+  @override
+  String get providersHint =>
+      'Ketuk provider untuk mengubahnya. Setiap provider menyimpan API key '
+      'dan daftar modelnya sendiri.';
+  @override
+  String get addProvider => 'Tambah provider';
+  @override
+  String get newProviderTitle => 'Provider baru';
+  @override
+  String get activeBadge => 'AKTIF';
+  @override
+  String get useProviderTooltip => 'Gunakan provider ini';
+  @override
+  String providerActivatedSnack(String name) => 'Terhubung ke $name';
+  @override
+  String get saveApiKey => 'Simpan API key';
+  @override
+  String get apiKeySavedSnack => 'API key tersimpan untuk provider ini';
+  @override
+  String get fetchModels => 'Ambil daftar model';
+  @override
+  String get fetchingModels => 'Mengambil…';
+  @override
+  String modelsFetchedSnack(int n) => '$n model tersedia';
+  @override
+  String get modelsCachedNote =>
+      'Menampilkan daftar terakhir yang berhasil diambil dari provider ini.';
+  @override
+  String modelsCachedCount(int n) => '$n model tersimpan';
+  @override
+  String get noModelsYet =>
+      'Belum ada model — ketuk “Ambil daftar model” untuk memuat daftar '
+      'dari provider ini.';
+  @override
+  String get nameRequiredError => 'Nama wajib diisi.';
+  @override
+  String get urlRequiredError => 'Base URL wajib diisi.';
+  @override
+  String get duplicateNameError => 'Provider dengan nama ini sudah ada.';
+  @override
+  String get providerSavedSnack => 'Provider tersimpan';
+  @override
+  String get providerDeletedSnack => 'Provider dihapus';
+  @override
+  String get keyStatusSection => 'Status key';
+
   @override
   String get maxStepsTitle => 'Maks. langkah agent';
   @override

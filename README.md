@@ -24,13 +24,25 @@ OpenAI-compatible: **OpenRouter, InferHub, Z.AI, OpenAI, DeepSeek, Groq, dan lai
   | `read_file` / `write_file` | Baca/tulis file di folder dokumen aplikasi |
   | `node_run` | Jalankan JavaScript di runtime tersemat (require/fs/fetch) |
   | `node_install` / `node_remove` | Tambah/hapus package npm sesuai kebutuhan agent |
-- **Custom provider** — cukup ganti Base URL + API key + model (preset tersedia:
-  OpenRouter, **InferHub** `sk-airo-…`, Z.AI, OpenAI, DeepSeek, Groq, atau Custom).
-- **Katalog model live** — pemilih model mengambil daftar langsung dari
-  `GET {baseUrl}/models` provider aktif, lengkap dengan:
-  - 🔍 **kolom pencarian** (by id atau nama),
+- **Custom provider** — kelola provider lewat layar **Providers** penuh
+  (bukan modal): setiap provider menyimpan **base URL + API key + model sendiri**
+  (preset tersedia: OpenRouter, **InferHub** `sk-airo-…`, Z.AI, OpenAI, DeepSeek,
+  Groq, atau Custom), lengkap dengan:
+  - 💾 **tombol Save API key per provider** (tersimpan seketi tanpa keluar layar),
+  - ☁️ **tombol Fetch models** — ambil daftar model yang benar-benar tersedia
+    di provider tersebut (`GET {baseUrl}/models`) langsung dari editor,
+  - ✅ validasi (nama wajib, URL wajib, nama ganda ditolak) + hapus provider
+    dengan konfirmasi, aktifkan provider satu ketukan (⚡),
+  - migrasi otomatis dari key lama.
+- **Katalog model live** — pemilih model selalu terikat ke **provider yang
+  di-set default di Settings** (nama provider + host tampil di header) dan
+  mengambil daftar langsung dari `GET {baseUrl}/models`, lengkap dengan:
+  - 🔍 **kolom pencarian** yang bekerja di semua state (katalog live, cache,
+    maupun saran offline) — filter by id atau nama,
   - 🏷️ **filter chip** (Semua / Tools / Gratis — termasuk model `:free` OpenRouter),
   - 📄 **paging** (20 model per halaman) dengan navigasi first/prev/next/last,
+  - 📴 **cache model per provider** — hasil fetch tersimpan di preset sehingga
+    daftar model provider Anda tetap tampil saat offline / API error,
   - badge info (konteks, tools, gratis) + tombol refresh + fallback saran offline.
 - **Dwibahasa** — antarmuka **English (default)** dan **Bahasa Indonesia**;
   ganti lewat ikon 🌐 di app bar atau **Settings → Language** (pilihan tersimpan).
@@ -65,9 +77,12 @@ OpenAI-compatible: **OpenRouter, InferHub, Z.AI, OpenAI, DeepSeek, Groq, dan lai
 
 1. Unduh APK terbaru dari halaman [**Releases**](https://github.com/SecretArrow/ZAgents/releases).
 2. Instal (izinkan instal dari sumber tidak dikenal bila diminta).
-3. Buka **Settings/Pengaturan** → pilih preset provider (mis. OpenRouter / **InferHub**) → isi **API key**
-   → ketuk ikon pencarian di kolom Model untuk **membrowse katalog model live**
-   (pilih yang mendukung tool calling: Claude, GPT, Gemini, DeepSeek, Qwen, GLM, dll).
+3. Buka **Settings → AI provider** → layar **Providers** → ketuk provider
+   (mis. OpenRouter / **InferHub**) → isi **API key** → ketuk **Save API key**
+   → ketuk **Fetch models** untuk menarik daftar model yang tersedia di
+   provider tersebut, pilih modelnya (atau lewat chip model di chat:
+   pilih yang mendukung tool calling — Claude, GPT, Gemini, DeepSeek, Qwen,
+   GLM, dll) → **Save**.
 4. (Opsional) **Settings → Language**: default **English**, tersedia **Bahasa Indonesia**.
 5. Kembali ke chat, aktifkan pill **Agent**, dan mulai bertanya.
 
@@ -90,7 +105,10 @@ lib/
 │   ├── chat_store.dart        # persistensi riwayat (JSON)
 │   └── settings_repository.dart
 ├── tools/tool_defs.dart       # skema tools + system prompt agent
-└── ui/                        # theme, HomeShell, composer, bubbles, dsb.
+├── ui/
+│   ├── screens/providers_screen.dart   # manajemen provider (list + aktivasi)
+│   ├── screens/preset_editor_screen.dart # editor provider penuh (key, fetch models)
+│   └── ...                    # theme, HomeShell, composer, bubbles, dsb.
 ```
 
 Alur agent: **prompt → chat/completions (stream) → tool_calls → eksekusi →

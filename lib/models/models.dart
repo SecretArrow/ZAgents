@@ -204,6 +204,7 @@ class ProviderPreset {
     this.baseUrl = '',
     this.apiKey = '',
     this.model = '',
+    this.modelsCache = const <String>[],
   });
 
   final String id;
@@ -212,19 +213,28 @@ class ProviderPreset {
   final String apiKey;
   final String model;
 
+  /// Model ids from the last successful `GET /models` fetch for this
+  /// provider. Lets the model picker open instantly (and offline) with the
+  /// models that actually exist on this provider.
+  final List<String> modelsCache;
+
   bool get hasKey => apiKey.trim().isNotEmpty;
+
+  bool get hasModelsCache => modelsCache.isNotEmpty;
 
   ProviderPreset copyWith({
     String? name,
     String? baseUrl,
     String? apiKey,
     String? model,
+    List<String>? modelsCache,
   }) => ProviderPreset(
     id: id,
     name: name ?? this.name,
     baseUrl: baseUrl ?? this.baseUrl,
     apiKey: apiKey ?? this.apiKey,
     model: model ?? this.model,
+    modelsCache: modelsCache ?? this.modelsCache,
   );
 
   Map<String, dynamic> toJson() => <String, dynamic>{
@@ -233,6 +243,7 @@ class ProviderPreset {
     'baseUrl': baseUrl,
     'apiKey': apiKey,
     'model': model,
+    'modelsCache': modelsCache,
   };
 
   factory ProviderPreset.fromJson(Map<String, dynamic> json) => ProviderPreset(
@@ -241,6 +252,9 @@ class ProviderPreset {
     baseUrl: json['baseUrl'] as String? ?? '',
     apiKey: json['apiKey'] as String? ?? '',
     model: json['model'] as String? ?? '',
+    modelsCache: ((json['modelsCache'] as List<dynamic>?) ?? const <dynamic>[])
+        .map((Object? e) => e.toString())
+        .toList(),
   );
 }
 
@@ -439,6 +453,14 @@ class AppSettings {
   /// copies its values into the active fields.
   final List<ProviderPreset> presets;
 
+  /// The preset backing the active connection ([providerName]), if any.
+  ProviderPreset? get activePreset {
+    for (final ProviderPreset p in presets) {
+      if (p.name == providerName) return p;
+    }
+    return null;
+  }
+
   AppSettings copyWith({
     String? providerName,
     String? baseUrl,
@@ -594,3 +616,12 @@ const List<String> suggestedModels = <String>[
 
 /// Page size of the model picker list.
 const int modelPickerPageSize = 20;
+
+/// Builds [ProviderPreset]-compatible host label (scheme + host) for
+/// display in provider lists, e.g. `https://api.inferhub.dev/v1` becomes
+/// `api.inferhub.dev`. Returns the raw value when parsing fails.
+String presetHostLabel(String baseUrl) {
+  final Uri? uri = Uri.tryParse(baseUrl.trim());
+  if (uri == null || uri.host.isEmpty) return baseUrl.trim();
+  return uri.host;
+}

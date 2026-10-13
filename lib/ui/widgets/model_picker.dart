@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -107,6 +108,38 @@ class _ModelPickerSheetState extends ConsumerState<ModelPickerSheet> {
 
   bool get _hasApiKey => ref.read(settingsProvider).apiKey.trim().isNotEmpty;
 
+  /// Model ids cached on the active preset from the last successful
+  /// fetch — the offline mirror of this provider's catalog.
+  List<RemoteModel> get _cachedModels {
+    final ProviderPreset? active = ref.read(settingsProvider).activePreset;
+    return <RemoteModel>[
+      for (final String id in active?.modelsCache ?? const <String>[])
+        RemoteModel(id: id, name: id),
+    ];
+  }
+
+  static List<RemoteModel> _asRemote(List<String> ids) => <RemoteModel>[
+    for (final String id in ids) RemoteModel(id: id, name: id),
+  ];
+
+  /// Remembers the fetched catalog on the active preset so the picker can
+  /// open instantly (and offline) with this provider's real models next
+  /// time. Writes only when the list actually changed.
+  void _persistCache(List<RemoteModel> models) {
+    final AppSettings settings = ref.read(settingsProvider);
+    final ProviderPreset? active = settings.activePreset;
+    if (active == null || models.isEmpty) return;
+    final List<String> ids = <String>[for (final RemoteModel m in models) m.id];
+    if (listEquals(active.modelsCache, ids)) return;
+    final List<ProviderPreset> presets = <ProviderPreset>[
+      for (final ProviderPreset p in settings.presets)
+        if (p.id == active.id) p.copyWith(modelsCache: ids) else p,
+    ];
+    ref
+        .read(settingsProvider.notifier)
+        .update(settings.copyWith(presets: presets));
+  }
+
   /// Re-fetches the catalog. The future never fails: fetch errors are
   /// captured into [_errorMessage] and surfaced as an empty result, so the
   /// UI switches to the error card without async-error plumbing.
@@ -120,7 +153,10 @@ class _ModelPickerSheetState extends ConsumerState<ModelPickerSheet> {
             .read(modelCatalogProvider)
             .fetchModels(baseUrl: settings.baseUrl, apiKey: settings.apiKey)
             .then<List<RemoteModel>>(
-              (List<RemoteModel> models) => models,
+              (List<RemoteModel> models) {
+                _persistCache(models);
+                return models;
+              },
               onError: (Object e) {
                 if (mounted) {
                   setState(() => _errorMessage = e.toString());
@@ -247,7 +283,6 @@ class _ModelPickerSheetState extends ConsumerState<ModelPickerSheet> {
               ),
               Divider(height: 1, color: context.zBorder),
               Expanded(child: _body(strings)),
-              if (_catalogFuture != null) _pagingBar(strings),
               Divider(height: 1, color: context.zBorder),
               Padding(
                 padding: const EdgeInsets.all(16),
@@ -270,26 +305,61 @@ class _ModelPickerSheetState extends ConsumerState<ModelPickerSheet> {
     );
   }
 
-  Widget _header(AppStrings strings) => Padding(
-    padding: const EdgeInsets.fromLTRB(20, 16, 12, 12),
-    child: Row(
-      children: <Widget>[
-        Expanded(
-          child: Text(
-            strings.pickModel,
-            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+  Widget _header(AppStrings strings) {
+    // Scoped to the provider configured in Settings: the chip always
+    // reflects the connection actually used for chats.
+    final AppSettings settings = ref.watch(settingsProvider);
+    final String host = presetHostLabel(settings.baseUrl);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 16, 12, 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              Expanded(
+                child: Text(
+                  strings.pickModel,
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              if (_hasApiKey)
+                IconButton(
+                  key: const Key('model-refresh-button'),
+                  tooltip: strings.refreshCatalog,
+                  icon: const Icon(Icons.refresh_rounded, size: 22),
+                  onPressed: _reload,
+                ),
+            ],
           ),
-        ),
-        if (_hasApiKey)
-          IconButton(
-            key: const Key('model-refresh-button'),
-            tooltip: strings.refreshCatalog,
-            icon: const Icon(Icons.refresh_rounded, size: 22),
-            onPressed: _reload,
+          const SizedBox(height: 2),
+          Row(
+            children: <Widget>[
+              Icon(Icons.dns_rounded, size: 13, color: context.zMuted),
+              const SizedBox(width: 6),
+              Flexible(
+                child: Text(
+                  host.isEmpty
+                      ? settings.providerName
+                      : '${settings.providerName}  ·  $host',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 11.5,
+                    color: context.zMuted,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ],
           ),
-      ],
-    ),
-  );
+        ],
+      ),
+    );
+  }
 
   Widget _filterChip({
     required String key,
@@ -309,11 +379,17 @@ class _ModelPickerSheetState extends ConsumerState<ModelPickerSheet> {
 
   Widget _body(AppStrings strings) {
     if (_catalogFuture == null) {
-      // No API key yet: offline suggestions + hint.
+      // No API key yet: offline suggestions (searchable) + hint.
+      final List<RemoteModel> suggestions = _applyFilters(
+        _asRemote(suggestedModels),
+      );
       return ListView(
         children: <Widget>[
           _infoCard(icon: Icons.key_rounded, text: strings.modelsApiKeyHint),
-          _suggestionList(strings),
+          if (suggestions.isEmpty)
+            _emptyCard(strings)
+          else
+            _suggestionList(strings, suggestions),
         ],
       );
     }
@@ -330,10 +406,26 @@ class _ModelPickerSheetState extends ConsumerState<ModelPickerSheet> {
               );
             }
             if (_errorMessage != null) {
+              // Fetch failed: fall back to this provider's cached model
+              // list when we have one — the search still applies to it.
+              final List<RemoteModel> cached = _applyFilters(_cachedModels);
+              if (cached.isNotEmpty) {
+                return _pagedModelList(
+                  strings,
+                  models: cached,
+                  cards: <Widget>[_offlineNote(strings)],
+                );
+              }
+              final List<RemoteModel> suggestions = _applyFilters(
+                _asRemote(suggestedModels),
+              );
               return ListView(
                 children: <Widget>[
                   _errorCard(strings),
-                  _suggestionList(strings),
+                  if (suggestions.isEmpty)
+                    _emptyCard(strings)
+                  else
+                    _suggestionList(strings, suggestions),
                 ],
               );
             }
@@ -343,21 +435,38 @@ class _ModelPickerSheetState extends ConsumerState<ModelPickerSheet> {
             if (filtered.isEmpty) {
               return ListView(children: <Widget>[_emptyCard(strings)]);
             }
-            final int pageCount = (filtered.length / modelPickerPageSize)
-                .ceil();
-            final int current = _page.clamp(0, pageCount - 1);
-            final int start = current * modelPickerPageSize;
-            final List<RemoteModel> slice = filtered
-                .skip(start)
-                .take(modelPickerPageSize)
-                .toList();
-            return ListView.builder(
-              key: Key('model-list-page-$current'),
-              itemCount: slice.length,
-              itemBuilder: (BuildContext context, int index) =>
-                  _modelTile(slice[index], strings),
-            );
+            return _pagedModelList(strings, models: filtered);
           },
+    );
+  }
+
+  /// Filtered + sorted + paged list renderer shared by the live catalog
+  /// and the cached fallback so search and paging behave identically.
+  Widget _pagedModelList(
+    AppStrings strings, {
+    required List<RemoteModel> models,
+    List<Widget> cards = const <Widget>[],
+  }) {
+    final int pageCount = (models.length / modelPickerPageSize).ceil();
+    final int current = _page.clamp(0, pageCount - 1);
+    final int start = current * modelPickerPageSize;
+    final List<RemoteModel> slice = models
+        .skip(start)
+        .take(modelPickerPageSize)
+        .toList();
+    return Column(
+      children: <Widget>[
+        ...cards,
+        Expanded(
+          child: ListView.builder(
+            key: Key('model-list-page-$current'),
+            itemCount: slice.length,
+            itemBuilder: (BuildContext context, int index) =>
+                _modelTile(slice[index], strings),
+          ),
+        ),
+        if (pageCount > 1) _pagingControls(strings, pageCount, current),
+      ],
     );
   }
 
@@ -419,74 +528,58 @@ class _ModelPickerSheetState extends ConsumerState<ModelPickerSheet> {
     );
   }
 
-  Widget _pagingBar(AppStrings strings) {
-    return FutureBuilder<List<RemoteModel>>(
-      future: _catalogFuture,
-      builder:
-          (BuildContext context, AsyncSnapshot<List<RemoteModel>> snapshot) {
-            final List<RemoteModel>? data = snapshot.data;
-            if (!snapshot.hasData || data == null || data.isEmpty) {
-              return const SizedBox.shrink();
-            }
-            final int total = _applyFilters(data).length;
-            if (total == 0) return const SizedBox.shrink();
-            final int pageCount = (total / modelPickerPageSize).ceil();
-            final int current = _page.clamp(0, pageCount - 1);
-            return Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              child: Row(
-                children: <Widget>[
-                  IconButton(
-                    key: const Key('model-page-first'),
-                    visualDensity: VisualDensity.compact,
-                    icon: const Icon(Icons.first_page_rounded, size: 20),
-                    onPressed: current > 0
-                        ? () => setState(() => _page = 0)
-                        : null,
-                  ),
-                  IconButton(
-                    key: const Key('model-page-prev'),
-                    visualDensity: VisualDensity.compact,
-                    icon: const Icon(Icons.chevron_left_rounded, size: 22),
-                    onPressed: current > 0
-                        ? () => setState(() => _page = current - 1)
-                        : null,
-                  ),
-                  Expanded(
-                    child: Text(
-                      strings.pageIndicator(current + 1, pageCount),
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: context.zMuted,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-                  IconButton(
-                    key: const Key('model-page-next'),
-                    visualDensity: VisualDensity.compact,
-                    icon: const Icon(Icons.chevron_right_rounded, size: 22),
-                    onPressed: current < pageCount - 1
-                        ? () => setState(() => _page = current + 1)
-                        : null,
-                  ),
-                  IconButton(
-                    key: const Key('model-page-last'),
-                    visualDensity: VisualDensity.compact,
-                    icon: const Icon(Icons.last_page_rounded, size: 20),
-                    onPressed: current < pageCount - 1
-                        ? () => setState(() => _page = pageCount - 1)
-                        : null,
-                  ),
-                ],
+  Widget _pagingControls(AppStrings strings, int pageCount, int current) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 8),
+      child: Row(
+        children: <Widget>[
+          IconButton(
+            key: const Key('model-page-first'),
+            visualDensity: VisualDensity.compact,
+            icon: const Icon(Icons.first_page_rounded, size: 20),
+            onPressed: current > 0 ? () => setState(() => _page = 0) : null,
+          ),
+          IconButton(
+            key: const Key('model-page-prev'),
+            visualDensity: VisualDensity.compact,
+            icon: const Icon(Icons.chevron_left_rounded, size: 22),
+            onPressed: current > 0
+                ? () => setState(() => _page = current - 1)
+                : null,
+          ),
+          Expanded(
+            child: Text(
+              strings.pageIndicator(current + 1, pageCount),
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 12,
+                color: context.zMuted,
+                fontWeight: FontWeight.w600,
               ),
-            );
-          },
+            ),
+          ),
+          IconButton(
+            key: const Key('model-page-next'),
+            visualDensity: VisualDensity.compact,
+            icon: const Icon(Icons.chevron_right_rounded, size: 22),
+            onPressed: current < pageCount - 1
+                ? () => setState(() => _page = current + 1)
+                : null,
+          ),
+          IconButton(
+            key: const Key('model-page-last'),
+            visualDensity: VisualDensity.compact,
+            icon: const Icon(Icons.last_page_rounded, size: 20),
+            onPressed: current < pageCount - 1
+                ? () => setState(() => _page = pageCount - 1)
+                : null,
+          ),
+        ],
+      ),
     );
   }
 
-  Widget _suggestionList(AppStrings strings) {
+  Widget _suggestionList(AppStrings strings, List<RemoteModel> models) {
     final String active = ref.watch(settingsProvider.select((s) => s.model));
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -503,21 +596,21 @@ class _ModelPickerSheetState extends ConsumerState<ModelPickerSheet> {
             ),
           ),
         ),
-        for (final String model in suggestedModels)
+        for (final RemoteModel model in models)
           ListTile(
             dense: true,
             leading: Icon(
-              model == active
+              model.id == active
                   ? Icons.check_circle_rounded
                   : Icons.circle_outlined,
               size: 18,
-              color: model == active ? kAccentColor : context.zMuted,
+              color: model.id == active ? kAccentColor : context.zMuted,
             ),
             title: Text(
-              model,
+              model.id,
               style: const TextStyle(fontSize: 14, fontFamily: 'monospace'),
             ),
-            onTap: () => _select(model),
+            onTap: () => _select(model.id),
           ),
       ],
     );
@@ -541,6 +634,35 @@ class _ModelPickerSheetState extends ConsumerState<ModelPickerSheet> {
               text,
               style: TextStyle(fontSize: 12, color: context.zMuted),
             ),
+          ),
+        ],
+      ),
+    ),
+  );
+
+  Widget _offlineNote(AppStrings strings) => Padding(
+    padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+    child: Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: context.zSurfaceAlt,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: context.zBorder),
+      ),
+      child: Row(
+        children: <Widget>[
+          Icon(Icons.offline_bolt_rounded, size: 18, color: context.zMuted),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              strings.modelsCachedNote,
+              style: TextStyle(fontSize: 12, color: context.zMuted),
+            ),
+          ),
+          TextButton(
+            key: const Key('model-retry-button'),
+            onPressed: _reload,
+            child: Text(strings.modelsRetry),
           ),
         ],
       ),

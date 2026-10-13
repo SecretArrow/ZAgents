@@ -100,18 +100,42 @@ void main() {
     expect(firstCall[1]['role'], 'user');
     expect(llm.calls[2].any((m) => m['role'] == 'tool'), isTrue);
 
-    // 4. Settings screen is reachable and editable.
+    // 4. Settings screen is reachable; provider CRUD works through the
+    // full-screen manager (per-provider API key + explicit save button).
     await tester.tap(find.byIcon(Icons.settings_outlined));
     await tester.pumpAndSettle();
     expect(find.byType(SettingsScreen), findsOneWidget);
-    await tester.enterText(find.byKey(const Key('api-key-field')), 'e2e-key-2');
-    await tester.testTextInput.receiveAction(TextInputAction.done);
-    await tester.pumpAndSettle();
     final BuildContext context = tester.element(find.byType(SettingsScreen));
-    expect(
-      ProviderScope.containerOf(context).read(settingsProvider).apiKey,
+    final ProviderContainer container = ProviderScope.containerOf(context);
+
+    await tester.tap(find.byKey(const Key('providers-tile')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('provider-OpenRouter')));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const Key('editor-api-key-field')),
       'e2e-key-2',
     );
+    await tester.tap(find.byKey(const Key('editor-save-api-key-button')));
+    await tester.pumpAndSettle();
+    // OpenRouter is the active provider: the live connection picks the
+    // key up immediately and the preset stores it.
+    expect(container.read(settingsProvider).apiKey, 'e2e-key-2');
+    expect(
+      container
+          .read(settingsProvider)
+          .presets
+          .firstWhere((ProviderPreset p) => p.name == 'OpenRouter')
+          .apiKey,
+      'e2e-key-2',
+    );
+
+    // Leave the editor and the providers manager.
+    await tester.tap(find.byType(BackButton).first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byType(BackButton).first);
+    await tester.pumpAndSettle();
+    expect(find.byType(SettingsScreen), findsOneWidget);
 
     // 5. Language option: English is the default, Bahasa Indonesia switches
     // the whole UI and the choice persists in settings.

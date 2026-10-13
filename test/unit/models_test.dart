@@ -10,6 +10,7 @@ void main() {
         baseUrl: 'https://api.inferhub.dev/v1',
         apiKey: 'sk-airo-test',
         model: 'glm-4.6',
+        modelsCache: <String>['glm-4.6', 'glm-4.5-air'],
       );
       final ProviderPreset decoded = ProviderPreset.fromJson(preset.toJson());
       expect(decoded.id, 'p1');
@@ -18,11 +19,48 @@ void main() {
       expect(decoded.apiKey, 'sk-airo-test');
       expect(decoded.model, 'glm-4.6');
       expect(decoded.hasKey, isTrue);
+      expect(decoded.hasModelsCache, isTrue);
+      expect(decoded.modelsCache, <String>['glm-4.6', 'glm-4.5-air']);
     });
 
     test('hasKey is false for blank keys', () {
       const ProviderPreset preset = ProviderPreset(id: 'p', name: 'X');
       expect(preset.hasKey, isFalse);
+    });
+
+    test('modelsCache defaults to empty and tolerates missing json field', () {
+      const ProviderPreset preset = ProviderPreset(id: 'p', name: 'X');
+      expect(preset.modelsCache, isEmpty);
+      expect(preset.hasModelsCache, isFalse);
+      final ProviderPreset decoded = ProviderPreset.fromJson(<String, dynamic>{
+        'id': 'p',
+        'name': 'X',
+      });
+      expect(decoded.modelsCache, isEmpty);
+    });
+
+    test('copyWith modelsCache replaces the cached list', () {
+      const ProviderPreset preset = ProviderPreset(id: 'p', name: 'X');
+      final ProviderPreset cached = preset.copyWith(
+        modelsCache: <String>['a/b'],
+      );
+      expect(cached.modelsCache, <String>['a/b']);
+      expect(preset.modelsCache, isEmpty);
+    });
+  });
+
+  group('presetHostLabel', () {
+    test('reduces a base URL to its host', () {
+      expect(
+        presetHostLabel('https://api.inferhub.dev/v1'),
+        'api.inferhub.dev',
+      );
+      expect(presetHostLabel('https://openrouter.ai/api/v1'), 'openrouter.ai');
+    });
+
+    test('falls back to the raw value when parsing fails', () {
+      expect(presetHostLabel('not a url'), 'not a url');
+      expect(presetHostLabel(''), '');
     });
   });
 

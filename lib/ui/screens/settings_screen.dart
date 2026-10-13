@@ -5,15 +5,15 @@ import '../../di.dart';
 import '../../l10n/app_strings.dart';
 import '../../models/models.dart';
 import '../theme.dart';
-import '../widgets/model_picker.dart';
 import 'context_screen.dart';
 import 'files_screen.dart';
 import 'node_screen.dart';
+import 'providers_screen.dart';
 
-/// App configuration: appearance (theme), provider presets (each with its
-/// own API key), agent behaviour (max steps 1-100 via slider + custom
-/// input), context manager, Node.js runtime, session import/export and
-/// language. Every change is persisted immediately via [SettingsController].
+/// App configuration: appearance (theme), providers (full-screen manager),
+/// agent behaviour (max steps 1-100 via slider + custom input), context
+/// manager, Node.js runtime, files, import/export and language. Every
+/// change is persisted immediately via [SettingsController].
 class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
 
@@ -22,60 +22,40 @@ class SettingsScreen extends ConsumerStatefulWidget {
 }
 
 class _SettingsScreenState extends ConsumerState<SettingsScreen> {
-  late final TextEditingController _baseUrl;
-  late final TextEditingController _apiKey;
-  late final TextEditingController _model;
   late final TextEditingController _maxSteps;
-  bool _obscureKey = true;
 
   @override
   void initState() {
     super.initState();
     final AppSettings settings = ref.read(settingsProvider);
-    _baseUrl = TextEditingController(text: settings.baseUrl);
-    _apiKey = TextEditingController(text: settings.apiKey);
-    _model = TextEditingController(text: settings.model);
     _maxSteps = TextEditingController(text: '${settings.maxSteps}');
   }
 
   @override
   void dispose() {
-    _baseUrl.dispose();
-    _apiKey.dispose();
-    _model.dispose();
     _maxSteps.dispose();
     super.dispose();
   }
 
   void _commit({
-    String? providerName,
-    String? baseUrl,
-    String? apiKey,
-    String? model,
     bool? agentMode,
     bool? automationEnabled,
     bool? runInBackground,
     Object? maxSteps,
     String? languageCode,
     ThemeModeSetting? themeMode,
-    List<ProviderPreset>? presets,
   }) {
     final AppSettings current = ref.read(settingsProvider);
     ref
         .read(settingsProvider.notifier)
         .update(
           current.copyWith(
-            providerName: providerName,
-            baseUrl: baseUrl ?? _baseUrl.text.trim(),
-            apiKey: apiKey ?? _apiKey.text,
-            model: model ?? _model.text.trim(),
             agentMode: agentMode,
             automationEnabled: automationEnabled,
             runInBackground: runInBackground,
             maxSteps: maxSteps ?? current.maxSteps,
             languageCode: languageCode,
             themeMode: themeMode,
-            presets: presets,
           ),
         );
     if (mounted) {
@@ -85,195 +65,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         }
       });
     }
-  }
-
-  /// Opens the shared model picker sheet; after it closes the model field
-  /// is synced with whatever the user picked there.
-  Future<void> _openModelPicker() async {
-    await showModalBottomSheet<void>(
-      context: context,
-      backgroundColor: context.zSurface,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      isScrollControlled: true,
-      builder: (_) => const ModelPickerSheet(),
-    );
-    if (!mounted) return;
-    setState(() {
-      _model.text = ref.read(settingsProvider).model;
-    });
-  }
-
-  /// Activates a preset: copies its stored base URL / key / model into the
-  /// active connection fields.
-  void _applyPreset(ProviderPreset preset) {
-    setState(() {
-      _baseUrl.text = preset.baseUrl;
-      _apiKey.text = preset.apiKey;
-      _model.text = preset.model;
-    });
-    _commit(
-      providerName: preset.name,
-      baseUrl: preset.baseUrl,
-      apiKey: preset.apiKey,
-      model: preset.model,
-    );
-  }
-
-  /// Writes the current active fields back into the preset of the same
-  /// name (so editing the key here also updates the preset's own key).
-  void _syncActivePreset() {
-    final AppSettings settings = ref.read(settingsProvider);
-    final List<ProviderPreset> presets = settings.presets
-        .map(
-          (ProviderPreset p) => p.name == settings.providerName
-              ? p.copyWith(
-                  baseUrl: _baseUrl.text.trim(),
-                  apiKey: _apiKey.text,
-                  model: _model.text.trim(),
-                )
-              : p,
-        )
-        .toList();
-    if (!presets.any((ProviderPreset p) => p.name == settings.providerName)) {
-      presets.insert(
-        0,
-        ProviderPreset(
-          id: newId(),
-          name: settings.providerName,
-          baseUrl: _baseUrl.text.trim(),
-          apiKey: _apiKey.text,
-          model: _model.text.trim(),
-        ),
-      );
-    }
-    _commit(presets: presets);
-  }
-
-  /// Add or edit a preset in a dialog; returns the saved preset.
-  Future<void> _editPreset([ProviderPreset? existing]) async {
-    final AppStrings strings = stringsOf(context);
-    final TextEditingController name = TextEditingController(
-      text: existing?.name ?? '',
-    );
-    final TextEditingController baseUrl = TextEditingController(
-      text: existing?.baseUrl ?? '',
-    );
-    final TextEditingController apiKey = TextEditingController(
-      text: existing?.apiKey ?? '',
-    );
-    final TextEditingController model = TextEditingController(
-      text: existing?.model ?? '',
-    );
-    final (ProviderPreset?, bool)?
-    result = await showDialog<(ProviderPreset?, bool)>(
-      context: context,
-      builder: (BuildContext dialogContext) => AlertDialog(
-        backgroundColor: context.zSurface,
-        title: Text(
-          existing == null ? strings.savePresetTitle : strings.editPreset,
-        ),
-        content: SizedBox(
-          width: double.maxFinite,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              TextField(
-                key: const Key('preset-name-field'),
-                autofocus: true,
-                controller: name,
-                decoration: InputDecoration(labelText: strings.presetNameLabel),
-              ),
-              const SizedBox(height: 10),
-              TextField(
-                controller: baseUrl,
-                decoration: InputDecoration(labelText: strings.baseUrlLabel),
-              ),
-              const SizedBox(height: 10),
-              TextField(
-                controller: apiKey,
-                obscureText: true,
-                decoration: InputDecoration(labelText: strings.apiKeyLabel),
-              ),
-              const SizedBox(height: 10),
-              TextField(
-                controller: model,
-                decoration: InputDecoration(labelText: strings.modelLabel),
-              ),
-            ],
-          ),
-        ),
-        actions: <Widget>[
-          if (existing != null)
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop((null, true)),
-              child: Text(
-                strings.delete,
-                style: const TextStyle(color: Colors.redAccent),
-              ),
-            ),
-          const Spacer(),
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop((null, false)),
-            child: Text(strings.cancel),
-          ),
-          TextButton(
-            key: const Key('preset-save-button'),
-            onPressed: () {
-              if (name.text.trim().isEmpty) return;
-              Navigator.of(dialogContext).pop((
-                ProviderPreset(
-                  id: existing?.id ?? newId(),
-                  name: name.text.trim(),
-                  baseUrl: baseUrl.text.trim(),
-                  apiKey: apiKey.text,
-                  model: model.text.trim(),
-                ),
-                false,
-              ));
-            },
-            child: Text(strings.save),
-          ),
-        ],
-      ),
-    );
-    if (result == null) return;
-    final AppSettings settings = ref.read(settingsProvider);
-    if (result.$2) {
-      // Delete requested.
-      final List<ProviderPreset> remaining = settings.presets
-          .where((ProviderPreset p) => p.id != existing!.id)
-          .toList();
-      _commit(presets: remaining);
-      return;
-    }
-    final ProviderPreset saved = result.$1!;
-    final bool replacing = settings.presets.any(
-      (ProviderPreset p) => p.id == saved.id,
-    );
-    final List<ProviderPreset> presets = replacing
-        ? <ProviderPreset>[
-            for (final ProviderPreset p in settings.presets)
-              if (p.id == saved.id) saved else p,
-          ]
-        : <ProviderPreset>[...settings.presets, saved];
-    _commit(presets: presets);
-  }
-
-  Future<void> _saveCurrentAsPreset() async {
-    final AppSettings settings = ref.read(settingsProvider);
-    await _editPreset(
-      ProviderPreset(
-        id: newId(),
-        name: settings.providerName == 'Custom'
-            ? 'My provider'
-            : settings.providerName,
-        baseUrl: _baseUrl.text.trim(),
-        apiKey: _apiKey.text,
-        model: _model.text.trim(),
-      ),
-    );
   }
 
   @override
@@ -325,110 +116,13 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             ),
             const SizedBox(height: 16),
 
-            // -- Provider presets ------------------------------------------
+            // -- Provider --------------------------------------------------
             _sectionTitle(strings.providerSection),
             _card(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  Text(
-                    strings.presetsTitle,
-                    style: TextStyle(fontSize: 12, color: palette.muted),
-                  ),
-                  const SizedBox(height: 8),
-                  for (final ProviderPreset preset in settings.presets)
-                    _PresetTile(
-                      preset: preset,
-                      isActive: preset.name == settings.providerName,
-                      onApply: () => _applyPreset(preset),
-                      onEdit: () => _editPreset(preset),
-                    ),
-                  const SizedBox(height: 4),
-                  TextButton.icon(
-                    key: const Key('save-preset-button'),
-                    onPressed: _saveCurrentAsPreset,
-                    icon: const Icon(Icons.playlist_add_rounded, size: 18),
-                    label: Text(strings.savePreset),
-                  ),
-                  const Divider(height: 24),
-                  TextField(
-                    key: const Key('base-url-field'),
-                    controller: _baseUrl,
-                    decoration: InputDecoration(
-                      labelText: strings.baseUrlLabel,
-                      hintText: 'https://openrouter.ai/api/v1',
-                    ),
-                    onSubmitted: (_) {
-                      _commit();
-                      _syncActivePreset();
-                    },
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    key: const Key('api-key-field'),
-                    controller: _apiKey,
-                    obscureText: _obscureKey,
-                    decoration: InputDecoration(
-                      labelText: strings.apiKeyLabel,
-                      helperText: strings.apiKeyStoredLocally,
-                      helperMaxLines: 3,
-                      suffixIcon: IconButton(
-                        icon: Icon(
-                          _obscureKey
-                              ? Icons.visibility_off_outlined
-                              : Icons.visibility_outlined,
-                        ),
-                        onPressed: () =>
-                            setState(() => _obscureKey = !_obscureKey),
-                      ),
-                    ),
-                    onSubmitted: (_) {
-                      _commit();
-                      _syncActivePreset();
-                    },
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    key: const Key('model-field'),
-                    controller: _model,
-                    decoration: InputDecoration(
-                      labelText: strings.modelLabel,
-                      hintText: strings.modelHint,
-                      helperText: strings.browseModelsHint,
-                      suffixIcon: IconButton(
-                        key: const Key('browse-models-button'),
-                        tooltip: strings.browseModels,
-                        icon: const Icon(Icons.manage_search_rounded),
-                        onPressed: _openModelPicker,
-                      ),
-                    ),
-                    onSubmitted: (_) {
-                      _commit();
-                      _syncActivePreset();
-                    },
-                  ),
-                  const SizedBox(height: 8),
-                  Wrap(
-                    spacing: 6,
-                    runSpacing: 6,
-                    children: <Widget>[
-                      for (final String model in suggestedModels)
-                        InputChip(
-                          label: Text(
-                            model,
-                            style: const TextStyle(fontSize: 11),
-                          ),
-                          backgroundColor: context.zSurface,
-                          side: BorderSide(color: context.zBorder),
-                          onPressed: () {
-                            _model.text = model;
-                            _commit(model: model);
-                            _syncActivePreset();
-                          },
-                        ),
-                    ],
-                  ),
-                ],
+              child: _ProviderSummaryTile(
+                settings: settings,
+                strings: strings,
+                palette: palette,
               ),
             ),
             const SizedBox(height: 16),
@@ -681,69 +375,66 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   );
 }
 
-/// One provider preset row: tap to activate (applies its key), menu to edit
-/// or delete. Shows key status so per-preset keys are visible at a glance.
-class _PresetTile extends StatelessWidget {
-  const _PresetTile({
-    required this.preset,
-    required this.isActive,
-    required this.onApply,
-    required this.onEdit,
+/// Compact summary of the active provider connection. Opens the full-screen
+/// [ProvidersScreen] where CRUD happens (the old inline fields + modal
+/// dialog were cramped, overflowed under the keyboard and lost edits).
+class _ProviderSummaryTile extends StatelessWidget {
+  const _ProviderSummaryTile({
+    required this.settings,
+    required this.strings,
+    required this.palette,
   });
 
-  final ProviderPreset preset;
-  final bool isActive;
-  final VoidCallback onApply;
-  final VoidCallback onEdit;
+  final AppSettings settings;
+  final AppStrings strings;
+  final ZPalette palette;
 
   @override
   Widget build(BuildContext context) {
-    final AppStrings strings = stringsOf(context);
-    final ZPalette palette = context.palette;
+    final ProviderPreset? active = settings.activePreset;
+    final bool hasKey = active?.hasKey ?? settings.apiKey.trim().isNotEmpty;
+    final String host = presetHostLabel(settings.baseUrl);
     return ListTile(
-      key: Key('preset-${preset.name}'),
-      dense: true,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 4),
+      key: const Key('providers-tile'),
+      contentPadding: EdgeInsets.zero,
       leading: Icon(
-        isActive
-            ? Icons.radio_button_checked_rounded
-            : Icons.radio_button_off_rounded,
-        size: 20,
-        color: isActive ? kAccentColor : palette.muted,
+        Icons.dns_rounded,
+        size: 24,
+        color: hasKey ? kAccentColor : palette.muted,
       ),
       title: Text(
-        preset.name,
+        settings.providerName,
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
-        style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+        style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
       ),
       subtitle: Row(
         children: <Widget>[
           Flexible(
             child: Text(
-              preset.baseUrl.isEmpty ? '—' : preset.baseUrl,
+              <String>[
+                if (host.isNotEmpty) host,
+                settings.model.isNotEmpty ? settings.model : '—',
+              ].join('  ·  '),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: TextStyle(fontSize: 11, color: palette.muted),
+              style: TextStyle(fontSize: 11.5, color: palette.muted),
             ),
           ),
           const SizedBox(width: 8),
           Text(
-            preset.hasKey
-                ? '· ${strings.presetHasKey}'
-                : '· ${strings.presetNoKey}',
+            hasKey ? '· ${strings.presetHasKey}' : '· ${strings.presetNoKey}',
             style: TextStyle(
               fontSize: 11,
-              color: preset.hasKey ? Colors.green.shade400 : palette.muted,
+              color: hasKey ? Colors.green.shade400 : palette.muted,
             ),
           ),
         ],
       ),
-      trailing: IconButton(
-        icon: Icon(Icons.more_vert_rounded, size: 18, color: palette.muted),
-        onPressed: onEdit,
-      ),
-      onTap: onApply,
+      trailing: Icon(Icons.chevron_right_rounded, color: palette.muted),
+      onTap: () => Navigator.of(
+        context,
+      ).push(MaterialPageRoute<void>(builder: (_) => const ProvidersScreen())),
     );
   }
 }
