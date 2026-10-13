@@ -187,6 +187,15 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('node-manager-tile')), findsOneWidget);
     expect(find.byKey(const Key('files-tile')), findsOneWidget);
+    // v1.7.0: the User-Agent mode dropdown lives below the agent section.
+    await tester.dragUntilVisible(
+      find.byKey(const Key('ua-mode-dropdown')),
+      find.byType(ListView),
+      const Offset(0, -200),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('ua-mode-dropdown')), findsOneWidget);
+    expect(find.byKey(const Key('ua-rotate-button')), findsOneWidget);
     // The context tile sits above the node section — reveal it too.
     await tester.dragUntilVisible(
       find.byKey(const Key('context-manager-tile')),

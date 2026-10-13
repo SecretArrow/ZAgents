@@ -7,6 +7,7 @@ import 'package:zagents/di.dart';
 import 'package:zagents/main.dart';
 import 'package:zagents/models/models.dart';
 import 'package:zagents/ui/screens/preset_editor_screen.dart';
+import 'package:zagents/models/user_agent.dart';
 import 'package:zagents/ui/screens/providers_screen.dart';
 import 'package:zagents/ui/screens/settings_screen.dart';
 
@@ -489,5 +490,56 @@ void main() {
       const Duration(seconds: 15),
     );
     expect(find.byKey(const Key('provider-OpenRouter')), findsOneWidget);
+  });
+
+  testWidgets('user-agent mode dropdown persists the selection', (
+    WidgetTester tester,
+  ) async {
+    final ProviderContainer container = await openSettings(tester);
+
+    // The section sits below the agent card: reveal it first.
+    await tester.dragUntilVisible(
+      find.byKey(const Key('ua-mode-dropdown')),
+      find.byType(ListView),
+      const Offset(0, -200),
+    );
+    await tester.pumpAndSettle(
+      const Duration(milliseconds: 100),
+      EnginePhase.sendSemanticsUpdate,
+      const Duration(seconds: 15),
+    );
+    expect(find.byKey(const Key('ua-mode-dropdown')), findsOneWidget);
+    expect(
+      container.read(settingsProvider).uaMode,
+      UaMode.auto,
+      reason: 'Auto is the default mode',
+    );
+
+    // Open the dropdown and pick PC/Desktop.
+    await tester.tap(find.byKey(const Key('ua-mode-dropdown')));
+    await tester.pumpAndSettle(
+      const Duration(milliseconds: 100),
+      EnginePhase.sendSemanticsUpdate,
+      const Duration(seconds: 15),
+    );
+    await tester.tap(find.text('PC/Desktop').last);
+    await tester.pumpAndSettle(
+      const Duration(milliseconds: 100),
+      EnginePhase.sendSemanticsUpdate,
+      const Duration(seconds: 15),
+    );
+    expect(container.read(settingsProvider).uaMode, UaMode.desktop);
+
+    // Rotating moves the desktop pick forward and persists it.
+    final int before = container.read(settingsProvider).uaDesktopId;
+    await tester.tap(find.byKey(const Key('ua-rotate-button')));
+    await tester.pumpAndSettle(
+      const Duration(milliseconds: 100),
+      EnginePhase.sendSemanticsUpdate,
+      const Duration(seconds: 15),
+    );
+    expect(container.read(settingsProvider).uaDesktopId, isNot(before));
+    // The preview label updates with the new pick.
+    expect(find.byKey(const Key('ua-current-preview')), findsOneWidget);
   });
 }

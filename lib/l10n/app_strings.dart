@@ -183,6 +183,17 @@ abstract class AppStrings {
   String get themeDark;
   String get themeSystem;
 
+  // -- User Agent (browser identity) -------------------------------------
+  String get uaSection;
+  String get uaModeTitle;
+  String get uaModeSubtitle;
+  String get uaModeAuto;
+  String get uaModeDesktop;
+  String get uaModeAndroid;
+  String get uaModeHint;
+  String get uaCurrentLabel;
+  String get uaRotateTooltip;
+
   // -- Settings --------------------------------------------------------
   String get providerSection;
   String get providerPreset;
@@ -509,6 +520,30 @@ class AppStringsEn implements AppStrings {
   String get themeDark => 'Dark';
   @override
   String get themeSystem => 'System';
+
+  // -- User Agent ---------------------------------------------------------
+  @override
+  String get uaSection => 'User Agent';
+  @override
+  String get uaModeTitle => 'User-Agent Mode';
+  @override
+  String get uaModeSubtitle =>
+      'Applied to the embedded browser the agent browses with.';
+  @override
+  String get uaModeAuto => 'Auto (device default)';
+  @override
+  String get uaModeDesktop => 'PC/Desktop';
+  @override
+  String get uaModeAndroid => 'Android Mobile';
+  @override
+  String get uaModeHint =>
+      'Auto uses an Android identity that matches this device and stays '
+      'stable for the whole session. PC/Desktop also switches page layout '
+      'to desktop rendering.';
+  @override
+  String get uaCurrentLabel => 'Active User-Agent';
+  @override
+  String get uaRotateTooltip => 'Use another User-Agent';
 
   // -- Settings --------------------------------------------------------
   @override
@@ -928,6 +963,30 @@ class AppStringsId implements AppStrings {
   String get themeDark => 'Gelap';
   @override
   String get themeSystem => 'Sistem';
+
+  // -- User Agent ---------------------------------------------------------
+  @override
+  String get uaSection => 'User Agent';
+  @override
+  String get uaModeTitle => 'Mode User-Agent';
+  @override
+  String get uaModeSubtitle =>
+      'Berlaku untuk browser tersemat yang dipakai agent untuk browsing.';
+  @override
+  String get uaModeAuto => 'Otomatis (ikut perangkat)';
+  @override
+  String get uaModeDesktop => 'PC/Desktop';
+  @override
+  String get uaModeAndroid => 'Android Mobile';
+  @override
+  String get uaModeHint =>
+      'Otomatis memakai identitas Android yang sesuai dengan perangkat ini '
+      'dan tetap stabil selama sesi. Mode PC/Desktop juga mengubah tata '
+      'letak halaman menjadi rendering desktop.';
+  @override
+  String get uaCurrentLabel => 'User-Agent aktif';
+  @override
+  String get uaRotateTooltip => 'Pakai User-Agent lain';
 
   // -- Settings --------------------------------------------------------
   @override

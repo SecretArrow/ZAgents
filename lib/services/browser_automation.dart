@@ -6,6 +6,8 @@ import 'dart:ui' show Size;
 
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 
+import '../models/user_agent.dart';
+
 /// Snapshot of the current page returned after navigation.
 class BrowserPageInfo {
   BrowserPageInfo({
@@ -55,14 +57,39 @@ abstract class BrowserAutomation {
 }
 
 /// Production implementation backed by a headless InAppWebView.
+///
+/// The User-Agent comes from Settings → User Agent through the injected
+/// [resolveUserAgent] callback: it is applied when the WebView starts AND
+/// re-applied on every navigation, so a mode change takes effect without
+/// restarting the app. Desktop picks also switch the viewport into wide
+/// ("desktop site") rendering so the page layout matches the identity —
+/// the environment is adjusted together with the UA, never the UA alone.
 class WebViewAutomation implements BrowserAutomation {
+  WebViewAutomation({UserAgentRecord? Function()? pickUserAgent})
+    : _resolveUserAgent = pickUserAgent;
+
+  final UserAgentRecord? Function()? _resolveUserAgent;
+
   HeadlessInAppWebView? _headless;
   InAppWebViewController? _controller;
   Completer<WebUri?>? _navCompleter;
 
-  static const String _userAgent =
+  /// Neutral Android fallback used only when no resolver is injected
+  /// (e.g. direct construction in legacy tests).
+  static const String _fallbackUserAgent =
       'Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 '
       '(KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36';
+
+  /// Current selection (never null: falls back to the built-in identity).
+  UserAgentRecord get _currentUa =>
+      _resolveUserAgent?.call() ??
+      const UserAgentRecord(
+        id: 0,
+        category: UserAgentCategory.android,
+        browser: UserAgentBrowser.chrome,
+        label: 'Fallback',
+        ua: _fallbackUserAgent,
+      );
 
   /// Creates (once) and returns the headless WebView controller.
   ///
@@ -73,15 +100,11 @@ class WebViewAutomation implements BrowserAutomation {
     if (_controller != null) {
       return _controller!;
     }
+    final UserAgentRecord ua = _currentUa;
     final headless = HeadlessInAppWebView(
       initialSize: const Size(1080, 1920),
       initialUrlRequest: URLRequest(url: WebUri('about:blank')),
-      initialSettings: InAppWebViewSettings(
-        javaScriptEnabled: true,
-        transparentBackground: false,
-        supportZoom: false,
-        userAgent: _userAgent,
-      ),
+      initialSettings: _settingsFor(ua),
       onLoadStop: (InAppWebViewController controller, WebUri? url) {
         final completer = _navCompleter;
         if (completer != null && !completer.isCompleted) {
@@ -115,6 +138,18 @@ class WebViewAutomation implements BrowserAutomation {
     return _controller!;
   }
 
+  /// WebView settings matching a UA selection: desktop identities render
+  /// with the wide "desktop site" viewport, Android identities keep the
+  /// natural mobile layout.
+  InAppWebViewSettings _settingsFor(UserAgentRecord ua) => InAppWebViewSettings(
+    javaScriptEnabled: true,
+    transparentBackground: false,
+    supportZoom: false,
+    userAgent: ua.ua,
+    useWideViewPort: true,
+    loadWithOverviewMode: ua.isDesktop,
+  );
+
   @override
   Future<BrowserPageInfo> navigate(
     String url, {
@@ -133,6 +168,15 @@ class WebViewAutomation implements BrowserAutomation {
         : 'https://${url.trim()}';
     try {
       final controller = await _ensure();
+      // Re-apply the current selection on every navigation so a Settings
+      // change reaches the long-lived WebView immediately and every page
+      // of a session is fetched with the SAME identity (stability).
+      try {
+        await controller.setSettings(settings: _settingsFor(_currentUa));
+      } catch (_) {
+        // Older engines may reject partial setSettings — the UA from
+        // WebView start still applies.
+      }
       _navCompleter = Completer<WebUri?>();
       try {
         await controller.loadUrl(

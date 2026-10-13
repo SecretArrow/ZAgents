@@ -50,6 +50,26 @@ OpenAI-compatible: **OpenRouter, InferHub, Z.AI, OpenAI, DeepSeek, Groq, dan lai
   Berlaku untuk: daftar model (picker + hasil fetch di editor provider), daftar
   provider, riwayat chat (drawer), File Manager, Context Manager, dan library
   npm — masing-masing dengan hint pencarian berbahasa.
+- **Database 500 User-Agent + Mode UA (v1.7.0)** — database internal berisi
+  **500 User-Agent unik & realistis** (250 PC/desktop + 250 Android; Chrome,
+  Edge, Firefox, Safari, Opera, Samsung Internet, Vivaldi) yang dibangkitkan
+  dan divalidasi otomatis (`scripts/gen_user_agents.py` + unit test):
+  - format 100% mengikuti browser asli — versi Edge/EdgA selalu sama dengan
+    Chromium-nya, Samsung Internet dipetakan ke Chromium bundel sebenarnya,
+    UA ponsel membawa token `Mobile` sementara tablet tidak, dan versi Android
+    selalu masuk akal untuk model perangkatnya (Samsung, Pixel, Xiaomi, OPPO,
+    vivo, realme, OnePlus, Motorola, dll. — tanpa vendor palsu),
+  - **Settings → User Agent**: dropdown **Auto / PC/Desktop / Android Mobile**.
+    *Auto* memakai identitas Android yang sesuai perangkat (mesin browser-nya
+    memang Android WebView — paling jujur & stabil); PC/Desktop membatasi ke
+    kategori desktop dan sekaligus mengubah viewport ke rendering "desktop
+    site" agar lingkungan browser konsisten dengan identitasnya,
+  - **pilihan sticky per sesi**: UA aktif tersimpan dan tidak berubah sendiri;
+    rotasi hanya lewat tombol eksplisit dan berputar tanpa duplikasi sampai
+    satu siklus penuh (500 entri) — kestabilan sesi & kompatibilitas situs
+    diutamakan, tanpa pengacakan identitas berlebihan,
+  - diterapkan konsisten ke seluruh WebView agent (browser automation per
+    navigasi + runtime JS/fetch), bukan sekadar ganti identitas.
 - **Dwibahasa** — antarmuka **English (default)** dan **Bahasa Indonesia**;
   ganti lewat ikon 🌐 di app bar atau **Settings → Language** (pilihan tersimpan).
 - **UI gelap ala Z.AI** — model chip, toggle Agent, kartu tool call dengan status

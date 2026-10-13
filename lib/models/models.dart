@@ -1,6 +1,7 @@
 import 'package:uuid/uuid.dart';
 
 import '../l10n/app_strings.dart' show defaultLanguageCode;
+import 'user_agent.dart' show UaMode, uaModeFromName;
 
 /// Role of a chat message (OpenAI-compatible subset).
 enum Role { system, user, assistant, tool }
@@ -427,6 +428,9 @@ class AppSettings {
     this.runInBackground = true,
     this.languageCode = defaultLanguageCode,
     this.themeMode = ThemeModeSetting.dark,
+    this.uaMode = UaMode.auto,
+    this.uaDesktopId = 1,
+    this.uaAndroidId = 1,
     List<ProviderPreset>? presets,
   }) : presets = presets ?? _defaultPresets();
 
@@ -447,6 +451,15 @@ class AppSettings {
 
   /// Appearance preference.
   final ThemeModeSetting themeMode;
+
+  /// User-Agent selection mode for the embedded browser surfaces.
+  final UaMode uaMode;
+
+  /// Sticky User-Agent selection per category (ids into the UA database).
+  /// The pick survives restarts and only changes when the user rotates it —
+  /// session stability beats novelty.
+  final int uaDesktopId;
+  final int uaAndroidId;
 
   /// Provider presets, each with its own API key. The active connection is
   /// still [providerName]/[baseUrl]/[apiKey]/[model]; switching a preset
@@ -472,6 +485,9 @@ class AppSettings {
     bool? runInBackground,
     String? languageCode,
     ThemeModeSetting? themeMode,
+    UaMode? uaMode,
+    int? uaDesktopId,
+    int? uaAndroidId,
     List<ProviderPreset>? presets,
   }) => AppSettings(
     providerName: providerName ?? this.providerName,
@@ -484,6 +500,9 @@ class AppSettings {
     runInBackground: runInBackground ?? this.runInBackground,
     languageCode: languageCode ?? this.languageCode,
     themeMode: themeMode ?? this.themeMode,
+    uaMode: uaMode ?? this.uaMode,
+    uaDesktopId: uaDesktopId ?? this.uaDesktopId,
+    uaAndroidId: uaAndroidId ?? this.uaAndroidId,
     presets: presets ?? this.presets,
   );
 
@@ -498,6 +517,9 @@ class AppSettings {
     'runInBackground': runInBackground,
     'languageCode': languageCode,
     'themeMode': themeMode.name,
+    'uaMode': uaMode.name,
+    'uaDesktopId': uaDesktopId,
+    'uaAndroidId': uaAndroidId,
     'presets': presets.map((p) => p.toJson()).toList(),
   };
 
@@ -513,6 +535,9 @@ class AppSettings {
       runInBackground: json['runInBackground'] as bool? ?? true,
       languageCode: json['languageCode'] as String? ?? defaultLanguageCode,
       themeMode: themeModeSettingFromName(json['themeMode'] as String?),
+      uaMode: uaModeFromName(json['uaMode'] as String?),
+      uaDesktopId: json['uaDesktopId'] as int? ?? 1,
+      uaAndroidId: json['uaAndroidId'] as int? ?? 1,
       presets: (json['presets'] as List<dynamic>?)
           ?.whereType<Map<String, dynamic>>()
           .map(ProviderPreset.fromJson)
@@ -564,6 +589,9 @@ class AppSettings {
       runInBackground: runInBackground,
       languageCode: languageCode,
       themeMode: themeMode,
+      uaMode: uaMode,
+      uaDesktopId: uaDesktopId,
+      uaAndroidId: uaAndroidId,
       presets: merged,
     );
   }

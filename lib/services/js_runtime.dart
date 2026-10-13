@@ -51,7 +51,7 @@ abstract class JsRuntime {
 ///     through the `zagentsNode` JavaScript handler; [run] awaits the
 ///     final `done` frame with a timeout.
 class WebViewJsRuntime implements JsRuntime {
-  WebViewJsRuntime({this.fetchProxy});
+  WebViewJsRuntime({this.fetchProxy, this.resolveUserAgent});
 
   /// Dart-side proxy for in-script `fetch(url)` calls (text bodies).
   final Future<Map<String, dynamic>?> Function(
@@ -60,6 +60,11 @@ class WebViewJsRuntime implements JsRuntime {
     String? body,
   )?
   fetchProxy;
+
+  /// Resolves the User-Agent applied to the sandbox WebView so in-page
+  /// `fetch()` requests carry the same identity the browser automation
+  /// uses (Settings → User Agent). Kept sticky per session.
+  final String? Function()? resolveUserAgent;
 
   HeadlessInAppWebView? _webview;
   Completer<String>? _done;
@@ -81,6 +86,7 @@ class WebViewJsRuntime implements JsRuntime {
         transparentBackground: true,
         javaScriptEnabled: true,
         disableContextMenu: true,
+        userAgent: resolveUserAgent?.call(),
       ),
       onWebViewCreated: (InAppWebViewController controller) {
         controller.addJavaScriptHandler(

@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../di.dart';
 import '../../l10n/app_strings.dart';
 import '../../models/models.dart';
+import '../../models/user_agent.dart';
 import '../theme.dart';
 import 'context_screen.dart';
 import 'files_screen.dart';
@@ -44,6 +45,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     Object? maxSteps,
     String? languageCode,
     ThemeModeSetting? themeMode,
+    UaMode? uaMode,
   }) {
     final AppSettings current = ref.read(settingsProvider);
     ref
@@ -56,6 +58,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             maxSteps: maxSteps ?? current.maxSteps,
             languageCode: languageCode,
             themeMode: themeMode,
+            uaMode: uaMode,
           ),
         );
     if (mounted) {
@@ -219,6 +222,100 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                       strings.maxStepsHint,
                       style: TextStyle(fontSize: 12, color: palette.muted),
                     ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+
+            // -- User Agent --------------------------------------------------
+            _sectionTitle(strings.uaSection),
+            _card(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  DropdownButtonFormField<UaMode>(
+                    key: const Key('ua-mode-dropdown'),
+                    initialValue: settings.uaMode,
+                    decoration: InputDecoration(
+                      labelText: strings.uaModeTitle,
+                      helperMaxLines: 3,
+                    ),
+                    items: <DropdownMenuItem<UaMode>>[
+                      DropdownMenuItem<UaMode>(
+                        value: UaMode.auto,
+                        child: Text(strings.uaModeAuto),
+                      ),
+                      DropdownMenuItem<UaMode>(
+                        value: UaMode.desktop,
+                        child: Text(strings.uaModeDesktop),
+                      ),
+                      DropdownMenuItem<UaMode>(
+                        value: UaMode.android,
+                        child: Text(strings.uaModeAndroid),
+                      ),
+                    ],
+                    onChanged: (UaMode? mode) {
+                      if (mode != null) _commit(uaMode: mode);
+                    },
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    strings.uaModeHint,
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: palette.muted,
+                      height: 1.4,
+                    ),
+                  ),
+                  const Divider(height: 20),
+                  Row(
+                    children: <Widget>[
+                      Icon(
+                        Icons.devices_rounded,
+                        size: 20,
+                        color: palette.muted,
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: <Widget>[
+                            Text(
+                              strings.uaCurrentLabel,
+                              style: const TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              ref
+                                  .read(userAgentManagerProvider)
+                                  .resolve(settings.uaMode)
+                                  .label,
+                              key: const Key('ua-current-preview'),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: palette.muted,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      IconButton(
+                        key: const Key('ua-rotate-button'),
+                        tooltip: strings.uaRotateTooltip,
+                        icon: const Icon(Icons.autorenew_rounded),
+                        onPressed: () async {
+                          await ref
+                              .read(userAgentManagerProvider)
+                              .rotate(settings.uaMode);
+                        },
+                      ),
+                    ],
                   ),
                 ],
               ),

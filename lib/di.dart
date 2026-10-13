@@ -16,6 +16,7 @@ import 'services/npm_service.dart';
 import 'services/session_export.dart';
 import 'services/settings_repository.dart';
 import 'services/tool_executor.dart';
+import 'services/user_agent_manager.dart';
 
 /// Must be overridden in main() with a real repository.
 final settingsRepositoryProvider = Provider<SettingsRepository>((ref) {
@@ -50,14 +51,30 @@ final modelCatalogProvider = Provider<ModelCatalogClient>(
 );
 
 final browserAutomationProvider = Provider<BrowserAutomation>((ref) {
-  final automation = WebViewAutomation();
+  final automation = WebViewAutomation(
+    pickUserAgent: () {
+      final AppSettings settings = ref.read(settingsProvider);
+      return ref.read(userAgentManagerProvider).resolve(settings.uaMode);
+    },
+  );
   ref.onDispose(automation.dispose);
   return automation;
 });
 
+/// Resolves the User-Agent applied to embedded browser surfaces according
+/// to Settings → User Agent (sticky pick, no per-request rotation).
+final userAgentManagerProvider = Provider<UserAgentManager>(
+  UserAgentManager.new,
+);
+
 /// Hidden-WebView JavaScript runtime for the embedded Node.js-style tools.
 final jsRuntimeProvider = Provider<JsRuntime>((ref) {
-  final runtime = WebViewJsRuntime();
+  final runtime = WebViewJsRuntime(
+    resolveUserAgent: () {
+      final AppSettings settings = ref.read(settingsProvider);
+      return ref.read(userAgentManagerProvider).resolve(settings.uaMode).ua;
+    },
+  );
   ref.onDispose(runtime.dispose);
   return runtime;
 });
