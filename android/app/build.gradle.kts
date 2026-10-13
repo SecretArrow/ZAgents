@@ -29,11 +29,34 @@ android {
         versionName = flutter.versionName
     }
 
+    signingConfigs {
+        create("release") {
+            // Signing material is injected via environment variables by
+            // .github/workflows/release.yml (unzipped from the AES-256 encrypted
+            // key-sign-apk.zip stored in this repository; the password lives in
+            // the KEYSTORE_PASSWORD Actions secret and is never committed).
+            val ksPath = System.getenv("KEYSTORE_PATH")
+            val ksPass = System.getenv("KEYSTORE_PASSWORD")
+            if (ksPath != null && ksPass != null) {
+                storeFile = file(ksPath)
+                storePassword = ksPass
+                keyAlias = System.getenv("KEYSTORE_ALIAS") ?: "zagents"
+                keyPassword = ksPass
+            }
+        }
+    }
+
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.getByName("debug")
+            val releaseSigningConfigured = !System.getenv("KEYSTORE_PATH").isNullOrBlank() &&
+                !System.getenv("KEYSTORE_PASSWORD").isNullOrBlank()
+            signingConfig = if (releaseSigningConfigured) {
+                signingConfigs.getByName("release")
+            } else {
+                // Without a keystore (local dev / forks) fall back to debug keys
+                // so `flutter run --release` keeps working.
+                signingConfigs.getByName("debug")
+            }
         }
     }
 }

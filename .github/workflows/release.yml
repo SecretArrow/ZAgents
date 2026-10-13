@@ -50,8 +50,39 @@ jobs:
           flutter analyze
           flutter test
 
+      - name: Restore signing keystore (unzip encrypted bundle)
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+        run: |
+          if [ -z "$KEYSTORE_PASSWORD" ]; then
+            echo "::warning::Secret KEYSTORE_PASSWORD is not set - the release APK will be debug-signed (fallback)."
+            exit 0
+          fi
+          if ! command -v 7z >/dev/null 2>&1; then
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq p7zip-full
+          fi
+          mkdir -p android/keystore
+          7z x -y -p"$KEYSTORE_PASSWORD" -oandroid/keystore key-sign-apk.zip
+          echo "KEYSTORE_PATH=$GITHUB_WORKSPACE/android/keystore/zagents-release.keystore" >> "$GITHUB_ENV"
+          echo "KEYSTORE_ALIAS=zagents" >> "$GITHUB_ENV"
+          echo "KEYSTORE_PASSWORD=$KEYSTORE_PASSWORD" >> "$GITHUB_ENV"
+          echo "SIGNED_BUILD=true" >> "$GITHUB_ENV"
+
       - name: Build release APK
         run: flutter build apk --release
+
+      - name: Verify APK signature
+        if: env.SIGNED_BUILD == 'true'
+        run: |
+          if ! command -v apksigner >/dev/null 2>&1; then
+            sudo apt-get install -y -qq apksigner
+          fi
+          apksigner verify --print-certs build/app/outputs/flutter-apk/app-release.apk
+
+      - name: Delete unzipped keystore (always, even on failure)
+        if: always()
+        run: rm -rf android/keystore
 
       - name: Organize artifacts
         run: |
