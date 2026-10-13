@@ -85,7 +85,7 @@ lib/
 ├── services/
 │   ├── llm_client.dart        # klien OpenAI-compatible (SSE + tool deltas)
 │   ├── agent_controller.dart  # tool-loop: LLM → tools → hasil → jawaban
-│   ├── tool_executor.dart     # dispatch 9 tools
+│   ├── tool_executor.dart     # dispatch 12 tools
 │   ├── browser_automation.dart# headless InAppWebView + JS bridge
 │   ├── chat_store.dart        # persistensi riwayat (JSON)
 │   └── settings_repository.dart
