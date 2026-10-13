@@ -139,6 +139,14 @@ void main() {
 
     // 6. New v1.4.0 controls exist: theme picker + max-steps custom input
     // + Node.js manager tile + files tile.
+    // The language section is at the bottom; drag back UP to reveal the
+    // appearance section first (ListView builds lazily).
+    await tester.dragUntilVisible(
+      find.byKey(const Key('theme-mode-segmented')),
+      find.byType(ListView),
+      const Offset(0, 400),
+    );
+    await tester.pumpAndSettle();
     expect(find.byKey(const Key('theme-mode-segmented')), findsOneWidget);
     await tester.dragUntilVisible(
       find.byKey(const Key('max-steps-field')),
