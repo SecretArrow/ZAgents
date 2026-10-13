@@ -48,10 +48,10 @@ class _ToolCallCardState extends State<ToolCallCard> {
   Widget get _statusWidget {
     switch (widget.call.status) {
       case ToolStatus.pending:
-        return const Icon(
+        return Icon(
           Icons.hourglass_empty_rounded,
           size: 15,
-          color: kMutedTextColor,
+          color: context.zMuted,
         );
       case ToolStatus.running:
         return const SizedBox(
@@ -122,9 +122,9 @@ class _ToolCallCardState extends State<ToolCallCard> {
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
-        color: kSurfaceColor,
+        color: context.zSurface,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: kBorderColor),
+        border: Border.all(color: context.zBorder),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -155,7 +155,7 @@ class _ToolCallCardState extends State<ToolCallCard> {
                 summary,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontSize: 11.5, color: kMutedTextColor),
+                style: TextStyle(fontSize: 11.5, color: context.zMuted),
               ),
             ),
           if (call.screenshotPath != null)
@@ -178,12 +178,12 @@ class _ToolCallCardState extends State<ToolCallCard> {
                             StackTrace? stack,
                           ) => Container(
                             padding: const EdgeInsets.all(12),
-                            color: kBackgroundColor,
+                            color: context.zBackground,
                             child: Text(
                               strings.screenshotUnavailable,
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontSize: 12,
-                                color: kMutedTextColor,
+                                color: context.zMuted,
                               ),
                             ),
                           ),
@@ -214,7 +214,7 @@ class _ToolCallCardState extends State<ToolCallCard> {
                           fontSize: 11,
                           color: call.status == ToolStatus.error
                               ? const Color(0xFFF87171)
-                              : kMutedTextColor,
+                              : context.zMuted,
                         ),
                       ),
                       Icon(
@@ -222,7 +222,7 @@ class _ToolCallCardState extends State<ToolCallCard> {
                             ? Icons.expand_less_rounded
                             : Icons.expand_more_rounded,
                         size: 14,
-                        color: kMutedTextColor,
+                        color: context.zMuted,
                       ),
                     ],
                   ),
@@ -235,7 +235,7 @@ class _ToolCallCardState extends State<ToolCallCard> {
               padding: const EdgeInsets.all(8),
               constraints: const BoxConstraints(maxHeight: 160),
               decoration: BoxDecoration(
-                color: kBackgroundColor,
+                color: context.zBackground,
                 borderRadius: BorderRadius.circular(8),
               ),
               child: SingleChildScrollView(

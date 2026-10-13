@@ -29,10 +29,10 @@ class AgentModeToggle extends ConsumerWidget {
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
           decoration: BoxDecoration(
             gradient: agentMode ? kBrandGradient : null,
-            color: agentMode ? null : kSurfaceAltColor,
+            color: agentMode ? null : context.zSurfaceAlt,
             borderRadius: BorderRadius.circular(999),
             border: Border.all(
-              color: agentMode ? Colors.transparent : kBorderColor,
+              color: agentMode ? Colors.transparent : context.zBorder,
             ),
           ),
           child: Row(
@@ -41,7 +41,7 @@ class AgentModeToggle extends ConsumerWidget {
               Icon(
                 Icons.bolt_rounded,
                 size: 15,
-                color: agentMode ? Colors.white : kMutedTextColor,
+                color: agentMode ? Colors.white : context.zMuted,
               ),
               const SizedBox(width: 4),
               Text(
@@ -49,7 +49,7 @@ class AgentModeToggle extends ConsumerWidget {
                 style: TextStyle(
                   fontSize: 12,
                   fontWeight: FontWeight.w600,
-                  color: agentMode ? Colors.white : kMutedTextColor,
+                  color: agentMode ? Colors.white : context.zMuted,
                 ),
               ),
             ],

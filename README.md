@@ -11,7 +11,7 @@ OpenAI-compatible: **OpenRouter, InferHub, Z.AI, OpenAI, DeepSeek, Groq, dan lai
 ## ✨ Fitur
 
 - **Chat streaming** — jawaban model ditampilkan token demi token (SSE).
-- **Mode Agent** — model diberi 9 tools dan bekerja step-by-step:
+- **Mode Agent** — model diberi 12 tools dan bekerja step-by-step:
   | Tool | Fungsi |
   |---|---|
   | `browser_navigate` | Buka URL di browser tersemat (headless WebView) |
@@ -22,6 +22,8 @@ OpenAI-compatible: **OpenRouter, InferHub, Z.AI, OpenAI, DeepSeek, Groq, dan lai
   | `browser_extract_text` | Ambil teks halaman untuk dianalisis |
   | `run_js` | Eksekusi JavaScript di konteks halaman |
   | `read_file` / `write_file` | Baca/tulis file di folder dokumen aplikasi |
+  | `node_run` | Jalankan JavaScript di runtime tersemat (require/fs/fetch) |
+  | `node_install` / `node_remove` | Tambah/hapus package npm sesuai kebutuhan agent |
 - **Custom provider** — cukup ganti Base URL + API key + model (preset tersedia:
   OpenRouter, **InferHub** `sk-airo-…`, Z.AI, OpenAI, DeepSeek, Groq, atau Custom).
 - **Katalog model live** — pemilih model mengambil daftar langsung dari
@@ -38,6 +40,22 @@ OpenAI-compatible: **OpenRouter, InferHub, Z.AI, OpenAI, DeepSeek, Groq, dan lai
   tertutup status bar atas maupun navigation bar bawah: mode edge-to-edge dideklarasikan
   eksplisit, semua layar memakai `SafeArea`, sheet model menghitung inset keyboard,
   dan app bar adaptif di layar sempit.
+- **Multi-session paralel** — buka sesi baru sementara agent lain masih bekerja;
+  badge progres di riwayat, rename (long-press), dan background refcount.
+- **Tema Light / Dark / System** — persisten, system bar ikut menyesuaikan.
+- **API key per-preset** — setiap preset provider menyimpan base URL + key + model
+  sendiri; migrasi otomatis dari key lama.
+- **Max agent steps 1–100** — slider + input angka kustom tervalidasi.
+- **Upload file untuk AI** — gambar → vision parts (base64), file teks → inline ke
+  prompt, biner → metadata.
+- **Context Manager** — blok prompt reusable (CRUD + toggle aktif) yang disuntikkan
+  ke system prompt setiap permintaan.
+- **File Manager** — jelajahi dokumen app: preview, share, rename, hapus,
+  **copy/cut/paste**, **zip/unzip**.
+- **Runtime Node.js-style + npm otomatis** — engine JS tersemat di headless WebView;
+  agent mengelola package dari registry npm sendiri.
+- **Import/export sesi** — backup seluruh percakapan ke JSON + share, impor aman
+  dengan id baru.
 - **Tahan crash** — semua operasi rentan (WebView, file IO, stream SSE, pembukaan
   riwayat yang korup) ditangani sebagai error terkontrol; tidak ada exception yang
   membuat aplikasi mati.

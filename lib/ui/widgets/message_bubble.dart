@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 
@@ -6,8 +8,8 @@ import '../../models/models.dart';
 import '../theme.dart';
 import 'tool_call_card.dart';
 
-/// One chat message: user (gradient bubble, right) or assistant
-/// (surface bubble, left, markdown + tool call cards).
+/// One chat message: user (gradient bubble, right, with attachment
+/// previews) or assistant (surface bubble, left, markdown + tool cards).
 class MessageBubble extends StatelessWidget {
   const MessageBubble({super.key, required this.message});
 
@@ -35,13 +37,33 @@ class MessageBubble extends StatelessWidget {
                 bottomRight: Radius.circular(6),
               ),
             ),
-            child: SelectableText(
-              message.content,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 15,
-                height: 1.4,
-              ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                if (message.attachments.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 6),
+                    child: Wrap(
+                      alignment: WrapAlignment.end,
+                      spacing: 6,
+                      runSpacing: 6,
+                      children: <Widget>[
+                        for (final ChatAttachment att in message.attachments)
+                          _AttachmentPreview(attachment: att),
+                      ],
+                    ),
+                  ),
+                if (message.content.trim().isNotEmpty)
+                  SelectableText(
+                    message.content,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 15,
+                      height: 1.4,
+                    ),
+                  ),
+              ],
             ),
           ),
         ),
@@ -66,8 +88,8 @@ class MessageBubble extends StatelessWidget {
             hasToolCards ? 6 : 10,
           ),
           decoration: BoxDecoration(
-            color: kSurfaceAltColor,
-            border: Border.all(color: kBorderColor),
+            color: context.zSurfaceAlt,
+            border: Border.all(color: context.zBorder),
             borderRadius: const BorderRadius.only(
               topLeft: Radius.circular(18),
               topRight: Radius.circular(18),
@@ -86,10 +108,10 @@ class MessageBubble extends StatelessWidget {
                   data: message.content,
                   selectable: true,
                   styleSheet: MarkdownStyleSheet(
-                    p: const TextStyle(
+                    p: TextStyle(
                       fontSize: 15,
                       height: 1.5,
-                      color: Colors.white,
+                      color: Theme.of(context).colorScheme.onSurface,
                     ),
                     h1: const TextStyle(
                       fontSize: 20,
@@ -104,16 +126,22 @@ class MessageBubble extends StatelessWidget {
                       fontWeight: FontWeight.w700,
                     ),
                     codeblockDecoration: BoxDecoration(
-                      color: kBackgroundColor,
+                      color: context.zBackground,
                       borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: kBorderColor),
+                      border: Border.all(color: context.zBorder),
                     ),
-                    code: const TextStyle(
+                    code: TextStyle(
                       fontSize: 13,
                       fontFamily: 'monospace',
-                      color: Color(0xFFB8C4FF),
+                      color: Theme.of(context).brightness == Brightness.dark
+                          ? const Color(0xFFB8C4FF)
+                          : const Color(0xFF3D51B4),
                     ),
-                    listBullet: const TextStyle(fontSize: 15, height: 1.5),
+                    listBullet: TextStyle(
+                      fontSize: 15,
+                      height: 1.5,
+                      color: Theme.of(context).colorScheme.onSurface,
+                    ),
                   ),
                 ),
               if (message.isStreaming)
@@ -130,10 +158,7 @@ class MessageBubble extends StatelessWidget {
                       const SizedBox(width: 8),
                       Text(
                         strings.thinking,
-                        style: const TextStyle(
-                          color: kMutedTextColor,
-                          fontSize: 12,
-                        ),
+                        style: TextStyle(color: context.zMuted, fontSize: 12),
                       ),
                     ],
                   ),
@@ -141,6 +166,77 @@ class MessageBubble extends StatelessWidget {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// Inline preview of a sent attachment inside the user bubble: a small
+/// image thumbnail or a file chip.
+class _AttachmentPreview extends StatelessWidget {
+  const _AttachmentPreview({required this.attachment});
+
+  final ChatAttachment attachment;
+
+  @override
+  Widget build(BuildContext context) {
+    if (attachment.kind == AttachmentKind.image) {
+      final File file = File(attachment.path);
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(10),
+        child: file.existsSync()
+            ? Image.file(
+                file,
+                width: 120,
+                height: 120,
+                fit: BoxFit.cover,
+                errorBuilder: (_, _, _) => Container(
+                  width: 120,
+                  height: 120,
+                  color: Colors.white24,
+                  alignment: Alignment.center,
+                  child: const Icon(
+                    Icons.broken_image_rounded,
+                    color: Colors.white70,
+                  ),
+                ),
+              )
+            : Container(
+                width: 120,
+                height: 120,
+                color: Colors.white24,
+                alignment: Alignment.center,
+                child: const Icon(
+                  Icons.broken_image_rounded,
+                  color: Colors.white70,
+                ),
+              ),
+      );
+    }
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: Colors.white24,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          const Icon(
+            Icons.insert_drive_file_rounded,
+            size: 14,
+            color: Colors.white,
+          ),
+          const SizedBox(width: 6),
+          Flexible(
+            child: Text(
+              attachment.name,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(color: Colors.white, fontSize: 12),
+            ),
+          ),
+        ],
       ),
     );
   }

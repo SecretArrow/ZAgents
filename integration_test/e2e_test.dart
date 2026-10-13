@@ -45,13 +45,25 @@ void main() {
         toolCalls: <ToolCallRequest>[
           ToolCallRequest(
             id: 'e2e-2',
+            name: 'node_run',
+            argumentsJson: jsonEncode(<String, dynamic>{
+              'code': '[1,2,3].reduce((a,b)=>a+b)',
+            }),
+          ),
+        ],
+      ),
+      AssistantTurn(
+        content: '',
+        toolCalls: <ToolCallRequest>[
+          ToolCallRequest(
+            id: 'e2e-3',
             name: 'browser_screenshot',
             argumentsJson: '{}',
           ),
         ],
       ),
       AssistantTurn(
-        content: 'E2E selesai: halaman dibuka & screenshot diambil.',
+        content: 'E2E selesai: halaman dibuka, node dijalankan & screenshot diambil.',
       ),
     ]);
 
@@ -76,8 +88,9 @@ void main() {
     await tester.pump();
     await tester.pumpAndSettle(const Duration(seconds: 5));
 
-    // 2. Both tool cards + final answer rendered.
+    // 2. All tool cards + final answer rendered.
     expect(find.text('browser_navigate'), findsOneWidget);
+    expect(find.text('node_run'), findsOneWidget);
     expect(find.text('browser_screenshot'), findsOneWidget);
     expect(find.textContaining('E2E selesai'), findsOneWidget);
 
@@ -123,6 +136,26 @@ void main() {
       ProviderScope.containerOf(context).read(settingsProvider).languageCode,
       'en',
     );
+
+    // 6. New v1.4.0 controls exist: theme picker + max-steps custom input
+    // + Node.js manager tile + files tile.
+    expect(find.byKey(const Key('theme-mode-segmented')), findsOneWidget);
+    await tester.dragUntilVisible(
+      find.byKey(const Key('max-steps-field')),
+      find.byType(ListView),
+      const Offset(0, -200),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('max-steps-field')), findsOneWidget);
+    await tester.dragUntilVisible(
+      find.byKey(const Key('node-manager-tile')),
+      find.byType(ListView),
+      const Offset(0, -200),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('node-manager-tile')), findsOneWidget);
+    expect(find.byKey(const Key('files-tile')), findsOneWidget);
+    expect(find.byKey(const Key('context-manager-tile')), findsOneWidget);
 
     try {
       await tester.runAsync(() => tempDir.delete(recursive: true));

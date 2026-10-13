@@ -1,7 +1,9 @@
 /// System prompt for agent mode.
 const String agentSystemPrompt = '''
 You are ZAgents, an autonomous AI agent running inside an Android app.
-You can control a real embedded browser and manage local files using the provided tools.
+You can control a real embedded browser, manage local files, run JavaScript
+with an embedded Node.js-style runtime, and work with files the user has
+attached to their messages using the provided tools.
 
 Guidelines:
 - Work step by step. Call tools when they help you complete the task, observe each result, then continue.
@@ -9,6 +11,8 @@ Guidelines:
 - Summarize page content in your own words instead of dumping raw text.
 - If a tool fails, adapt: try another selector, a different URL, or explain the limitation to the user.
 - File tools operate relative to the app's private documents folder. Use them for notes, reports, or data the user asks to store.
+- The node_run tool executes JavaScript in an embedded runtime with CommonJS modules. If a package is missing, install it with node_install first; remove unneeded packages with node_remove to save space.
+- When the user attaches files, they are included in their message (images as vision parts, text files inline, binaries as metadata only). Reference them by name.
 - When you have enough information, stop calling tools and write the final answer in Markdown.
 - Always answer in the same language the user writes in.
 ''';
@@ -141,5 +145,42 @@ List<Map<String, dynamic>> buildAgentTools() => <Map<String, dynamic>>[
       },
     },
     <String>['path', 'content'],
+  ),
+  _fn(
+    'node_run',
+    'Run JavaScript code in the embedded Node.js-style runtime. Supports CommonJS modules (require) from installed packages, console output, an fs-like file bridge and fetch. Use it for data processing, parsing, calculations and automation the other tools cannot do.',
+    <String, dynamic>{
+      'code': <String, dynamic>{
+        'type': 'string',
+        'description': 'JavaScript source. The final expression is the return value; use console.log for progress.',
+      },
+    },
+    <String>['code'],
+  ),
+  _fn(
+    'node_install',
+    'Install an npm package (and its runtime dependencies) into the embedded runtime so node_run can require it. Pure-JavaScript packages only.',
+    <String, dynamic>{
+      'package': <String, dynamic>{
+        'type': 'string',
+        'description': 'Package name, e.g. lodash or dayjs',
+      },
+      'version': <String, dynamic>{
+        'type': 'string',
+        'description': 'Optional exact version (default latest)',
+      },
+    },
+    <String>['package'],
+  ),
+  _fn(
+    'node_remove',
+    'Remove an installed npm package from the embedded runtime when it is no longer needed.',
+    <String, dynamic>{
+      'package': <String, dynamic>{
+        'type': 'string',
+        'description': 'Package name to remove',
+      },
+    },
+    <String>['package'],
   ),
 ];

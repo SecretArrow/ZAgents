@@ -2,6 +2,8 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'browser_automation.dart';
+import 'js_runtime.dart';
+import 'npm_service.dart';
 
 /// Result of executing one tool.
 class ToolResult {
@@ -24,18 +26,26 @@ class ToolResult {
   final String? displayText;
 }
 
-/// Executes agent tools: embedded browser automation, page JS, and file IO
-/// scoped to the app documents directory.
+/// Executes agent tools: embedded browser automation, page JS, file IO
+/// scoped to the app documents directory, and the embedded Node.js-style
+/// JS runtime with npm package management.
 class ToolExecutor {
   ToolExecutor({
     required this.browser,
     required this.resolveBaseDir,
     required this.isAutomationEnabled,
+    this.js,
+    this.npm,
   });
 
   final BrowserAutomation browser;
   final Future<Directory> Function() resolveBaseDir;
   final bool Function() isAutomationEnabled;
+
+  /// Embedded JS runtime + npm manager. Nullable so existing tests and
+  /// minimal setups keep working; the node tools degrade gracefully.
+  final JsRuntime? js;
+  final NpmService? npm;
 
   static const Set<String> _browserTools = <String>{
     'browser_navigate',
@@ -68,6 +78,12 @@ class ToolExecutor {
           return await _readFile(args);
         case 'write_file':
           return await _writeFile(args);
+        case 'node_run':
+          return await _nodeRun(args);
+        case 'node_install':
+          return await _nodeInstall(args);
+        case 'node_remove':
+          return await _nodeRemove(args);
         default:
           return ToolResult(ok: false, llmOutput: 'Unknown tool: $name');
       }
@@ -243,6 +259,97 @@ class ToolExecutor {
       ok: true,
       llmOutput: 'Wrote ${content.length} characters to ${file.path}',
       displayText: file.path.split(Platform.pathSeparator).last,
+    );
+  }
+
+  // -- Embedded Node.js-style runtime ------------------------------------
+
+  Future<ToolResult> _nodeRun(Map<String, dynamic> args) async {
+    final JsRuntime? runtime = js;
+    if (runtime == null) {
+      return const ToolResult(
+        ok: false,
+        llmOutput: 'The embedded JS runtime is not available in this build.',
+      );
+    }
+    final code = args['code']?.toString() ?? '';
+    if (code.trim().isEmpty) {
+      return const ToolResult(ok: false, llmOutput: 'Parameter code is empty.');
+    }
+    final Directory base = await _safeBaseDir();
+    final String modulesRoot =
+        '${base.path}${Platform.pathSeparator}node_modules';
+    final result = await runtime.run(
+      code,
+      moduleRoots: <String>[modulesRoot],
+      workingDir: base.path,
+    );
+    final String output = result.output;
+    if (!result.ok) {
+      return ToolResult(
+        ok: false,
+        llmOutput: output.isEmpty
+            ? 'Script error: ${result.error}'
+            : '$output\nScript error: ${result.error}',
+        displayText: 'node error',
+      );
+    }
+    final List<String> parts = <String>[
+      if (output.isNotEmpty) output,
+      if (result.result != null && result.result != 'undefined')
+        '=> ${result.result}',
+    ];
+    return ToolResult(
+      ok: true,
+      llmOutput: parts.isEmpty
+          ? 'Script finished with no output.'
+          : parts.join('\n'),
+      displayText: 'node',
+    );
+  }
+
+  Future<ToolResult> _nodeInstall(Map<String, dynamic> args) async {
+    final NpmService? service = npm;
+    if (service == null) {
+      return const ToolResult(
+        ok: false,
+        llmOutput: 'npm management is not available in this build.',
+      );
+    }
+    final String pkg = args['package']?.toString() ?? '';
+    final String? version = args['version']?.toString();
+    final result = await service.install(pkg, version: version);
+    return ToolResult(
+      ok: result.ok,
+      llmOutput: result.ok
+          ? '${result.message}. It can now be required from node_run.'
+          : result.message,
+      displayText: result.ok ? 'installed $pkg' : 'install failed',
+    );
+  }
+
+  Future<ToolResult> _nodeRemove(Map<String, dynamic> args) async {
+    final NpmService? service = npm;
+    if (service == null) {
+      return const ToolResult(
+        ok: false,
+        llmOutput: 'npm management is not available in this build.',
+      );
+    }
+    final String pkg = args['package']?.toString() ?? '';
+    if (pkg.trim().isEmpty) {
+      return const ToolResult(
+        ok: false,
+        llmOutput: 'Parameter package is empty.',
+      );
+    }
+    final bool removed = await service.remove(pkg);
+    return ToolResult(
+      ok: removed,
+      llmOutput: removed
+          ? 'Removed $pkg from the embedded runtime.'
+          : '$pkg is not installed.',
+      displayText: removed ? 'removed $pkg' : 'not installed',
     );
   }
 }

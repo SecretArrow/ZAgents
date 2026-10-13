@@ -28,7 +28,7 @@ class EmptyState extends ConsumerWidget {
             Text(
               strings.emptySubtitle,
               textAlign: TextAlign.center,
-              style: const TextStyle(color: kMutedTextColor, height: 1.5),
+              style: TextStyle(color: context.zMuted, height: 1.5),
             ),
             const SizedBox(height: 24),
             Wrap(
@@ -42,8 +42,8 @@ class EmptyState extends ConsumerWidget {
                       suggestion,
                       style: const TextStyle(fontSize: 12),
                     ),
-                    backgroundColor: kSurfaceAltColor,
-                    side: const BorderSide(color: kBorderColor),
+                    backgroundColor: context.zSurfaceAlt,
+                    side: BorderSide(color: context.zBorder),
                     onPressed: () {
                       FocusScope.of(context).unfocus();
                       ref

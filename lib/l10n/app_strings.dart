@@ -79,15 +79,29 @@ abstract class AppStrings {
   String get screenshotUnavailable;
   String get thinking;
   String get readPageText;
+  String get open;
+  String get share;
+  String get rename;
+  String get copy;
+  String get cut;
+  String get paste;
+  String get save;
+  String get edit;
+  String get add;
+  String get confirm;
+  String get operationFailed;
 
   // -- Home / chat -----------------------------------------------------
   String get askAnything;
+  String get attachFile;
   String get newChat;
   String get historyTitle;
   String get historyLoadFailed;
   String get noChats;
   String get deleteChatTitle;
   String get deleteChatBody;
+  String get renameChatTitle;
+  String get nameHint;
   String get pickModel;
   String get customModelHint;
   String get searchModelsHint;
@@ -111,6 +125,58 @@ abstract class AppStrings {
   String get emptySubtitle;
   List<String> get suggestions;
 
+  // -- Files manager ----------------------------------------------------
+  String get filesTitle;
+  String get filesEmpty;
+  String get filesHint;
+  String get newFolder;
+  String get newFolderTitle;
+  String get compress;
+  String get extractHere;
+  String get noPreview;
+  String get filePreviewTitle;
+  String get clipboardCopied;
+  String get clipboardCut;
+  String get pastedOk;
+  String get zipCreatedOk;
+  String get unzippedOk;
+  String get deleteEntryTitle;
+  String get deleteEntryBody;
+
+  // -- Context Manager ---------------------------------------------------
+  String get contextSection;
+  String get contextManagerTitle;
+  String get contextManagerHint;
+  String contextActiveCount(int n);
+  String get addContext;
+  String get editContext;
+  String get contextNameLabel;
+  String get contextContentLabel;
+  String get contextEnabledLabel;
+  String get deleteContextTitle;
+  String get deleteContextBody;
+  String get contextEmpty;
+
+  // -- Node.js runtime ---------------------------------------------------
+  String get nodeSection;
+  String get nodeManagerTitle;
+  String get nodeManagerHint;
+  String nodeInstalledCount(int n);
+  String get nodeAddHint;
+  String get nodeAddButton;
+  String get nodeVersionHint;
+  String get nodeEmpty;
+  String get nodeInstalling;
+  String get nodeDescription;
+  String get nodeRemoveTitle;
+  String get nodeRemoveBody;
+
+  // -- Appearance --------------------------------------------------------
+  String get appearanceSection;
+  String get themeLight;
+  String get themeDark;
+  String get themeSystem;
+
   // -- Settings --------------------------------------------------------
   String get providerSection;
   String get providerPreset;
@@ -119,6 +185,17 @@ abstract class AppStrings {
   String get apiKeyStoredLocally;
   String get modelLabel;
   String get modelHint;
+  String get presetsTitle;
+  String get savePreset;
+  String get savePresetTitle;
+  String get presetNameLabel;
+  String get editPreset;
+  String get deletePresetTitle;
+  String get deletePresetBody;
+  String get presetHasKey;
+  String get presetNoKey;
+  String get maxStepsTitle;
+  String get maxStepsHint;
   String get agentSection;
   String get agentModeTitle;
   String get agentModeSubtitle;
@@ -126,11 +203,16 @@ abstract class AppStrings {
   String get automationSubtitle;
   String get runInBackgroundTitle;
   String get runInBackgroundSubtitle;
-  String get maxStepsTitle;
   String get languageSection;
   String get languageSubtitle;
   String get englishOption;
   String get indonesianOption;
+  String get dataSection;
+  String get exportSessions;
+  String get importSessions;
+  String exportDone(String path);
+  String importDone(int count);
+  String get importFailed;
   String get aboutSection;
   String get aboutBody;
 
@@ -140,6 +222,7 @@ abstract class AppStrings {
   String get stoppedMarkdown;
   String get chatOpenError;
   String get chatDeleteError;
+  String get chatRenameError;
 
   // -- Background service notification (no BuildContext available) -----
   String get notifTitle;
@@ -174,10 +257,34 @@ class AppStringsEn implements AppStrings {
   String get thinking => 'thinking…';
   @override
   String get readPageText => 'Read page text';
+  @override
+  String get open => 'Open';
+  @override
+  String get share => 'Share';
+  @override
+  String get rename => 'Rename';
+  @override
+  String get copy => 'Copy';
+  @override
+  String get cut => 'Cut';
+  @override
+  String get paste => 'Paste';
+  @override
+  String get save => 'Save';
+  @override
+  String get edit => 'Edit';
+  @override
+  String get add => 'Add';
+  @override
+  String get confirm => 'OK';
+  @override
+  String get operationFailed => 'Operation failed.';
 
   // -- Home / chat -----------------------------------------------------
   @override
   String get askAnything => 'Ask anything…';
+  @override
+  String get attachFile => 'Attach file';
   @override
   String get newChat => 'New chat';
   @override
@@ -190,6 +297,10 @@ class AppStringsEn implements AppStrings {
   String get deleteChatTitle => 'Delete conversation?';
   @override
   String get deleteChatBody => 'This conversation will be permanently deleted.';
+  @override
+  String get renameChatTitle => 'Rename conversation';
+  @override
+  String get nameHint => 'Name';
   @override
   String get pickModel => 'Pick a model';
   @override
@@ -240,14 +351,121 @@ class AppStringsEn implements AppStrings {
   @override
   String get emptySubtitle =>
       'Your on-device AI agent — browse, take screenshots,\n'
-      'and manage files right from chat.';
+      'run code, and manage files right from chat.';
   @override
   List<String> get suggestions => const <String>[
     'Open wikipedia.org and summarize its main page',
     "Search today's Bitcoin price and take a screenshot",
     'Create a notes.txt file with my daily plan',
-    'Explain how tool calling works in LLMs',
+    'Run JavaScript to parse this JSON I attached',
   ];
+
+  // -- Files manager ----------------------------------------------------
+  @override
+  String get filesTitle => 'Files';
+  @override
+  String get filesEmpty => 'No files yet.';
+  @override
+  String get filesHint =>
+      'Files created by the agent (write_file) and your uploads live here. '
+      'Copy, paste, zip and share them.';
+  @override
+  String get newFolder => 'New folder';
+  @override
+  String get newFolderTitle => 'New folder';
+  @override
+  String get compress => 'Compress to ZIP';
+  @override
+  String get extractHere => 'Extract';
+  @override
+  String get noPreview => 'No preview available for this file type.';
+  @override
+  String get filePreviewTitle => 'Preview';
+  @override
+  String get clipboardCopied => 'Copied.';
+  @override
+  String get clipboardCut => 'Cut. Paste it in another folder.';
+  @override
+  String get pastedOk => 'Pasted.';
+  @override
+  String get zipCreatedOk => 'ZIP created.';
+  @override
+  String get unzippedOk => 'Extracted.';
+  @override
+  String get deleteEntryTitle => 'Delete?';
+  @override
+  String get deleteEntryBody => 'This item will be permanently deleted.';
+
+  // -- Context Manager ---------------------------------------------------
+  @override
+  String get contextSection => 'Context';
+  @override
+  String get contextManagerTitle => 'Context manager';
+  @override
+  String get contextManagerHint =>
+      'Reusable prompt blocks. Enabled entries are sent with every request '
+      'so the agent always follows your rules.';
+  @override
+  String contextActiveCount(int n) => '$n active';
+  @override
+  String get addContext => 'Add context';
+  @override
+  String get editContext => 'Edit context';
+  @override
+  String get contextNameLabel => 'Name';
+  @override
+  String get contextContentLabel => 'Content (sent as prompt context)';
+  @override
+  String get contextEnabledLabel => 'Use this context';
+  @override
+  String get deleteContextTitle => 'Delete context?';
+  @override
+  String get deleteContextBody =>
+      'This context entry will be permanently deleted.';
+  @override
+  String get contextEmpty =>
+      'No context entries yet. Add rules the agent should always follow.';
+
+  // -- Node.js runtime ---------------------------------------------------
+  @override
+  String get nodeSection => 'Node.js runtime';
+  @override
+  String get nodeManagerTitle => 'Node.js runtime & modules';
+  @override
+  String get nodeManagerHint =>
+      'An embedded JavaScript runtime the agent can use to process data. '
+      'Install npm packages it needs and remove them when done.';
+  @override
+  String nodeInstalledCount(int n) => '$n package(s) installed';
+  @override
+  String get nodeAddHint => 'Package name, e.g. lodash';
+  @override
+  String get nodeAddButton => 'Install';
+  @override
+  String get nodeVersionHint => 'Version (optional)';
+  @override
+  String get nodeEmpty => 'No packages installed yet.';
+  @override
+  String get nodeInstalling => 'Installing…';
+  @override
+  String get nodeDescription =>
+      'node_run lets the agent execute JavaScript with require(), fs and '
+      'fetch. Packages are downloaded from the npm registry and stored in '
+      'the app sandbox.';
+  @override
+  String get nodeRemoveTitle => 'Remove package?';
+  @override
+  String get nodeRemoveBody => 'The package files will be deleted.';
+
+  // -- Appearance --------------------------------------------------------
+  @override
+  String get appearanceSection => 'Appearance';
+  @override
+  String get themeLight => 'Light';
+  @override
+  String get themeDark => 'Dark';
+  @override
+  String get themeSystem => 'System';
 
   // -- Settings --------------------------------------------------------
   @override
@@ -260,18 +478,43 @@ class AppStringsEn implements AppStrings {
   String get apiKeyLabel => 'API key';
   @override
   String get apiKeyStoredLocally =>
-      'Stored only on this device. InferHub keys look like sk-airo-…';
+      'Each preset keeps its own key, stored only on this device. '
+      'InferHub keys look like sk-airo-…';
   @override
   String get modelLabel => 'Model';
   @override
   String get modelHint => 'e.g. z-ai/glm-4.6 or anthropic/claude-sonnet-4.5';
+  @override
+  String get presetsTitle => 'Presets (each keeps its own API key)';
+  @override
+  String get savePreset => 'Save current as preset';
+  @override
+  String get savePresetTitle => 'Save preset';
+  @override
+  String get presetNameLabel => 'Preset name';
+  @override
+  String get editPreset => 'Edit preset';
+  @override
+  String get deletePresetTitle => 'Delete preset?';
+  @override
+  String get deletePresetBody => 'The preset and its stored key are removed.';
+  @override
+  String get presetHasKey => 'key saved';
+  @override
+  String get presetNoKey => 'no key';
+  @override
+  String get maxStepsTitle => 'Max agent steps';
+  @override
+  String get maxStepsHint =>
+      'How many tool-call rounds the agent may take (1-100). Type a custom '
+      'value or use the slider.';
   @override
   String get agentSection => 'Agent';
   @override
   String get agentModeTitle => 'Agent mode';
   @override
   String get agentModeSubtitle =>
-      'Enable tool calling: browsing, screenshots, files. '
+      'Enable tool calling: browsing, screenshots, files, code. '
       'Turn off for plain chat.';
   @override
   String get automationTitle => 'Browser automation';
@@ -285,8 +528,6 @@ class AppStringsEn implements AppStrings {
       'Keep the agent working when you leave the app '
       '(shows a progress notification).';
   @override
-  String get maxStepsTitle => 'Max agent steps';
-  @override
   String get languageSection => 'Language';
   @override
   String get languageSubtitle => 'App interface language. Default: English.';
@@ -295,14 +536,28 @@ class AppStringsEn implements AppStrings {
   @override
   String get indonesianOption => 'Bahasa Indonesia';
   @override
+  String get dataSection => 'Data';
+  @override
+  String get exportSessions => 'Export sessions';
+  @override
+  String get importSessions => 'Import sessions';
+  @override
+  String exportDone(String path) => 'Exported to $path';
+  @override
+  String importDone(int count) => '$count session(s) imported.';
+  @override
+  String get importFailed => 'Import failed: not a valid export file.';
+  @override
   String get aboutSection => 'About';
   @override
   String get aboutBody =>
-      'ZAgents v1.3.0 — an Android clone of the chat.z.ai agent mode UI, '
+      'ZAgents v1.4.0 — an Android clone of the chat.z.ai agent mode UI, '
       'with custom OpenAI-compatible providers (OpenRouter, InferHub, '
-      'Z.AI, OpenAI, DeepSeek, Groq, and more). Agent tasks can keep '
-      'running in the background. Your API key is stored only on this '
-      'device.';
+      'Z.AI, OpenAI, DeepSeek, Groq, and more), per-provider API keys, '
+      'light/dark themes, multi-session chat with background running, '
+      'file uploads, a Context Manager, an in-app file manager with '
+      'zip support, and an embedded Node.js-style runtime with npm '
+      'package management. Your keys stay on this device.';
 
   // -- Controller messages ----------------------------------------------
   @override
@@ -317,6 +572,8 @@ class AppStringsEn implements AppStrings {
   String get chatOpenError => 'Could not open this conversation.';
   @override
   String get chatDeleteError => 'Could not delete this conversation.';
+  @override
+  String get chatRenameError => 'Could not rename this conversation.';
 
   // -- Background service notification ----------------------------------
   @override
@@ -354,10 +611,34 @@ class AppStringsId implements AppStrings {
   String get thinking => 'berpikir…';
   @override
   String get readPageText => 'Baca teks halaman';
+  @override
+  String get open => 'Buka';
+  @override
+  String get share => 'Bagikan';
+  @override
+  String get rename => 'Ganti nama';
+  @override
+  String get copy => 'Salin';
+  @override
+  String get cut => 'Potong';
+  @override
+  String get paste => 'Tempel';
+  @override
+  String get save => 'Simpan';
+  @override
+  String get edit => 'Ubah';
+  @override
+  String get add => 'Tambah';
+  @override
+  String get confirm => 'OK';
+  @override
+  String get operationFailed => 'Operasi gagal.';
 
   // -- Home / chat -----------------------------------------------------
   @override
   String get askAnything => 'Tanya apa saja…';
+  @override
+  String get attachFile => 'Lampirkan file';
   @override
   String get newChat => 'Percakapan baru';
   @override
@@ -370,6 +651,10 @@ class AppStringsId implements AppStrings {
   String get deleteChatTitle => 'Hapus percakapan?';
   @override
   String get deleteChatBody => 'Percakapan ini akan dihapus permanen.';
+  @override
+  String get renameChatTitle => 'Ganti nama percakapan';
+  @override
+  String get nameHint => 'Nama';
   @override
   String get pickModel => 'Pilih model';
   @override
@@ -421,14 +706,121 @@ class AppStringsId implements AppStrings {
   @override
   String get emptySubtitle =>
       'Agent AI di perangkat Anda — browsing, screenshot,\n'
-      'dan kelola file langsung dari chat.';
+      'jalankan kode, dan kelola file langsung dari chat.';
   @override
   List<String> get suggestions => const <String>[
     'Buka wikipedia.org lalu rangkum halaman utamanya',
     'Cari harga Bitcoin hari ini dan ambil screenshot',
     'Buat file catatan.txt berisi rencana harian',
-    'Jelaskan cara kerja tool calling pada LLM',
+    'Jalankan JavaScript untuk memproses JSON yang saya lampirkan',
   ];
+
+  // -- Files manager ----------------------------------------------------
+  @override
+  String get filesTitle => 'File';
+  @override
+  String get filesEmpty => 'Belum ada file.';
+  @override
+  String get filesHint =>
+      'File yang dibuat agent (write_file) dan hasil unggahan Anda ada di '
+      'sini. Salin, tempel, zip, dan bagikan.';
+  @override
+  String get newFolder => 'Folder baru';
+  @override
+  String get newFolderTitle => 'Folder baru';
+  @override
+  String get compress => 'Kompres ke ZIP';
+  @override
+  String get extractHere => 'Ekstrak';
+  @override
+  String get noPreview => 'Pratinjau tidak tersedia untuk tipe file ini.';
+  @override
+  String get filePreviewTitle => 'Pratinjau';
+  @override
+  String get clipboardCopied => 'Disalin.';
+  @override
+  String get clipboardCut => 'Dipotong. Tempel di folder lain.';
+  @override
+  String get pastedOk => 'Ditempel.';
+  @override
+  String get zipCreatedOk => 'ZIP dibuat.';
+  @override
+  String get unzippedOk => 'Diekstrak.';
+  @override
+  String get deleteEntryTitle => 'Hapus?';
+  @override
+  String get deleteEntryBody => 'Item ini akan dihapus permanen.';
+
+  // -- Context Manager ---------------------------------------------------
+  @override
+  String get contextSection => 'Konteks';
+  @override
+  String get contextManagerTitle => 'Manajer konteks';
+  @override
+  String get contextManagerHint =>
+      'Blok prompt yang bisa dipakai ulang. Entri yang aktif dikirim dengan '
+      'setiap permintaan agar agent selalu mengikuti aturan Anda.';
+  @override
+  String contextActiveCount(int n) => '$n aktif';
+  @override
+  String get addContext => 'Tambah konteks';
+  @override
+  String get editContext => 'Ubah konteks';
+  @override
+  String get contextNameLabel => 'Nama';
+  @override
+  String get contextContentLabel => 'Isi (dikirim sebagai konteks prompt)';
+  @override
+  String get contextEnabledLabel => 'Pakai konteks ini';
+  @override
+  String get deleteContextTitle => 'Hapus konteks?';
+  @override
+  String get deleteContextBody => 'Entri konteks ini akan dihapus permanen.';
+  @override
+  String get contextEmpty =>
+      'Belum ada entri konteks. Tambahkan aturan yang harus selalu '
+      'diikuti agent.';
+
+  // -- Node.js runtime ---------------------------------------------------
+  @override
+  String get nodeSection => 'Runtime Node.js';
+  @override
+  String get nodeManagerTitle => 'Runtime & modul Node.js';
+  @override
+  String get nodeManagerHint =>
+      'Runtime JavaScript tersemat yang bisa dipakai agent untuk memproses '
+      'data. Instal package npm yang dibutuhkan dan hapus saat selesai.';
+  @override
+  String nodeInstalledCount(int n) => '$n package terpasang';
+  @override
+  String get nodeAddHint => 'Nama package, mis. lodash';
+  @override
+  String get nodeAddButton => 'Instal';
+  @override
+  String get nodeVersionHint => 'Versi (opsional)';
+  @override
+  String get nodeEmpty => 'Belum ada package terpasang.';
+  @override
+  String get nodeInstalling => 'Menginstal…';
+  @override
+  String get nodeDescription =>
+      'node_run memungkinkan agent menjalankan JavaScript dengan require(), '
+      'fs, dan fetch. Package diunduh dari registry npm dan disimpan di '
+      'sandbox aplikasi.';
+  @override
+  String get nodeRemoveTitle => 'Hapus package?';
+  @override
+  String get nodeRemoveBody => 'File package akan dihapus.';
+
+  // -- Appearance --------------------------------------------------------
+  @override
+  String get appearanceSection => 'Tampilan';
+  @override
+  String get themeLight => 'Terang';
+  @override
+  String get themeDark => 'Gelap';
+  @override
+  String get themeSystem => 'Sistem';
 
   // -- Settings --------------------------------------------------------
   @override
@@ -441,18 +833,43 @@ class AppStringsId implements AppStrings {
   String get apiKeyLabel => 'API key';
   @override
   String get apiKeyStoredLocally =>
-      'Disimpan hanya di perangkat ini. Key InferHub berformat sk-airo-…';
+      'Setiap preset menyimpan key-nya sendiri, hanya di perangkat ini. '
+      'Key InferHub berformat sk-airo-…';
   @override
   String get modelLabel => 'Model';
   @override
   String get modelHint => 'mis. z-ai/glm-4.6 atau anthropic/claude-sonnet-4.5';
+  @override
+  String get presetsTitle => 'Preset (masing-masing punya API key sendiri)';
+  @override
+  String get savePreset => 'Simpan sebagai preset';
+  @override
+  String get savePresetTitle => 'Simpan preset';
+  @override
+  String get presetNameLabel => 'Nama preset';
+  @override
+  String get editPreset => 'Ubah preset';
+  @override
+  String get deletePresetTitle => 'Hapus preset?';
+  @override
+  String get deletePresetBody => 'Preset beserta key tersimpannya dihapus.';
+  @override
+  String get presetHasKey => 'key tersimpan';
+  @override
+  String get presetNoKey => 'tanpa key';
+  @override
+  String get maxStepsTitle => 'Maks. langkah agent';
+  @override
+  String get maxStepsHint =>
+      'Jumlah maksimum putaran tool-call agent (1-100). Isi angka kustom '
+      'atau gunakan slider.';
   @override
   String get agentSection => 'Agent';
   @override
   String get agentModeTitle => 'Mode Agent';
   @override
   String get agentModeSubtitle =>
-      'Aktifkan tool calling: browsing, screenshot, file. '
+      'Aktifkan tool calling: browsing, screenshot, file, kode. '
       'Matikan untuk chat biasa.';
   @override
   String get automationTitle => 'Otomasi browser';
@@ -466,8 +883,6 @@ class AppStringsId implements AppStrings {
       'Agent tetap bekerja saat keluar dari aplikasi '
       '(menampilkan notifikasi progres).';
   @override
-  String get maxStepsTitle => 'Maks. langkah agent';
-  @override
   String get languageSection => 'Bahasa';
   @override
   String get languageSubtitle => 'Bahasa antarmuka aplikasi. Bawaan: English.';
@@ -476,14 +891,28 @@ class AppStringsId implements AppStrings {
   @override
   String get indonesianOption => 'Bahasa Indonesia';
   @override
+  String get dataSection => 'Data';
+  @override
+  String get exportSessions => 'Ekspor sesi';
+  @override
+  String get importSessions => 'Impor sesi';
+  @override
+  String exportDone(String path) => 'Diekspor ke $path';
+  @override
+  String importDone(int count) => '$count sesi diimpor.';
+  @override
+  String get importFailed => 'Impor gagal: file ekspor tidak valid.';
+  @override
   String get aboutSection => 'Tentang';
   @override
   String get aboutBody =>
-      'ZAgents v1.3.0 — klon UI agent mode chat.z.ai untuk Android, '
+      'ZAgents v1.4.0 — klon UI agent mode chat.z.ai untuk Android, '
       'dengan custom provider OpenAI-compatible (OpenRouter, InferHub, '
-      'Z.AI, OpenAI, DeepSeek, Groq, dan lainnya). Tugas agent dapat '
-      'tetap berjalan di latar belakang. API key disimpan hanya di '
-      'penyimpanan lokal perangkat.';
+      'Z.AI, OpenAI, DeepSeek, Groq, dan lainnya), API key per-provider, '
+      'tema terang/gelap, multi-sesi dengan proses latar belakang, '
+      'unggah file, Manajer Konteks, manajer file dengan dukungan zip, '
+      'serta runtime bergaya Node.js tersemat dengan manajemen package '
+      'npm. Key Anda tetap di perangkat ini.';
 
   // -- Controller messages ----------------------------------------------
   @override
@@ -498,6 +927,8 @@ class AppStringsId implements AppStrings {
   String get chatOpenError => 'Gagal membuka percakapan ini.';
   @override
   String get chatDeleteError => 'Gagal menghapus percakapan ini.';
+  @override
+  String get chatRenameError => 'Gagal mengganti nama percakapan ini.';
 
   // -- Background service notification ----------------------------------
   @override

@@ -33,6 +33,11 @@ class BackgroundRunService implements BackgroundRun {
   bool _active = false;
   bool _lastOperationSucceeded = false;
 
+  /// Number of agent runs currently holding the service. With multi
+  /// session the foreground service must stay up until EVERY run finishes,
+  /// so start/stop are refcounted.
+  int _holds = 0;
+
   @override
   bool get isActive => _active;
 
@@ -42,6 +47,8 @@ class BackgroundRunService implements BackgroundRun {
 
   @override
   Future<void> start({required String title, required String text}) async {
+    _holds++;
+    if (_active) return; // Service already running for another session.
     try {
       _lastOperationSucceeded =
           await _channel.invokeMethod<bool>('start', <String, dynamic>{
@@ -72,9 +79,9 @@ class BackgroundRunService implements BackgroundRun {
 
   @override
   Future<void> stop() async {
-    final bool wasActive = _active;
+    if (_holds > 0) _holds--;
+    if (_holds > 0 || !_active) return;
     _active = false;
-    if (!wasActive) return;
     try {
       await _channel.invokeMethod<bool>('stop');
     } catch (_) {

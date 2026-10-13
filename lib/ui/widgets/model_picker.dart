@@ -22,7 +22,7 @@ class ModelChip extends ConsumerWidget {
       borderRadius: BorderRadius.circular(999),
       onTap: () => showModalBottomSheet<void>(
         context: context,
-        backgroundColor: kSurfaceColor,
+        backgroundColor: context.zSurface,
         shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
         ),
@@ -32,9 +32,9 @@ class ModelChip extends ConsumerWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
         decoration: BoxDecoration(
-          color: kSurfaceAltColor,
+          color: context.zSurfaceAlt,
           borderRadius: BorderRadius.circular(999),
-          border: Border.all(color: kBorderColor),
+          border: Border.all(color: context.zBorder),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
@@ -54,10 +54,10 @@ class ModelChip extends ConsumerWidget {
                 ),
               ),
             ),
-            const Icon(
+            Icon(
               Icons.arrow_drop_down_rounded,
               size: 18,
-              color: kMutedTextColor,
+              color: context.zMuted,
             ),
           ],
         ),
@@ -245,10 +245,10 @@ class _ModelPickerSheetState extends ConsumerState<ModelPickerSheet> {
                   ],
                 ),
               ),
-              Divider(height: 1, color: kBorderColor),
+              Divider(height: 1, color: context.zBorder),
               Expanded(child: _body(strings)),
               if (_catalogFuture != null) _pagingBar(strings),
-              Divider(height: 1, color: kBorderColor),
+              Divider(height: 1, color: context.zBorder),
               Padding(
                 padding: const EdgeInsets.all(16),
                 child: TextField(
@@ -374,7 +374,7 @@ class _ModelPickerSheetState extends ConsumerState<ModelPickerSheet> {
       leading: Icon(
         selected ? Icons.check_circle_rounded : Icons.circle_outlined,
         size: 18,
-        color: selected ? kAccentColor : kMutedTextColor,
+        color: selected ? kAccentColor : context.zMuted,
       ),
       title: Text(
         model.id,
@@ -392,7 +392,7 @@ class _ModelPickerSheetState extends ConsumerState<ModelPickerSheet> {
               ].join(' · '),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontSize: 11, color: kMutedTextColor),
+              style: TextStyle(fontSize: 11, color: context.zMuted),
             ),
           ),
           if (model.isFree)
@@ -456,9 +456,9 @@ class _ModelPickerSheetState extends ConsumerState<ModelPickerSheet> {
                     child: Text(
                       strings.pageIndicator(current + 1, pageCount),
                       textAlign: TextAlign.center,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 12,
-                        color: kMutedTextColor,
+                        color: context.zMuted,
                         fontWeight: FontWeight.w600,
                       ),
                     ),
@@ -495,11 +495,11 @@ class _ModelPickerSheetState extends ConsumerState<ModelPickerSheet> {
           padding: const EdgeInsets.fromLTRB(20, 12, 20, 4),
           child: Text(
             strings.suggestedFallback,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 11,
               letterSpacing: 1,
               fontWeight: FontWeight.w700,
-              color: kMutedTextColor,
+              color: context.zMuted,
             ),
           ),
         ),
@@ -511,7 +511,7 @@ class _ModelPickerSheetState extends ConsumerState<ModelPickerSheet> {
                   ? Icons.check_circle_rounded
                   : Icons.circle_outlined,
               size: 18,
-              color: model == active ? kAccentColor : kMutedTextColor,
+              color: model == active ? kAccentColor : context.zMuted,
             ),
             title: Text(
               model,
@@ -528,18 +528,18 @@ class _ModelPickerSheetState extends ConsumerState<ModelPickerSheet> {
     child: Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: kSurfaceAltColor,
+        color: context.zSurfaceAlt,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: kBorderColor),
+        border: Border.all(color: context.zBorder),
       ),
       child: Row(
         children: <Widget>[
-          Icon(icon, size: 18, color: kMutedTextColor),
+          Icon(icon, size: 18, color: context.zMuted),
           const SizedBox(width: 10),
           Expanded(
             child: Text(
               text,
-              style: const TextStyle(fontSize: 12, color: kMutedTextColor),
+              style: TextStyle(fontSize: 12, color: context.zMuted),
             ),
           ),
         ],
@@ -552,19 +552,15 @@ class _ModelPickerSheetState extends ConsumerState<ModelPickerSheet> {
     child: Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: kSurfaceAltColor,
+        color: context.zSurfaceAlt,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: kBorderColor),
+        border: Border.all(color: context.zBorder),
       ),
       child: Column(
         children: <Widget>[
           Row(
             children: <Widget>[
-              const Icon(
-                Icons.cloud_off_rounded,
-                size: 18,
-                color: kMutedTextColor,
-              ),
+              Icon(Icons.cloud_off_rounded, size: 18, color: context.zMuted),
               const SizedBox(width: 10),
               Expanded(
                 child: Text(
@@ -589,9 +585,9 @@ class _ModelPickerSheetState extends ConsumerState<ModelPickerSheet> {
                 _errorMessage!,
                 maxLines: 3,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 11,
-                  color: kMutedTextColor,
+                  color: context.zMuted,
                   fontFamily: 'monospace',
                 ),
               ),
@@ -600,7 +596,7 @@ class _ModelPickerSheetState extends ConsumerState<ModelPickerSheet> {
             alignment: Alignment.centerLeft,
             child: Text(
               strings.suggestedFallbackBody,
-              style: const TextStyle(fontSize: 11, color: kMutedTextColor),
+              style: TextStyle(fontSize: 11, color: context.zMuted),
             ),
           ),
         ],
@@ -612,7 +608,7 @@ class _ModelPickerSheetState extends ConsumerState<ModelPickerSheet> {
     padding: const EdgeInsets.fromLTRB(16, 24, 16, 4),
     child: Column(
       children: <Widget>[
-        const Icon(Icons.search_off_rounded, size: 32, color: kMutedTextColor),
+        Icon(Icons.search_off_rounded, size: 32, color: context.zMuted),
         const SizedBox(height: 8),
         Text(
           strings.modelsEmpty,
@@ -622,7 +618,7 @@ class _ModelPickerSheetState extends ConsumerState<ModelPickerSheet> {
         Text(
           strings.modelsEmptyHint,
           textAlign: TextAlign.center,
-          style: const TextStyle(fontSize: 11.5, color: kMutedTextColor),
+          style: TextStyle(fontSize: 11.5, color: context.zMuted),
         ),
       ],
     ),

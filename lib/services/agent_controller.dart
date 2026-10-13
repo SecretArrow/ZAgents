@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -9,7 +11,7 @@ import '../tools/tool_defs.dart';
 import 'background_service.dart';
 import 'llm_client.dart';
 
-/// Immutable UI state of the current chat session.
+/// Immutable UI state of the currently ACTIVE chat session.
 class ChatState {
   const ChatState({
     this.sessionId,
@@ -42,56 +44,227 @@ class ChatState {
   );
 }
 
-/// Drives the agent loop: user prompt -> LLM (streaming) -> tool calls ->
-/// tool results -> ... -> final answer. Also handles persistence and history.
+/// Internal state of one running (or recently run) session. Sessions run
+/// in parallel: each keeps its own message list so switching to another
+/// chat never interrupts the loop.
+class _SessionRun {
+  _SessionRun({required this.sessionId, required this.title});
+
+  final String sessionId;
+  String title;
+  final List<ChatMessage> messages = <ChatMessage>[];
+  bool isRunning = true;
+  bool stopRequested = false;
+
+  /// Set when the user deletes the session mid-run: the final persist is
+  /// skipped so the conversation cannot resurrect itself.
+  bool deleted = false;
+
+  /// base64 payloads cached per attachment path (avoid re-encoding images
+  /// on every wire rebuild).
+  final Map<String, String> dataUrlCache = <String, String>{};
+
+  /// Text contents of text-like attachments, read once per run.
+  final Map<String, String> textCache = <String, String>{};
+}
+
+/// Drives multi-session agent loops: user prompt -> LLM (streaming) ->
+/// tool calls -> tool results -> ... -> final answer, per session, in
+/// parallel. Also handles persistence, history and renaming.
 class ChatController extends Notifier<ChatState> {
-  bool _stopRequested = false;
+  final Map<String, _SessionRun> _runs = <String, _SessionRun>{};
+
+  /// The session currently rendered by the UI (null = fresh draft).
+  String? _activeSessionId;
 
   @override
   ChatState build() => const ChatState();
 
-  void stop() => _stopRequested = true;
+  Set<String> get runningIds => <String>{
+    for (final _SessionRun run in _runs.values) run.sessionId,
+  };
 
-  Future<void> send(String text) async {
-    final trimmed = text.trim();
+  void _markRunning() {
+    ref.read(runningSessionsProvider.notifier).state = runningIds;
+  }
+
+  /// Stops the ACTIVE session's loop (other sessions keep running).
+  void stop() {
+    final String? id = _activeSessionId;
+    if (id != null) _runs[id]?.stopRequested = true;
+  }
+
+  Future<void> send(
+    String text, {
+    List<ChatAttachment> attachments = const <ChatAttachment>[],
+  }) async {
+    final String trimmed = text.trim();
     if (trimmed.isEmpty || state.isRunning) return;
-    _stopRequested = false;
+    _SessionRun? run = _activeSessionId != null
+        ? _runs[_activeSessionId!]
+        : null;
+    if (run != null && run.isRunning) return; // active session busy
 
     final settings = ref.read(settingsProvider);
+    final AppStrings strings = appStringsFor(settings.languageCode);
     if (settings.apiKey.trim().isEmpty) {
-      state = state.copyWith(
-        error: appStringsFor(settings.languageCode).missingApiKey,
-      );
+      state = state.copyWith(error: strings.missingApiKey);
       return;
     }
     if (settings.model.trim().isEmpty) {
-      state = state.copyWith(
-        error: appStringsFor(settings.languageCode).modelNotSet,
-      );
+      state = state.copyWith(error: strings.modelNotSet);
       return;
     }
 
-    final messages = [...state.messages];
-    var sessionId = state.sessionId;
-    var title = state.title;
-    if (sessionId == null) {
-      sessionId = newId();
-      title = trimmed.length > 48 ? '${trimmed.substring(0, 48)}…' : trimmed;
+    // Continue the active session, or create a new one.
+    if (run == null) {
+      final String sessionId = newId();
+      run = _SessionRun(sessionId: sessionId, title: _titleFor(trimmed));
+      _runs[sessionId] = run;
+      _activeSessionId = sessionId;
+      state = ChatState(
+        sessionId: sessionId,
+        title: run.title,
+        messages: run.messages,
+        isRunning: true,
+      );
+    } else {
+      state = state.copyWith(isRunning: true, error: null);
     }
-    messages.add(ChatMessage.user(trimmed));
-    state = state.copyWith(
-      sessionId: sessionId,
-      title: title,
-      messages: messages,
-      isRunning: true,
-      error: null,
+    _markRunning();
+
+    // Preload attachment contents (text bodies + image data URLs).
+    await _prepareAttachments(run, attachments);
+
+    final _RunResult result = await _runLoop(
+      run,
+      settings,
+      trimmed,
+      attachments,
     );
 
+    run.isRunning = false;
+    _markRunning();
+    if (!run.deleted) {
+      if (_activeSessionId == run.sessionId) {
+        state = state.copyWith(
+          messages: [...run.messages],
+          isRunning: false,
+          error: result.error,
+        );
+      }
+      await _persist(run);
+    }
+    _runs.remove(run.sessionId);
+    _markRunning();
+  }
+
+  static String _titleFor(String text) =>
+      text.length > 48 ? '${text.substring(0, 48)}…' : text;
+
+  /// Reads picked files into the run's caches so wire building never
+  /// touches the filesystem again. Failures degrade to a note in text.
+  Future<void> _prepareAttachments(
+    _SessionRun run,
+    List<ChatAttachment> attachments,
+  ) async {
+    for (final ChatAttachment att in attachments) {
+      if (att.path.isEmpty ||
+          run.dataUrlCache.containsKey(att.path) ||
+          run.textCache.containsKey(att.path)) {
+        continue;
+      }
+      try {
+        final File file = File(att.path);
+        if (!await file.exists()) continue;
+        switch (att.kind) {
+          case AttachmentKind.image:
+            final List<int> bytes = await file.readAsBytes();
+            final String mime = _mimeForName(att.name);
+            run.dataUrlCache[att.path] =
+                'data:$mime;base64,${base64Encode(bytes)}';
+          case AttachmentKind.text:
+            final String content = await file.readAsString();
+            run.textCache[att.path] = content.length > 20000
+                ? '${content.substring(0, 20000)}\n…[truncated]'
+                : content;
+          case AttachmentKind.other:
+            // Binary: only the metadata travels in the prompt.
+            break;
+        }
+      } catch (_) {
+        // Unreadable attachment: skip silently, message text still sends.
+      }
+    }
+  }
+
+  static String _mimeForName(String name) {
+    final String ext = name.contains('.')
+        ? name.split('.').last.toLowerCase()
+        : '';
+    return switch (ext) {
+      'png' => 'image/png',
+      'jpg' || 'jpeg' => 'image/jpeg',
+      'webp' => 'image/webp',
+      'gif' => 'image/gif',
+      'bmp' => 'image/bmp',
+      _ => 'application/octet-stream',
+    };
+  }
+
+  /// Composes the effective user text: prompt + text-attachment blocks.
+  String _composeUserText(
+    String prompt,
+    List<ChatAttachment> attachments,
+    _SessionRun run,
+  ) {
+    final StringBuffer buffer = StringBuffer(prompt);
+    for (final ChatAttachment att in attachments) {
+      switch (att.kind) {
+        case AttachmentKind.text:
+          final String? content = run.textCache[att.path];
+          if (content != null) {
+            buffer
+              ..writeln()
+              ..writeln()
+              ..writeln('[Attached file: ${att.name}]');
+            buffer
+              ..writeln('```')
+              ..writeln(content)
+              ..write('```');
+          }
+        case AttachmentKind.image:
+          // Images travel as separate content parts, not inline text.
+          break;
+        case AttachmentKind.other:
+          buffer
+            ..writeln()
+            ..writeln(
+              '[Attached file: ${att.name} '
+              '(${att.sizeBytes} bytes, binary — no preview available)]',
+            );
+      }
+    }
+    return buffer.toString();
+  }
+
+  Future<_RunResult> _runLoop(
+    _SessionRun run,
+    AppSettings settings,
+    String prompt,
+    List<ChatAttachment> attachments,
+  ) async {
+    final AppStrings strings = appStringsFor(settings.languageCode);
+    run.messages.add(ChatMessage.user(prompt, attachments: attachments));
+    _sync(run);
+
     final wire = <Map<String, dynamic>>[
-      if (settings.agentMode)
-        <String, dynamic>{'role': 'system', 'content': agentSystemPrompt},
-      ..._buildWire(messages),
+      _systemWire(settings),
+      // Full replay: previous turns (assistant + tool results + user msgs,
+      // attachments included) followed by the freshly added user message.
+      ..._buildWire(run, run.messages),
     ];
+
     final config = LlmConfig(
       baseUrl: settings.baseUrl,
       apiKey: settings.apiKey,
@@ -99,10 +272,6 @@ class ChatController extends Notifier<ChatState> {
     );
     final tools = settings.agentMode ? buildAgentTools() : null;
 
-    // Background hold: while a task runs, keep the process alive off-screen
-    // (Android foreground service + wake lock + progress notification).
-    // Best-effort — on unsupported platforms this is a silent no-op.
-    final AppStrings strings = appStringsFor(settings.languageCode);
     final BackgroundRun background = ref.read(backgroundRunServiceProvider);
     final bool holdStarted = settings.runInBackground;
     if (holdStarted) {
@@ -115,8 +284,8 @@ class ChatController extends Notifier<ChatState> {
     try {
       for (var step = 0; step < settings.maxSteps; step++) {
         // 1. Stream one assistant turn.
-        messages.add(ChatMessage.assistant('', isStreaming: true));
-        _sync(messages);
+        run.messages.add(ChatMessage.assistant('', isStreaming: true));
+        _sync(run);
 
         final buffer = StringBuffer();
         final turn = await ref
@@ -127,24 +296,24 @@ class ChatController extends Notifier<ChatState> {
               tools: tools,
               onDelta: (delta) {
                 buffer.write(delta);
-                messages[messages.length - 1] = ChatMessage.assistant(
+                run.messages[run.messages.length - 1] = ChatMessage.assistant(
                   buffer.toString(),
                   isStreaming: true,
                 );
-                _sync(messages);
+                _sync(run);
               },
             );
-        if (_stopRequested) break;
+        if (run.stopRequested) break;
 
         final toolCalls = <ToolCall>[
           for (final tc in turn.toolCalls)
             ToolCall(id: tc.id, name: tc.name, arguments: tc.args),
         ];
-        messages[messages.length - 1] = ChatMessage.assistant(
+        run.messages[run.messages.length - 1] = ChatMessage.assistant(
           turn.content,
           toolCalls: toolCalls,
         );
-        _sync(messages);
+        _sync(run);
 
         if (toolCalls.isEmpty) break; // Final answer reached.
 
@@ -167,9 +336,9 @@ class ChatController extends Notifier<ChatState> {
 
         final executor = ref.read(toolExecutorProvider);
         for (final call in toolCalls) {
-          if (_stopRequested) break;
+          if (run.stopRequested) break;
           call.status = ToolStatus.running;
-          _sync(messages);
+          _sync(run);
           // Live progress in the foreground-service notification.
           await background.updateStatus(strings.notifStep(step + 1, call.name));
 
@@ -177,7 +346,7 @@ class ChatController extends Notifier<ChatState> {
           call.status = result.ok ? ToolStatus.success : ToolStatus.error;
           call.resultText = result.llmOutput;
           call.screenshotPath = result.screenshotPath;
-          _sync(messages);
+          _sync(run);
 
           wire.add(<String, dynamic>{
             'role': 'tool',
@@ -185,42 +354,91 @@ class ChatController extends Notifier<ChatState> {
             'content': result.llmOutput,
           });
         }
-        if (_stopRequested) break;
+        if (run.stopRequested) break;
       }
 
-      if (_stopRequested && messages.isNotEmpty) {
-        final last = messages.last;
+      if (run.stopRequested && run.messages.isNotEmpty) {
+        final ChatMessage last = run.messages.last;
         if (last.role == Role.assistant && last.isStreaming) {
-          final stopped = appStringsFor(ref.read(settingsProvider).languageCode)
-              .stoppedMarkdown;
-          messages[messages.length - 1] = ChatMessage.assistant(
-            '${last.content}\n\n$stopped',
+          run.messages[run.messages.length - 1] = ChatMessage.assistant(
+            '${last.content}\n\n${appStringsFor(settings.languageCode).stoppedMarkdown}',
           );
         }
       }
+      return const _RunResult();
     } catch (e) {
-      state = state.copyWith(isRunning: false, error: e.toString());
-      await _persist(messages);
-      return;
+      return _RunResult(error: e.toString());
     } finally {
-      // Always release the background hold — success, error, or stop —
-      // but never touch a hold this run did not start.
+      // Always release the background hold — success, error, or stop.
+      // Refcounted: parallel sessions keep the service alive until all end.
       if (holdStarted) await background.stop();
     }
-    state = state.copyWith(isRunning: false);
-    await _persist(messages);
   }
 
-  /// Rebuild the OpenAI wire format from UI messages (incl. past tool calls).
-  List<Map<String, dynamic>> _buildWire(List<ChatMessage> messages) {
+  /// System message: agent prompt (agent mode) + enabled Context Manager
+  /// entries merged into ONE system message (some providers reject several).
+  Map<String, dynamic> _systemWire(AppSettings settings) {
+    final StringBuffer content = StringBuffer();
+    if (settings.agentMode) content.write(agentSystemPrompt);
+    try {
+      final List<ContextEntry> entries = ref
+          .read(contextRepositoryProvider)
+          .load()
+          .where((ContextEntry e) => e.enabled && e.content.trim().isNotEmpty)
+          .toList();
+      for (final ContextEntry entry in entries) {
+        if (content.isNotEmpty) content.writeln();
+        content
+          ..writeln()
+          ..writeln('# Context: ${entry.name}')
+          ..write(entry.content.trim());
+      }
+    } catch (_) {
+      // Context store failure must never block a chat request.
+    }
+    return <String, dynamic>{'role': 'system', 'content': content.toString()};
+  }
+
+  /// User message in wire format; with image attachments the content
+  /// becomes an OpenAI multimodal parts array.
+  Map<String, dynamic> _userWireMessage(_SessionRun run, ChatMessage message) {
+    final String text = _composeUserText(
+      message.content,
+      message.attachments,
+      run,
+    );
+    final List<String> dataUrls = <String>[
+      for (final ChatAttachment att in message.attachments)
+        if (att.kind == AttachmentKind.image &&
+            run.dataUrlCache[att.path] != null)
+          run.dataUrlCache[att.path]!,
+    ];
+    if (dataUrls.isEmpty) {
+      return <String, dynamic>{'role': 'user', 'content': text};
+    }
+    return <String, dynamic>{
+      'role': 'user',
+      'content': <Map<String, dynamic>>[
+        <String, dynamic>{'type': 'text', 'text': text},
+        for (final String url in dataUrls)
+          <String, dynamic>{
+            'type': 'image_url',
+            'image_url': <String, dynamic>{'url': url},
+          },
+      ],
+    };
+  }
+
+  /// Rebuilds the LLM wire for a CONTINUING session (history replay).
+  List<Map<String, dynamic>> _buildWire(
+    _SessionRun run,
+    List<ChatMessage> messages,
+  ) {
     final out = <Map<String, dynamic>>[];
     for (final message in messages) {
       switch (message.role) {
         case Role.user:
-          out.add(<String, dynamic>{
-            'role': 'user',
-            'content': message.content,
-          });
+          out.add(_userWireMessage(run, message));
         case Role.assistant:
           if (message.isStreaming) continue;
           if (message.toolCalls.isNotEmpty) {
@@ -259,35 +477,57 @@ class ChatController extends Notifier<ChatState> {
     return out;
   }
 
-  void _sync(List<ChatMessage> messages) {
-    state = state.copyWith(messages: [...messages]);
+  /// Writes the run's view into the UI state — but only when the run's
+  /// session is the one currently displayed (parallel sessions otherwise
+  /// clobber each other's screen).
+  void _sync(_SessionRun run) {
+    if (_activeSessionId != run.sessionId) return;
+    state = state.copyWith(
+      messages: [...run.messages],
+      title: run.title,
+      sessionId: run.sessionId,
+    );
   }
 
-  Future<void> _persist(List<ChatMessage> messages) async {
-    final sessionId = state.sessionId;
-    if (sessionId == null) return;
-    final persisted = messages
+  Future<void> _persist(_SessionRun run) async {
+    final persisted = run.messages
         .where((m) => !(m.isStreaming && m.content.isEmpty))
         .toList();
     try {
       await ref
           .read(chatStoreProvider)
-          .save(id: sessionId, title: state.title, messages: persisted);
+          .save(id: run.sessionId, title: run.title, messages: persisted);
       ref.invalidate(chatListProvider);
     } catch (_) {
       // Persistence is best-effort.
     }
   }
 
+  /// Starts a fresh draft. Any in-flight session keeps running in the
+  /// background and can be reopened from history.
   Future<void> newChat() async {
-    if (state.isRunning) return;
+    _activeSessionId = null;
     state = const ChatState();
   }
 
   Future<void> openChat(ChatSummary summary) async {
-    if (state.isRunning) return;
+    _activeSessionId = summary.id;
+    final _SessionRun? run = _runs[summary.id];
+    if (run != null) {
+      // Live session (still running or just finished): adopt its state.
+      state = ChatState(
+        sessionId: run.sessionId,
+        title: run.title,
+        messages: [...run.messages],
+        isRunning: run.isRunning && !run.stopRequested,
+      );
+      return;
+    }
     try {
       final messages = await ref.read(chatStoreProvider).load(summary.id);
+      // The user may have switched again while loading — only commit when
+      // this session is still the active one.
+      if (_activeSessionId != summary.id) return;
       state = ChatState(
         sessionId: summary.id,
         title: summary.title,
@@ -296,14 +536,40 @@ class ChatController extends Notifier<ChatState> {
     } catch (_) {
       // A corrupted history entry must never crash the app: open an empty
       // session and tell the user what happened.
+      if (_activeSessionId != summary.id) return;
       state = ChatState(
+        sessionId: summary.id,
         error: appStringsFor(ref.read(settingsProvider).languageCode)
             .chatOpenError,
       );
     }
   }
 
+  Future<void> renameChat(String id, String title) async {
+    final String trimmed = title.trim();
+    if (trimmed.isEmpty) return;
+    final _SessionRun? run = _runs[id];
+    if (run != null) {
+      run.title = _titleFor(trimmed);
+      if (_activeSessionId == id) {
+        state = state.copyWith(title: run.title);
+      }
+    }
+    try {
+      await ref.read(chatStoreProvider).rename(id, _titleFor(trimmed));
+      ref.invalidate(chatListProvider);
+    } catch (_) {
+      state = state.copyWith(
+        error: appStringsFor(ref.read(settingsProvider).languageCode)
+            .chatRenameError,
+      );
+    }
+  }
+
   Future<void> deleteChat(String id) async {
+    // If this session is running, stop it and drop its results.
+    _runs[id]?.stopRequested = true;
+    _runs[id]?.deleted = true;
     try {
       await ref.read(chatStoreProvider).delete(id);
     } catch (_) {
@@ -313,9 +579,18 @@ class ChatController extends Notifier<ChatState> {
       );
       return;
     }
-    if (state.sessionId == id) state = const ChatState();
+    if (_activeSessionId == id) {
+      _activeSessionId = null;
+      state = const ChatState();
+    }
     ref.invalidate(chatListProvider);
+    _markRunning();
   }
+}
+
+class _RunResult {
+  const _RunResult({this.error});
+  final String? error;
 }
 
 /// Settings controller: holds AppSettings and persists on every update.

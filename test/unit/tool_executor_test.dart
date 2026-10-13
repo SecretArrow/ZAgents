@@ -1,6 +1,10 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
+import 'package:zagents/services/js_runtime.dart';
+import 'package:zagents/services/npm_service.dart';
 import 'package:zagents/services/tool_executor.dart';
 
 import '../fakes/fakes.dart';
@@ -148,5 +152,95 @@ void main() {
     );
     expect(result.ok, isFalse);
     expect(result.llmOutput, contains('Could not write file'));
+  });
+
+  test('node_run executes through the injected JS runtime', () async {
+    final FakeJsRuntime js = FakeJsRuntime(
+      const JsRunResult(output: 'hello from node', result: '"42"'),
+    );
+    final ToolExecutor nodeExecutor = ToolExecutor(
+      browser: fakeBrowser,
+      resolveBaseDir: () async => tempDir,
+      isAutomationEnabled: () => true,
+      js: js,
+    );
+    final ToolResult result = await nodeExecutor.execute(
+      'node_run',
+      <String, dynamic>{'code': 'return 42;'},
+    );
+    expect(result.ok, isTrue);
+    expect(result.llmOutput, contains('hello from node'));
+    expect(result.llmOutput, contains('=> "42"'));
+    expect(js.runs.single, 'return 42;');
+  });
+
+  test('node_run surfaces script errors without crashing', () async {
+    final FakeJsRuntime js = FakeJsRuntime(
+      const JsRunResult(output: 'starting…', error: 'boom'),
+    );
+    final ToolExecutor nodeExecutor = ToolExecutor(
+      browser: fakeBrowser,
+      resolveBaseDir: () async => tempDir,
+      isAutomationEnabled: () => true,
+      js: js,
+    );
+    final ToolResult result = await nodeExecutor.execute(
+      'node_run',
+      <String, dynamic>{'code': 'throw new Error("boom")'},
+    );
+    expect(result.ok, isFalse);
+    expect(result.llmOutput, contains('starting…'));
+    expect(result.llmOutput, contains('boom'));
+  });
+
+  test(
+    'node tools degrade gracefully when the runtime is unavailable',
+    () async {
+      for (final String tool in <String>[
+        'node_run',
+        'node_install',
+        'node_remove',
+      ]) {
+        final ToolResult result = await executor.execute(
+          tool,
+          <String, dynamic>{'code': '1', 'package': 'x'},
+        );
+        expect(result.ok, isFalse, reason: '$tool must not throw');
+        expect(result.llmOutput, isNotEmpty);
+      }
+    },
+  );
+
+  test('node_install / node_remove go through the npm service', () async {
+    final NpmService npm = NpmService(
+      resolveBaseDir: () async => tempDir,
+      client: MockClient(
+        (http.Request request) async => http.Response('not found', 404),
+      ),
+    );
+    final ToolExecutor nodeExecutor = ToolExecutor(
+      browser: fakeBrowser,
+      resolveBaseDir: () async => tempDir,
+      isAutomationEnabled: () => true,
+      npm: npm,
+    );
+
+    final ToolResult fail = await nodeExecutor.execute(
+      'node_install',
+      <String, dynamic>{'package': 'missing-pkg'},
+    );
+    expect(fail.ok, isFalse);
+
+    // Create a fake installed package, then remove it via the tool.
+    final Directory pkg = Directory('${tempDir.path}/node_modules/left-pad');
+    await pkg.create(recursive: true);
+    await File('${pkg.path}/package.json')
+        .writeAsString('{"name":"left-pad","version":"1.0.0"}');
+    final ToolResult removed = await nodeExecutor.execute(
+      'node_remove',
+      <String, dynamic>{'package': 'left-pad'},
+    );
+    expect(removed.ok, isTrue);
+    expect(pkg.existsSync(), isFalse);
   });
 }

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -333,6 +334,258 @@ void main() {
     await container.read(chatControllerProvider.notifier).send('plain');
     expect(background.calls, isEmpty);
   });
+
+  test(
+    'enabled context entries are injected into the system message',
+    () async {
+      final FakeLlmClient llm = FakeLlmClient(<AssistantTurn>[
+        AssistantTurn(content: 'ok'),
+      ]);
+      final ProviderContainer container = ProviderContainer(
+        overrides: testOverrides(
+          llm: llm,
+          dir: tempDir,
+          settings: AppSettings(apiKey: 'k'),
+          contexts: <ContextEntry>[
+            const ContextEntry(
+              id: 'c1',
+              name: 'House rules',
+              content: 'Always be brief.',
+              enabled: true,
+            ),
+            const ContextEntry(
+              id: 'c2',
+              name: 'Disabled',
+              content: 'Never applied.',
+              enabled: false,
+            ),
+          ],
+        ),
+      );
+      addTearDown(container.dispose);
+
+      await container.read(chatControllerProvider.notifier).send('hi');
+      final List<Map<String, dynamic>> wire = llm.calls.first;
+      expect(wire.first['role'], 'system');
+      expect(wire.first['content'], contains('Always be brief.'));
+      expect(wire.first['content'], contains('# Context: House rules'));
+      expect(wire.first['content'], isNot(contains('Never applied.')));
+    },
+  );
+
+  test('text attachments travel inline in the user wire message', () async {
+    final FakeLlmClient llm = FakeLlmClient(<AssistantTurn>[
+      AssistantTurn(content: 'parsed'),
+    ]);
+    final ProviderContainer container = ProviderContainer(
+      overrides: testOverrides(
+        llm: llm,
+        dir: tempDir,
+        settings: AppSettings(apiKey: 'k'),
+      ),
+    );
+    addTearDown(container.dispose);
+
+    final File dataFile = File('${tempDir.path}/numbers.csv');
+    await dataFile.writeAsString('a,b\n1,2');
+
+    await container
+        .read(chatControllerProvider.notifier)
+        .send(
+          'analyze this',
+          attachments: <ChatAttachment>[
+            ChatAttachment(
+              name: 'numbers.csv',
+              path: dataFile.path,
+              sizeBytes: 8,
+              kind: AttachmentKind.text,
+            ),
+          ],
+        );
+    final Map<String, dynamic> userWire = llm.calls.first.firstWhere(
+      (m) => m['role'] == 'user',
+    );
+    expect(userWire['content'], contains('analyze this'));
+    expect(userWire['content'], contains('[Attached file: numbers.csv]'));
+    expect(userWire['content'], contains('a,b\n1,2'));
+  });
+
+  test('image attachments become OpenAI vision content parts', () async {
+    final FakeLlmClient llm = FakeLlmClient(<AssistantTurn>[
+      AssistantTurn(content: 'nice picture'),
+    ]);
+    final ProviderContainer container = ProviderContainer(
+      overrides: testOverrides(
+        llm: llm,
+        dir: tempDir,
+        settings: AppSettings(apiKey: 'k'),
+      ),
+    );
+    addTearDown(container.dispose);
+
+    final File image = File('${tempDir.path}/tiny.png');
+    await image.writeAsBytes(base64Decode(tinyPngBase64));
+
+    await container
+        .read(chatControllerProvider.notifier)
+        .send(
+          'what is this?',
+          attachments: <ChatAttachment>[
+            ChatAttachment(
+              name: 'tiny.png',
+              path: image.path,
+              sizeBytes: 100,
+              kind: AttachmentKind.image,
+            ),
+          ],
+        );
+    final Map<String, dynamic> userWire = llm.calls.first.firstWhere(
+      (m) => m['role'] == 'user',
+    );
+    final List<dynamic> parts = userWire['content'] as List<dynamic>;
+    expect(parts.first['type'], 'text');
+    expect(parts.first['text'], contains('what is this?'));
+    expect(parts.last['type'], 'image_url');
+    expect(
+      (parts.last['image_url'] as Map<String, dynamic>)['url'],
+      startsWith('data:image/png;base64,'),
+    );
+  });
+
+  test(
+    'sessions run in parallel and switching never interrupts them',
+    () async {
+      // Gate each LLM turn behind a completer so we control run timing.
+      final List<Completer<AssistantTurn>> gates =
+          List<Completer<AssistantTurn>>.generate(
+            4,
+            (_) => Completer<AssistantTurn>(),
+          );
+      int turn = 0;
+      final _GatedLlmClient llm = _GatedLlmClient(gates, () => turn++);
+      final ProviderContainer container = ProviderContainer(
+        overrides: testOverrides(
+          llm: llm,
+          dir: tempDir,
+          settings: AppSettings(apiKey: 'k'),
+        ),
+      );
+      addTearDown(container.dispose);
+
+      // Session A starts and blocks mid-run.
+      final Future<void> runA = container
+          .read(chatControllerProvider.notifier)
+          .send('task A');
+      await Future<void>.delayed(Duration.zero);
+      final String? idA = container.read(chatControllerProvider).sessionId;
+      expect(idA, isNotNull);
+      expect(container.read(chatControllerProvider).isRunning, isTrue);
+      expect(container.read(runningSessionsProvider), contains(idA));
+
+      // Starting a NEW session while A runs must be possible.
+      await container.read(chatControllerProvider.notifier).newChat();
+      final Future<void> runB = container
+          .read(chatControllerProvider.notifier)
+          .send('task B');
+      await Future<void>.delayed(Duration.zero);
+      final String? idB = container.read(chatControllerProvider).sessionId;
+      expect(idB, isNot(idA));
+      expect(
+        container.read(runningSessionsProvider),
+        containsAll(<String?>[idA, idB]),
+      );
+
+      // Finish A, then B.
+      gates[0].complete(AssistantTurn(content: 'A done'));
+      await runA;
+      expect(
+        container.read(chatControllerProvider).sessionId,
+        idB,
+        reason: 'finishing a background run must not switch the screen',
+      );
+      gates[1].complete(AssistantTurn(content: 'B done'));
+      await runB;
+      expect(container.read(runningSessionsProvider), isEmpty);
+
+      // Both conversations were persisted independently.
+      final List<ChatSummary> summaries = await container
+          .read(chatStoreProvider)
+          .listSummaries();
+      expect(
+        summaries.map((s) => s.title),
+        containsAll(<String>['task A', 'task B']),
+      );
+    },
+  );
+
+  test('renameChat updates the stored title', () async {
+    final ProviderContainer container = await _container(<AssistantTurn>[
+      AssistantTurn(content: 'ok'),
+    ], tempDir);
+    await container.read(chatControllerProvider.notifier).send('hello');
+    final String id = container.read(chatControllerProvider).sessionId!;
+    await container
+        .read(chatControllerProvider.notifier)
+        .renameChat(id, 'Renamed');
+    final List<ChatSummary> summaries = await container
+        .read(chatStoreProvider)
+        .listSummaries();
+    expect(summaries.single.title, 'Renamed');
+  });
+
+  test(
+    'deleting a running session stops it and skips the final persist',
+    () async {
+      final List<Completer<AssistantTurn>> gates =
+          List<Completer<AssistantTurn>>.generate(
+            2,
+            (_) => Completer<AssistantTurn>(),
+          );
+      int turn = 0;
+      final _GatedLlmClient llm = _GatedLlmClient(gates, () => turn++);
+      final ProviderContainer container = ProviderContainer(
+        overrides: testOverrides(
+          llm: llm,
+          dir: tempDir,
+          settings: AppSettings(apiKey: 'k'),
+        ),
+      );
+      addTearDown(container.dispose);
+
+      final Future<void> run = container
+          .read(chatControllerProvider.notifier)
+          .send('doomed');
+      await Future<void>.delayed(Duration.zero);
+      final String id = container.read(chatControllerProvider).sessionId!;
+
+      await container.read(chatControllerProvider.notifier).deleteChat(id);
+      gates[0].complete(AssistantTurn(content: 'too late'));
+      await run;
+
+      expect(
+        await container.read(chatStoreProvider).load(id),
+        isNull,
+        reason: 'a deleted session must not be resurrected by its own run',
+      );
+      expect(container.read(runningSessionsProvider), isEmpty);
+    },
+  );
+}
+
+/// LLM fake whose turns are gated behind completers for parallel-run tests.
+class _GatedLlmClient implements LlmClient {
+  _GatedLlmClient(this.gates, this.nextTurn);
+
+  final List<Completer<AssistantTurn>> gates;
+  final int Function() nextTurn;
+
+  @override
+  Future<AssistantTurn> complete({
+    required LlmConfig config,
+    required List<Map<String, dynamic>> messages,
+    List<Map<String, dynamic>>? tools,
+    void Function(String delta)? onDelta,
+  }) => gates[nextTurn() % gates.length].future;
 }
 
 /// LLM fake whose complete() always throws — proves the controller

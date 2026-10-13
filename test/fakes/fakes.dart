@@ -8,6 +8,8 @@ import 'package:zagents/models/models.dart';
 import 'package:zagents/services/background_service.dart';
 import 'package:zagents/services/browser_automation.dart';
 import 'package:zagents/services/chat_store.dart';
+import 'package:zagents/services/context_repository.dart';
+import 'package:zagents/services/js_runtime.dart';
 import 'package:zagents/services/llm_client.dart';
 import 'package:zagents/services/settings_repository.dart';
 
@@ -157,6 +159,10 @@ class ThrowingChatStore implements ChatStore {
   @override
   Future<void> delete(String id) async =>
       throw const FileSystemException('disk exploded');
+
+  @override
+  Future<void> rename(String id, String title) async =>
+      throw const FileSystemException('disk exploded');
 }
 
 /// Browser fake whose every method throws — used to prove the tool
@@ -242,9 +248,14 @@ List<Override> testOverrides({
   required Directory dir,
   AppSettings? settings,
   bool writeScreenshots = true,
+  List<ContextEntry>? contexts,
+  FakeJsRuntime? js,
 }) => <Override>[
   settingsRepositoryProvider.overrideWithValue(
     MemorySettingsRepository(settings),
+  ),
+  contextRepositoryProvider.overrideWithValue(
+    MemoryContextRepository(contexts),
   ),
   documentsDirProvider.overrideWithValue(() async => dir),
   if (llm != null) llmClientProvider.overrideWithValue(llm),
@@ -259,4 +270,7 @@ List<Override> testOverrides({
       writeScreenshot: writeScreenshots,
     ),
   ),
+  // The real JS runtime spins up a headless WebView — never available in
+  // the test zone. Every test gets a deterministic fake by default.
+  jsRuntimeProvider.overrideWithValue(js ?? FakeJsRuntime()),
 ];

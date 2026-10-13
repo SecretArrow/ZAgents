@@ -1,0 +1,524 @@
+import 'dart:io';
+
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:share_plus/share_plus.dart';
+
+import '../../di.dart';
+import '../../l10n/app_strings.dart';
+import '../../services/file_system_service.dart';
+import '../theme.dart';
+
+/// In-app file manager over the app documents directory: browse, preview,
+/// share, rename, delete, copy/cut/paste, zip and unzip.
+class FilesScreen extends ConsumerStatefulWidget {
+  const FilesScreen({super.key});
+
+  @override
+  ConsumerState<FilesScreen> createState() => _FilesScreenState();
+}
+
+class _FilesScreenState extends ConsumerState<FilesScreen> {
+  String _current = '';
+  List<FsEntry> _entries = const <FsEntry>[];
+  bool _loading = true;
+  ({String path, bool cut})? _clipboard;
+
+  @override
+  void initState() {
+    super.initState();
+    _refresh();
+  }
+
+  Future<void> _refresh() async {
+    setState(() => _loading = true);
+    try {
+      final List<FsEntry> entries = await ref
+          .read(fileSystemServiceProvider)
+          .list(_current);
+      if (!mounted) return;
+      setState(() {
+        _entries = entries;
+        _loading = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _loading = false);
+      _toast(stringsOf(context).operationFailed);
+    }
+  }
+
+  void _toast(String message) {
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  void _snack(String text) {
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(text)));
+  }
+
+  Future<void> _guard(Future<void> Function() op, String? success) async {
+    try {
+      await op();
+      if (!mounted) return;
+      if (success != null) _snack(success);
+      await _refresh();
+    } catch (_) {
+      if (mounted) _toast(stringsOf(context).operationFailed);
+    }
+  }
+
+  IconData _iconFor(FsEntry entry) {
+    if (entry.isDirectory) return Icons.folder_rounded;
+    return switch (entry.extension) {
+      'zip' => Icons.folder_zip_rounded,
+      'png' || 'jpg' || 'jpeg' || 'webp' || 'gif' => Icons.image_rounded,
+      'json' ||
+      'js' ||
+      'ts' ||
+      'dart' ||
+      'py' ||
+      'html' ||
+      'css' => Icons.code_rounded,
+      'md' || 'txt' || 'log' => Icons.description_rounded,
+      _ => Icons.insert_drive_file_rounded,
+    };
+  }
+
+  String _sizeLabel(FsEntry entry) {
+    if (entry.isDirectory) return '—';
+    final int kb = entry.sizeBytes ~/ 1024;
+    if (kb < 1) return '${entry.sizeBytes} B';
+    if (kb < 1024) return '$kb KB';
+    return '${(kb / 1024).toStringAsFixed(1)} MB';
+  }
+
+  Future<void> _openEntry(FsEntry entry) async {
+    final AppStrings strings = stringsOf(context);
+    if (entry.isDirectory) {
+      setState(() => _current = entry.relativePath);
+      await _refresh();
+      return;
+    }
+    if (<String>[
+      'png',
+      'jpg',
+      'jpeg',
+      'webp',
+      'gif',
+    ].contains(entry.extension)) {
+      final String? abs = await ref
+          .read(fileSystemServiceProvider)
+          .resolve(entry.relativePath);
+      if (abs == null || !mounted) return;
+      await showDialog<void>(
+        context: context,
+        builder: (BuildContext dialogContext) => AlertDialog(
+          backgroundColor: Theme.of(context).colorScheme.surface,
+          title: Text(entry.name),
+          content: Image.file(File(abs), fit: BoxFit.contain),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: Text(strings.confirm),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
+    if (<String>[
+      'txt',
+      'md',
+      'json',
+      'csv',
+      'log',
+      'js',
+      'ts',
+      'dart',
+      'html',
+      'css',
+      'py',
+      'xml',
+      'yaml',
+      'yml',
+      'sh',
+      'toml',
+    ].contains(entry.extension)) {
+      try {
+        final String text = await ref
+            .read(fileSystemServiceProvider)
+            .readText(entry.relativePath);
+        if (!mounted) return;
+        await showDialog<void>(
+          context: context,
+          builder: (BuildContext dialogContext) => AlertDialog(
+            backgroundColor: Theme.of(context).colorScheme.surface,
+            title: Text(entry.name),
+            content: SizedBox(
+              width: double.maxFinite,
+              child: SingleChildScrollView(
+                child: SelectableText(
+                  text,
+                  style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
+                ),
+              ),
+            ),
+            actions: <Widget>[
+              TextButton(
+                onPressed: () => Navigator.of(dialogContext).pop(),
+                child: Text(strings.confirm),
+              ),
+            ],
+          ),
+        );
+      } catch (_) {
+        if (mounted) _toast(stringsOf(context).noPreview);
+      }
+      return;
+    }
+    _snack(stringsOf(context).noPreview);
+  }
+
+  Future<void> _share(FsEntry entry) async {
+    final String? abs = await ref
+        .read(fileSystemServiceProvider)
+        .resolve(entry.relativePath);
+    if (abs == null) return;
+    try {
+      await SharePlus.instance.share(ShareParams(files: <XFile>[XFile(abs)]));
+    } catch (_) {
+      if (mounted) _toast(stringsOf(context).operationFailed);
+    }
+  }
+
+  Future<void> _rename(FsEntry entry) async {
+    final AppStrings strings = stringsOf(context);
+    final TextEditingController controller = TextEditingController(
+      text: entry.name,
+    );
+    final String? newName = await showDialog<String>(
+      context: context,
+      builder: (BuildContext dialogContext) => AlertDialog(
+        backgroundColor: Theme.of(context).colorScheme.surface,
+        title: Text(strings.rename),
+        content: TextField(
+          autofocus: true,
+          controller: controller,
+          decoration: InputDecoration(labelText: strings.nameHint),
+          onSubmitted: (String value) => Navigator.of(dialogContext).pop(value),
+        ),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: Text(strings.cancel),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(controller.text),
+            child: Text(strings.save),
+          ),
+        ],
+      ),
+    );
+    if (newName == null || newName.trim().isEmpty || newName == entry.name) {
+      return;
+    }
+    await _guard(
+      () async => ref
+          .read(fileSystemServiceProvider)
+          .rename(entry.relativePath, newName.trim()),
+      null,
+    );
+  }
+
+  Future<void> _delete(FsEntry entry) async {
+    final AppStrings strings = stringsOf(context);
+    final bool? confirmed = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext dialogContext) => AlertDialog(
+        backgroundColor: Theme.of(context).colorScheme.surface,
+        title: Text(strings.deleteEntryTitle),
+        content: Text(strings.deleteEntryBody),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: Text(strings.cancel),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: Text(strings.delete),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    await _guard(
+      () => ref.read(fileSystemServiceProvider).delete(entry.relativePath),
+      null,
+    );
+  }
+
+  Future<void> _newFolder() async {
+    final AppStrings strings = stringsOf(context);
+    final TextEditingController controller = TextEditingController();
+    final String? name = await showDialog<String>(
+      context: context,
+      builder: (BuildContext dialogContext) => AlertDialog(
+        backgroundColor: Theme.of(context).colorScheme.surface,
+        title: Text(strings.newFolderTitle),
+        content: TextField(
+          autofocus: true,
+          controller: controller,
+          key: const Key('new-folder-field'),
+          decoration: InputDecoration(labelText: strings.nameHint),
+          onSubmitted: (String value) => Navigator.of(dialogContext).pop(value),
+        ),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: Text(strings.cancel),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(controller.text),
+            child: Text(strings.add),
+          ),
+        ],
+      ),
+    );
+    if (name == null || name.trim().isEmpty) return;
+    final String rel = _current.isEmpty
+        ? name.trim()
+        : '$_current/${name.trim()}';
+    await _guard(() => ref.read(fileSystemServiceProvider).mkdir(rel), null);
+  }
+
+  void _copyEntry(FsEntry entry) {
+    setState(() => _clipboard = (path: entry.relativePath, cut: false));
+    _snack(stringsOf(context).clipboardCopied);
+  }
+
+  void _cutEntry(FsEntry entry) {
+    setState(() => _clipboard = (path: entry.relativePath, cut: true));
+    _snack(stringsOf(context).clipboardCut);
+  }
+
+  Future<void> _paste() async {
+    final ({String path, bool cut}) clip = _clipboard!;
+    final String path = clip.path;
+    final bool cut = clip.cut;
+    final String name = path.split('/').last;
+    final String dest = _current.isEmpty ? name : '$_current/$name';
+    if (dest == path) {
+      // Pasting into the same folder: make a "copy" suffix for copies.
+      if (cut) return;
+      final int dot = name.lastIndexOf('.') > 0
+          ? name.lastIndexOf('.')
+          : name.length;
+      final String destCopy =
+          '${path.substring(0, path.lastIndexOf('/') + 1)}'
+          '${name.substring(0, dot)}_copy${name.substring(dot)}';
+      await _guard(
+        () => ref.read(fileSystemServiceProvider).copy(path, destCopy),
+        stringsOf(context).pastedOk,
+      );
+      return;
+    }
+    await _guard(() async {
+      if (cut) {
+        await ref.read(fileSystemServiceProvider).move(path, dest);
+      } else {
+        await ref.read(fileSystemServiceProvider).copy(path, dest);
+      }
+    }, stringsOf(context).pastedOk);
+    if (mounted) setState(() => _clipboard = null);
+  }
+
+  Future<void> _compress(FsEntry entry) async {
+    await _guard(
+      () => ref.read(fileSystemServiceProvider).zip(entry.relativePath),
+      stringsOf(context).zipCreatedOk,
+    );
+  }
+
+  Future<void> _extract(FsEntry entry) async {
+    await _guard(
+      () => ref.read(fileSystemServiceProvider).unzip(entry.relativePath),
+      stringsOf(context).unzippedOk,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final AppStrings strings = stringsOf(context);
+    final ZPalette palette = context.palette;
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(
+          _current.isEmpty ? strings.filesTitle : _current.split('/').last,
+        ),
+        actions: <Widget>[
+          IconButton(
+            key: const Key('files-new-folder'),
+            tooltip: strings.newFolder,
+            icon: const Icon(Icons.create_new_folder_outlined),
+            onPressed: _newFolder,
+          ),
+          IconButton(
+            key: const Key('files-paste'),
+            tooltip: strings.paste,
+            icon: Badge(
+              isLabelVisible: _clipboard != null,
+              child: const Icon(Icons.paste_rounded),
+            ),
+            onPressed: _clipboard == null ? null : _paste,
+          ),
+          const SizedBox(width: 4),
+        ],
+      ),
+      body: _loading
+          ? const Center(child: CircularProgressIndicator(strokeWidth: 2))
+          : _entries.isEmpty
+          ? Padding(
+              padding: const EdgeInsets.all(32),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: <Widget>[
+                  Icon(
+                    Icons.folder_open_rounded,
+                    size: 48,
+                    color: palette.muted,
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    strings.filesEmpty,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: palette.muted),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    strings.filesHint,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: palette.muted, fontSize: 12),
+                  ),
+                ],
+              ),
+            )
+          : RefreshIndicator(
+              onRefresh: _refresh,
+              child: ListView.builder(
+                key: const Key('files-list'),
+                itemCount: _entries.length,
+                itemBuilder: (BuildContext context, int index) {
+                  final FsEntry entry = _entries[index];
+                  return ListTile(
+                    key: Key('file-${entry.name}'),
+                    leading: Icon(_iconFor(entry), color: context.zMuted),
+                    title: Text(
+                      entry.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    subtitle: Text(
+                      '${_sizeLabel(entry)} · '
+                      '${entry.modified.day}/${entry.modified.month}/${entry.modified.year}',
+                      style: TextStyle(fontSize: 11, color: context.zMuted),
+                    ),
+                    trailing: PopupMenuButton<String>(
+                      key: Key('file-menu-${entry.name}'),
+                      icon: Icon(
+                        Icons.more_vert_rounded,
+                        color: context.zMuted,
+                      ),
+                      onSelected: (String action) {
+                        switch (action) {
+                          case 'open':
+                            _openEntry(entry);
+                          case 'share':
+                            _share(entry);
+                          case 'copy':
+                            _copyEntry(entry);
+                          case 'cut':
+                            _cutEntry(entry);
+                          case 'rename':
+                            _rename(entry);
+                          case 'zip':
+                            _compress(entry);
+                          case 'unzip':
+                            _extract(entry);
+                          case 'delete':
+                            _delete(entry);
+                        }
+                      },
+                      itemBuilder: (BuildContext menuContext) =>
+                          <PopupMenuEntry<String>>[
+                            PopupMenuItem<String>(
+                              value: 'open',
+                              child: Text(
+                                entry.isDirectory
+                                    ? strings.open
+                                    : strings.filePreviewTitle,
+                              ),
+                            ),
+                            const PopupMenuDivider(),
+                            PopupMenuItem<String>(
+                              value: 'share',
+                              child: Text(strings.share),
+                            ),
+                            PopupMenuItem<String>(
+                              value: 'copy',
+                              child: Text(strings.copy),
+                            ),
+                            PopupMenuItem<String>(
+                              value: 'cut',
+                              child: Text(strings.cut),
+                            ),
+                            PopupMenuItem<String>(
+                              value: 'rename',
+                              child: Text(strings.rename),
+                            ),
+                            if (!entry.isDirectory)
+                              const PopupMenuItem<String>(
+                                value: 'zip',
+                                child: Text('ZIP'),
+                              ),
+                            if (entry.extension == 'zip')
+                              PopupMenuItem<String>(
+                                value: 'unzip',
+                                child: Text(strings.extractHere),
+                              ),
+                            const PopupMenuDivider(),
+                            PopupMenuItem<String>(
+                              value: 'delete',
+                              child: Text(
+                                strings.delete,
+                                style: const TextStyle(color: Colors.redAccent),
+                              ),
+                            ),
+                          ],
+                    ),
+                    onTap: () => _openEntry(entry),
+                    onLongPress: () => _copyEntry(entry),
+                  );
+                },
+              ),
+            ),
+      floatingActionButton: _current.isEmpty
+          ? null
+          : FloatingActionButton(
+              heroTag: 'files-up',
+              tooltip: '..',
+              onPressed: () async {
+                final int slash = _current.lastIndexOf('/');
+                setState(() {
+                  _current = slash <= 0 ? '' : _current.substring(0, slash);
+                });
+                await _refresh();
+              },
+              child: const Icon(Icons.arrow_upward_rounded),
+            ),
+    );
+  }
+}

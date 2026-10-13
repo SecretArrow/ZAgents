@@ -47,10 +47,14 @@ class _HomeShellState extends ConsumerState<HomeShell> {
     return Scaffold(
       drawer: const ChatDrawer(),
       appBar: AppBar(
-        leading: IconButton(
-          icon: const Icon(Icons.menu_rounded),
-          tooltip: strings.menu,
-          onPressed: () => Scaffold.of(context).openDrawer(),
+        leading: Builder(
+          // A Builder context BELOW the Scaffold is required for
+          // Scaffold.of(); the widget's own context would throw.
+          builder: (BuildContext menuContext) => IconButton(
+            icon: const Icon(Icons.menu_rounded),
+            tooltip: strings.menu,
+            onPressed: () => Scaffold.of(menuContext).openDrawer(),
+          ),
         ),
         titleSpacing: 0,
         title: Row(

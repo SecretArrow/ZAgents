@@ -81,4 +81,20 @@ class ChatStore {
     final file = File('${dir.path}${Platform.pathSeparator}$id.json');
     if (await file.exists()) await file.delete();
   }
+
+  /// Updates the stored title of a session (keeps messages untouched).
+  Future<void> rename(String id, String title) async {
+    final dir = await _chatsDir();
+    final file = File('${dir.path}${Platform.pathSeparator}$id.json');
+    if (!await file.exists()) return;
+    try {
+      final data = jsonDecode(await file.readAsString());
+      if (data is Map<String, dynamic>) {
+        data['title'] = title;
+        await file.writeAsString(jsonEncode(data));
+      }
+    } catch (_) {
+      // Corrupted file: renaming must never crash the caller.
+    }
+  }
 }

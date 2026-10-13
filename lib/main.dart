@@ -5,6 +5,8 @@ import 'package:flutter/services.dart';
 
 import 'di.dart';
 import 'l10n/app_strings.dart';
+import 'models/models.dart';
+import 'services/context_repository.dart';
 import 'services/settings_repository.dart';
 import 'ui/screens/home_shell.dart';
 import 'ui/theme.dart';
@@ -17,25 +19,20 @@ Future<void> main() async {
   // Scaffold/SafeArea.
   try {
     await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
-    SystemChrome.setSystemUIOverlayStyle(
-      const SystemUiOverlayStyle(
-        statusBarColor: Colors.transparent,
-        statusBarIconBrightness: Brightness.light,
-        statusBarBrightness: Brightness.dark,
-        systemNavigationBarColor: Colors.transparent,
-        systemNavigationBarIconBrightness: Brightness.light,
-        systemNavigationBarContrastEnforced: false,
-      ),
-    );
+    // Per-theme icon brightness (dark/light) is declared in the AppBarTheme
+    // of buildDarkTheme/buildLightTheme and applied by every Scaffold.
   } catch (_) {
     // System UI channels are unavailable in some test environments.
   }
   final PrefsSettingsRepository settingsRepo =
       await PrefsSettingsRepository.create();
+  final PrefsContextRepository contextRepo =
+      await PrefsContextRepository.create();
   runApp(
     ProviderScope(
       overrides: <Override>[
         settingsRepositoryProvider.overrideWithValue(settingsRepo),
+        contextRepositoryProvider.overrideWithValue(contextRepo),
       ],
       child: const ZAgentsApp(),
     ),
@@ -47,15 +44,25 @@ class ZAgentsApp extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // Rebuild the tree only when the language preference changes; other
-    // settings (API key, model, …) are read further down the tree.
+    // Rebuild the tree only when the language or theme preference changes;
+    // other settings (API key, model, …) are read further down the tree.
     final String languageCode = ref.watch(
       settingsProvider.select((s) => s.languageCode),
     );
+    final ThemeModeSetting themeSetting = ref.watch(
+      settingsProvider.select((s) => s.themeMode),
+    );
+    final ThemeMode themeMode = switch (themeSetting) {
+      ThemeModeSetting.light => ThemeMode.light,
+      ThemeModeSetting.dark => ThemeMode.dark,
+      ThemeModeSetting.system => ThemeMode.system,
+    };
     return MaterialApp(
       title: 'ZAgents',
       debugShowCheckedModeBanner: false,
-      theme: buildDarkTheme(),
+      theme: buildLightTheme(),
+      darkTheme: buildDarkTheme(),
+      themeMode: themeMode,
       // Explicit locale (never the device locale): English is the default
       // until the user picks Bahasa Indonesia in Settings.
       locale: Locale(languageCode),
