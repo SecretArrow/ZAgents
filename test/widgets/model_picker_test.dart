@@ -60,7 +60,7 @@ void main() {
     if (await tempDir.exists()) await tempDir.delete(recursive: true);
   });
 
-  /// 25 models so the default page size (20) yields exactly 2 pages.
+  /// 25 models so the default page size (5) yields exactly 5 pages.
   List<RemoteModel> bigCatalog() => <RemoteModel>[
     for (var i = 0; i < 25; i++)
       m('vendor/model-${i.toString().padLeft(2, '0')}'),
@@ -116,11 +116,11 @@ void main() {
   ) async {
     await openSheet(tester, catalog: FakeModelCatalog(models: bigCatalog()));
 
-    // Page 1 of 2: indicator shown, first item visible, page-2 item absent.
+    // Page 1 of 5: indicator shown, first item visible, page-2 item absent.
     expect(inSheet(find.byKey(const Key('model-list-page-0'))), findsOneWidget);
-    expect(inSheet(find.text('Page 1 of 2')), findsOneWidget);
+    expect(inSheet(find.text('Page 1 of 5')), findsOneWidget);
     expect(inSheet(find.text('vendor/model-00')), findsOneWidget);
-    expect(inSheet(find.text('vendor/model-20')), findsNothing);
+    expect(inSheet(find.text('vendor/model-05')), findsNothing);
 
     // Next page: first page-2 item becomes visible, page-1 item is gone.
     await tester.tap(find.byKey(const Key('model-page-next')));
@@ -129,8 +129,8 @@ void main() {
       EnginePhase.sendSemanticsUpdate,
       const Duration(seconds: 15),
     );
-    expect(inSheet(find.text('Page 2 of 2')), findsOneWidget);
-    expect(inSheet(find.text('vendor/model-20')), findsOneWidget);
+    expect(inSheet(find.text('Page 2 of 5')), findsOneWidget);
+    expect(inSheet(find.text('vendor/model-05')), findsOneWidget);
     expect(inSheet(find.text('vendor/model-00')), findsNothing);
 
     // Prev button returns to page 1.
@@ -140,7 +140,7 @@ void main() {
       EnginePhase.sendSemanticsUpdate,
       const Duration(seconds: 15),
     );
-    expect(inSheet(find.text('Page 1 of 2')), findsOneWidget);
+    expect(inSheet(find.text('Page 1 of 5')), findsOneWidget);
   });
 
   testWidgets('search box filters models by id and name', (
@@ -272,7 +272,16 @@ void main() {
 
     expect(catalog.callCount, 0);
     expect(inSheet(find.textContaining('Enter your API key')), findsOneWidget);
-    // Static fallback suggestions are visible.
+    // Static fallback suggestions are paged too: page 1 holds the first
+    // five (alphabetical), the rest sit behind the pager.
+    expect(inSheet(find.text('anthropic/claude-sonnet-4.5')), findsOneWidget);
+    expect(inSheet(find.text('z-ai/glm-4.6')), findsNothing);
+    await tester.tap(find.byKey(const Key('model-suggest-page-next')));
+    await tester.pumpAndSettle(
+      const Duration(milliseconds: 100),
+      EnginePhase.sendSemanticsUpdate,
+      const Duration(seconds: 15),
+    );
     expect(inSheet(find.text('z-ai/glm-4.6')), findsOneWidget);
   });
 
@@ -289,6 +298,14 @@ void main() {
       findsOneWidget,
     );
     expect(inSheet(find.textContaining('Unauthorized')), findsOneWidget);
+    // Suggestions render paged: jump to the second page to see z-ai.
+    expect(inSheet(find.text('z-ai/glm-4.6')), findsNothing);
+    await tester.tap(find.byKey(const Key('model-suggest-page-next')));
+    await tester.pumpAndSettle(
+      const Duration(milliseconds: 100),
+      EnginePhase.sendSemanticsUpdate,
+      const Duration(seconds: 15),
+    );
     expect(inSheet(find.text('z-ai/glm-4.6')), findsOneWidget);
 
     // Retry re-invokes the catalog; the fake still throws, so the error

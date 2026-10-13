@@ -122,6 +122,42 @@ void main() {
     expect(find.textContaining('No files yet'), findsOneWidget);
   });
 
+  testWidgets('file search filters entries by name', (tester) async {
+    FsEntry file(String name) => FsEntry(
+      name: name,
+      relativePath: name,
+      isDirectory: false,
+      sizeBytes: 1,
+      modified: DateTime(2025, 1, 1),
+    );
+    fs.entries.addAll(<FsEntry>[file('report.txt'), file('photo.png')]);
+    await openFilesScreen(tester);
+
+    expect(find.byKey(const Key('file-report.txt')), findsOneWidget);
+    expect(find.byKey(const Key('file-photo.png')), findsOneWidget);
+
+    await tester.enterText(
+      find.byKey(const Key('files-search-field')),
+      'report',
+    );
+    await tester.pumpAndSettle(
+      const Duration(milliseconds: 100),
+      EnginePhase.sendSemanticsUpdate,
+      const Duration(seconds: 10),
+    );
+    expect(find.byKey(const Key('file-report.txt')), findsOneWidget);
+    expect(find.byKey(const Key('file-photo.png')), findsNothing);
+
+    // No match shows the localized empty state.
+    await tester.enterText(find.byKey(const Key('files-search-field')), 'zzz');
+    await tester.pumpAndSettle(
+      const Duration(milliseconds: 100),
+      EnginePhase.sendSemanticsUpdate,
+      const Duration(seconds: 10),
+    );
+    expect(find.text('No results'), findsOneWidget);
+  });
+
   testWidgets('new folder dialog reaches the service with the name', (
     tester,
   ) async {

@@ -80,8 +80,12 @@ class ChatController extends Notifier<ChatState> {
   @override
   ChatState build() => const ChatState();
 
+  /// Sessions whose agent loop is still active. Finished runs stay in
+  /// [_runs] (their messages are still on screen) but must not keep the
+  /// drawer's "running" badge spinning forever.
   Set<String> get runningIds => <String>{
-    for (final _SessionRun run in _runs.values) run.sessionId,
+    for (final _SessionRun run in _runs.values)
+      if (run.isRunning) run.sessionId,
   };
 
   void _markRunning() {

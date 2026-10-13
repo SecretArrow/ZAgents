@@ -9,6 +9,7 @@ import '../../l10n/app_strings.dart';
 import '../../models/models.dart';
 import '../../services/model_catalog.dart';
 import '../theme.dart';
+import 'paged_list.dart';
 
 /// Top-bar chip showing the active model; opens the picker sheet.
 class ModelChip extends ConsumerWidget {
@@ -88,7 +89,6 @@ class _ModelPickerSheetState extends ConsumerState<ModelPickerSheet> {
   String? _errorMessage;
   String _query = '';
   _ModelFilter _filter = _ModelFilter.all;
-  int _page = 0;
 
   @override
   void initState() {
@@ -145,7 +145,6 @@ class _ModelPickerSheetState extends ConsumerState<ModelPickerSheet> {
   /// UI switches to the error card without async-error plumbing.
   void _reload() {
     setState(() {
-      _page = 0;
       _errorMessage = null;
       if (_hasApiKey) {
         final AppSettings settings = ref.read(settingsProvider);
@@ -181,17 +180,11 @@ class _ModelPickerSheetState extends ConsumerState<ModelPickerSheet> {
   }
 
   void _setFilter(_ModelFilter filter) {
-    setState(() {
-      _filter = filter;
-      _page = 0;
-    });
+    setState(() => _filter = filter);
   }
 
   void _setQuery(String value) {
-    setState(() {
-      _query = value;
-      _page = 0;
-    });
+    setState(() => _query = value);
   }
 
   List<RemoteModel> _applyFilters(List<RemoteModel> models) {
@@ -383,14 +376,17 @@ class _ModelPickerSheetState extends ConsumerState<ModelPickerSheet> {
       final List<RemoteModel> suggestions = _applyFilters(
         _asRemote(suggestedModels),
       );
-      return ListView(
-        children: <Widget>[
+      return PagedList<RemoteModel>(
+        prefix: 'model-suggest',
+        showSearch: false,
+        items: suggestions,
+        resetKey: '$_query|${_filter.name}',
+        header: <Widget>[
           _infoCard(icon: Icons.key_rounded, text: strings.modelsApiKeyHint),
-          if (suggestions.isEmpty)
-            _emptyCard(strings)
-          else
-            _suggestionList(strings, suggestions),
         ],
+        emptyBuilder: (_) => _emptyCard(strings),
+        itemBuilder: (BuildContext context, RemoteModel model) =>
+            _suggestionTile(model, strings),
       );
     }
     return FutureBuilder<List<RemoteModel>>(
@@ -410,63 +406,43 @@ class _ModelPickerSheetState extends ConsumerState<ModelPickerSheet> {
               // list when we have one — the search still applies to it.
               final List<RemoteModel> cached = _applyFilters(_cachedModels);
               if (cached.isNotEmpty) {
-                return _pagedModelList(
-                  strings,
-                  models: cached,
-                  cards: <Widget>[_offlineNote(strings)],
+                return PagedList<RemoteModel>(
+                  prefix: 'model',
+                  showSearch: false,
+                  items: cached,
+                  resetKey: '$_query|${_filter.name}',
+                  header: <Widget>[_offlineNote(strings)],
+                  itemBuilder: (BuildContext context, RemoteModel model) =>
+                      _modelTile(model, strings),
                 );
               }
               final List<RemoteModel> suggestions = _applyFilters(
                 _asRemote(suggestedModels),
               );
-              return ListView(
-                children: <Widget>[
-                  _errorCard(strings),
-                  if (suggestions.isEmpty)
-                    _emptyCard(strings)
-                  else
-                    _suggestionList(strings, suggestions),
-                ],
+              return PagedList<RemoteModel>(
+                prefix: 'model-suggest',
+                showSearch: false,
+                items: suggestions,
+                resetKey: '$_query|${_filter.name}',
+                header: <Widget>[_errorCard(strings)],
+                emptyBuilder: (_) => _emptyCard(strings),
+                itemBuilder: (BuildContext context, RemoteModel model) =>
+                    _suggestionTile(model, strings),
               );
             }
             final List<RemoteModel> filtered = _applyFilters(
               snapshot.data ?? const <RemoteModel>[],
             );
-            if (filtered.isEmpty) {
-              return ListView(children: <Widget>[_emptyCard(strings)]);
-            }
-            return _pagedModelList(strings, models: filtered);
+            return PagedList<RemoteModel>(
+              prefix: 'model',
+              showSearch: false,
+              items: filtered,
+              resetKey: '$_query|${_filter.name}',
+              emptyBuilder: (_) => _emptyCard(strings),
+              itemBuilder: (BuildContext context, RemoteModel model) =>
+                  _modelTile(model, strings),
+            );
           },
-    );
-  }
-
-  /// Filtered + sorted + paged list renderer shared by the live catalog
-  /// and the cached fallback so search and paging behave identically.
-  Widget _pagedModelList(
-    AppStrings strings, {
-    required List<RemoteModel> models,
-    List<Widget> cards = const <Widget>[],
-  }) {
-    final int pageCount = (models.length / modelPickerPageSize).ceil();
-    final int current = _page.clamp(0, pageCount - 1);
-    final int start = current * modelPickerPageSize;
-    final List<RemoteModel> slice = models
-        .skip(start)
-        .take(modelPickerPageSize)
-        .toList();
-    return Column(
-      children: <Widget>[
-        ...cards,
-        Expanded(
-          child: ListView.builder(
-            key: Key('model-list-page-$current'),
-            itemCount: slice.length,
-            itemBuilder: (BuildContext context, int index) =>
-                _modelTile(slice[index], strings),
-          ),
-        ),
-        if (pageCount > 1) _pagingControls(strings, pageCount, current),
-      ],
     );
   }
 
@@ -528,91 +504,20 @@ class _ModelPickerSheetState extends ConsumerState<ModelPickerSheet> {
     );
   }
 
-  Widget _pagingControls(AppStrings strings, int pageCount, int current) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 8),
-      child: Row(
-        children: <Widget>[
-          IconButton(
-            key: const Key('model-page-first'),
-            visualDensity: VisualDensity.compact,
-            icon: const Icon(Icons.first_page_rounded, size: 20),
-            onPressed: current > 0 ? () => setState(() => _page = 0) : null,
-          ),
-          IconButton(
-            key: const Key('model-page-prev'),
-            visualDensity: VisualDensity.compact,
-            icon: const Icon(Icons.chevron_left_rounded, size: 22),
-            onPressed: current > 0
-                ? () => setState(() => _page = current - 1)
-                : null,
-          ),
-          Expanded(
-            child: Text(
-              strings.pageIndicator(current + 1, pageCount),
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                fontSize: 12,
-                color: context.zMuted,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-          IconButton(
-            key: const Key('model-page-next'),
-            visualDensity: VisualDensity.compact,
-            icon: const Icon(Icons.chevron_right_rounded, size: 22),
-            onPressed: current < pageCount - 1
-                ? () => setState(() => _page = current + 1)
-                : null,
-          ),
-          IconButton(
-            key: const Key('model-page-last'),
-            visualDensity: VisualDensity.compact,
-            icon: const Icon(Icons.last_page_rounded, size: 20),
-            onPressed: current < pageCount - 1
-                ? () => setState(() => _page = pageCount - 1)
-                : null,
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _suggestionList(AppStrings strings, List<RemoteModel> models) {
+  Widget _suggestionTile(RemoteModel model, AppStrings strings) {
     final String active = ref.watch(settingsProvider.select((s) => s.model));
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: <Widget>[
-        Padding(
-          padding: const EdgeInsets.fromLTRB(20, 12, 20, 4),
-          child: Text(
-            strings.suggestedFallback,
-            style: TextStyle(
-              fontSize: 11,
-              letterSpacing: 1,
-              fontWeight: FontWeight.w700,
-              color: context.zMuted,
-            ),
-          ),
-        ),
-        for (final RemoteModel model in models)
-          ListTile(
-            dense: true,
-            leading: Icon(
-              model.id == active
-                  ? Icons.check_circle_rounded
-                  : Icons.circle_outlined,
-              size: 18,
-              color: model.id == active ? kAccentColor : context.zMuted,
-            ),
-            title: Text(
-              model.id,
-              style: const TextStyle(fontSize: 14, fontFamily: 'monospace'),
-            ),
-            onTap: () => _select(model.id),
-          ),
-      ],
+    return ListTile(
+      dense: true,
+      leading: Icon(
+        model.id == active ? Icons.check_circle_rounded : Icons.circle_outlined,
+        size: 18,
+        color: model.id == active ? kAccentColor : context.zMuted,
+      ),
+      title: Text(
+        model.id,
+        style: const TextStyle(fontSize: 14, fontFamily: 'monospace'),
+      ),
+      onTap: () => _select(model.id),
     );
   }
 

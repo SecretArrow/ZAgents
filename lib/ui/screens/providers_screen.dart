@@ -5,6 +5,7 @@ import '../../di.dart';
 import '../../l10n/app_strings.dart';
 import '../../models/models.dart';
 import '../theme.dart';
+import '../widgets/paged_list.dart';
 import 'preset_editor_screen.dart';
 
 /// Full-screen provider management: every preset is a card with its key
@@ -60,12 +61,22 @@ class ProvidersScreen extends ConsumerWidget {
         ],
       ),
       body: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.all(16),
-          children: <Widget>[
+        child: PagedList<ProviderPreset>(
+          prefix: 'providers',
+          searchFieldKey: const Key('providers-search-field'),
+          searchHint: strings.searchProvidersHint,
+          items: settings.presets,
+          resetKey: settings.presets.length,
+          filter: (ProviderPreset p, String q) =>
+              p.name.toLowerCase().contains(q) ||
+              presetHostLabel(p.baseUrl).toLowerCase().contains(q) ||
+              p.model.toLowerCase().contains(q),
+          padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
+          header: <Widget>[
             _hintCard(context, strings, palette),
-            const SizedBox(height: 12),
-            for (final ProviderPreset preset in settings.presets)
+            const SizedBox(height: 4),
+          ],
+          itemBuilder: (BuildContext context, ProviderPreset preset) =>
               _ProviderCard(
                 key: Key('provider-${preset.name}'),
                 preset: preset,
@@ -75,18 +86,22 @@ class ProvidersScreen extends ConsumerWidget {
                 onOpen: () => _openEditor(context, preset),
                 onUse: () => _activate(context, ref, preset),
               ),
-            const SizedBox(height: 16),
-            OutlinedButton.icon(
-              key: const Key('add-provider-bottom'),
-              style: OutlinedButton.styleFrom(
-                minimumSize: const Size.fromHeight(48),
+          footer: <Widget>[
+            const SizedBox(height: 12),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: OutlinedButton.icon(
+                key: const Key('add-provider-bottom'),
+                style: OutlinedButton.styleFrom(
+                  minimumSize: const Size.fromHeight(48),
+                ),
+                icon: const Icon(Icons.add_rounded),
+                label: Text(strings.addProvider),
+                onPressed: () =>
+                    _openEditor(context, ProviderPreset(id: newId(), name: '')),
               ),
-              icon: const Icon(Icons.add_rounded),
-              label: Text(strings.addProvider),
-              onPressed: () =>
-                  _openEditor(context, ProviderPreset(id: newId(), name: '')),
             ),
-            const SizedBox(height: 24),
+            const SizedBox(height: 16),
           ],
         ),
       ),

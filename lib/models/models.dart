@@ -614,8 +614,10 @@ const List<String> suggestedModels = <String>[
   'qwen/qwen3-max',
 ];
 
-/// Page size of the model picker list.
-const int modelPickerPageSize = 20;
+/// Page size used by every list in the app (model picker, providers,
+/// files, sessions, contexts, libraries, ...). Kept small (5) so lists
+/// stay comfortable on phones and the pager is predictable.
+const int listPageSize = 5;
 
 /// Builds [ProviderPreset]-compatible host label (scheme + host) for
 /// display in provider lists, e.g. `https://api.inferhub.dev/v1` becomes

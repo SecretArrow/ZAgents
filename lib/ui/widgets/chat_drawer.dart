@@ -8,6 +8,7 @@ import '../../models/models.dart';
 import '../screens/files_screen.dart';
 import '../screens/settings_screen.dart';
 import '../theme.dart';
+import 'paged_list.dart';
 
 /// Navigation drawer: brand header, new chat, files, history list
 /// (long-press to rename, running badge for parallel sessions),
@@ -233,10 +234,16 @@ class ChatDrawer extends ConsumerWidget {
                       ),
                     );
                   }
-                  return ListView.builder(
-                    itemCount: items.length,
-                    itemBuilder: (BuildContext context, int index) {
-                      final ChatSummary item = items[index];
+                  return PagedList<ChatSummary>(
+                    prefix: 'history',
+                    searchFieldKey: const Key('history-search-field'),
+                    searchHint: strings.searchSessionsHint,
+                    items: items,
+                    resetKey: items.length,
+                    filter: (ChatSummary c, String q) =>
+                        c.title.toLowerCase().contains(q),
+                    padding: const EdgeInsets.symmetric(horizontal: 4),
+                    itemBuilder: (BuildContext context, ChatSummary item) {
                       final bool isRunning = running.contains(item.id);
                       return ListTile(
                         dense: true,
@@ -295,6 +302,15 @@ class ChatDrawer extends ConsumerWidget {
                         onLongPress: () => _renameChat(context, ref, item),
                       );
                     },
+                    emptyBuilder: (BuildContext emptyContext) => Center(
+                      child: Text(
+                        strings.noResults,
+                        style: TextStyle(
+                          color: emptyContext.zMuted,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ),
                   );
                 },
               ),

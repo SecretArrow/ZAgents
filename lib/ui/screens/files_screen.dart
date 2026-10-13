@@ -8,6 +8,7 @@ import '../../di.dart';
 import '../../l10n/app_strings.dart';
 import '../../services/file_system_service.dart';
 import '../theme.dart';
+import '../widgets/paged_list.dart';
 
 /// In-app file manager over the app documents directory: browse, preview,
 /// share, rename, delete, copy/cut/paste, zip and unzip.
@@ -23,6 +24,10 @@ class _FilesScreenState extends ConsumerState<FilesScreen> {
   List<FsEntry> _entries = const <FsEntry>[];
   bool _loading = true;
   ({String path, bool cut})? _clipboard;
+
+  /// Bumped on every successful listing so the paged list returns to its
+  /// first page when the folder content changes.
+  int _generation = 0;
 
   @override
   void initState() {
@@ -40,6 +45,7 @@ class _FilesScreenState extends ConsumerState<FilesScreen> {
       setState(() {
         _entries = entries;
         _loading = false;
+        _generation++;
       });
     } catch (_) {
       if (!mounted) return;
@@ -408,11 +414,16 @@ class _FilesScreenState extends ConsumerState<FilesScreen> {
             )
           : RefreshIndicator(
               onRefresh: _refresh,
-              child: ListView.builder(
-                key: const Key('files-list'),
-                itemCount: _entries.length,
-                itemBuilder: (BuildContext context, int index) {
-                  final FsEntry entry = _entries[index];
+              child: PagedList<FsEntry>(
+                prefix: 'files',
+                searchFieldKey: const Key('files-search-field'),
+                searchHint: strings.searchFilesHint,
+                items: _entries,
+                resetKey: '$_current|$_generation',
+                filter: (FsEntry e, String q) =>
+                    e.name.toLowerCase().contains(q),
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                itemBuilder: (BuildContext context, FsEntry entry) {
                   return ListTile(
                     key: Key('file-${entry.name}'),
                     leading: Icon(_iconFor(entry), color: context.zMuted),
@@ -503,6 +514,16 @@ class _FilesScreenState extends ConsumerState<FilesScreen> {
                     onLongPress: () => _copyEntry(entry),
                   );
                 },
+                emptyBuilder: (BuildContext emptyContext) => Center(
+                  child: Text(
+                    strings.noResults,
+                    style: TextStyle(color: emptyContext.zMuted, fontSize: 13),
+                  ),
+                ),
+                // Subfolders show the "up" FAB — keep the pager clear of it.
+                footer: _current.isEmpty
+                    ? const <Widget>[]
+                    : const <Widget>[SizedBox(height: 84)],
               ),
             ),
       floatingActionButton: _current.isEmpty

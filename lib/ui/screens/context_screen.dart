@@ -5,6 +5,7 @@ import '../../di.dart';
 import '../../l10n/app_strings.dart';
 import '../../models/models.dart';
 import '../theme.dart';
+import '../widgets/paged_list.dart';
 
 /// Context Manager: the user creates, edits, enables/disables and deletes
 /// reusable prompt blocks. Enabled entries are injected into every request
@@ -194,12 +195,19 @@ class _ContextScreenState extends ConsumerState<ContextScreen> {
                 ],
               ),
             )
-          : ListView(
-              key: const Key('context-list'),
-              padding: const EdgeInsets.fromLTRB(12, 8, 12, 96),
-              children: <Widget>[
+          : PagedList<ContextEntry>(
+              prefix: 'context',
+              searchFieldKey: const Key('context-search-field'),
+              searchHint: strings.searchContextHint,
+              items: entries,
+              resetKey: entries.length,
+              filter: (ContextEntry e, String q) =>
+                  e.name.toLowerCase().contains(q) ||
+                  e.content.toLowerCase().contains(q),
+              padding: const EdgeInsets.fromLTRB(12, 4, 12, 96),
+              header: <Widget>[
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
+                  padding: const EdgeInsets.fromLTRB(20, 4, 20, 0),
                   child: Text(
                     strings.contextManagerHint,
                     style: TextStyle(
@@ -209,7 +217,8 @@ class _ContextScreenState extends ConsumerState<ContextScreen> {
                     ),
                   ),
                 ),
-                for (final ContextEntry entry in entries)
+              ],
+              itemBuilder: (BuildContext context, ContextEntry entry) =>
                   Container(
                     margin: const EdgeInsets.only(bottom: 8),
                     decoration: BoxDecoration(
@@ -268,7 +277,14 @@ class _ContextScreenState extends ConsumerState<ContextScreen> {
                       ),
                     ),
                   ),
-              ],
+              emptyBuilder: (BuildContext emptyContext) => Center(
+                child: Text(
+                  strings.noResults,
+                  style: TextStyle(color: emptyContext.zMuted, fontSize: 13),
+                ),
+              ),
+              // Keeps the pager clear of the floating action button.
+              footer: const <Widget>[SizedBox(height: 84)],
             ),
     );
   }

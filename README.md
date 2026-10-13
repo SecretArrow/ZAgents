@@ -40,10 +40,16 @@ OpenAI-compatible: **OpenRouter, InferHub, Z.AI, OpenAI, DeepSeek, Groq, dan lai
   - 🔍 **kolom pencarian** yang bekerja di semua state (katalog live, cache,
     maupun saran offline) — filter by id atau nama,
   - 🏷️ **filter chip** (Semua / Tools / Gratis — termasuk model `:free` OpenRouter),
-  - 📄 **paging** (20 model per halaman) dengan navigasi first/prev/next/last,
+  - 📄 **paging 5 item per halaman** dengan navigasi first/prev/next/last,
   - 📴 **cache model per provider** — hasil fetch tersimpan di preset sehingga
     daftar model provider Anda tetap tampil saat offline / API error,
   - badge info (konteks, tools, gratis) + tombol refresh + fallback saran offline.
+- **Pencarian + paging universal (v1.6.0)** — SEMUA list di aplikasi memakai
+  widget `PagedList` yang sama: **5 item per halaman** (termasuk dropdown model),
+  kolom pencarian, pager first/prev/next/last, dan empty state "No results".
+  Berlaku untuk: daftar model (picker + hasil fetch di editor provider), daftar
+  provider, riwayat chat (drawer), File Manager, Context Manager, dan library
+  npm — masing-masing dengan hint pencarian berbahasa.
 - **Dwibahasa** — antarmuka **English (default)** dan **Bahasa Indonesia**;
   ganti lewat ikon 🌐 di app bar atau **Settings → Language** (pilihan tersimpan).
 - **UI gelap ala Z.AI** — model chip, toggle Agent, kartu tool call dengan status

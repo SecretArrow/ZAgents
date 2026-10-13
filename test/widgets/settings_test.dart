@@ -260,11 +260,12 @@ void main() {
     // A new preset is not auto-activated.
     expect(settings.providerName, 'OpenRouter');
 
-    // The new card renders at the bottom of the list — reveal it.
-    await tester.dragUntilVisible(
-      find.byKey(const Key('provider-My Provider')),
-      find.byType(ListView),
-      const Offset(0, -140),
+    // The new card is appended at the end of the list — page 2 with the
+    // 5-per-page pager. The built-in search brings it into view (and
+    // doubles as an integration test of the universal search).
+    await tester.enterText(
+      find.byKey(const Key('providers-search-field')),
+      'My Provider',
     );
     await tester.pumpAndSettle(
       const Duration(milliseconds: 100),
@@ -395,11 +396,11 @@ void main() {
       EnginePhase.sendSemanticsUpdate,
       const Duration(seconds: 15),
     );
-    // The new card sits at the bottom of the list — reveal it first.
-    await tester.dragUntilVisible(
-      find.byKey(const Key('provider-Throwaway')),
-      find.byType(ListView),
-      const Offset(0, -140),
+    // The new card sits at the bottom of the list (page 2 with the
+    // 5-per-page pager) — use the search to reach it.
+    await tester.enterText(
+      find.byKey(const Key('providers-search-field')),
+      'Throwaway',
     );
     await tester.pumpAndSettle(
       const Duration(milliseconds: 100),
@@ -439,6 +440,15 @@ void main() {
       const Duration(seconds: 15),
     );
 
+    // The search query 'Throwaway' is still active: after deletion the
+    // filtered list is empty, so clear the search first.
+    await tester.enterText(find.byKey(const Key('providers-search-field')), '');
+    await tester.pumpAndSettle(
+      const Duration(milliseconds: 100),
+      EnginePhase.sendSemanticsUpdate,
+      const Duration(seconds: 15),
+    );
+
     expect(find.byKey(const Key('provider-Throwaway')), findsNothing);
     expect(
       container
@@ -447,5 +457,37 @@ void main() {
           .any((ProviderPreset p) => p.name == 'Throwaway'),
       isFalse,
     );
+  });
+
+  testWidgets('providers search filters by name and resets to page one', (
+    WidgetTester tester,
+  ) async {
+    await openSettings(tester);
+    await openProviders(tester);
+
+    expect(find.byKey(const Key('provider-OpenRouter')), findsOneWidget);
+    expect(find.byKey(const Key('provider-InferHub')), findsOneWidget);
+
+    await tester.enterText(
+      find.byKey(const Key('providers-search-field')),
+      'inferhub',
+    );
+    await tester.pumpAndSettle(
+      const Duration(milliseconds: 100),
+      EnginePhase.sendSemanticsUpdate,
+      const Duration(seconds: 15),
+    );
+    expect(find.byKey(const Key('provider-InferHub')), findsOneWidget);
+    expect(find.byKey(const Key('provider-OpenRouter')), findsNothing);
+    expect(find.byKey(const Key('provider-Z.AI')), findsNothing);
+
+    // Clearing the query restores the full list.
+    await tester.enterText(find.byKey(const Key('providers-search-field')), '');
+    await tester.pumpAndSettle(
+      const Duration(milliseconds: 100),
+      EnginePhase.sendSemanticsUpdate,
+      const Duration(seconds: 15),
+    );
+    expect(find.byKey(const Key('provider-OpenRouter')), findsOneWidget);
   });
 }

@@ -5,10 +5,16 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:zagents/main.dart';
+import 'package:zagents/di.dart';
 import 'package:zagents/models/models.dart';
 import 'package:zagents/services/llm_client.dart';
 
 import '../../test/fakes/fakes.dart';
+
+/// Drawer assertions must be scoped: chat texts also render in the body
+/// behind the drawer (find.text matches those bubbles too).
+Finder inDrawer(Finder finder) =>
+    find.descendant(of: find.byType(Drawer), matching: finder);
 
 void main() {
   late Directory tempDir;
@@ -145,5 +151,76 @@ void main() {
     );
     // Toggle still rendered after state change.
     expect(find.byKey(const Key('agent-toggle')), findsOneWidget);
+  });
+
+  testWidgets('drawer history search filters chats', (
+    WidgetTester tester,
+  ) async {
+    // Static history (the real chat store does disk IO that never
+    // completes inside the fake-async zone — the same reason
+    // files_screen_test overrides this provider).
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: <Override>[
+          ...testOverrides(
+            dir: tempDir,
+            settings: AppSettings(apiKey: 'test-key'),
+            writeScreenshots: false,
+          ),
+          chatListProvider.overrideWith(
+            (Ref ref) async => <ChatSummary>[
+              ChatSummary(
+                id: 'c-1',
+                title: 'Resep kue cokelat',
+                updatedAt: DateTime(2025, 1, 1),
+              ),
+              ChatSummary(
+                id: 'c-2',
+                title: 'Jadwal kereta api',
+                updatedAt: DateTime(2025, 1, 2),
+              ),
+            ],
+          ),
+        ],
+        child: const ZAgentsApp(),
+      ),
+    );
+    await tester.pump();
+
+    // Open the drawer and search the history.
+    await tester.tap(find.byIcon(Icons.menu_rounded));
+    await tester.pumpAndSettle(
+      const Duration(milliseconds: 100),
+      EnginePhase.sendSemanticsUpdate,
+      const Duration(seconds: 15),
+    );
+    expect(
+      inDrawer(find.byKey(const Key('history-search-field'))),
+      findsOneWidget,
+    );
+
+    await tester.enterText(
+      find.byKey(const Key('history-search-field')),
+      'kereta api',
+    );
+    await tester.pumpAndSettle(
+      const Duration(milliseconds: 100),
+      EnginePhase.sendSemanticsUpdate,
+      const Duration(seconds: 15),
+    );
+    expect(inDrawer(find.text('Jadwal kereta api')), findsOneWidget);
+    expect(inDrawer(find.text('Resep kue cokelat')), findsNothing);
+
+    await tester.enterText(
+      find.byKey(const Key('history-search-field')),
+      'kue cokelat',
+    );
+    await tester.pumpAndSettle(
+      const Duration(milliseconds: 100),
+      EnginePhase.sendSemanticsUpdate,
+      const Duration(seconds: 15),
+    );
+    expect(inDrawer(find.text('Resep kue cokelat')), findsOneWidget);
+    expect(inDrawer(find.text('Jadwal kereta api')), findsNothing);
   });
 }

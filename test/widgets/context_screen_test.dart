@@ -53,7 +53,7 @@ void main() {
     );
 
     // Default entries are seeded (disabled).
-    expect(find.byKey(const Key('context-list')), findsOneWidget);
+    expect(find.byKey(const Key('context-list-page-0')), findsOneWidget);
     final ContextRepository repo = container.read(contextRepositoryProvider);
     final List<ContextEntry> seeded = repo.load();
     expect(seeded, isNotEmpty);
@@ -72,6 +72,63 @@ void main() {
           .enabled,
       isTrue,
     );
+  });
+
+  testWidgets('context search filters entries by name and content', (
+    tester,
+  ) async {
+    final ProviderContainer container = ProviderContainer(
+      overrides: testOverrides(dir: tempDir),
+    );
+    addTearDown(container.dispose);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: const ZAgentsApp(),
+      ),
+    );
+    await tester.pump();
+    final NavigatorState navigator = tester.state(find.byType(Navigator));
+    unawaited(
+      navigator.push(
+        MaterialPageRoute<void>(builder: (_) => const ContextScreen()),
+      ),
+    );
+    await tester.pumpAndSettle(
+      const Duration(milliseconds: 100),
+      EnginePhase.sendSemanticsUpdate,
+      const Duration(seconds: 10),
+    );
+
+    final ContextRepository repo = container.read(contextRepositoryProvider);
+    final List<ContextEntry> seeded = repo.load();
+    expect(seeded.length, greaterThanOrEqualTo(2));
+
+    // Filter by name: only the matching entry stays visible.
+    await tester.enterText(
+      find.byKey(const Key('context-search-field')),
+      seeded.first.name,
+    );
+    await tester.pumpAndSettle(
+      const Duration(milliseconds: 100),
+      EnginePhase.sendSemanticsUpdate,
+      const Duration(seconds: 10),
+    );
+    expect(find.byKey(Key('context-${seeded.first.id}')), findsOneWidget);
+    expect(find.byKey(Key('context-${seeded.last.id}')), findsNothing);
+
+    // No match shows the localized empty state.
+    await tester.enterText(
+      find.byKey(const Key('context-search-field')),
+      'zzz-no-match',
+    );
+    await tester.pumpAndSettle(
+      const Duration(milliseconds: 100),
+      EnginePhase.sendSemanticsUpdate,
+      const Duration(seconds: 10),
+    );
+    expect(find.text('No results'), findsOneWidget);
   });
 
   testWidgets('adding a context entry through the dialog persists it', (

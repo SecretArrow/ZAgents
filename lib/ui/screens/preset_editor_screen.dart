@@ -6,6 +6,7 @@ import '../../l10n/app_strings.dart';
 import '../../models/models.dart';
 import '../../services/model_catalog.dart';
 import '../theme.dart';
+import '../widgets/paged_list.dart';
 
 /// Full-screen editor for one provider preset (replaces the old modal
 /// dialog, which overflowed under the keyboard and made the Save button
@@ -34,7 +35,6 @@ class _PresetEditorScreenState extends ConsumerState<PresetEditorScreen> {
   late final TextEditingController _baseUrl;
   late final TextEditingController _apiKey;
   late final TextEditingController _model;
-  late final TextEditingController _modelSearch;
 
   /// Last known persisted snapshot of this preset. Field edits stay local
   /// until an explicit save; [_stored] is what the settings list holds.
@@ -45,7 +45,10 @@ class _PresetEditorScreenState extends ConsumerState<PresetEditorScreen> {
   String? _fetchError;
   String? _validationError;
   List<RemoteModel> _models = const <RemoteModel>[];
-  String _modelQuery = '';
+
+  /// Bumped on every successful fetch so the paged model list resets to
+  /// its first page when a fresh catalog arrives.
+  int _fetchGeneration = 0;
 
   bool get _isNew => _stored.name.isEmpty;
 
@@ -59,7 +62,6 @@ class _PresetEditorScreenState extends ConsumerState<PresetEditorScreen> {
     _baseUrl = TextEditingController(text: widget.preset.baseUrl);
     _apiKey = TextEditingController(text: widget.preset.apiKey);
     _model = TextEditingController(text: widget.preset.model);
-    _modelSearch = TextEditingController();
     _models = <RemoteModel>[
       for (final String id in widget.preset.modelsCache)
         RemoteModel(id: id, name: id),
@@ -72,7 +74,6 @@ class _PresetEditorScreenState extends ConsumerState<PresetEditorScreen> {
     _baseUrl.dispose();
     _apiKey.dispose();
     _model.dispose();
-    _modelSearch.dispose();
     super.dispose();
   }
 
@@ -203,8 +204,7 @@ class _PresetEditorScreenState extends ConsumerState<PresetEditorScreen> {
     setState(() {
       _fetching = false;
       _models = models;
-      _modelQuery = '';
-      _modelSearch.clear();
+      _fetchGeneration++;
     });
     // Cache the ids into the stored preset so the model picker (and the
     // next editor visit) can show them without refetching. New presets
@@ -276,18 +276,6 @@ class _PresetEditorScreenState extends ConsumerState<PresetEditorScreen> {
     if (!mounted) return;
     _snack(_strings.providerDeletedSnack);
     Navigator.of(context).pop();
-  }
-
-  List<RemoteModel> get _filteredModels {
-    final String q = _modelQuery.trim().toLowerCase();
-    if (q.isEmpty) return _models;
-    return _models
-        .where(
-          (RemoteModel m) =>
-              m.id.toLowerCase().contains(q) ||
-              m.name.toLowerCase().contains(q),
-        )
-        .toList();
   }
 
   @override
@@ -447,7 +435,6 @@ class _PresetEditorScreenState extends ConsumerState<PresetEditorScreen> {
   }
 
   Widget _modelsSection(AppStrings strings, ZPalette palette) {
-    final List<RemoteModel> filtered = _filteredModels;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
@@ -535,62 +522,51 @@ class _PresetEditorScreenState extends ConsumerState<PresetEditorScreen> {
           ),
         if (_models.isNotEmpty) ...<Widget>[
           const SizedBox(height: 12),
-          TextField(
-            key: const Key('editor-model-search-field'),
-            controller: _modelSearch,
-            onChanged: (String value) => setState(() => _modelQuery = value),
-            decoration: InputDecoration(
-              hintText: strings.searchModelsHint,
-              prefixIcon: const Icon(Icons.search_rounded, size: 20),
-              isDense: true,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Container(
+          SizedBox(
             key: const Key('editor-model-list'),
-            constraints: const BoxConstraints(maxHeight: 240),
-            decoration: BoxDecoration(
-              color: context.zSurfaceAlt,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: context.zBorder),
-            ),
-            child: filtered.isEmpty
-                ? Padding(
-                    padding: const EdgeInsets.all(14),
-                    child: Text(
-                      strings.modelsEmpty,
-                      style: TextStyle(fontSize: 12, color: palette.muted),
-                    ),
-                  )
-                : ListView.builder(
-                    shrinkWrap: true,
-                    itemCount: filtered.length,
-                    itemBuilder: (BuildContext context, int index) {
-                      final RemoteModel m = filtered[index];
-                      final bool selected = m.id == _model.text;
-                      return ListTile(
-                        dense: true,
-                        visualDensity: VisualDensity.compact,
-                        leading: Icon(
-                          selected
-                              ? Icons.check_circle_rounded
-                              : Icons.circle_outlined,
-                          size: 16,
-                          color: selected ? kAccentColor : palette.muted,
-                        ),
-                        title: Text(
-                          m.id,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            fontSize: 12.5,
-                            fontFamily: 'monospace',
-                          ),
-                        ),
-                        onTap: () => setState(() => _model.text = m.id),
-                      );
-                    },
+            height: 320,
+            child: PagedList<RemoteModel>(
+              prefix: 'editor-model',
+              items: _models,
+              resetKey: _fetchGeneration,
+              searchHint: strings.searchModelsHint,
+              searchFieldKey: const Key('editor-model-search-field'),
+              padding: EdgeInsets.zero,
+              filter: (RemoteModel m, String q) =>
+                  m.id.toLowerCase().contains(q) ||
+                  m.name.toLowerCase().contains(q),
+              emptyBuilder: (BuildContext emptyContext) => Padding(
+                padding: const EdgeInsets.all(14),
+                child: Text(
+                  strings.modelsEmpty,
+                  style: TextStyle(fontSize: 12, color: emptyContext.zMuted),
+                ),
+              ),
+              itemBuilder: (BuildContext context, RemoteModel m) {
+                final bool selected = m.id == _model.text;
+                return ListTile(
+                  dense: true,
+                  visualDensity: VisualDensity.compact,
+                  leading: Icon(
+                    selected
+                        ? Icons.check_circle_rounded
+                        : Icons.circle_outlined,
+                    size: 16,
+                    color: selected ? kAccentColor : context.zMuted,
                   ),
+                  title: Text(
+                    m.id,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 12.5,
+                      fontFamily: 'monospace',
+                    ),
+                  ),
+                  onTap: () => setState(() => _model.text = m.id),
+                );
+              },
+            ),
           ),
         ],
       ],

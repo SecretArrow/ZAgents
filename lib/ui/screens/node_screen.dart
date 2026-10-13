@@ -5,6 +5,7 @@ import '../../di.dart';
 import '../../l10n/app_strings.dart';
 import '../../services/npm_service.dart';
 import '../theme.dart';
+import '../widgets/paged_list.dart';
 
 /// Node.js runtime manager: lists installed npm packages, installs new
 /// ones (auto add) and removes them (auto remove) for the embedded JS
@@ -20,6 +21,10 @@ class _NodeScreenState extends ConsumerState<NodeScreen> {
   List<InstalledModule> _modules = const <InstalledModule>[];
   bool _loading = true;
   bool _installing = false;
+
+  /// Bumped on every refresh so the paged list returns to page 1 when the
+  /// installed packages change.
+  int _generation = 0;
 
   @override
   void initState() {
@@ -37,6 +42,7 @@ class _NodeScreenState extends ConsumerState<NodeScreen> {
       setState(() {
         _modules = modules;
         _loading = false;
+        _generation++;
       });
     } catch (_) {
       if (!mounted) return;
@@ -199,40 +205,58 @@ class _NodeScreenState extends ConsumerState<NodeScreen> {
                             style: TextStyle(color: context.zMuted),
                           ),
                         )
-                      : ListView.builder(
-                          key: const Key('node-modules-list'),
-                          itemCount: _modules.length,
-                          itemBuilder: (BuildContext context, int index) {
-                            final InstalledModule module = _modules[index];
-                            return ListTile(
-                              key: Key('node-module-${module.name}'),
-                              leading: const Icon(
-                                Icons.inventory_2_rounded,
-                                color: kAccentColor,
-                                size: 20,
+                      : PagedList<InstalledModule>(
+                          prefix: 'node',
+                          searchFieldKey: const Key('node-search-field'),
+                          searchHint: strings.searchLibsHint,
+                          items: _modules,
+                          resetKey: _generation,
+                          filter: (InstalledModule m, String q) =>
+                              m.name.toLowerCase().contains(q) ||
+                              m.version.toLowerCase().contains(q),
+                          padding: const EdgeInsets.symmetric(vertical: 4),
+                          itemBuilder:
+                              (BuildContext context, InstalledModule module) =>
+                                  ListTile(
+                                    key: Key('node-module-${module.name}'),
+                                    leading: const Icon(
+                                      Icons.inventory_2_rounded,
+                                      color: kAccentColor,
+                                      size: 20,
+                                    ),
+                                    title: Text(
+                                      module.name,
+                                      style: const TextStyle(fontSize: 14),
+                                    ),
+                                    subtitle: Text(
+                                      module.version,
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        color: context.zMuted,
+                                      ),
+                                    ),
+                                    trailing: IconButton(
+                                      key: Key('node-remove-${module.name}'),
+                                      icon: const Icon(
+                                        Icons.delete_outline_rounded,
+                                        size: 18,
+                                        color: Colors.redAccent,
+                                      ),
+                                      onPressed: () => _remove(module),
+                                    ),
+                                  ),
+                          emptyBuilder: (BuildContext emptyContext) => Center(
+                            child: Text(
+                              strings.noResults,
+                              style: TextStyle(
+                                color: emptyContext.zMuted,
+                                fontSize: 13,
                               ),
-                              title: Text(
-                                module.name,
-                                style: const TextStyle(fontSize: 14),
-                              ),
-                              subtitle: Text(
-                                module.version,
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  color: context.zMuted,
-                                ),
-                              ),
-                              trailing: IconButton(
-                                key: Key('node-remove-${module.name}'),
-                                icon: const Icon(
-                                  Icons.delete_outline_rounded,
-                                  size: 18,
-                                  color: Colors.redAccent,
-                                ),
-                                onPressed: () => _remove(module),
-                              ),
-                            );
-                          },
+                            ),
+                          ),
+                          // Keeps the pager clear of the floating action
+                          // button.
+                          footer: const <Widget>[SizedBox(height: 84)],
                         ),
                 ),
                 if (_installing)

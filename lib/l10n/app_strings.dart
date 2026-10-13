@@ -121,6 +121,12 @@ abstract class AppStrings {
   String get browseModels;
   String get browseModelsHint;
   String pageIndicator(int current, int total);
+  String get searchProvidersHint;
+  String get searchSessionsHint;
+  String get searchFilesHint;
+  String get searchContextHint;
+  String get searchLibsHint;
+  String get noResults;
   String get agentTagline;
   String get emptySubtitle;
   List<String> get suggestions;
@@ -371,6 +377,18 @@ class AppStringsEn implements AppStrings {
       'Tap the search icon to browse the live model catalog.';
   @override
   String pageIndicator(int current, int total) => 'Page $current of $total';
+  @override
+  String get searchProvidersHint => 'Search providers…';
+  @override
+  String get searchSessionsHint => 'Search chats…';
+  @override
+  String get searchFilesHint => 'Search files…';
+  @override
+  String get searchContextHint => 'Search contexts…';
+  @override
+  String get searchLibsHint => 'Search libraries…';
+  @override
+  String get noResults => 'No results';
   @override
   String get agentTagline => 'AI Agent · Flutter';
   @override
@@ -778,6 +796,18 @@ class AppStringsId implements AppStrings {
   @override
   String pageIndicator(int current, int total) =>
       'Halaman $current dari $total';
+  @override
+  String get searchProvidersHint => 'Cari provider…';
+  @override
+  String get searchSessionsHint => 'Cari chat…';
+  @override
+  String get searchFilesHint => 'Cari file…';
+  @override
+  String get searchContextHint => 'Cari context…';
+  @override
+  String get searchLibsHint => 'Cari pustaka…';
+  @override
+  String get noResults => 'Tidak ada hasil';
   @override
   String get agentTagline => 'AI Agent · Flutter';
   @override
