@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
+import 'package:zagents/services/file_system_service.dart';
 import 'package:zagents/services/js_runtime.dart';
 import 'package:zagents/services/npm_service.dart';
 import 'package:zagents/services/tool_executor.dart';
@@ -301,6 +302,86 @@ void main() {
         },
       );
       expect(result.ok, isTrue);
+    });
+  });
+
+  group('archive tools (zip_file / unzip_file)', () {
+    late ToolExecutor fsExecutor;
+
+    setUp(() {
+      fsExecutor = ToolExecutor(
+        browser: fakeBrowser,
+        resolveBaseDir: () async => tempDir,
+        isAutomationEnabled: () => true,
+        fs: FileSystemService(resolveBaseDir: () async => tempDir),
+      );
+    });
+
+    test(
+      'unzip_file extracts an archive and lists the JS files inside',
+      () async {
+        // Build a source folder that mimics an uploaded JS project, then
+        // compress it with the very same service the tool delegates to.
+        final Directory src = Directory('${tempDir.path}/proj');
+        src.createSync(recursive: true);
+        File('${src.path}/index.js').writeAsStringSync("console.log('hi');");
+        final Directory lib = Directory('${src.path}/lib');
+        lib.createSync(recursive: true);
+        File('${lib.path}/util.js').writeAsStringSync('module.exports = 42;');
+        final String zipRel = await FileSystemService(
+          resolveBaseDir: () async => tempDir,
+        ).zip('proj');
+
+        final ToolResult result = await fsExecutor.execute(
+          'unzip_file',
+          <String, dynamic>{'path': zipRel},
+        );
+        expect(result.ok, isTrue);
+        // 'proj' still exists next to the archive -> extraction lands in
+        // proj_extracted and both extracted files are listed for the model.
+        expect(result.llmOutput, contains('proj_extracted'));
+        expect(result.llmOutput, contains('proj_extracted/index.js'));
+        expect(result.llmOutput, contains('proj_extracted/lib/util.js'));
+        expect(
+          File('${tempDir.path}/proj_extracted/index.js').readAsStringSync(),
+          "console.log('hi');",
+        );
+      },
+    );
+
+    test('zip_file compresses a folder into a .zip next to it', () async {
+      final Directory notes = Directory('${tempDir.path}/notes');
+      notes.createSync(recursive: true);
+      File('${notes.path}/a.txt').writeAsStringSync('hello');
+      final ToolResult result = await fsExecutor.execute(
+        'zip_file',
+        <String, dynamic>{'path': 'notes'},
+      );
+      expect(result.ok, isTrue);
+      expect(result.llmOutput, contains('notes.zip'));
+      expect(File('${tempDir.path}/notes.zip').existsSync(), isTrue);
+    });
+
+    test('archive tools degrade gracefully without the fs service', () async {
+      final ToolResult result = await executor.execute(
+        'unzip_file',
+        <String, dynamic>{'path': 'whatever.zip'},
+      );
+      expect(result.ok, isFalse);
+      expect(result.llmOutput, contains('not available'));
+    });
+
+    test('path traversal and empty path are rejected', () async {
+      final ToolResult bad = await fsExecutor.execute(
+        'unzip_file',
+        <String, dynamic>{'path': '../../x.zip'},
+      );
+      expect(bad.ok, isFalse);
+      final ToolResult empty = await fsExecutor.execute(
+        'zip_file',
+        <String, dynamic>{'path': '  '},
+      );
+      expect(empty.ok, isFalse);
     });
   });
 }

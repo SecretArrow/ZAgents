@@ -223,4 +223,149 @@ void main() {
     expect(inDrawer(find.text('Resep kue cokelat')), findsOneWidget);
     expect(inDrawer(find.text('Jadwal kereta api')), findsNothing);
   });
+
+  testWidgets('new chat offers a random User-Agent and accepting rotates it', (
+    WidgetTester tester,
+  ) async {
+    late ProviderContainer container;
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: <Override>[
+          // Static history: the real chat store does disk IO that never
+          // completes inside the fake-async zone (drawer would spin
+          // forever and pumpAndSettle would time out).
+          ...testOverrides(
+            dir: tempDir,
+            settings: AppSettings(apiKey: 'test-key'),
+            writeScreenshots: false,
+          ),
+          chatListProvider.overrideWith((Ref ref) async => <ChatSummary>[]),
+        ],
+        child: Builder(
+          builder: (BuildContext context) {
+            container = ProviderScope.containerOf(context);
+            return const ZAgentsApp();
+          },
+        ),
+      ),
+    );
+    await tester.pump();
+
+    final int before = container.read(settingsProvider).uaAndroidId;
+
+    await tester.tap(find.byIcon(Icons.menu_rounded));
+    await tester.pumpAndSettle(
+      const Duration(milliseconds: 100),
+      EnginePhase.sendSemanticsUpdate,
+      const Duration(seconds: 15),
+    );
+
+    // Prompt is shown by default (askRandomUa = true).
+    await tester.tap(inDrawer(find.byKey(const Key('new-chat'))));
+    await tester.pumpAndSettle(
+      const Duration(milliseconds: 100),
+      EnginePhase.sendSemanticsUpdate,
+      const Duration(seconds: 15),
+    );
+    expect(find.byKey(const Key('random-ua-accept')), findsOneWidget);
+    expect(find.byKey(const Key('random-ua-decline')), findsOneWidget);
+
+    // Accepting rotates to a different, persisted User-Agent.
+    await tester.tap(find.byKey(const Key('random-ua-accept')));
+    await tester.pumpAndSettle(
+      const Duration(milliseconds: 100),
+      EnginePhase.sendSemanticsUpdate,
+      const Duration(seconds: 15),
+    );
+    expect(container.read(settingsProvider).uaAndroidId, isNot(before));
+    // The drawer closed and the fresh draft is on screen.
+    expect(find.byType(Drawer), findsNothing);
+    expect(container.read(chatControllerProvider).messages, isEmpty);
+  });
+
+  testWidgets('declining the random User-Agent prompt keeps the pick', (
+    WidgetTester tester,
+  ) async {
+    late ProviderContainer container;
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: <Override>[
+          // Static history: the real chat store does disk IO that never
+          // completes inside the fake-async zone (drawer would spin
+          // forever and pumpAndSettle would time out).
+          ...testOverrides(
+            dir: tempDir,
+            settings: AppSettings(apiKey: 'test-key'),
+            writeScreenshots: false,
+          ),
+          chatListProvider.overrideWith((Ref ref) async => <ChatSummary>[]),
+        ],
+        child: Builder(
+          builder: (BuildContext context) {
+            container = ProviderScope.containerOf(context);
+            return const ZAgentsApp();
+          },
+        ),
+      ),
+    );
+    await tester.pump();
+
+    final int before = container.read(settingsProvider).uaAndroidId;
+
+    await tester.tap(find.byIcon(Icons.menu_rounded));
+    await tester.pumpAndSettle(
+      const Duration(milliseconds: 100),
+      EnginePhase.sendSemanticsUpdate,
+      const Duration(seconds: 15),
+    );
+    await tester.tap(inDrawer(find.byKey(const Key('new-chat'))));
+    await tester.pumpAndSettle(
+      const Duration(milliseconds: 100),
+      EnginePhase.sendSemanticsUpdate,
+      const Duration(seconds: 15),
+    );
+    await tester.tap(find.byKey(const Key('random-ua-decline')));
+    await tester.pumpAndSettle(
+      const Duration(milliseconds: 100),
+      EnginePhase.sendSemanticsUpdate,
+      const Duration(seconds: 15),
+    );
+    expect(container.read(settingsProvider).uaAndroidId, before);
+    expect(find.byType(Drawer), findsNothing);
+  });
+
+  testWidgets('new chat skips the prompt when askRandomUa is disabled', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: <Override>[
+          ...testOverrides(
+            dir: tempDir,
+            settings: AppSettings(apiKey: 'test-key', askRandomUa: false),
+            writeScreenshots: false,
+          ),
+          chatListProvider.overrideWith((Ref ref) async => <ChatSummary>[]),
+        ],
+        child: const ZAgentsApp(),
+      ),
+    );
+    await tester.pump();
+
+    await tester.tap(find.byIcon(Icons.menu_rounded));
+    await tester.pumpAndSettle(
+      const Duration(milliseconds: 100),
+      EnginePhase.sendSemanticsUpdate,
+      const Duration(seconds: 15),
+    );
+    await tester.tap(inDrawer(find.byKey(const Key('new-chat'))));
+    await tester.pumpAndSettle(
+      const Duration(milliseconds: 100),
+      EnginePhase.sendSemanticsUpdate,
+      const Duration(seconds: 15),
+    );
+    // No dialog: the drawer closes straight into the fresh draft.
+    expect(find.text('Random User-Agent'), findsNothing);
+    expect(find.byType(Drawer), findsNothing);
+  });
 }

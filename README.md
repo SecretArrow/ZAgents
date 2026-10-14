@@ -72,6 +72,20 @@ OpenAI-compatible: **OpenRouter, InferHub, Z.AI, OpenAI, DeepSeek, Groq, dan lai
   **tahan (long-press) kartu provider** di layar Providers untuk
   mengaktifkannya: muncul **dialog konfirmasi** sebelum koneksi berpindah
   (tekan lama pada provider yang sudah aktif tidak melakukan apa-apa).
+- **Eksekusi JS dari arsip upload (v1.11.0)** — file binary yang diunggah
+  (mis. **zip berisi proyek JavaScript**) kini benar-benar bisa dikerjakan
+  agent: pesan lampiran otomatis menyertakan **path relatif** file di folder
+  `uploads/` + instruksi pemakaian, dan agent mendapat **tool baru
+  `unzip_file` / `zip_file`** — mengekstrak arsip, membaca daftar isinya,
+  lalu menjalankan file `.js` dengan `node_run` (runtime bergaya Node.js
+  tersemat dengan `require` lokal, fs bridge, dan npm).
+- **Tawaran User-Agent acak saat chat baru (v1.11.0)** — setiap kali
+  **"New chat"** ditekan, muncul dialog menanyakan apakah browser tersemat
+  harus memakai **User-Agent lain yang dipilih acak** (Ya, acak /
+  Pertahankan). Bisa dimatikan lewat Settings → User Agent → "Tawarkan
+  User-Agent acak saat chat baru" (**default aktif**).
+- **Kredit pembuat di About (v1.11.0)** — Settings → About kini menampilkan
+  **"Dibuat oleh Maragung"**.
 - **Pencarian + paging universal (v1.6.0)** — SEMUA list di aplikasi memakai
   widget `PagedList` yang sama: **5 item per halaman** (termasuk dropdown model),
   kolom pencarian, pager first/prev/next/last, dan empty state "No results".

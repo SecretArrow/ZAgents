@@ -3,6 +3,7 @@ import 'dart:io';
 
 import '../models/models.dart';
 import 'browser_automation.dart';
+import 'file_system_service.dart';
 import 'js_runtime.dart';
 import 'npm_service.dart';
 
@@ -37,6 +38,7 @@ class ToolExecutor {
     required this.isAutomationEnabled,
     this.js,
     this.npm,
+    this.fs,
   });
 
   final BrowserAutomation browser;
@@ -47,6 +49,10 @@ class ToolExecutor {
   /// minimal setups keep working; the node tools degrade gracefully.
   final JsRuntime? js;
   final NpmService? npm;
+
+  /// File workspace (zip/unzip + sandboxed paths). Nullable for legacy
+  /// tests; the zip tools degrade gracefully when absent.
+  final FileSystemService? fs;
 
   static const Set<String> _browserTools = <String>{
     'browser_navigate',
@@ -81,6 +87,10 @@ class ToolExecutor {
           return await _readFile(args);
         case 'write_file':
           return await _writeFile(args);
+        case 'unzip_file':
+          return await _unzipFile(args);
+        case 'zip_file':
+          return await _zipFile(args);
         case 'node_run':
           return await _nodeRun(args);
         case 'node_install':
@@ -262,6 +272,85 @@ class ToolExecutor {
       ok: true,
       llmOutput: 'Wrote ${content.length} characters to ${file.path}',
       displayText: file.path.split(Platform.pathSeparator).last,
+    );
+  }
+
+  // -- Archive tools (zip / unzip) ---------------------------------------
+
+  /// Lists up to [_unzipListCap] files under [dir] (relative paths, '/'
+  /// separators) so the model learns what an archive contained.
+  static const int _unzipListCap = 100;
+
+  Future<List<String>> _listFiles(Directory dir, String relativeRoot) async {
+    final List<String> out = <String>[];
+    if (!dir.existsSync()) return out;
+    await for (final FileSystemEntity entity in dir.list(
+      recursive: true,
+      followLinks: false,
+    )) {
+      if (FileSystemEntity.typeSync(entity.path) != FileSystemEntityType.file) {
+        continue;
+      }
+      final String rel = entity.path
+          .substring(relativeRoot.length)
+          .replaceAll(Platform.pathSeparator, '/');
+      out.add(rel.startsWith('/') ? rel.substring(1) : rel);
+      if (out.length >= _unzipListCap) break;
+    }
+    return out;
+  }
+
+  Future<ToolResult> _unzipFile(Map<String, dynamic> args) async {
+    final FileSystemService? service = fs;
+    if (service == null) {
+      return const ToolResult(
+        ok: false,
+        llmOutput: 'Archive tools are not available in this build.',
+      );
+    }
+    final String path = args['path']?.toString() ?? '';
+    if (path.trim().isEmpty) {
+      return const ToolResult(ok: false, llmOutput: 'Parameter path is empty.');
+    }
+    final String dest = await service.unzip(path);
+    final String? destDirPath = await service.resolve(dest);
+    final List<String> files = destDirPath == null
+        ? const <String>[]
+        : await _listFiles(Directory(destDirPath), destDirPath);
+    final StringBuffer output = StringBuffer()
+      ..write('Extracted to $dest')
+      ..writeln(
+        files.isEmpty
+            ? ' (no files inside the archive).'
+            : ' — ${files.length} file(s):',
+      );
+    for (final String file in files) {
+      output.writeln('- $dest/$file');
+    }
+    return ToolResult(
+      ok: true,
+      llmOutput: output.toString().trim(),
+      displayText: 'unzip $path',
+    );
+  }
+
+  Future<ToolResult> _zipFile(Map<String, dynamic> args) async {
+    final FileSystemService? service = fs;
+    if (service == null) {
+      return const ToolResult(
+        ok: false,
+        llmOutput: 'Archive tools are not available in this build.',
+      );
+    }
+    final String path = args['path']?.toString() ?? '';
+    if (path.trim().isEmpty) {
+      return const ToolResult(ok: false, llmOutput: 'Parameter path is empty.');
+    }
+    final String zipPath = await service.zip(path);
+    return ToolResult(
+      ok: true,
+      llmOutput: 'Created archive $zipPath',
+      displayText: 'zip $path',
     );
   }
 

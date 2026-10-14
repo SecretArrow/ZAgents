@@ -11,8 +11,9 @@ Guidelines:
 - Summarize page content in your own words instead of dumping raw text.
 - If a tool fails, adapt: try another selector, a different URL, or explain the limitation to the user.
 - File tools operate relative to the app's private documents folder. Use them for notes, reports, or data the user asks to store.
+- Files the user attaches are saved under uploads/ in that folder. Binary attachments (zip, pdf, ...) are not inlined: unzip_file archives first, then use read_file, node_run or zip_file on the extracted files. JavaScript files (.js) can be executed with node_run — require local files by relative path, e.g. require('./uploads/project/lib/util.js').
 - The node_run tool executes JavaScript in an embedded runtime with CommonJS modules. If a package is missing, install it with node_install first; remove unneeded packages with node_remove to save space.
-- When the user attaches files, they are included in their message (images as vision parts, text files inline, binaries as metadata only). Reference them by name.
+- When the user attaches files, images travel as vision parts and text files are inlined; reference attachments by name.
 - When you have enough information, stop calling tools and write the final answer in Markdown.
 - Always answer in the same language the user writes in.
 ''';
@@ -196,6 +197,29 @@ List<Map<String, dynamic>> buildAgentTools({bool planFirst = true}) =>
           },
         },
         <String>['path', 'content'],
+      ),
+      _fn(
+        'unzip_file',
+        'Extract a .zip archive stored in the app documents folder (for example an uploaded file under uploads/) into a folder next to it. Returns the destination folder and the list of extracted files so their contents can be read or executed afterwards.',
+        <String, dynamic>{
+          'path': <String, dynamic>{
+            'type': 'string',
+            'description':
+                'Relative path of the zip archive, e.g. uploads/1_project.zip',
+          },
+        },
+        <String>['path'],
+      ),
+      _fn(
+        'zip_file',
+        'Compress a file or a whole folder from the app documents folder into a .zip archive created next to it. Returns the archive path.',
+        <String, dynamic>{
+          'path': <String, dynamic>{
+            'type': 'string',
+            'description': 'Relative path of the file or folder to compress',
+          },
+        },
+        <String>['path'],
       ),
       _fn(
         'node_run',

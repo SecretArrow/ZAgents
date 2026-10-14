@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/models.dart' show AppSettings;
@@ -64,6 +66,31 @@ class UserAgentManager {
       }
     }
     final UserAgentRecord next = pool[(index + 1) % pool.length];
+    final AppSettings updated = category == UserAgentCategory.desktop
+        ? settings.copyWith(uaDesktopId: next.id)
+        : settings.copyWith(uaAndroidId: next.id);
+    await _ref.read(settingsProvider.notifier).update(updated);
+    return next;
+  }
+
+  /// Picks a genuinely RANDOM record of [mode]'s category (never the
+  /// currently active one) and persists it as the new sticky pick. Used by
+  /// the "New chat" prompt when the user accepts a random identity change.
+  Future<UserAgentRecord> rotateRandom(UaMode mode) async {
+    final AppSettings settings = _ref.read(settingsProvider);
+    final UserAgentCategory category = categoryFor(mode);
+    final List<UserAgentRecord> pool = userAgentsOf(category);
+    final int savedId = category == UserAgentCategory.desktop
+        ? settings.uaDesktopId
+        : settings.uaAndroidId;
+    final List<UserAgentRecord> candidates = <UserAgentRecord>[
+      for (final UserAgentRecord r in pool)
+        if (r.id != savedId) r,
+    ];
+    // Degenerate pool (single record): keep the current one.
+    if (candidates.isEmpty) return resolve(mode);
+    final UserAgentRecord next =
+        candidates[Random.secure().nextInt(candidates.length)];
     final AppSettings updated = category == UserAgentCategory.desktop
         ? settings.copyWith(uaDesktopId: next.id)
         : settings.copyWith(uaAndroidId: next.id);

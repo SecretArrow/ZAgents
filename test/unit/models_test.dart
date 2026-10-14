@@ -342,4 +342,21 @@ void main() {
       expect(decoded.content, 'x');
     });
   });
+
+  group('random user-agent prompt (askRandomUa)', () {
+    test('askRandomUa defaults to true', () {
+      expect(AppSettings().askRandomUa, isTrue);
+    });
+
+    test('askRandomUa roundtrip + backward compatible default', () {
+      final AppSettings off = AppSettings(askRandomUa: false);
+      expect(AppSettings.fromJson(off.toJson()).askRandomUa, isFalse);
+      expect(
+        AppSettings.fromJson(<String, dynamic>{'apiKey': 'k'}).askRandomUa,
+        isTrue,
+        reason: 'legacy storage without the flag must keep the prompt on',
+      );
+      expect(off.copyWith(askRandomUa: true).askRandomUa, isTrue);
+    });
+  });
 }

@@ -193,6 +193,13 @@ abstract class AppStrings {
   String get uaModeHint;
   String get uaCurrentLabel;
   String get uaRotateTooltip;
+  String get uaAskRandomTitle;
+  String get uaAskRandomSubtitle;
+  String get randomUaDialogTitle;
+  String get randomUaDialogBody;
+  String get randomUaAccept;
+  String get randomUaDecline;
+  String createdBy(String name);
 
   // -- Settings --------------------------------------------------------
   String get providerSection;
@@ -557,6 +564,23 @@ class AppStringsEn implements AppStrings {
   String get uaCurrentLabel => 'Active User-Agent';
   @override
   String get uaRotateTooltip => 'Use another User-Agent';
+  @override
+  String get uaAskRandomTitle => 'Offer random User-Agent on new chat';
+  @override
+  String get uaAskRandomSubtitle =>
+      'Every new chat asks whether the embedded browser should switch to a '
+      'different, randomly picked User-Agent. You can decline to keep the '
+      'current one.';
+  @override
+  String get randomUaDialogTitle => 'Random User-Agent';
+  @override
+  String get randomUaDialogBody =>
+      'Use a different, randomly picked User-Agent for the embedded browser '
+      'in this new chat? The choice is remembered until you change it again.';
+  @override
+  String get randomUaAccept => 'Yes, randomize';
+  @override
+  String get randomUaDecline => 'Keep current';
 
   // -- Settings --------------------------------------------------------
   @override
@@ -732,13 +756,17 @@ class AppStringsEn implements AppStrings {
   String get aboutSection => 'About';
   @override
   String get aboutBody =>
-      'ZAgents v1.4.0 — an Android clone of the chat.z.ai agent mode UI, '
+      'ZAgents v1.11.0 — an Android clone of the chat.z.ai agent mode UI, '
       'with custom OpenAI-compatible providers (OpenRouter, InferHub, '
       'Z.AI, OpenAI, DeepSeek, Groq, and more), per-provider API keys, '
-      'light/dark themes, multi-session chat with background running, '
-      'file uploads, a Context Manager, an in-app file manager with '
-      'zip support, and an embedded Node.js-style runtime with npm '
-      'package management. Your keys stay on this device.';
+      'light/dark themes, parallel multi-session chat with background '
+      'running, plan-first Todos, file uploads with zip extraction, a '
+      'Context Manager, an in-app file manager, and an embedded '
+      'Node.js-style runtime with npm package management. Your keys stay '
+      'on this device.';
+
+  @override
+  String createdBy(String name) => 'Created by $name';
 
   // -- Controller messages ----------------------------------------------
   @override
@@ -1038,6 +1066,23 @@ class AppStringsId implements AppStrings {
   String get uaCurrentLabel => 'User-Agent aktif';
   @override
   String get uaRotateTooltip => 'Pakai User-Agent lain';
+  @override
+  String get uaAskRandomTitle => 'Tawarkan User-Agent acak saat chat baru';
+  @override
+  String get uaAskRandomSubtitle =>
+      'Setiap chat baru menanyakan apakah browser tersemat harus beralih ke '
+      'User-Agent lain yang dipilih acak. Anda bisa menolak agar '
+      'User-Agent sekarang tetap dipakai.';
+  @override
+  String get randomUaDialogTitle => 'User-Agent acak';
+  @override
+  String get randomUaDialogBody =>
+      'Pakai User-Agent lain yang dipilih acak untuk browser tersemat di '
+      'chat baru ini? Pilihan ini diingat sampai Anda mengubahnya lagi.';
+  @override
+  String get randomUaAccept => 'Ya, acak';
+  @override
+  String get randomUaDecline => 'Pertahankan';
 
   // -- Settings --------------------------------------------------------
   @override
@@ -1215,13 +1260,17 @@ class AppStringsId implements AppStrings {
   String get aboutSection => 'Tentang';
   @override
   String get aboutBody =>
-      'ZAgents v1.4.0 — klon UI agent mode chat.z.ai untuk Android, '
+      'ZAgents v1.11.0 — klon UI agent mode chat.z.ai untuk Android, '
       'dengan custom provider OpenAI-compatible (OpenRouter, InferHub, '
       'Z.AI, OpenAI, DeepSeek, Groq, dan lainnya), API key per-provider, '
-      'tema terang/gelap, multi-sesi dengan proses latar belakang, '
-      'unggah file, Manajer Konteks, manajer file dengan dukungan zip, '
-      'serta runtime bergaya Node.js tersemat dengan manajemen package '
-      'npm. Key Anda tetap di perangkat ini.';
+      'tema terang/gelap, multi-sesi paralel dengan proses latar '
+      'belakang, Todos perencanaan, unggah file dengan ekstraksi zip, '
+      'Manajer Konteks, manajer file, serta runtime bergaya Node.js '
+      'tersemat dengan manajemen package npm. Key Anda tetap di '
+      'perangkat ini.';
+
+  @override
+  String createdBy(String name) => 'Dibuat oleh $name';
 
   // -- Controller messages ----------------------------------------------
   @override

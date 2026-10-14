@@ -526,6 +526,7 @@ class AppSettings {
     this.runUntilDone = true,
     this.planFirst = true,
     this.runInBackground = true,
+    this.askRandomUa = true,
     this.languageCode = defaultLanguageCode,
     this.themeMode = ThemeModeSetting.dark,
     this.uaMode = UaMode.auto,
@@ -557,6 +558,11 @@ class AppSettings {
   /// Keep the agent task running when the user leaves the app (Android
   /// foreground service + wake lock + progress notification).
   final bool runInBackground;
+
+  /// When true (default) tapping "New chat" offers a dialog asking whether
+  /// the embedded browser should switch to a different, randomly picked
+  /// User-Agent for the next conversation. Disable to skip the prompt.
+  final bool askRandomUa;
 
   /// UI language: 'en' (default) or 'id'. See lib/l10n/app_strings.dart.
   final String languageCode;
@@ -597,6 +603,7 @@ class AppSettings {
     bool? runUntilDone,
     bool? planFirst,
     bool? runInBackground,
+    bool? askRandomUa,
     String? languageCode,
     ThemeModeSetting? themeMode,
     UaMode? uaMode,
@@ -614,6 +621,7 @@ class AppSettings {
     runUntilDone: runUntilDone ?? this.runUntilDone,
     planFirst: planFirst ?? this.planFirst,
     runInBackground: runInBackground ?? this.runInBackground,
+    askRandomUa: askRandomUa ?? this.askRandomUa,
     languageCode: languageCode ?? this.languageCode,
     themeMode: themeMode ?? this.themeMode,
     uaMode: uaMode ?? this.uaMode,
@@ -633,6 +641,7 @@ class AppSettings {
     'runUntilDone': runUntilDone,
     'planFirst': planFirst,
     'runInBackground': runInBackground,
+    'askRandomUa': askRandomUa,
     'languageCode': languageCode,
     'themeMode': themeMode.name,
     'uaMode': uaMode.name,
@@ -653,6 +662,7 @@ class AppSettings {
       runUntilDone: json['runUntilDone'] as bool? ?? true,
       planFirst: json['planFirst'] as bool? ?? true,
       runInBackground: json['runInBackground'] as bool? ?? true,
+      askRandomUa: json['askRandomUa'] as bool? ?? true,
       languageCode: json['languageCode'] as String? ?? defaultLanguageCode,
       themeMode: themeModeSettingFromName(json['themeMode'] as String?),
       uaMode: uaModeFromName(json['uaMode'] as String?),
@@ -709,6 +719,7 @@ class AppSettings {
       runUntilDone: runUntilDone,
       planFirst: planFirst,
       runInBackground: runInBackground,
+      askRandomUa: askRandomUa,
       languageCode: languageCode,
       themeMode: themeMode,
       uaMode: uaMode,

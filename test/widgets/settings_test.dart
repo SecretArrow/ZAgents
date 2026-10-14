@@ -682,4 +682,39 @@ void main() {
     // The preview label updates with the new pick.
     expect(find.byKey(const Key('ua-current-preview')), findsOneWidget);
   });
+
+  testWidgets('ask-random-ua switch defaults on and persists the toggle', (
+    WidgetTester tester,
+  ) async {
+    final ProviderContainer container = await openSettings(tester);
+
+    // The UA section sits below the fold: reveal it first.
+    await tester.dragUntilVisible(
+      find.byKey(const Key('ask-random-ua-switch')),
+      find.byType(ListView),
+      const Offset(0, -200),
+    );
+    await tester.pumpAndSettle(
+      const Duration(milliseconds: 100),
+      EnginePhase.sendSemanticsUpdate,
+      const Duration(seconds: 15),
+    );
+
+    final SwitchListTile tile = tester.widget<SwitchListTile>(
+      find.byKey(const Key('ask-random-ua-switch')),
+    );
+    expect(
+      tile.value,
+      isTrue,
+      reason: 'the new-chat random UA prompt is enabled by default',
+    );
+
+    await tester.tap(find.byKey(const Key('ask-random-ua-switch')));
+    await tester.pumpAndSettle(
+      const Duration(milliseconds: 100),
+      EnginePhase.sendSemanticsUpdate,
+      const Duration(seconds: 15),
+    );
+    expect(container.read(settingsProvider).askRandomUa, isFalse);
+  });
 }

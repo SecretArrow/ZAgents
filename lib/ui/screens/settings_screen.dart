@@ -44,6 +44,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     bool? runUntilDone,
     bool? planFirst,
     bool? runInBackground,
+    bool? askRandomUa,
     Object? maxSteps,
     String? languageCode,
     ThemeModeSetting? themeMode,
@@ -59,6 +60,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             runUntilDone: runUntilDone,
             planFirst: planFirst,
             runInBackground: runInBackground,
+            askRandomUa: askRandomUa,
             maxSteps: maxSteps ?? current.maxSteps,
             languageCode: languageCode,
             themeMode: themeMode,
@@ -350,6 +352,19 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                       ),
                     ],
                   ),
+                  const Divider(height: 20),
+                  SwitchListTile(
+                    key: const Key('ask-random-ua-switch'),
+                    contentPadding: EdgeInsets.zero,
+                    dense: true,
+                    title: Text(strings.uaAskRandomTitle),
+                    subtitle: Text(
+                      strings.uaAskRandomSubtitle,
+                      style: TextStyle(fontSize: 12, color: palette.muted),
+                    ),
+                    value: settings.askRandomUa,
+                    onChanged: (bool value) => _commit(askRandomUa: value),
+                  ),
                 ],
               ),
             ),
@@ -462,13 +477,35 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             const SizedBox(height: 16),
             _sectionTitle(strings.aboutSection),
             _card(
-              child: Text(
-                strings.aboutBody,
-                style: TextStyle(
-                  fontSize: 12.5,
-                  color: palette.muted,
-                  height: 1.5,
-                ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Row(
+                    key: const Key('about-creator'),
+                    children: <Widget>[
+                      Icon(Icons.code_rounded, size: 20, color: palette.muted),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          strings.createdBy('Maragung'),
+                          style: const TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    strings.aboutBody,
+                    style: TextStyle(
+                      fontSize: 12.5,
+                      color: palette.muted,
+                      height: 1.5,
+                    ),
+                  ),
+                ],
               ),
             ),
             const SizedBox(height: 24),

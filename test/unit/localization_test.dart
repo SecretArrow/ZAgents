@@ -84,4 +84,21 @@ void main() {
       expect(updated.baseUrl, base.baseUrl);
     });
   });
+
+  test('random UA prompt + creator strings are localized in both bundles', () {
+    final AppStrings en = appStringsFor('en');
+    final AppStrings id = appStringsFor('id');
+    expect(en.uaAskRandomTitle, contains('random User-Agent'));
+    expect(en.randomUaDialogTitle, 'Random User-Agent');
+    expect(en.randomUaAccept, 'Yes, randomize');
+    expect(en.randomUaDecline, 'Keep current');
+    expect(en.createdBy('Maragung'), 'Created by Maragung');
+    expect(id.uaAskRandomTitle, contains('acak'));
+    expect(id.randomUaDialogTitle, 'User-Agent acak');
+    expect(id.randomUaAccept, 'Ya, acak');
+    expect(id.randomUaDecline, 'Pertahankan');
+    expect(id.createdBy('Maragung'), 'Dibuat oleh Maragung');
+    expect(en.aboutBody, contains('v1.11.0'));
+    expect(id.aboutBody, contains('v1.11.0'));
+  });
 }

@@ -121,4 +121,44 @@ void main() {
       expect(manager.resolve(UaMode.auto).id, androidPick.id);
     });
   });
+
+  group('UserAgentManager.rotateRandom', () {
+    test(
+      'picks a different record of the same category and persists it',
+      () async {
+        final ProviderContainer c = container();
+        final UserAgentManager manager = c.read(userAgentManagerProvider);
+        final UserAgentRecord before = manager.resolve(UaMode.android);
+        final UserAgentRecord after = await manager.rotateRandom(
+          UaMode.android,
+        );
+        expect(after.category, UserAgentCategory.android);
+        expect(after.id, isNot(before.id));
+        expect(after.ua, isNot(before.ua));
+        // Sticky: the random pick survives further resolves ...
+        expect(manager.resolve(UaMode.android).id, after.id);
+        // ... and was persisted into settings.
+        expect(c.read(settingsProvider).uaAndroidId, after.id);
+      },
+    );
+
+    test('desktop rotation stays inside the desktop pool', () async {
+      final ProviderContainer c = container();
+      final UserAgentManager manager = c.read(userAgentManagerProvider);
+      final UserAgentRecord after = await manager.rotateRandom(UaMode.desktop);
+      expect(after.category, UserAgentCategory.desktop);
+      expect(c.read(settingsProvider).uaDesktopId, after.id);
+    });
+
+    test('repeated calls always move away from the current pick', () async {
+      final ProviderContainer c = container();
+      final UserAgentManager manager = c.read(userAgentManagerProvider);
+      UserAgentRecord current = manager.resolve(UaMode.android);
+      for (var i = 0; i < 8; i++) {
+        final UserAgentRecord next = await manager.rotateRandom(UaMode.android);
+        expect(next.id, isNot(current.id));
+        current = next;
+      }
+    });
+  });
 }

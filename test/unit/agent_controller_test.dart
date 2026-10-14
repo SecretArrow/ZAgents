@@ -999,6 +999,117 @@ void main() {
       },
     );
   });
+
+  group('binary attachments expose their documents path', () {
+    test('zip attachments advertise the uploads path + unzip_file hint on the wire', () async {
+      final FakeLlmClient llm = FakeLlmClient(<AssistantTurn>[
+        AssistantTurn(content: 'extracted'),
+      ]);
+      final ProviderContainer container = ProviderContainer(
+        overrides: testOverrides(
+          llm: llm,
+          dir: tempDir,
+          settings: AppSettings(apiKey: 'k'),
+        ),
+      );
+      addTearDown(container.dispose);
+
+      // Mimic the composer: the picked file is copied into uploads/.
+      final Directory uploads = Directory(
+        '${tempDir.path}${Platform.pathSeparator}uploads',
+      );
+      await uploads.create(recursive: true);
+      final File zip = File(
+        '${uploads.path}${Platform.pathSeparator}1_project.zip',
+      );
+      await zip.writeAsBytes(<int>[1, 2, 3, 4]);
+
+      await container
+          .read(chatControllerProvider.notifier)
+          .send(
+            'run the JS project inside',
+            attachments: <ChatAttachment>[
+              ChatAttachment(
+                name: 'project.zip',
+                path: zip.path,
+                sizeBytes: 4,
+                kind: AttachmentKind.other,
+              ),
+            ],
+          );
+
+      final Map<String, dynamic> userWire = llm.calls.first.firstWhere(
+        (m) => m['role'] == 'user',
+      );
+      final String content = userWire['content'] as String;
+      expect(content, contains('[Attached file: project.zip'));
+      // The documents-relative path + how-to hint reach the model.
+      expect(content, contains('uploads/1_project.zip'));
+      expect(content, contains('unzip_file'));
+      expect(content, contains('node_run'));
+    });
+
+    test('non-zip binaries get the generic processing hint', () async {
+      final FakeLlmClient llm = FakeLlmClient(<AssistantTurn>[
+        AssistantTurn(content: 'noted'),
+      ]);
+      final ProviderContainer container = ProviderContainer(
+        overrides: testOverrides(
+          llm: llm,
+          dir: tempDir,
+          settings: AppSettings(apiKey: 'k'),
+        ),
+      );
+      addTearDown(container.dispose);
+
+      final File bin = File('${tempDir.path}/data.bin');
+      await bin.writeAsBytes(<int>[9, 9]);
+
+      await container
+          .read(chatControllerProvider.notifier)
+          .send(
+            'inspect this',
+            attachments: <ChatAttachment>[
+              ChatAttachment(
+                name: 'data.bin',
+                path: bin.path,
+                sizeBytes: 2,
+                kind: AttachmentKind.other,
+              ),
+            ],
+          );
+
+      final Map<String, dynamic> userWire = llm.calls.first.firstWhere(
+        (m) => m['role'] == 'user',
+      );
+      final String content = userWire['content'] as String;
+      expect(content, contains('data.bin'));
+      expect(content, contains('node_run'));
+      expect(content, isNot(contains('unzip_file with this path')));
+    });
+
+    test('agent tool list includes zip_file and unzip_file', () async {
+      final FakeLlmClient llm = FakeLlmClient(<AssistantTurn>[
+        AssistantTurn(content: 'ok'),
+      ]);
+      final ProviderContainer container = ProviderContainer(
+        overrides: testOverrides(
+          llm: llm,
+          dir: tempDir,
+          settings: AppSettings(apiKey: 'k'),
+        ),
+      );
+      addTearDown(container.dispose);
+
+      await container.read(chatControllerProvider.notifier).send('hello');
+      final List<Map<String, dynamic>>? tools = llm.toolSets.first;
+      final List<String> names = <String>[
+        for (final Map<String, dynamic> t in tools!)
+          t['function']['name'] as String,
+      ];
+      expect(names, containsAll(<String>['zip_file', 'unzip_file']));
+    });
+  });
 }
 
 /// LLM fake whose turns are gated behind completers for parallel-run tests.

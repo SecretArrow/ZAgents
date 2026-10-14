@@ -103,6 +103,11 @@ class _SessionRun {
   /// Latest plan written via `todo_write` in THIS run. Mirrored into the
   /// [ChatState] on every sync so the UI can show live plan progress.
   List<TodoItem> latestTodos = const <TodoItem>[];
+
+  /// Absolute path of the app documents directory, resolved once per run so
+  /// binary attachment notes can advertise the documents-relative path the
+  /// file tools expect (e.g. `uploads/1_project.zip`).
+  String? docsPath;
 }
 
 /// Drives multi-session agent loops: user prompt -> LLM (streaming) ->
@@ -194,7 +199,9 @@ class ChatController extends Notifier<ChatState> {
     }
     _markRunning();
 
-    // Preload attachment contents (text bodies + image data URLs).
+    // Preload attachment contents (text bodies + image data URLs) and the
+    // documents root (for relative path hints on binary attachments).
+    run.docsPath ??= (await ref.read(documentsDirProvider)()).path;
     await _prepareAttachments(run, attachments);
 
     final _RunResult result = await _runLoop(
@@ -328,15 +335,42 @@ class ChatController extends Notifier<ChatState> {
           // Images travel as separate content parts, not inline text.
           break;
         case AttachmentKind.other:
+          // Binary: metadata + the documents-relative path so the agent can
+          // act on the file (unzip_file, node_run, zip_file ...).
+          final String relative = _relativeToDocs(att.path, run);
+          final bool isZip = att.name.toLowerCase().endsWith('.zip');
           buffer
             ..writeln()
             ..writeln(
-              '[Attached file: ${att.name} '
-              '(${att.sizeBytes} bytes, binary — no preview available)]',
+              '[Attached file: ${att.name} (${att.sizeBytes} bytes, binary — '
+              'no preview available)]',
             );
+          if (relative.isNotEmpty) {
+            buffer.writeln(
+              isZip
+                  ? 'The archive is saved at "$relative". Use unzip_file '
+                        'with this path to extract it, then read_file or '
+                        'node_run (require relative paths like '
+                        '"./$relative/...") to work with the files inside.'
+                  : 'The file is saved at "$relative". It can be processed '
+                        'with node_run or re-archived with zip_file.',
+            );
+          }
       }
     }
     return buffer.toString();
+  }
+
+  /// Documents-relative form of [absolutePath] (forward slashes), or ''
+  /// when the path is unknown/outside the documents root.
+  String _relativeToDocs(String absolutePath, _SessionRun run) {
+    final String? docsPath = run.docsPath;
+    if (docsPath == null || docsPath.isEmpty) return '';
+    String normalized = absolutePath.replaceAll('\\', '/');
+    String root = docsPath.replaceAll('\\', '/');
+    if (!root.endsWith('/')) root = '$root/';
+    if (!normalized.startsWith(root)) return '';
+    return normalized.substring(root.length);
   }
 
   Future<_RunResult> _runLoop(

@@ -105,6 +105,7 @@ final toolExecutorProvider = Provider<ToolExecutor>(
     isAutomationEnabled: () => ref.read(settingsProvider).automationEnabled,
     js: ref.watch(jsRuntimeProvider),
     npm: ref.watch(npmServiceProvider),
+    fs: ref.watch(fileSystemServiceProvider),
   ),
 );
 

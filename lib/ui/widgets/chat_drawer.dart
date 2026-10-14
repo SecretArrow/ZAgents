@@ -118,6 +118,42 @@ class ChatDrawer extends ConsumerWidget {
     }
   }
 
+  /// New chat flow. When "offer random User-Agent" is enabled (default),
+  /// a dialog asks whether the embedded browser should switch to a
+  /// different, randomly picked User-Agent before the fresh conversation
+  /// starts. Declining (or a disabled prompt) keeps the current identity.
+  Future<void> _onNewChat(BuildContext context, WidgetRef ref) async {
+    final AppSettings settings = ref.read(settingsProvider);
+    if (settings.askRandomUa) {
+      final AppStrings strings = stringsOf(context);
+      final bool? randomize = await showDialog<bool>(
+        context: context,
+        builder: (BuildContext dialogContext) => AlertDialog(
+          backgroundColor: context.zSurface,
+          title: Text(strings.randomUaDialogTitle),
+          content: Text(strings.randomUaDialogBody),
+          actions: <Widget>[
+            TextButton(
+              key: const Key('random-ua-decline'),
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: Text(strings.randomUaDecline),
+            ),
+            FilledButton(
+              key: const Key('random-ua-accept'),
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: Text(strings.randomUaAccept),
+            ),
+          ],
+        ),
+      );
+      if (randomize == true) {
+        await ref.read(userAgentManagerProvider).rotateRandom(settings.uaMode);
+      }
+    }
+    ref.read(chatControllerProvider.notifier).newChat();
+    if (context.mounted) Navigator.of(context).pop();
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final AppStrings strings = stringsOf(context);
@@ -175,10 +211,7 @@ class ChatDrawer extends ConsumerWidget {
               padding: const EdgeInsets.symmetric(horizontal: 12),
               child: FilledButton.icon(
                 key: const Key('new-chat'),
-                onPressed: () {
-                  ref.read(chatControllerProvider.notifier).newChat();
-                  Navigator.of(context).pop();
-                },
+                onPressed: () => _onNewChat(context, ref),
                 icon: const Icon(Icons.add_rounded),
                 label: Text(strings.newChat),
               ),
