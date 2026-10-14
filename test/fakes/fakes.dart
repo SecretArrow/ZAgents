@@ -20,10 +20,18 @@ const String tinyPngBase64 =
 /// Scripted LLM client for tests: returns queued turns in order
 /// (last turn repeats when the queue is exhausted).
 class FakeLlmClient implements LlmClient {
-  FakeLlmClient(this.turns);
+  FakeLlmClient(this.turns, {this.onFirstDelta, this.onTurnComplete});
 
   final List<AssistantTurn> turns;
   int _index = 0;
+
+  /// Invoked just before the first content delta of a turn is emitted —
+  /// lets tests trigger controller.stop() mid-stream.
+  final void Function()? onFirstDelta;
+
+  /// Invoked right before a turn is handed back to the controller — lets
+  /// tests trigger controller.stop() between steps.
+  final void Function()? onTurnComplete;
 
   /// Wire messages captured for every call.
   final List<List<Map<String, dynamic>>> calls = <List<Map<String, dynamic>>>[];
@@ -38,17 +46,34 @@ class FakeLlmClient implements LlmClient {
     required List<Map<String, dynamic>> messages,
     List<Map<String, dynamic>>? tools,
     void Function(String delta)? onDelta,
+    bool Function()? shouldAbort,
   }) async {
+    if (shouldAbort?.call() ?? false) {
+      throw const LlmAbortedException('');
+    }
     calls.add(messages);
     toolSets.add(tools);
     final AssistantTurn turn =
         turns[_index < turns.length - 1 ? _index++ : turns.length - 1];
     if (turn.content.isNotEmpty && onDelta != null) {
+      var first = true;
+      final buffer = StringBuffer();
       for (final String part in turn.content.split(' ')) {
+        if (first) {
+          onFirstDelta?.call();
+          first = false;
+        }
+        buffer.write('$part ');
         onDelta('$part ');
         await Future<void>.delayed(Duration.zero);
+        // Abort mid-stream: Stop must cut the turn short, keeping what
+        // was already streamed.
+        if (shouldAbort?.call() ?? false) {
+          throw LlmAbortedException(buffer.toString());
+        }
       }
     }
+    onTurnComplete?.call();
     return turn;
   }
 }

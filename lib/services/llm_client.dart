@@ -40,6 +40,18 @@ class ToolCallRequest {
   }
 }
 
+/// Thrown when [LlmClient.complete] is aborted through its `shouldAbort`
+/// callback (the user pressed Stop). Carries whatever content was already
+/// streamed so the caller can keep the partial answer.
+class LlmAbortedException implements Exception {
+  const LlmAbortedException(this.partialContent);
+
+  final String partialContent;
+
+  @override
+  String toString() => 'LlmAbortedException';
+}
+
 /// One completed assistant turn: streamed text + any tool calls.
 class AssistantTurn {
   AssistantTurn({
@@ -73,12 +85,19 @@ class LlmClient {
   ///
   /// [onDelta] receives incremental content tokens while streaming.
   /// Tool call deltas are accumulated internally and returned with the turn.
+  /// [shouldAbort] is polled while streaming; when it returns true the
+  /// connection is torn down immediately and [LlmAbortedException] is
+  /// thrown with the partial content — Stop must feel instant.
   Future<AssistantTurn> complete({
     required LlmConfig config,
     required List<Map<String, dynamic>> messages,
     List<Map<String, dynamic>>? tools,
     void Function(String delta)? onDelta,
+    bool Function()? shouldAbort,
   }) async {
+    if (shouldAbort?.call() ?? false) {
+      throw const LlmAbortedException('');
+    }
     final url = Uri.parse(
       '${config.baseUrl.replaceAll(RegExp(r'/+$'), '')}/chat/completions',
     );
@@ -116,11 +135,16 @@ class LlmClient {
     final contentType = (response.headers['content-type'] ?? '').toLowerCase();
     if (!contentType.contains('text/event-stream')) {
       // Some providers ignore `stream: true`; parse a plain JSON response.
+      if (shouldAbort?.call() ?? false) {
+        throw const LlmAbortedException('');
+      }
       final raw = await response.stream.bytesToString();
       return _parseNonStreaming(raw);
     }
     try {
-      return await _parseSse(response.stream, onDelta);
+      return await _parseSse(response.stream, onDelta, shouldAbort);
+    } on LlmAbortedException {
+      rethrow;
     } on LlmException {
       rethrow;
     } catch (e) {
@@ -154,14 +178,23 @@ class LlmClient {
   Future<AssistantTurn> _parseSse(
     http.ByteStream stream,
     void Function(String delta)? onDelta,
+    bool Function()? shouldAbort,
   ) async {
     final contentBuffer = StringBuffer();
     final toolAccumulators = <int, _ToolAccumulator>{};
     var lineBuffer = '';
     var done = false;
+    var aborted = false;
 
     try {
       await for (final chunk in stream.transform(utf8.decoder)) {
+        // Stop must interrupt DURING generation: bail out of the stream at
+        // the first chance, which also cancels the HTTP subscription and
+        // tears the connection down.
+        if (shouldAbort?.call() ?? false) {
+          aborted = true;
+          break;
+        }
         lineBuffer += chunk;
         while (true) {
           final newlineIndex = lineBuffer.indexOf('\n');
@@ -235,6 +268,9 @@ class LlmClient {
         return AssistantTurn(content: contentBuffer.toString());
       }
       throw LlmException('Connection lost while streaming: $e');
+    }
+    if (aborted) {
+      throw LlmAbortedException(contentBuffer.toString());
     }
 
     final ordered = toolAccumulators.entries.toList()

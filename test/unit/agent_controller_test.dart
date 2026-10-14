@@ -509,6 +509,85 @@ void main() {
     expect(background.calls.last, 'stop');
   });
 
+  test('stop during streaming aborts the turn and marks it stopped', () async {
+    final RecordingBackgroundRun background = RecordingBackgroundRun();
+    late final ProviderContainer container;
+    final FakeLlmClient llm = FakeLlmClient(
+      <AssistantTurn>[AssistantTurn(content: 'a long answer')],
+      // Stop the run as soon as the first token arrives.
+      onFirstDelta: () =>
+          container.read(chatControllerProvider.notifier).stop(),
+    );
+    container = ProviderContainer(
+      overrides: <Override>[
+        ...testOverrides(
+          llm: llm,
+          dir: tempDir,
+          settings: AppSettings(apiKey: 'k'),
+        ),
+        backgroundRunServiceProvider.overrideWithValue(background),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    await container.read(chatControllerProvider.notifier).send('go');
+
+    // The abort cut the stream short: no second LLM call was made and the
+    // partial answer is kept with the stopped marker.
+    expect(llm.calls, hasLength(1));
+    final ChatState state = container.read(chatControllerProvider);
+    expect(state.isRunning, isFalse);
+    expect(state.messages.last.role, Role.assistant);
+    expect(state.messages.last.content, contains('a'));
+    expect(state.messages.last.content, contains('_(stopped)_'));
+    expect(state.messages.last.isStreaming, isFalse);
+    // The background hold was still released on the abort path.
+    expect(background.calls.last, 'stop');
+  });
+
+  test('stop between steps prevents the next LLM call', () async {
+    late final ProviderContainer container;
+    final FakeLlmClient llm = FakeLlmClient(
+      <AssistantTurn>[
+        AssistantTurn(
+          content: '',
+          toolCalls: <ToolCallRequest>[
+            ToolCallRequest(
+              id: 't1',
+              name: 'browser_navigate',
+              argumentsJson: jsonEncode(<String, dynamic>{
+                'url': 'https://example.com',
+              }),
+            ),
+          ],
+        ),
+        AssistantTurn(content: 'should never be reached'),
+      ],
+      // Stop the run as soon as the tool-call turn is handed back.
+      onTurnComplete: () =>
+          container.read(chatControllerProvider.notifier).stop(),
+    );
+    container = ProviderContainer(
+      overrides: testOverrides(
+        llm: llm,
+        dir: tempDir,
+        settings: AppSettings(apiKey: 'k'),
+      ),
+    );
+    addTearDown(container.dispose);
+
+    await container.read(chatControllerProvider.notifier).send('go');
+
+    // The loop exited before the second turn and before executing the
+    // requested tool — the streaming placeholder is marked stopped.
+    expect(llm.calls, hasLength(1));
+    final ChatState state = container.read(chatControllerProvider);
+    expect(state.isRunning, isFalse);
+    expect(state.messages.last.role, Role.assistant);
+    expect(state.messages.last.content, '_(stopped)_');
+    expect(state.messages.last.isStreaming, isFalse);
+  });
+
   test('runInBackground=false never touches the background service', () async {
     final RecordingBackgroundRun background = RecordingBackgroundRun();
     final ProviderContainer container = ProviderContainer(
@@ -1125,6 +1204,7 @@ class _GatedLlmClient implements LlmClient {
     required List<Map<String, dynamic>> messages,
     List<Map<String, dynamic>>? tools,
     void Function(String delta)? onDelta,
+    bool Function()? shouldAbort,
   }) => gates[nextTurn() % gates.length].future;
 }
 
@@ -1137,5 +1217,6 @@ class _ThrowingLlmClient implements LlmClient {
     required List<Map<String, dynamic>> messages,
     List<Map<String, dynamic>>? tools,
     void Function(String delta)? onDelta,
+    bool Function()? shouldAbort,
   }) async => throw const SocketException('provider unreachable');
 }

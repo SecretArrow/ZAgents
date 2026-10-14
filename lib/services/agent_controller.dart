@@ -423,26 +423,39 @@ class ChatController extends Notifier<ChatState> {
       int planNudges = 0;
 
       for (var step = 0; step < stepLimit; step++) {
+        // Stop pressed before this turn even starts — leave immediately.
+        if (run.stopRequested) break;
+
         // 1. Stream one assistant turn.
         run.messages.add(ChatMessage.assistant('', isStreaming: true));
         _sync(run);
 
         final buffer = StringBuffer();
-        final turn = await ref
-            .read(llmClientProvider)
-            .complete(
-              config: config,
-              messages: wire,
-              tools: tools,
-              onDelta: (delta) {
-                buffer.write(delta);
-                run.messages[run.messages.length - 1] = ChatMessage.assistant(
-                  buffer.toString(),
-                  isStreaming: true,
-                );
-                _sync(run);
-              },
-            );
+        final AssistantTurn turn;
+        try {
+          turn = await ref
+              .read(llmClientProvider)
+              .complete(
+                config: config,
+                messages: wire,
+                tools: tools,
+                onDelta: (delta) {
+                  buffer.write(delta);
+                  run.messages[run.messages.length - 1] = ChatMessage.assistant(
+                    buffer.toString(),
+                    isStreaming: true,
+                  );
+                  _sync(run);
+                },
+                // Stop must interrupt DURING the stream, not after it.
+                shouldAbort: () => run.stopRequested,
+              );
+        } on LlmAbortedException {
+          // Keep the partial answer on screen; the finalize step below
+          // marks it as stopped. No wire entry is added, so the next
+          // message continues from a clean history.
+          break;
+        }
         if (run.stopRequested) break;
 
         final toolCalls = <ToolCall>[
@@ -522,9 +535,12 @@ class ChatController extends Notifier<ChatState> {
       if (run.stopRequested && run.messages.isNotEmpty) {
         final ChatMessage last = run.messages.last;
         if (last.role == Role.assistant && last.isStreaming) {
+          final String marker = appStringsFor(settings.languageCode)
+              .stoppedMarkdown;
           run.messages[run.messages.length - 1] = ChatMessage.assistant(
-            '${last.content}\n\n${appStringsFor(settings.languageCode).stoppedMarkdown}',
+            last.content.trim().isEmpty ? marker : '${last.content}\n\n$marker',
           );
+          _sync(run);
         }
       } else if (!run.stopRequested &&
           run.messages.isNotEmpty &&
@@ -724,7 +740,9 @@ class ChatController extends Notifier<ChatState> {
         sessionId: run.sessionId,
         title: run.title,
         messages: [...run.messages],
-        isRunning: run.isRunning && !run.stopRequested,
+        // A stopping run is still running until its loop actually exits —
+        // showing send here would silently swallow the next message.
+        isRunning: run.isRunning,
       );
       return;
     }

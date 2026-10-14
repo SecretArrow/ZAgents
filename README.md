@@ -93,6 +93,12 @@ OpenAI-compatible: **OpenRouter, InferHub, Z.AI, OpenAI, DeepSeek, Groq, dan lai
   diminta menanyakan kata sandi ke Anda lalu mencoba lagi; di File Manager
   muncul **dialog kata sandi** saat mengekstrak arsip terenkripsi (kata
   sandi salah menampilkan pesan khusus).
+- **Tombol Stop kini instan (v1.12.1)** — menekan **Stop** langsung
+  **memutus koneksi streaming** ke provider (sebelumnya tombol hanya
+  menandai flag yang baru dicek setelah giliran/tool selesai, jadi terasa
+  mati). Jawaban sebagian tetap tampil dengan penanda *stopped*, run latar
+  belakang dirilis dengan benar, dan tombol kirim tidak muncul selama run
+  masih dalam proses berhenti (pesan tidak lagi tertelan diam-diam).
 - **Pencarian + paging universal (v1.6.0)** — SEMUA list di aplikasi memakai
   widget `PagedList` yang sama: **5 item per halaman** (termasuk dropdown model),
   kolom pencarian, pager first/prev/next/last, dan empty state "No results".
