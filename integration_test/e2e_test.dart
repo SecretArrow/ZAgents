@@ -130,6 +130,10 @@ void main() {
       'e2e-key-2',
     );
 
+    // Leave the editor first — the providers manager is behind it.
+    await tester.tap(find.byType(BackButton).first);
+    await tester.pumpAndSettle();
+
     // v1.10.0: long-pressing a (non-active) provider card opens the
     // confirmation dialog; cancelling keeps the connection unchanged.
     await tester.longPress(find.byKey(const Key('provider-InferHub')));
@@ -139,9 +143,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('provider-activate-dialog')), findsNothing);
 
-    // Leave the editor and the providers manager.
-    await tester.tap(find.byType(BackButton).first);
-    await tester.pumpAndSettle();
+    // Leave the providers manager.
     await tester.tap(find.byType(BackButton).first);
     await tester.pumpAndSettle();
     expect(find.byType(SettingsScreen), findsOneWidget);
