@@ -350,9 +350,81 @@ class _FilesScreenState extends ConsumerState<FilesScreen> {
   }
 
   Future<void> _extract(FsEntry entry) async {
-    await _guard(
-      () => ref.read(fileSystemServiceProvider).unzip(entry.relativePath),
-      stringsOf(context).unzippedOk,
+    final FileSystemService service = ref.read(fileSystemServiceProvider);
+    try {
+      await _runExtract(service, entry, null);
+    } on ZipPasswordRequiredException {
+      // Encrypted archive: ask for the password and retry once.
+      if (!mounted) return;
+      final String? password = await _askPassword(entry.name);
+      if (password == null || password.isEmpty) return;
+      try {
+        await _runExtract(service, entry, password);
+      } on ZipWrongPasswordException {
+        if (mounted) _snack(stringsOf(context).wrongPassword);
+      }
+    }
+  }
+
+  /// Runs one extraction attempt. Password problems are rethrown so the
+  /// caller can drive the password dialog; every other failure keeps the
+  /// generic operation-failed snackbar.
+  Future<void> _runExtract(
+    FileSystemService service,
+    FsEntry entry,
+    String? password,
+  ) async {
+    try {
+      await service.unzip(entry.relativePath, password: password);
+      if (!mounted) return;
+      _snack(stringsOf(context).unzippedOk);
+      await _refresh();
+    } on ZipWrongPasswordException {
+      rethrow;
+    } on ZipPasswordRequiredException {
+      rethrow;
+    } catch (_) {
+      if (mounted) _toast(stringsOf(context).operationFailed);
+    }
+  }
+
+  /// Dialog asking for an encrypted archive's password.
+  Future<String?> _askPassword(String name) {
+    final AppStrings strings = stringsOf(context);
+    final TextEditingController controller = TextEditingController();
+    return showDialog<String>(
+      context: context,
+      builder: (BuildContext dialogContext) => AlertDialog(
+        key: const Key('unzip-password-dialog'),
+        title: Text(strings.unzipPasswordTitle),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Text(strings.unzipPasswordBody(name)),
+            const SizedBox(height: 12),
+            TextField(
+              key: const Key('unzip-password-field'),
+              controller: controller,
+              obscureText: true,
+              autofocus: true,
+              decoration: InputDecoration(labelText: strings.passwordFieldHint),
+            ),
+          ],
+        ),
+        actions: <Widget>[
+          TextButton(
+            key: const Key('unzip-password-cancel'),
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: Text(strings.cancel),
+          ),
+          FilledButton(
+            key: const Key('unzip-password-ok'),
+            onPressed: () => Navigator.of(dialogContext).pop(controller.text),
+            child: Text(strings.unzipPasswordConfirm),
+          ),
+        ],
+      ),
     );
   }
 

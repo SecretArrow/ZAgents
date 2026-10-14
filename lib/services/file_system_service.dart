@@ -23,6 +23,25 @@ class FsEntry {
       : '';
 }
 
+/// Thrown when an archive is encrypted (ZipCrypto or WinZip AES) and no
+/// password was supplied to [FileSystemService.unzip].
+class ZipPasswordRequiredException implements Exception {
+  const ZipPasswordRequiredException(this.filename);
+
+  final String filename;
+
+  @override
+  String toString() => 'ZipPasswordRequiredException: $filename';
+}
+
+/// Thrown when the supplied password does not decrypt the archive.
+class ZipWrongPasswordException implements Exception {
+  const ZipWrongPasswordException();
+
+  @override
+  String toString() => 'ZipWrongPasswordException';
+}
+
 /// All file-management operations for the in-app File Manager and the
 /// zip/unzip features. Every path is sandboxed under the app documents
 /// directory — traversal attempts are rejected.
@@ -241,48 +260,78 @@ class FileSystemService {
 
   /// Extracts [zipRelative] into a sibling folder named after the archive
   /// (or [destName]). Returns the destination's relative path.
-  Future<String> unzip(String zipRelative, {String? destName}) async {
+  ///
+  /// Encrypted archives (legacy ZipCrypto and WinZip AES-128/192/256) are
+  /// decrypted with [password]. Passing no password to an encrypted archive
+  /// throws [ZipPasswordRequiredException]; a wrong password throws
+  /// [ZipWrongPasswordException].
+  Future<String> unzip(
+    String zipRelative, {
+    String? destName,
+    String? password,
+  }) async {
     final String? zipPath = await resolve(zipRelative);
     if (zipPath == null) throw const FileSystemException('Invalid path');
     final List<int> bytes = await File(zipPath).readAsBytes();
-    final Archive archive = ZipDecoder().decodeBytes(bytes);
-    final String zipName = zipPath.split(Platform.pathSeparator).last;
-    final String parentDir = zipPath.substring(
-      0,
-      zipPath.lastIndexOf(Platform.pathSeparator),
-    );
-    String folderName =
-        destName ??
-        (zipName.toLowerCase().endsWith('.zip')
-            ? zipName.substring(0, zipName.length - 4)
-            : '${zipName}_extracted');
-    // Never collide with an existing entry next to the archive (e.g.
-    // extracting proj.zip next to the original proj/ folder).
-    if (FileSystemEntity.typeSync(
-          '$parentDir${Platform.pathSeparator}$folderName',
-        ) !=
-        FileSystemEntityType.notFound) {
-      folderName = '${folderName}_extracted';
-    }
-    final Directory dest = Directory(
-      '$parentDir${Platform.pathSeparator}$folderName',
-    );
-    await dest.create(recursive: true);
-    for (final ArchiveFile file in archive.files) {
-      final String outPath =
-          '${dest.path}${Platform.pathSeparator}${file.name.replaceAll('/', Platform.pathSeparator)}';
-      if (file.isFile) {
-        final File outFile = File(outPath);
-        await outFile.parent.create(recursive: true);
-        await outFile.writeAsBytes(file.content as List<int>);
-      } else {
-        await Directory(outPath).create(recursive: true);
+    // The archive package decrypts lazily: encryption problems surface
+    // while entries are read, not only during decodeBytes, so both the
+    // decode and the extraction loop must be covered here.
+    try {
+      final Archive archive = ZipDecoder().decodeBytes(
+        bytes,
+        password: (password == null || password.isEmpty) ? null : password,
+      );
+      final String zipName = zipPath.split(Platform.pathSeparator).last;
+      final String parentDir = zipPath.substring(
+        0,
+        zipPath.lastIndexOf(Platform.pathSeparator),
+      );
+      String folderName =
+          destName ??
+          (zipName.toLowerCase().endsWith('.zip')
+              ? zipName.substring(0, zipName.length - 4)
+              : '${zipName}_extracted');
+      // Never collide with an existing entry next to the archive (e.g.
+      // extracting proj.zip next to the original proj/ folder).
+      if (FileSystemEntity.typeSync(
+            '$parentDir${Platform.pathSeparator}$folderName',
+          ) !=
+          FileSystemEntityType.notFound) {
+        folderName = '${folderName}_extracted';
       }
+      final Directory dest = Directory(
+        '$parentDir${Platform.pathSeparator}$folderName',
+      );
+      await dest.create(recursive: true);
+      for (final ArchiveFile file in archive.files) {
+        final String outPath =
+            '${dest.path}${Platform.pathSeparator}${file.name.replaceAll('/', Platform.pathSeparator)}';
+        if (file.isFile) {
+          final File outFile = File(outPath);
+          await outFile.parent.create(recursive: true);
+          await outFile.writeAsBytes(file.content as List<int>);
+        } else {
+          await Directory(outPath).create(recursive: true);
+        }
+      }
+      final String root = await _root();
+      return dest.path.startsWith(root)
+          ? dest.path.substring(root.length + 1)
+          : dest.path;
+    } on ArchiveException catch (error) {
+      // The archive package reports encryption problems through message
+      // text only, so map them onto typed exceptions callers can act on.
+      final String message = error.message;
+      if (message.contains('A password is needed')) {
+        throw ZipPasswordRequiredException(
+          zipPath.split(Platform.pathSeparator).last,
+        );
+      }
+      if (message.contains('Wrong password')) {
+        throw const ZipWrongPasswordException();
+      }
+      rethrow;
     }
-    final String root = await _root();
-    return dest.path.startsWith(root)
-        ? dest.path.substring(root.length + 1)
-        : dest.path;
   }
 
   /// Reads a text preview (max [maxChars]) of a file.

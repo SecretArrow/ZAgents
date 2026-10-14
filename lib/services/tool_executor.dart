@@ -312,7 +312,30 @@ class ToolExecutor {
     if (path.trim().isEmpty) {
       return const ToolResult(ok: false, llmOutput: 'Parameter path is empty.');
     }
-    final String dest = await service.unzip(path);
+    final String password = args['password']?.toString() ?? '';
+    final String? effectivePassword = password.trim().isEmpty ? null : password;
+    final String dest;
+    try {
+      dest = await service.unzip(path, password: effectivePassword);
+    } on ZipPasswordRequiredException {
+      return ToolResult(
+        ok: false,
+        llmOutput:
+            'The archive $path is password-protected. Ask the user for the '
+            'password, then call unzip_file again passing it in the '
+            '"password" argument.',
+        displayText: 'unzip $path — password required',
+      );
+    } on ZipWrongPasswordException {
+      return ToolResult(
+        ok: false,
+        llmOutput:
+            'The password for $path is wrong. Ask the user to confirm the '
+            'password, then call unzip_file again with the corrected '
+            '"password" argument.',
+        displayText: 'unzip $path — wrong password',
+      );
+    }
     final String? destDirPath = await service.resolve(dest);
     final List<String> files = destDirPath == null
         ? const <String>[]

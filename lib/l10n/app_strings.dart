@@ -146,6 +146,11 @@ abstract class AppStrings {
   String get pastedOk;
   String get zipCreatedOk;
   String get unzippedOk;
+  String get unzipPasswordTitle;
+  String unzipPasswordBody(String name);
+  String get passwordFieldHint;
+  String get unzipPasswordConfirm;
+  String get wrongPassword;
   String get deleteEntryTitle;
   String get deleteEntryBody;
 
@@ -466,6 +471,17 @@ class AppStringsEn implements AppStrings {
   @override
   String get unzippedOk => 'Extracted.';
   @override
+  String get unzipPasswordTitle => 'Password required';
+  @override
+  String unzipPasswordBody(String name) =>
+      '"$name" is encrypted. Enter the password to extract it.';
+  @override
+  String get passwordFieldHint => 'Password';
+  @override
+  String get unzipPasswordConfirm => 'Extract';
+  @override
+  String get wrongPassword => 'Wrong password.';
+  @override
   String get deleteEntryTitle => 'Delete?';
   @override
   String get deleteEntryBody => 'This item will be permanently deleted.';
@@ -756,14 +772,14 @@ class AppStringsEn implements AppStrings {
   String get aboutSection => 'About';
   @override
   String get aboutBody =>
-      'ZAgents v1.11.0 — an Android clone of the chat.z.ai agent mode UI, '
+      'ZAgents v1.12.0 — an Android clone of the chat.z.ai agent mode UI, '
       'with custom OpenAI-compatible providers (OpenRouter, InferHub, '
       'Z.AI, OpenAI, DeepSeek, Groq, and more), per-provider API keys, '
       'light/dark themes, parallel multi-session chat with background '
-      'running, plan-first Todos, file uploads with zip extraction, a '
-      'Context Manager, an in-app file manager, and an embedded '
-      'Node.js-style runtime with npm package management. Your keys stay '
-      'on this device.';
+      'running, plan-first Todos, file uploads with zip extraction '
+      'including password-protected archives, a Context Manager, an '
+      'in-app file manager, and an embedded Node.js-style runtime with '
+      'npm package management. Your keys stay on this device.';
 
   @override
   String createdBy(String name) => 'Created by $name';
@@ -967,6 +983,17 @@ class AppStringsId implements AppStrings {
   String get zipCreatedOk => 'ZIP dibuat.';
   @override
   String get unzippedOk => 'Diekstrak.';
+  @override
+  String get unzipPasswordTitle => 'Kata sandi diperlukan';
+  @override
+  String unzipPasswordBody(String name) =>
+      '"$name" terenkripsi. Masukkan kata sandi untuk mengekstraknya.';
+  @override
+  String get passwordFieldHint => 'Kata sandi';
+  @override
+  String get unzipPasswordConfirm => 'Ekstrak';
+  @override
+  String get wrongPassword => 'Kata sandi salah.';
   @override
   String get deleteEntryTitle => 'Hapus?';
   @override
@@ -1260,14 +1287,14 @@ class AppStringsId implements AppStrings {
   String get aboutSection => 'Tentang';
   @override
   String get aboutBody =>
-      'ZAgents v1.11.0 — klon UI agent mode chat.z.ai untuk Android, '
+      'ZAgents v1.12.0 — klon UI agent mode chat.z.ai untuk Android, '
       'dengan custom provider OpenAI-compatible (OpenRouter, InferHub, '
       'Z.AI, OpenAI, DeepSeek, Groq, dan lainnya), API key per-provider, '
       'tema terang/gelap, multi-sesi paralel dengan proses latar '
-      'belakang, Todos perencanaan, unggah file dengan ekstraksi zip, '
-      'Manajer Konteks, manajer file, serta runtime bergaya Node.js '
-      'tersemat dengan manajemen package npm. Key Anda tetap di '
-      'perangkat ini.';
+      'belakang, Todos perencanaan, unggah file dengan ekstraksi zip '
+      'termasuk arsip terproteksi kata sandi, Manajer Konteks, manajer '
+      'file, serta runtime bergaya Node.js tersemat dengan manajemen '
+      'package npm. Key Anda tetap di perangkat ini.';
 
   @override
   String createdBy(String name) => 'Dibuat oleh $name';

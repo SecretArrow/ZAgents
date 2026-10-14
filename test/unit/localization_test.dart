@@ -60,6 +60,21 @@ void main() {
       expect(en.providersHint, contains('long-press'));
       expect(id.providersHint, contains('long-press'));
     });
+
+    test('encrypted zip password strings are localized', () {
+      final AppStrings en = appStringsFor('en');
+      final AppStrings id = appStringsFor('id');
+      expect(en.unzipPasswordTitle, 'Password required');
+      expect(en.unzipPasswordBody('a.zip'), contains('a.zip'));
+      expect(en.passwordFieldHint, 'Password');
+      expect(en.unzipPasswordConfirm, 'Extract');
+      expect(en.wrongPassword, 'Wrong password.');
+      expect(id.unzipPasswordTitle, 'Kata sandi diperlukan');
+      expect(id.unzipPasswordBody('a.zip'), contains('a.zip'));
+      expect(id.passwordFieldHint, 'Kata sandi');
+      expect(id.unzipPasswordConfirm, 'Ekstrak');
+      expect(id.wrongPassword, 'Kata sandi salah.');
+    });
   });
 
   group('AppSettings language persistence', () {
@@ -98,7 +113,7 @@ void main() {
     expect(id.randomUaAccept, 'Ya, acak');
     expect(id.randomUaDecline, 'Pertahankan');
     expect(id.createdBy('Maragung'), 'Dibuat oleh Maragung');
-    expect(en.aboutBody, contains('v1.11.0'));
-    expect(id.aboutBody, contains('v1.11.0'));
+    expect(en.aboutBody, contains('v1.12.0'));
+    expect(id.aboutBody, contains('v1.12.0'));
   });
 }

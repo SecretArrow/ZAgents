@@ -349,6 +349,69 @@ void main() {
       },
     );
 
+    test(
+      'unzip_file without a password reports password-protected archives',
+      () async {
+        final Directory uploads = Directory('${tempDir.path}/uploads');
+        uploads.createSync(recursive: true);
+        File('${uploads.path}/locked.zip').writeAsBytesSync(
+          File('test/fixtures/zipcrypto.zip').readAsBytesSync(),
+        );
+
+        final ToolResult result = await fsExecutor.execute(
+          'unzip_file',
+          <String, dynamic>{'path': 'uploads/locked.zip'},
+        );
+        expect(result.ok, isFalse);
+        expect(result.llmOutput, contains('password-protected'));
+        expect(result.llmOutput, contains('password'));
+      },
+    );
+
+    test(
+      'unzip_file decrypts encrypted archives when given the password',
+      () async {
+        final Directory uploads = Directory('${tempDir.path}/uploads');
+        uploads.createSync(recursive: true);
+        File('${uploads.path}/locked.zip').writeAsBytesSync(
+          File('test/fixtures/zipcrypto.zip').readAsBytesSync(),
+        );
+
+        final ToolResult result = await fsExecutor.execute(
+          'unzip_file',
+          <String, dynamic>{
+            'path': 'uploads/locked.zip',
+            'password': 'fixt-pass-42',
+          },
+        );
+        expect(result.ok, isTrue);
+        expect(result.llmOutput, contains('uploads/locked/hello.txt'));
+        expect(
+          File('${tempDir.path}/uploads/locked/hello.txt').readAsStringSync(),
+          'Hello from an encrypted zip! ZAgents can decrypt this.\n',
+        );
+      },
+    );
+
+    test(
+      'unzip_file with a wrong password tells the model to re-ask',
+      () async {
+        final Directory uploads = Directory('${tempDir.path}/uploads');
+        uploads.createSync(recursive: true);
+        File('${uploads.path}/locked.zip').writeAsBytesSync(
+          File('test/fixtures/zipcrypto.zip').readAsBytesSync(),
+        );
+
+        final ToolResult result = await fsExecutor.execute(
+          'unzip_file',
+          <String, dynamic>{'path': 'uploads/locked.zip', 'password': 'guess'},
+        );
+        expect(result.ok, isFalse);
+        expect(result.llmOutput, contains('wrong'));
+        expect(result.llmOutput, contains('"password"'));
+      },
+    );
+
     test('zip_file compresses a folder into a .zip next to it', () async {
       final Directory notes = Directory('${tempDir.path}/notes');
       notes.createSync(recursive: true);

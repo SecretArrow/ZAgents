@@ -49,9 +49,31 @@ class StaticFileSystemService extends FileSystemService {
   @override
   Future<String> zip(String srcRelative) async => '$srcRelative.zip';
 
+  /// When set, [unzip] behaves like an encrypted archive needing this
+  /// password: null/empty -> password required, wrong -> wrong password.
+  String? requiredPassword;
+
+  final List<String> extractedWithPassword = <String>[];
+
   @override
-  Future<String> unzip(String zipRelative, {String? destName}) async =>
-      destName ?? zipRelative;
+  Future<String> unzip(
+    String zipRelative, {
+    String? destName,
+    String? password,
+  }) async {
+    final String? required = requiredPassword;
+    if (required != null && zipRelative.endsWith('.zip')) {
+      if (password == null || password.isEmpty) {
+        throw ZipPasswordRequiredException(zipRelative);
+      }
+      if (password != required) {
+        throw const ZipWrongPasswordException();
+      }
+      extractedWithPassword.add(zipRelative);
+      return zipRelative;
+    }
+    return destName ?? zipRelative;
+  }
 
   @override
   Future<String> readText(String relative, {int maxChars = 20000}) async =>
@@ -254,5 +276,91 @@ void main() {
       const Duration(seconds: 10),
     );
     expect(find.byKey(const Key('file-gone.txt')), findsNothing);
+  });
+
+  testWidgets('extracting an encrypted zip asks for a password (wrong first)', (
+    tester,
+  ) async {
+    fs.requiredPassword = 'fixt-pass-42';
+    fs.entries.add(
+      FsEntry(
+        name: 'secret.zip',
+        relativePath: 'secret.zip',
+        isDirectory: false,
+        sizeBytes: 100,
+        modified: DateTime(2025, 1, 1),
+      ),
+    );
+    await openFilesScreen(tester);
+
+    await tester.tap(find.byKey(const Key('file-menu-secret.zip')));
+    await tester.pumpAndSettle(
+      const Duration(milliseconds: 100),
+      EnginePhase.sendSemanticsUpdate,
+      const Duration(seconds: 10),
+    );
+    await tester.tap(find.text('Extract').last);
+    await tester.pumpAndSettle(
+      const Duration(milliseconds: 100),
+      EnginePhase.sendSemanticsUpdate,
+      const Duration(seconds: 10),
+    );
+    // The password dialog appeared instead of extracting.
+    expect(find.byKey(const Key('unzip-password-dialog')), findsOneWidget);
+
+    // A wrong password surfaces the dedicated snackbar.
+    await tester.enterText(
+      find.byKey(const Key('unzip-password-field')),
+      'nope',
+    );
+    await tester.tap(find.byKey(const Key('unzip-password-ok')));
+    await tester.pumpAndSettle(
+      const Duration(milliseconds: 100),
+      EnginePhase.sendSemanticsUpdate,
+      const Duration(seconds: 10),
+    );
+    expect(find.text('Wrong password.'), findsOneWidget);
+    expect(fs.extractedWithPassword, isEmpty);
+  });
+
+  testWidgets('extracting an encrypted zip succeeds with the right password', (
+    tester,
+  ) async {
+    fs.requiredPassword = 'fixt-pass-42';
+    fs.entries.add(
+      FsEntry(
+        name: 'secret.zip',
+        relativePath: 'secret.zip',
+        isDirectory: false,
+        sizeBytes: 100,
+        modified: DateTime(2025, 1, 1),
+      ),
+    );
+    await openFilesScreen(tester);
+
+    await tester.tap(find.byKey(const Key('file-menu-secret.zip')));
+    await tester.pumpAndSettle(
+      const Duration(milliseconds: 100),
+      EnginePhase.sendSemanticsUpdate,
+      const Duration(seconds: 10),
+    );
+    await tester.tap(find.text('Extract').last);
+    await tester.pumpAndSettle(
+      const Duration(milliseconds: 100),
+      EnginePhase.sendSemanticsUpdate,
+      const Duration(seconds: 10),
+    );
+    await tester.enterText(
+      find.byKey(const Key('unzip-password-field')),
+      'fixt-pass-42',
+    );
+    await tester.tap(find.byKey(const Key('unzip-password-ok')));
+    await tester.pumpAndSettle(
+      const Duration(milliseconds: 100),
+      EnginePhase.sendSemanticsUpdate,
+      const Duration(seconds: 10),
+    );
+    expect(fs.extractedWithPassword, contains('secret.zip'));
+    expect(find.text('Extracted.'), findsOneWidget);
   });
 }

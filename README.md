@@ -86,6 +86,13 @@ OpenAI-compatible: **OpenRouter, InferHub, Z.AI, OpenAI, DeepSeek, Groq, dan lai
   User-Agent acak saat chat baru" (**default aktif**).
 - **Kredit pembuat di About (v1.11.0)** — Settings → About kini menampilkan
   **"Dibuat oleh Maragung"**.
+- **ZIP terproteksi kata sandi (v1.12.0)** — `unzip_file` dan File Manager
+  kini bisa mengekstrak **arsip zip terenkripsi**, baik **ZipCrypto**
+  (enkripsi klasik) maupun **WinZip AES-128/192/256**. Tool agent menerima
+  argumen **`password`** opsional — bila arsip terkunci, agent otomatis
+  diminta menanyakan kata sandi ke Anda lalu mencoba lagi; di File Manager
+  muncul **dialog kata sandi** saat mengekstrak arsip terenkripsi (kata
+  sandi salah menampilkan pesan khusus).
 - **Pencarian + paging universal (v1.6.0)** — SEMUA list di aplikasi memakai
   widget `PagedList` yang sama: **5 item per halaman** (termasuk dropdown model),
   kolom pencarian, pager first/prev/next/last, dan empty state "No results".
