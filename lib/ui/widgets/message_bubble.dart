@@ -12,13 +12,26 @@ import 'tool_call_card.dart';
 /// One chat message: user (gradient bubble, right, with attachment
 /// previews) or assistant (surface bubble, left, markdown + tool cards).
 class MessageBubble extends StatelessWidget {
-  const MessageBubble({super.key, required this.message});
+  const MessageBubble({
+    super.key,
+    required this.message,
+    this.todos = const <TodoItem>[],
+    this.agentWorking = false,
+  });
 
   final ChatMessage message;
 
+  /// Latest plan of the running session — powers the show/hide panel next
+  /// to the thinking indicator.
+  final List<TodoItem> todos;
+
+  /// True when the session's agent loop is active AND this bubble is the
+  /// newest message: keeps the thinking indicator (and its plan toggle)
+  /// visible while tools execute, not just while text streams.
+  final bool agentWorking;
+
   @override
   Widget build(BuildContext context) {
-    final AppStrings strings = stringsOf(context);
     if (message.role == Role.user) {
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: 4),
@@ -149,29 +162,85 @@ class MessageBubble extends StatelessWidget {
                     ),
                   ),
                 ),
-              if (message.isStreaming)
-                Padding(
-                  padding: const EdgeInsets.only(top: 6),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: <Widget>[
-                      const SizedBox(
-                        width: 12,
-                        height: 12,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        strings.thinking,
-                        style: TextStyle(color: context.zMuted, fontSize: 12),
-                      ),
-                    ],
-                  ),
-                ),
+              if (message.isStreaming ||
+                  (agentWorking && message.role == Role.assistant))
+                _ThinkingFooter(todos: todos),
             ],
           ),
         ),
       ),
+    );
+  }
+}
+
+/// Footer row under a working assistant message: spinner + "thinking…"
+/// on the left, and — as soon as the agent has written a plan — a
+/// right-aligned show/hide toggle that reveals the LIVE todo panel so the
+/// user can check at any time how far the agent has progressed.
+class _ThinkingFooter extends StatefulWidget {
+  const _ThinkingFooter({required this.todos});
+
+  final List<TodoItem> todos;
+
+  @override
+  State<_ThinkingFooter> createState() => _ThinkingFooterState();
+}
+
+class _ThinkingFooterState extends State<_ThinkingFooter> {
+  bool _expanded = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final AppStrings strings = stringsOf(context);
+    final bool hasPlan = widget.todos.isNotEmpty;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        Row(
+          children: <Widget>[
+            const SizedBox(
+              width: 12,
+              height: 12,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+            const SizedBox(width: 8),
+            Text(
+              strings.thinking,
+              style: TextStyle(color: context.zMuted, fontSize: 12),
+            ),
+            const Spacer(),
+            if (hasPlan)
+              IconButton(
+                key: const Key('todo-toggle-button'),
+                tooltip: _expanded
+                    ? strings.hidePlanTooltip
+                    : strings.showPlanTooltip,
+                icon: Icon(
+                  _expanded
+                      ? Icons.visibility_off_outlined
+                      : Icons.visibility_outlined,
+                  size: 16,
+                  color: context.zMuted,
+                ),
+                visualDensity: VisualDensity.compact,
+                constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                padding: const EdgeInsets.all(6),
+                onPressed: () => setState(() => _expanded = !_expanded),
+              ),
+          ],
+        ),
+        AnimatedSwitcher(
+          duration: const Duration(milliseconds: 150),
+          child: _expanded && hasPlan
+              ? TodoPlanView(
+                  key: const Key('live-todo-panel'),
+                  todos: widget.todos,
+                  live: true,
+                )
+              : const SizedBox(width: double.infinity),
+        ),
+      ],
     );
   }
 }

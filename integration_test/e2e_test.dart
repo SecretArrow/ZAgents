@@ -130,6 +130,15 @@ void main() {
       'e2e-key-2',
     );
 
+    // v1.10.0: long-pressing a (non-active) provider card opens the
+    // confirmation dialog; cancelling keeps the connection unchanged.
+    await tester.longPress(find.byKey(const Key('provider-InferHub')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('provider-activate-dialog')), findsOneWidget);
+    await tester.tap(find.byKey(const Key('cancel-activate-provider')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('provider-activate-dialog')), findsNothing);
+
     // Leave the editor and the providers manager.
     await tester.tap(find.byType(BackButton).first);
     await tester.pumpAndSettle();

@@ -10,7 +10,8 @@ import 'preset_editor_screen.dart';
 
 /// Full-screen provider management: every preset is a card with its key
 /// status, model and cache size. Tap a card to edit it in the full-screen
-/// [PresetEditorScreen]; the bolt action switches the active connection.
+/// [PresetEditorScreen]; the bolt action switches the active connection,
+/// and long-pressing a card asks for confirmation before switching.
 class ProvidersScreen extends ConsumerWidget {
   const ProvidersScreen({super.key});
 
@@ -32,6 +33,39 @@ class ProvidersScreen extends ConsumerWidget {
       ..showSnackBar(
         SnackBar(content: Text(strings.providerActivatedSnack(preset.name))),
       );
+  }
+
+  /// Long-press shortcut: ask for confirmation before switching the
+  /// active connection to this provider.
+  Future<void> _confirmActivate(
+    BuildContext context,
+    WidgetRef ref,
+    ProviderPreset preset,
+  ) async {
+    final AppStrings strings = stringsOf(context);
+    final bool? confirmed = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext dialogContext) => AlertDialog(
+        key: const Key('provider-activate-dialog'),
+        title: Text(strings.activateProviderTitle),
+        content: Text(strings.activateProviderBody(preset.name)),
+        actions: <Widget>[
+          TextButton(
+            key: const Key('cancel-activate-provider'),
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: Text(strings.cancel),
+          ),
+          FilledButton(
+            key: const Key('confirm-activate-provider'),
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: Text(strings.activateProviderConfirm),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true && context.mounted) {
+      _activate(context, ref, preset);
+    }
   }
 
   void _openEditor(BuildContext context, ProviderPreset preset) {
@@ -85,6 +119,10 @@ class ProvidersScreen extends ConsumerWidget {
                 palette: palette,
                 onOpen: () => _openEditor(context, preset),
                 onUse: () => _activate(context, ref, preset),
+                // Long-press the card itself: confirm-then-activate.
+                onLongPress: preset.name == settings.providerName
+                    ? null
+                    : () => _confirmActivate(context, ref, preset),
               ),
           footer: <Widget>[
             const SizedBox(height: 12),
@@ -143,6 +181,7 @@ class _ProviderCard extends StatelessWidget {
     required this.palette,
     required this.onOpen,
     required this.onUse,
+    this.onLongPress,
   });
 
   final ProviderPreset preset;
@@ -151,6 +190,7 @@ class _ProviderCard extends StatelessWidget {
   final ZPalette palette;
   final VoidCallback onOpen;
   final VoidCallback onUse;
+  final VoidCallback? onLongPress;
 
   @override
   Widget build(BuildContext context) {
@@ -163,6 +203,7 @@ class _ProviderCard extends StatelessWidget {
         child: InkWell(
           borderRadius: BorderRadius.circular(16),
           onTap: onOpen,
+          onLongPress: onLongPress,
           child: Container(
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(16),

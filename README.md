@@ -62,6 +62,16 @@ OpenAI-compatible: **OpenRouter, InferHub, Z.AI, OpenAI, DeepSeek, Groq, dan lai
   hingga semua todo tuntas. Rencana tampil sebagai **kartu Rencana** dengan
   progress bar + ikon status per langkah di dalam chat. Bisa dimatikan lewat
   Settings → Agent → "Buat rencana dulu (Todos)".
+- **Panel rencana live + toggle show/hide (v1.10.0)** — di kanan teks
+  **"thinking…"** kini ada ikon show/hide (rata kanan); ketuk untuk
+  menampilkan/menyembunyikan **rencana (Todos) langsung** — langkah yang
+  sedang dikerjakan berputar (spinner), progress bar dan status tiap todo
+  diperbarui real-time, jadi Anda bisa memantau sejauh mana agent bekerja
+  kapan saja selama proses berjalan (termasuk saat tool dieksekusi).
+- **Aktivasi provider via long-press (v1.10.0)** — selain tombol bolt,
+  **tahan (long-press) kartu provider** di layar Providers untuk
+  mengaktifkannya: muncul **dialog konfirmasi** sebelum koneksi berpindah
+  (tekan lama pada provider yang sudah aktif tidak melakukan apa-apa).
 - **Pencarian + paging universal (v1.6.0)** — SEMUA list di aplikasi memakai
   widget `PagedList` yang sama: **5 item per halaman** (termasuk dropdown model),
   kolom pencarian, pager first/prev/next/last, dan empty state "No results".

@@ -245,6 +245,11 @@ abstract class AppStrings {
   String get planFirstSubtitle;
   String get planTitle;
   String planProgress(int done, int total);
+  String get showPlanTooltip;
+  String get hidePlanTooltip;
+  String get activateProviderTitle;
+  String activateProviderBody(String name);
+  String get activateProviderConfirm;
   String maxStepsReachedMarkdown(int steps);
   String get agentSection;
   String get agentModeTitle;
@@ -596,8 +601,8 @@ class AppStringsEn implements AppStrings {
   String get providersTitle => 'Providers';
   @override
   String get providersHint =>
-      'Tap a provider to edit it. Each provider stores its own API key '
-      'and model list.';
+      'Tap a provider to edit it, long-press to activate it with a '
+      'confirmation. Each provider stores its own API key and model list.';
   @override
   String get addProvider => 'Add provider';
   @override
@@ -672,6 +677,18 @@ class AppStringsEn implements AppStrings {
   String get planTitle => 'Plan';
   @override
   String planProgress(int done, int total) => '$done/$total done';
+  @override
+  String get showPlanTooltip => 'Show plan';
+  @override
+  String get hidePlanTooltip => 'Hide plan';
+  @override
+  String get activateProviderTitle => 'Activate provider';
+  @override
+  String activateProviderBody(String name) =>
+      'Use “$name” as the active provider? Its stored API key and model '
+      'will be applied to the connection.';
+  @override
+  String get activateProviderConfirm => 'Activate';
   @override
   String get agentSection => 'Agent';
   @override
@@ -1066,7 +1083,8 @@ class AppStringsId implements AppStrings {
   String get providersTitle => 'Provider';
   @override
   String get providersHint =>
-      'Ketuk provider untuk mengubahnya. Setiap provider menyimpan API key '
+      'Ketuk provider untuk mengubahnya, tahan (long-press) untuk '
+      'mengaktifkannya dengan konfirmasi. Setiap provider menyimpan API key '
       'dan daftar modelnya sendiri.';
   @override
   String get addProvider => 'Tambah provider';
@@ -1142,6 +1160,18 @@ class AppStringsId implements AppStrings {
   String get planTitle => 'Rencana';
   @override
   String planProgress(int done, int total) => '$done/$total selesai';
+  @override
+  String get showPlanTooltip => 'Tampilkan rencana';
+  @override
+  String get hidePlanTooltip => 'Sembunyikan rencana';
+  @override
+  String get activateProviderTitle => 'Aktifkan provider';
+  @override
+  String activateProviderBody(String name) =>
+      'Gunakan “$name” sebagai provider aktif? API key dan model yang '
+      'tersimpan akan diterapkan ke koneksi.';
+  @override
+  String get activateProviderConfirm => 'Aktifkan';
   @override
   String get agentSection => 'Agent';
   @override

@@ -43,6 +43,23 @@ void main() {
       expect(id.planTitle, 'Rencana');
       expect(id.planProgress(2, 5), '2/5 selesai');
     });
+
+    test('live plan toggle + provider activation strings are localized', () {
+      final AppStrings en = appStringsFor('en');
+      final AppStrings id = appStringsFor('id');
+      expect(en.showPlanTooltip, 'Show plan');
+      expect(en.hidePlanTooltip, 'Hide plan');
+      expect(en.activateProviderTitle, 'Activate provider');
+      expect(en.activateProviderBody('X'), contains('X'));
+      expect(en.activateProviderConfirm, 'Activate');
+      expect(id.showPlanTooltip, 'Tampilkan rencana');
+      expect(id.hidePlanTooltip, 'Sembunyikan rencana');
+      expect(id.activateProviderTitle, 'Aktifkan provider');
+      expect(id.activateProviderBody('X'), contains('X'));
+      expect(id.activateProviderConfirm, 'Aktifkan');
+      expect(en.providersHint, contains('long-press'));
+      expect(id.providersHint, contains('long-press'));
+    });
   });
 
   group('AppSettings language persistence', () {

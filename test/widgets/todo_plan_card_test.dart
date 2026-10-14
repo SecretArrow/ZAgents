@@ -96,4 +96,107 @@ void main() {
     expect(find.byIcon(Icons.radio_button_unchecked_rounded), findsNothing);
     expect(find.text(const AppStringsEn().planProgress(1, 1)), findsOneWidget);
   });
+
+  group('live plan toggle (thinking indicator)', () {
+    final List<TodoItem> todos = const <TodoItem>[
+      TodoItem(content: 'research topic', status: TodoStatus.completed),
+      TodoItem(content: 'draft report', status: TodoStatus.inProgress),
+      TodoItem(content: 'review output', status: TodoStatus.pending),
+    ];
+
+    testWidgets('streaming message with a plan shows the right-aligned '
+        'show/hide toggle that reveals the live plan panel', (
+      WidgetTester tester,
+    ) async {
+      final ChatMessage message = ChatMessage.assistant(
+        'Working on it…',
+        isStreaming: true,
+      );
+
+      await tester.pumpWidget(
+        wrap(MessageBubble(message: message, todos: todos)),
+      );
+
+      // Toggle exists, panel hidden at first.
+      expect(find.byKey(const Key('todo-toggle-button')), findsOneWidget);
+      expect(find.byKey(const Key('live-todo-panel')), findsNothing);
+      expect(find.text('thinking…'), findsOneWidget);
+
+      // Show: the live plan renders with progress and todos.
+      await tester.tap(find.byKey(const Key('todo-toggle-button')));
+      // pump (not pumpAndSettle): the streaming spinner animates forever.
+      // Two pumps: one to start the switcher transition, one to finish it.
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 200));
+      expect(find.byKey(const Key('live-todo-panel')), findsOneWidget);
+      expect(
+        find.text(const AppStringsEn().planProgress(1, 3)),
+        findsOneWidget,
+      );
+      expect(find.text('research topic'), findsOneWidget);
+      expect(find.text('draft report'), findsOneWidget);
+      expect(find.text('review output'), findsOneWidget);
+      expect(
+        find.byTooltip(const AppStringsEn().hidePlanTooltip),
+        findsOneWidget,
+      );
+
+      // Hide again.
+      await tester.tap(find.byKey(const Key('todo-toggle-button')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 200));
+      expect(find.byKey(const Key('live-todo-panel')), findsNothing);
+    });
+
+    testWidgets('no plan yet: the toggle is not rendered', (
+      WidgetTester tester,
+    ) async {
+      final ChatMessage message = ChatMessage.assistant('', isStreaming: true);
+
+      await tester.pumpWidget(
+        wrap(MessageBubble(message: message, todos: const <TodoItem>[])),
+      );
+
+      expect(find.text('thinking…'), findsOneWidget);
+      expect(find.byKey(const Key('todo-toggle-button')), findsNothing);
+    });
+
+    testWidgets('tool execution phase: footer stays visible on the newest '
+        'message while the agent works', (WidgetTester tester) async {
+      // Not streaming (a finalized tool-call turn), but the agent loop is
+      // still running — the thinking indicator must remain available.
+      final ChatMessage message = _assistantWith(<String, dynamic>{
+        'todos': <dynamic>[
+          <String, dynamic>{'content': 'step', 'status': 'in_progress'},
+        ],
+      });
+
+      await tester.pumpWidget(
+        wrap(
+          MessageBubble(
+            message: message,
+            todos: const <TodoItem>[
+              TodoItem(content: 'step', status: TodoStatus.inProgress),
+            ],
+            agentWorking: true,
+          ),
+        ),
+      );
+
+      expect(find.text('thinking…'), findsOneWidget);
+      expect(find.byKey(const Key('todo-toggle-button')), findsOneWidget);
+    });
+
+    testWidgets('a finished message without a running session shows no '
+        'thinking footer', (WidgetTester tester) async {
+      final ChatMessage message = ChatMessage.assistant('All done.');
+
+      await tester.pumpWidget(
+        wrap(MessageBubble(message: message, todos: todos)),
+      );
+
+      expect(find.text('thinking…'), findsNothing);
+      expect(find.byKey(const Key('todo-toggle-button')), findsNothing);
+    });
+  });
 }

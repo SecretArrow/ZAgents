@@ -249,6 +249,68 @@ void main() {
     );
   });
 
+  testWidgets('long-pressing a provider card asks for confirmation before '
+      'activating it', (WidgetTester tester) async {
+    final ProviderContainer container = await openSettings(tester);
+    await openProviders(tester);
+
+    // Default active provider is OpenRouter.
+    expect(container.read(settingsProvider).providerName, 'OpenRouter');
+
+    // Long-press opens the confirmation dialog (the editor must NOT open).
+    await tester.longPress(find.byKey(const Key('provider-InferHub')));
+    await tester.pumpAndSettle(
+      const Duration(milliseconds: 100),
+      EnginePhase.sendSemanticsUpdate,
+      const Duration(seconds: 15),
+    );
+    expect(find.byKey(const Key('provider-activate-dialog')), findsOneWidget);
+    expect(container.read(settingsProvider).providerName, 'OpenRouter');
+
+    // Cancel keeps the current connection.
+    await tester.tap(find.byKey(const Key('cancel-activate-provider')));
+    await tester.pumpAndSettle(
+      const Duration(milliseconds: 100),
+      EnginePhase.sendSemanticsUpdate,
+      const Duration(seconds: 15),
+    );
+    expect(container.read(settingsProvider).providerName, 'OpenRouter');
+
+    // Long-press again and confirm: the connection switches.
+    await tester.longPress(find.byKey(const Key('provider-InferHub')));
+    await tester.pumpAndSettle(
+      const Duration(milliseconds: 100),
+      EnginePhase.sendSemanticsUpdate,
+      const Duration(seconds: 15),
+    );
+    await tester.tap(find.byKey(const Key('confirm-activate-provider')));
+    await tester.pumpAndSettle(
+      const Duration(milliseconds: 100),
+      EnginePhase.sendSemanticsUpdate,
+      const Duration(seconds: 15),
+    );
+    expect(container.read(settingsProvider).providerName, 'InferHub');
+    expect(
+      container.read(settingsProvider).baseUrl,
+      'https://api.inferhub.dev/v1',
+    );
+  });
+
+  testWidgets('long-pressing the already-active provider does nothing', (
+    WidgetTester tester,
+  ) async {
+    await openSettings(tester);
+    await openProviders(tester);
+
+    await tester.longPress(find.byKey(const Key('provider-OpenRouter')));
+    await tester.pumpAndSettle(
+      const Duration(milliseconds: 100),
+      EnginePhase.sendSemanticsUpdate,
+      const Duration(seconds: 15),
+    );
+    expect(find.byKey(const Key('provider-activate-dialog')), findsNothing);
+  });
+
   testWidgets('editing an existing provider: API key is saved per provider '
       'via the explicit save button', (WidgetTester tester) async {
     final ProviderContainer container = await openSettings(tester);

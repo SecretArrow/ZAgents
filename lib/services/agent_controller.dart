@@ -45,6 +45,7 @@ class ChatState {
     this.messages = const <ChatMessage>[],
     this.isRunning = false,
     this.error,
+    this.todos = const <TodoItem>[],
   });
 
   final String? sessionId;
@@ -52,6 +53,10 @@ class ChatState {
   final List<ChatMessage> messages;
   final bool isRunning;
   final String? error;
+
+  /// Latest plan written via `todo_write` in the running session — drives
+  /// the show/hide plan panel next to the thinking indicator.
+  final List<TodoItem> todos;
 
   static const Object _unset = Object();
 
@@ -61,12 +66,14 @@ class ChatState {
     List<ChatMessage>? messages,
     bool? isRunning,
     Object? error = _unset,
+    List<TodoItem>? todos,
   }) => ChatState(
     sessionId: sessionId ?? this.sessionId,
     title: title ?? this.title,
     messages: messages ?? this.messages,
     isRunning: isRunning ?? this.isRunning,
     error: error == _unset ? this.error : error as String?,
+    todos: todos ?? this.todos,
   );
 }
 
@@ -92,6 +99,10 @@ class _SessionRun {
 
   /// Text contents of text-like attachments, read once per run.
   final Map<String, String> textCache = <String, String>{};
+
+  /// Latest plan written via `todo_write` in THIS run. Mirrored into the
+  /// [ChatState] on every sync so the UI can show live plan progress.
+  List<TodoItem> latestTodos = const <TodoItem>[];
 }
 
 /// Drives multi-session agent loops: user prompt -> LLM (streaming) ->
@@ -371,10 +382,10 @@ class ChatController extends Notifier<ChatState> {
           ? unboundedStepLimit
           : settings.maxSteps;
 
-      // Latest plan state written via todo_write in THIS run. A plan from
-      // an earlier turn stays in the replayed history; a new user command
-      // is expected to re-plan, so the nudge only tracks the current run.
-      List<TodoItem> latestTodos = const <TodoItem>[];
+      // Latest plan state written via todo_write in THIS run (tracked on
+      // the run itself so the UI can mirror it). A plan from an earlier
+      // turn stays in the replayed history; a new user command is expected
+      // to re-plan, so the nudge only tracks the current run.
       int planNudges = 0;
 
       for (var step = 0; step < stepLimit; step++) {
@@ -419,12 +430,12 @@ class ChatController extends Notifier<ChatState> {
               settings.planFirst &&
               settings.agentMode &&
               !run.stopRequested &&
-              hasIncompleteTodos(latestTodos) &&
+              hasIncompleteTodos(run.latestTodos) &&
               planNudges < maxPlanNudges) {
             planNudges++;
             wire.add(<String, dynamic>{
               'role': 'user',
-              'content': planNudgeText(latestTodos),
+              'content': planNudgeText(run.latestTodos),
             });
             continue;
           }
@@ -461,7 +472,7 @@ class ChatController extends Notifier<ChatState> {
           call.resultText = result.llmOutput;
           call.screenshotPath = result.screenshotPath;
           if (call.name == 'todo_write') {
-            latestTodos = parseTodoList(call.arguments['todos']);
+            run.latestTodos = parseTodoList(call.arguments['todos']);
           }
           _sync(run);
 
@@ -621,6 +632,7 @@ class ChatController extends Notifier<ChatState> {
       messages: [...run.messages],
       title: run.title,
       sessionId: run.sessionId,
+      todos: run.latestTodos,
     );
   }
 

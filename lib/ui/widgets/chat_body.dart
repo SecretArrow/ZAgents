@@ -23,8 +23,12 @@ class ChatBody extends ConsumerWidget {
       reverse: true,
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       itemCount: items.length,
-      itemBuilder: (BuildContext context, int index) =>
-          MessageBubble(message: items[index]),
+      itemBuilder: (BuildContext context, int index) => MessageBubble(
+        message: items[index],
+        // Live plan for the thinking indicator's show/hide panel.
+        todos: state.todos,
+        agentWorking: state.isRunning && index == 0,
+      ),
     );
   }
 }

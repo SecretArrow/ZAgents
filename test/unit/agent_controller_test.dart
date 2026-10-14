@@ -863,6 +863,14 @@ void main() {
         expect(state.isRunning, isFalse);
         expect(state.error, isNull);
 
+        // The final plan is mirrored into the UI state for the live
+        // show/hide plan panel (here: everything completed).
+        expect(state.todos, hasLength(2));
+        expect(
+          state.todos.every((TodoItem t) => t.status == TodoStatus.completed),
+          isTrue,
+        );
+
         // Continuation semantics intact: still exactly one stored chat.
         final List<ChatSummary> summaries = await container
             .read(chatStoreProvider)
