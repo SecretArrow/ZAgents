@@ -144,7 +144,7 @@ void main() {
     expect(state.messages, isEmpty); // rejected before appending anything
   });
 
-  test('maxSteps bounds the number of LLM turns', () async {
+  test('maxSteps bounds the number of LLM turns (runUntilDone off)', () async {
     final FakeLlmClient fake = FakeLlmClient(<AssistantTurn>[
       AssistantTurn(
         content: '',
@@ -161,7 +161,7 @@ void main() {
       overrides: testOverrides(
         llm: fake,
         dir: tempDir,
-        settings: AppSettings(apiKey: 'k', maxSteps: 2),
+        settings: AppSettings(apiKey: 'k', maxSteps: 2, runUntilDone: false),
       ),
     );
     addTearDown(container.dispose);
@@ -171,6 +171,198 @@ void main() {
     final ChatState state = container.read(chatControllerProvider);
     expect(state.isRunning, isFalse);
     expect(state.error, isNull);
+  });
+
+  test(
+    'sending to an opened history chat continues it instead of forking',
+    () async {
+      final FakeLlmClient llm = FakeLlmClient(<AssistantTurn>[
+        AssistantTurn(content: 'first reply'),
+      ]);
+      final ProviderContainer container = ProviderContainer(
+        overrides: testOverrides(
+          llm: llm,
+          dir: tempDir,
+          settings: AppSettings(apiKey: 'k'),
+        ),
+      );
+      addTearDown(container.dispose);
+
+      // Turn 1 creates and persists session X.
+      await container
+          .read(chatControllerProvider.notifier)
+          .send('first question');
+      final String id = container.read(chatControllerProvider).sessionId!;
+      expect(id, isNotNull);
+
+      // Reopen it from history (the finished run is no longer tracked).
+      await container
+          .read(chatControllerProvider.notifier)
+          .openChat(
+            ChatSummary(
+              id: id,
+              title: 'first question',
+              updatedAt: DateTime.now(),
+            ),
+          );
+      expect(container.read(chatControllerProvider).sessionId, id);
+
+      // Turn 2 must CONTINUE session X — same id, full history on the wire.
+      await container
+          .read(chatControllerProvider.notifier)
+          .send('second question');
+      final ChatState state = container.read(chatControllerProvider);
+      expect(
+        state.sessionId,
+        id,
+        reason: 'sending into an open chat must not fork a new session',
+      );
+      expect(
+        state.messages.where((m) => m.role == Role.user).map((m) => m.content),
+        containsAll(<String>['first question', 'second question']),
+      );
+
+      // The LLM wire for the second call replayed the earlier turn.
+      final List<Map<String, dynamic>> wire = llm.calls.last;
+      final List<String> userTexts = <String>[
+        for (final Map<String, dynamic> m in wire)
+          if (m['role'] == 'user') m['content'] as String,
+      ];
+      expect(userTexts, contains('first question'));
+      expect(userTexts, contains('second question'));
+
+      // Nothing new was stored: still exactly one conversation file.
+      final List<ChatSummary> summaries = await container
+          .read(chatStoreProvider)
+          .listSummaries();
+      expect(summaries, hasLength(1));
+      expect(summaries.single.id, id);
+    },
+  );
+
+  test('restoreLastChat reopens the most recent conversation', () async {
+    final ProviderContainer container = await _container(
+      <AssistantTurn>[AssistantTurn(content: 'hi there')],
+      tempDir,
+      settings: AppSettings(apiKey: 'k'),
+    );
+    addTearDown(container.dispose);
+    final notifier = container.read(chatControllerProvider.notifier);
+
+    await notifier.send('hello world');
+    final String id = container.read(chatControllerProvider).sessionId!;
+    await notifier.newChat();
+    expect(container.read(chatControllerProvider).sessionId, isNull);
+
+    await notifier.restoreLastChat();
+    expect(container.read(chatControllerProvider).sessionId, id);
+    expect(container.read(chatControllerProvider).messages, isNotEmpty);
+  });
+
+  test(
+    'restoreLastChat keeps the fresh draft when there is no history',
+    () async {
+      final ProviderContainer container = await _container(
+        <AssistantTurn>[AssistantTurn(content: 'ok')],
+        tempDir,
+        settings: AppSettings(apiKey: 'k'),
+      );
+      addTearDown(container.dispose);
+
+      await container.read(chatControllerProvider.notifier).restoreLastChat();
+      final ChatState state = container.read(chatControllerProvider);
+      expect(state.sessionId, isNull);
+      expect(state.messages, isEmpty);
+    },
+  );
+
+  test('runUntilDone ignores maxSteps and works to the final answer', () async {
+    final FakeLlmClient llm = FakeLlmClient(<AssistantTurn>[
+      AssistantTurn(
+        content: '',
+        toolCalls: <ToolCallRequest>[
+          ToolCallRequest(
+            id: 't1',
+            name: 'browser_extract_text',
+            argumentsJson: '{}',
+          ),
+        ],
+      ),
+      AssistantTurn(
+        content: '',
+        toolCalls: <ToolCallRequest>[
+          ToolCallRequest(
+            id: 't2',
+            name: 'browser_extract_text',
+            argumentsJson: '{}',
+          ),
+        ],
+      ),
+      AssistantTurn(
+        content: '',
+        toolCalls: <ToolCallRequest>[
+          ToolCallRequest(
+            id: 't3',
+            name: 'browser_extract_text',
+            argumentsJson: '{}',
+          ),
+        ],
+      ),
+      AssistantTurn(content: 'task finished'),
+    ]);
+    final ProviderContainer container = ProviderContainer(
+      overrides: testOverrides(
+        llm: llm,
+        dir: tempDir,
+        // maxSteps=2 would normally cut the loop after two turns.
+        settings: AppSettings(apiKey: 'k', maxSteps: 2, runUntilDone: true),
+      ),
+    );
+    addTearDown(container.dispose);
+
+    await container.read(chatControllerProvider.notifier).send('long task');
+    expect(llm.calls, hasLength(4)); // 3 tool rounds + final answer
+    final ChatState state = container.read(chatControllerProvider);
+    expect(state.error, isNull);
+    expect(state.messages.last.content, 'task finished');
+    expect(state.messages.last.toolCalls, isEmpty);
+  });
+
+  test('maxSteps cap with runUntilDone=false appends a visible note', () async {
+    final FakeLlmClient llm = FakeLlmClient(<AssistantTurn>[
+      AssistantTurn(
+        content: '',
+        toolCalls: <ToolCallRequest>[
+          ToolCallRequest(
+            id: 'loop',
+            name: 'browser_extract_text',
+            argumentsJson: '{}',
+          ),
+        ],
+      ),
+    ]);
+    final ProviderContainer container = ProviderContainer(
+      overrides: testOverrides(
+        llm: llm,
+        dir: tempDir,
+        settings: AppSettings(apiKey: 'k', maxSteps: 2, runUntilDone: false),
+      ),
+    );
+    addTearDown(container.dispose);
+
+    await container.read(chatControllerProvider.notifier).send('loop terus');
+    expect(llm.calls, hasLength(2));
+    final ChatState state = container.read(chatControllerProvider);
+    expect(state.isRunning, isFalse);
+    expect(state.error, isNull);
+    // The pause is explained instead of stopping silently.
+    expect(
+      state.messages.last.content,
+      contains(
+        appStringsFor('en').maxStepsReachedMarkdown(2).replaceAll('*', ''),
+      ),
+      reason: 'cap exhaustion must be visible to the user',
+    );
   });
 
   test('openChat on a corrupted session file never crashes', () async {

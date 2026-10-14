@@ -41,6 +41,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   void _commit({
     bool? agentMode,
     bool? automationEnabled,
+    bool? runUntilDone,
     bool? runInBackground,
     Object? maxSteps,
     String? languageCode,
@@ -54,6 +55,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           current.copyWith(
             agentMode: agentMode,
             automationEnabled: automationEnabled,
+            runUntilDone: runUntilDone,
             runInBackground: runInBackground,
             maxSteps: maxSteps ?? current.maxSteps,
             languageCode: languageCode,
@@ -169,6 +171,17 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     value: settings.runInBackground,
                     onChanged: (bool value) => _commit(runInBackground: value),
                   ),
+                  SwitchListTile(
+                    key: const Key('run-until-done-switch'),
+                    contentPadding: EdgeInsets.zero,
+                    title: Text(strings.runUntilDoneTitle),
+                    subtitle: Text(
+                      strings.runUntilDoneSubtitle,
+                      style: TextStyle(fontSize: 12, color: palette.muted),
+                    ),
+                    value: settings.runUntilDone,
+                    onChanged: (bool value) => _commit(runUntilDone: value),
+                  ),
                   const SizedBox(height: 4),
                   Text(
                     strings.maxStepsTitle,
@@ -184,10 +197,14 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                           divisions: maxMaxSteps - minMaxSteps,
                           label: '${settings.maxSteps}',
                           value: settings.maxSteps.toDouble(),
-                          onChanged: (double value) {
-                            _maxSteps.text = '${value.round()}';
-                            _commit(maxSteps: value.round());
-                          },
+                          // The cap is bypassed while "Run until done" is
+                          // active — dim + disable the control.
+                          onChanged: settings.runUntilDone
+                              ? null
+                              : (double value) {
+                                  _maxSteps.text = '${value.round()}';
+                                  _commit(maxSteps: value.round());
+                                },
                         ),
                       ),
                       SizedBox(
@@ -195,6 +212,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                         child: TextField(
                           key: const Key('max-steps-field'),
                           controller: _maxSteps,
+                          enabled: !settings.runUntilDone,
                           keyboardType: TextInputType.number,
                           textAlign: TextAlign.center,
                           decoration: const InputDecoration(
@@ -219,7 +237,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   Padding(
                     padding: const EdgeInsets.only(top: 4),
                     child: Text(
-                      strings.maxStepsHint,
+                      settings.runUntilDone
+                          ? strings.runUntilDoneHint
+                          : strings.maxStepsHint,
                       style: TextStyle(fontSize: 12, color: palette.muted),
                     ),
                   ),

@@ -154,6 +154,42 @@ void main() {
     });
   });
 
+  group('run until done', () {
+    test('defaults to true so the agent works until tasks finish', () {
+      expect(AppSettings().runUntilDone, isTrue);
+    });
+
+    test('json roundtrip preserves the flag', () {
+      final AppSettings off = AppSettings(runUntilDone: false);
+      final AppSettings decoded = AppSettings.fromJson(off.toJson());
+      expect(decoded.runUntilDone, isFalse);
+      expect(decoded.maxSteps, off.maxSteps);
+    });
+
+    test('legacy storage without the flag falls back to true (backward '
+        'compatible)', () {
+      final AppSettings decoded = AppSettings.fromJson(<String, dynamic>{
+        'apiKey': 'k',
+        'maxSteps': 6,
+      });
+      expect(decoded.runUntilDone, isTrue);
+    });
+
+    test('copyWith toggles the flag without touching maxSteps', () {
+      final AppSettings settings = AppSettings(maxSteps: 42);
+      final AppSettings off = settings.copyWith(runUntilDone: false);
+      expect(off.runUntilDone, isFalse);
+      expect(off.maxSteps, 42);
+      final AppSettings backOn = off.copyWith(runUntilDone: true);
+      expect(backOn.runUntilDone, isTrue);
+    });
+
+    test('unboundedStepLimit stays far beyond any real task', () {
+      expect(unboundedStepLimit, greaterThan(maxMaxSteps));
+      expect(unboundedStepLimit, greaterThanOrEqualTo(10000));
+    });
+  });
+
   group('attachment kinds', () {
     test('images, text and binaries are classified by extension', () {
       expect(attachmentKindFor('photo.PNG'), AttachmentKind.image);

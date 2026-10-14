@@ -179,6 +179,8 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('max-steps-field')), findsOneWidget);
+    // v1.8.0: "Run until done" switch sits right above the max-steps row.
+    expect(find.byKey(const Key('run-until-done-switch')), findsOneWidget);
     await tester.dragUntilVisible(
       find.byKey(const Key('node-manager-tile')),
       find.byType(ListView),

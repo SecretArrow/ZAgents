@@ -120,18 +120,38 @@ class ChatController extends Notifier<ChatState> {
       return;
     }
 
-    // Continue the active session, or create a new one.
+    // Continue the active session, or create a new one. An OPEN but not
+    // currently-running session (opened from history, or one whose run has
+    // finished) must be CONTINUED — sending a message must never silently
+    // fork a brand-new chat. A fresh chat is only created when there is no
+    // open conversation at all (i.e. the user tapped "New chat" / fresh app
+    // start with no history).
     if (run == null) {
-      final String sessionId = newId();
-      run = _SessionRun(sessionId: sessionId, title: _titleFor(trimmed));
-      _runs[sessionId] = run;
-      _activeSessionId = sessionId;
-      state = ChatState(
-        sessionId: sessionId,
-        title: run.title,
-        messages: run.messages,
-        isRunning: true,
-      );
+      final String? openId = _activeSessionId;
+      if (openId != null) {
+        run = await _adoptSession(openId, trimmed);
+        // The user may have switched away while the history was loading.
+        if (_activeSessionId != openId) return;
+        _runs[openId] = run;
+        _activeSessionId = openId;
+        state = ChatState(
+          sessionId: openId,
+          title: run.title,
+          messages: [...run.messages],
+          isRunning: true,
+        );
+      } else {
+        final String sessionId = newId();
+        run = _SessionRun(sessionId: sessionId, title: _titleFor(trimmed));
+        _runs[sessionId] = run;
+        _activeSessionId = sessionId;
+        state = ChatState(
+          sessionId: sessionId,
+          title: run.title,
+          messages: run.messages,
+          isRunning: true,
+        );
+      }
     } else {
       state = state.copyWith(isRunning: true, error: null);
     }
@@ -165,6 +185,36 @@ class ChatController extends Notifier<ChatState> {
 
   static String _titleFor(String text) =>
       text.length > 48 ? '${text.substring(0, 48)}…' : text;
+
+  /// Loads an existing (persisted) session into a runnable state so the
+  /// next message CONTINUES it instead of forking a new chat. Falls back
+  /// to an empty transcript when the stored file is unreadable — the
+  /// conversation keeps its id and title either way.
+  Future<_SessionRun> _adoptSession(String sessionId, String prompt) async {
+    final _SessionRun run = _SessionRun(
+      sessionId: sessionId,
+      title: state.title.isNotEmpty ? state.title : _titleFor(prompt),
+    );
+    try {
+      final List<ChatMessage>? history = await ref
+          .read(chatStoreProvider)
+          .load(sessionId);
+      if (history != null && history.isNotEmpty) {
+        run.messages.addAll(history);
+        // Re-read attachment payloads so replayed attachments reach the
+        // model again (images need their data URLs, text files their
+        // bodies). Missing files are skipped by [_prepareAttachments].
+        final List<ChatAttachment> atts = <ChatAttachment>[
+          for (final ChatMessage m in history) ...m.attachments,
+        ];
+        await _prepareAttachments(run, atts);
+      }
+    } catch (_) {
+      // Storage failure: continue with whatever is on screen (possibly
+      // empty) rather than blocking the user's message.
+    }
+    return run;
+  }
 
   /// Reads picked files into the run's caches so wire building never
   /// touches the filesystem again. Failures degrade to a note in text.
@@ -286,7 +336,13 @@ class ChatController extends Notifier<ChatState> {
     }
 
     try {
-      for (var step = 0; step < settings.maxSteps; step++) {
+      // "Run until done" removes the max-steps cap: the loop only ends
+      // when the model stops requesting tools or the user presses Stop.
+      // [unboundedStepLimit] remains as a runaway guard.
+      final int stepLimit = settings.runUntilDone
+          ? unboundedStepLimit
+          : settings.maxSteps;
+      for (var step = 0; step < stepLimit; step++) {
         // 1. Stream one assistant turn.
         run.messages.add(ChatMessage.assistant('', isStreaming: true));
         _sync(run);
@@ -368,6 +424,20 @@ class ChatController extends Notifier<ChatState> {
             '${last.content}\n\n${appStringsFor(settings.languageCode).stoppedMarkdown}',
           );
         }
+      } else if (!run.stopRequested &&
+          run.messages.isNotEmpty &&
+          run.messages.last.role == Role.assistant &&
+          run.messages.last.toolCalls.isNotEmpty) {
+        // The step cap was exhausted while the model still wanted to call
+        // tools — explain the pause instead of stopping silently.
+        run.messages.add(
+          ChatMessage.assistant(
+            strings.maxStepsReachedMarkdown(
+              settings.runUntilDone ? unboundedStepLimit : settings.maxSteps,
+            ),
+          ),
+        );
+        _sync(run);
       }
       return const _RunResult();
     } catch (e) {
@@ -512,6 +582,30 @@ class ChatController extends Notifier<ChatState> {
   Future<void> newChat() async {
     _activeSessionId = null;
     state = const ChatState();
+  }
+
+  /// App-start behavior (chat.z.ai style): reopen the most recent
+  /// conversation so the first message CONTINUES it. A brand-new chat is
+  /// only started after the user explicitly taps "New chat" in the drawer.
+  /// Never yanks the screen away when the user is already interacting.
+  Future<void> restoreLastChat() async {
+    if (_activeSessionId != null ||
+        state.messages.isNotEmpty ||
+        state.isRunning) {
+      return;
+    }
+    try {
+      final List<ChatSummary> items = await ref.read(chatListProvider.future);
+      if (items.isEmpty) return;
+      if (_activeSessionId != null ||
+          state.messages.isNotEmpty ||
+          state.isRunning) {
+        return;
+      }
+      await openChat(items.first);
+    } catch (_) {
+      // History unavailable: stay on the fresh draft.
+    }
   }
 
   Future<void> openChat(ChatSummary summary) async {

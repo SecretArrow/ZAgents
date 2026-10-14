@@ -238,6 +238,10 @@ abstract class AppStrings {
 
   String get maxStepsTitle;
   String get maxStepsHint;
+  String get runUntilDoneTitle;
+  String get runUntilDoneSubtitle;
+  String get runUntilDoneHint;
+  String maxStepsReachedMarkdown(int steps);
   String get agentSection;
   String get agentModeTitle;
   String get agentModeSubtitle;
@@ -638,6 +642,22 @@ class AppStringsEn implements AppStrings {
   String get maxStepsHint =>
       'How many tool-call rounds the agent may take (1-100). Type a custom '
       'value or use the slider.';
+  @override
+  String get runUntilDoneTitle => 'Run until done';
+  @override
+  String get runUntilDoneSubtitle =>
+      'The agent keeps working until the task is really finished instead of '
+      'stopping at the steps cap (recommended). Turn off to enforce the '
+      'limit below.';
+  @override
+  String maxStepsReachedMarkdown(int steps) =>
+      '*Paused: reached the max agent steps limit ($steps). The task may not '
+      'be finished — raise the limit in Settings or keep “Run until done” '
+      'enabled.*';
+  @override
+  String get runUntilDoneHint =>
+      'Bypassed while “Run until done” is on — the agent works until the '
+      'task is finished.';
   @override
   String get agentSection => 'Agent';
   @override
@@ -1082,6 +1102,22 @@ class AppStringsId implements AppStrings {
   String get maxStepsHint =>
       'Jumlah maksimum putaran tool-call agent (1-100). Isi angka kustom '
       'atau gunakan slider.';
+  @override
+  String get runUntilDoneTitle => 'Jalankan sampai selesai';
+  @override
+  String get runUntilDoneSubtitle =>
+      'Agent terus bekerja sampai tugas benar-benar selesai alih-alih '
+      'berhenti di batas langkah (disarankan). Matikan untuk menerapkan '
+      'batas di bawah.';
+  @override
+  String maxStepsReachedMarkdown(int steps) =>
+      '*Berhenti sementara: batas maks. langkah agent ($steps) tercapai. '
+      'Tugas mungkin belum selesai — naikkan batas di Pengaturan atau '
+      'biarkan “Jalankan sampai selesai” aktif.*';
+  @override
+  String get runUntilDoneHint =>
+      'Dinonaktifkan selama “Jalankan sampai selesai” aktif — agent bekerja '
+      'sampai tugas selesai.';
   @override
   String get agentSection => 'Agent';
   @override

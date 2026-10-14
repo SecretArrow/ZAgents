@@ -90,6 +90,7 @@ void main() {
     expect(find.byKey(const Key('agent-mode-switch')), findsOneWidget);
     expect(find.byKey(const Key('automation-switch')), findsOneWidget);
 
+    // Reveal the bottom of the agent card first so slider + field are built.
     await tester.dragUntilVisible(
       find.byKey(const Key('max-steps-field')),
       find.byType(ListView),
@@ -100,6 +101,52 @@ void main() {
       EnginePhase.sendSemanticsUpdate,
       const Duration(seconds: 15),
     );
+
+    // "Run until done" is ON by default: the max-steps cap is bypassed and
+    // the slider/input are disabled (dimmed).
+    expect(container.read(settingsProvider).runUntilDone, isTrue);
+    final Slider disabledSlider = tester.widget<Slider>(
+      find.byKey(const Key('max-steps-slider')),
+    );
+    expect(disabledSlider.onChanged, isNull);
+    final TextField disabledField = tester.widget<TextField>(
+      find.byKey(const Key('max-steps-field')),
+    );
+    expect(disabledField.enabled, isFalse);
+
+    // Toggling the switch OFF re-enables the max-steps controls.
+    await tester.dragUntilVisible(
+      find.byKey(const Key('run-until-done-switch')),
+      find.byType(ListView),
+      const Offset(0, 120),
+    );
+    await tester.pumpAndSettle(
+      const Duration(milliseconds: 100),
+      EnginePhase.sendSemanticsUpdate,
+      const Duration(seconds: 15),
+    );
+    await tester.tap(find.byKey(const Key('run-until-done-switch')));
+    await tester.pumpAndSettle(
+      const Duration(milliseconds: 100),
+      EnginePhase.sendSemanticsUpdate,
+      const Duration(seconds: 15),
+    );
+    expect(container.read(settingsProvider).runUntilDone, isFalse);
+
+    await tester.dragUntilVisible(
+      find.byKey(const Key('max-steps-field')),
+      find.byType(ListView),
+      const Offset(0, -140),
+    );
+    await tester.pumpAndSettle(
+      const Duration(milliseconds: 100),
+      EnginePhase.sendSemanticsUpdate,
+      const Duration(seconds: 15),
+    );
+    final Slider enabledSlider = tester.widget<Slider>(
+      find.byKey(const Key('max-steps-slider')),
+    );
+    expect(enabledSlider.onChanged, isNotNull);
 
     await tester.enterText(find.byKey(const Key('max-steps-field')), '55');
     await tester.testTextInput.receiveAction(TextInputAction.done);
@@ -119,6 +166,9 @@ void main() {
       const Duration(seconds: 15),
     );
     expect(container.read(settingsProvider).maxSteps, 100);
+
+    // The choice persists in settings (memory repo keeps the last write).
+    expect(container.read(settingsProvider).runUntilDone, isFalse);
   });
 
   testWidgets('theme picker switches light/dark/system and persists', (

@@ -44,6 +44,16 @@ OpenAI-compatible: **OpenRouter, InferHub, Z.AI, OpenAI, DeepSeek, Groq, dan lai
   - 📴 **cache model per provider** — hasil fetch tersimpan di preset sehingga
     daftar model provider Anda tetap tampil saat offline / API error,
   - badge info (konteks, tools, gratis) + tombol refresh + fallback saran offline.
+- **Lanjut percakapan, bukan chat baru (v1.8.0)** — mengirim pesan selalu
+  **melanjutkan percakapan yang terbuka** (dibuka dari riwayat maupun yang
+  baru selesai jalan) alih-alih mem-fork chat baru; percakapan terakhir
+  otomatis dibuka kembali saat aplikasi dimulai, dan chat baru hanya dimulai
+  lewat tombol **"New chat"** di menu.
+- **Run until done (v1.8.0)** — agent bekerja **sampai tugas benar-benar
+  selesai** tanpa berhenti di batas langkah (default aktif). Batas maks.
+  langkah tetap tersedia (slider 1-100 + input kustom) dan bisa diterapkan
+  lewat Settings → Agent; saat batas tercapai, aplikasi kini menjelaskan
+  alasannya di chat alih-alih berhenti diam-diam.
 - **Pencarian + paging universal (v1.6.0)** — SEMUA list di aplikasi memakai
   widget `PagedList` yang sama: **5 item per halaman** (termasuk dropdown model),
   kolom pencarian, pager first/prev/next/last, dan empty state "No results".

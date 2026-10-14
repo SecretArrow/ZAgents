@@ -24,6 +24,19 @@ class HomeShell extends ConsumerStatefulWidget {
 
 class _HomeShellState extends ConsumerState<HomeShell> {
   @override
+  void initState() {
+    super.initState();
+    // Continue-where-you-left-off: reopen the most recent conversation (if
+    // any) so the first message continues it. Starting a NEW chat stays an
+    // explicit drawer action ("New chat").
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        ref.read(chatControllerProvider.notifier).restoreLastChat();
+      }
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
     final AppStrings strings = stringsOf(context);
     // Narrow screens: drop decorative elements (brand mark, quick language

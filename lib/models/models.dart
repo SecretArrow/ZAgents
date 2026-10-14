@@ -340,6 +340,13 @@ const int minMaxSteps = 1;
 const int maxMaxSteps = 100;
 const int defaultMaxSteps = 6;
 
+/// Absolute ceiling used when "Run until done" is enabled: the agent is
+/// NOT bound by the max-steps setting and keeps working until the model
+/// stops requesting tools (or the user presses Stop). The ceiling only
+/// exists as a runaway guard against a provider looping forever — it is
+/// far beyond any real task.
+const int unboundedStepLimit = 10000;
+
 int clampMaxSteps(Object? value) {
   final int parsed = value is int ? value : int.tryParse('$value') ?? 0;
   if (parsed < minMaxSteps) return minMaxSteps;
@@ -425,6 +432,7 @@ class AppSettings {
     this.agentMode = true,
     this.automationEnabled = true,
     this.maxSteps = defaultMaxSteps,
+    this.runUntilDone = true,
     this.runInBackground = true,
     this.languageCode = defaultLanguageCode,
     this.themeMode = ThemeModeSetting.dark,
@@ -441,6 +449,13 @@ class AppSettings {
   final bool agentMode;
   final bool automationEnabled;
   final int maxSteps;
+
+  /// When true (default) the agent loop is NOT capped by [maxSteps]: it
+  /// keeps calling tools until the model produces its final answer or the
+  /// user presses Stop. When false, [maxSteps] is enforced and hitting it
+  /// pauses the work with a visible explanation instead of stopping
+  /// silently.
+  final bool runUntilDone;
 
   /// Keep the agent task running when the user leaves the app (Android
   /// foreground service + wake lock + progress notification).
@@ -482,6 +497,7 @@ class AppSettings {
     bool? agentMode,
     bool? automationEnabled,
     Object? maxSteps,
+    bool? runUntilDone,
     bool? runInBackground,
     String? languageCode,
     ThemeModeSetting? themeMode,
@@ -497,6 +513,7 @@ class AppSettings {
     agentMode: agentMode ?? this.agentMode,
     automationEnabled: automationEnabled ?? this.automationEnabled,
     maxSteps: clampMaxSteps(maxSteps ?? this.maxSteps),
+    runUntilDone: runUntilDone ?? this.runUntilDone,
     runInBackground: runInBackground ?? this.runInBackground,
     languageCode: languageCode ?? this.languageCode,
     themeMode: themeMode ?? this.themeMode,
@@ -514,6 +531,7 @@ class AppSettings {
     'agentMode': agentMode,
     'automationEnabled': automationEnabled,
     'maxSteps': maxSteps,
+    'runUntilDone': runUntilDone,
     'runInBackground': runInBackground,
     'languageCode': languageCode,
     'themeMode': themeMode.name,
@@ -532,6 +550,7 @@ class AppSettings {
       agentMode: json['agentMode'] as bool? ?? true,
       automationEnabled: json['automationEnabled'] as bool? ?? true,
       maxSteps: clampMaxSteps(json['maxSteps'] ?? defaultMaxSteps),
+      runUntilDone: json['runUntilDone'] as bool? ?? true,
       runInBackground: json['runInBackground'] as bool? ?? true,
       languageCode: json['languageCode'] as String? ?? defaultLanguageCode,
       themeMode: themeModeSettingFromName(json['themeMode'] as String?),
@@ -586,6 +605,7 @@ class AppSettings {
       agentMode: agentMode,
       automationEnabled: automationEnabled,
       maxSteps: maxSteps,
+      runUntilDone: runUntilDone,
       runInBackground: runInBackground,
       languageCode: languageCode,
       themeMode: themeMode,
