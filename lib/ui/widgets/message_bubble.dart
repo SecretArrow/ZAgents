@@ -6,6 +6,7 @@ import 'package:flutter_markdown/flutter_markdown.dart';
 import '../../l10n/app_strings.dart';
 import '../../models/models.dart';
 import '../theme.dart';
+import 'todo_plan_card.dart';
 import 'tool_call_card.dart';
 
 /// One chat message: user (gradient bubble, right, with attachment
@@ -102,7 +103,11 @@ class MessageBubble extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
               for (final ToolCall call in message.toolCalls)
-                ToolCallCard(call: call),
+                if (call.name == 'todo_write' &&
+                    parseTodoList(call.arguments['todos']).isNotEmpty)
+                  TodoPlanCard(call: call)
+                else
+                  ToolCallCard(call: call),
               if (showContent)
                 MarkdownBody(
                   data: message.content,

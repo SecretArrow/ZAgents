@@ -54,6 +54,14 @@ OpenAI-compatible: **OpenRouter, InferHub, Z.AI, OpenAI, DeepSeek, Groq, dan lai
   langkah tetap tersedia (slider 1-100 + input kustom) dan bisa diterapkan
   lewat Settings → Agent; saat batas tercapai, aplikasi kini menjelaskan
   alasannya di chat alih-alih berhenti diam-diam.
+- **Plan first + Todos (v1.9.0)** — mirip mode agent z.ai: agent **selalu
+  memulai tugas dengan rencana todo** (`todo_write`) sebelum bekerja,
+  memperbarui status tiap langkah (pending → in progress → selesai), dan
+  **otomatis tahu kapan tugas selesai** — bila model mencoba berhenti saat
+  masih ada todo yang belum selesai, loop mengingatkannya untuk melanjutkan
+  hingga semua todo tuntas. Rencana tampil sebagai **kartu Rencana** dengan
+  progress bar + ikon status per langkah di dalam chat. Bisa dimatikan lewat
+  Settings → Agent → "Buat rencana dulu (Todos)".
 - **Pencarian + paging universal (v1.6.0)** — SEMUA list di aplikasi memakai
   widget `PagedList` yang sama: **5 item per halaman** (termasuk dropdown model),
   kolom pencarian, pager first/prev/next/last, dan empty state "No results".

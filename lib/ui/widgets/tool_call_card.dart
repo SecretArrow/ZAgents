@@ -23,6 +23,8 @@ class _ToolCallCardState extends State<ToolCallCard> {
 
   IconData get _icon {
     switch (widget.call.name) {
+      case 'todo_write':
+        return Icons.checklist_rounded;
       case 'browser_navigate':
         return Icons.travel_explore_rounded;
       case 'browser_click':

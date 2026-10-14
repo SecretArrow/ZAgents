@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import '../models/models.dart';
 import 'browser_automation.dart';
 import 'js_runtime.dart';
 import 'npm_service.dart';
@@ -60,6 +61,8 @@ class ToolExecutor {
   Future<ToolResult> execute(String name, Map<String, dynamic> args) async {
     try {
       switch (name) {
+        case 'todo_write':
+          return _todoWrite(args);
         case 'browser_navigate':
           return await _navigate(args);
         case 'browser_click':
@@ -259,6 +262,43 @@ class ToolExecutor {
       ok: true,
       llmOutput: 'Wrote ${content.length} characters to ${file.path}',
       displayText: file.path.split(Platform.pathSeparator).last,
+    );
+  }
+
+  // -- Task plan (todos) --------------------------------------------------
+
+  /// The planning tool is stateless on purpose: the model re-sends the
+  /// FULL list every time, so the latest `todo_write` call in the history
+  /// always describes the current plan. The executor only validates and
+  /// reports progress back to the model; UI and history read the same
+  /// arguments from the persisted tool call.
+  ToolResult _todoWrite(Map<String, dynamic> args) {
+    final List<TodoItem> todos = parseTodoList(args['todos']);
+    if (todos.isEmpty) {
+      return const ToolResult(
+        ok: false,
+        llmOutput:
+            'todo_write requires a non-empty "todos" array of objects with '
+            '"content" (string) and "status" (pending | in_progress | '
+            'completed). Send the complete updated list.',
+      );
+    }
+    final int completed = todos
+        .where((TodoItem t) => t.status == TodoStatus.completed)
+        .length;
+    final int inProgress = todos
+        .where((TodoItem t) => t.status == TodoStatus.inProgress)
+        .length;
+    return ToolResult(
+      ok: true,
+      llmOutput: jsonEncode(<String, dynamic>{
+        'ok': true,
+        'total': todos.length,
+        'completed': completed,
+        'in_progress': inProgress,
+        'pending': todos.length - completed - inProgress,
+      }),
+      displayText: 'plan $completed/${todos.length}',
     );
   }
 

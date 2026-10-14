@@ -171,6 +171,34 @@ void main() {
     expect(container.read(settingsProvider).runUntilDone, isFalse);
   });
 
+  testWidgets('plan-first switch defaults on and persists the toggle', (
+    WidgetTester tester,
+  ) async {
+    final ProviderContainer container = await openSettings(tester);
+
+    await tester.dragUntilVisible(
+      find.byKey(const Key('plan-first-switch')),
+      find.byType(ListView),
+      const Offset(0, -120),
+    );
+    await tester.pumpAndSettle(
+      const Duration(milliseconds: 100),
+      EnginePhase.sendSemanticsUpdate,
+      const Duration(seconds: 15),
+    );
+
+    expect(container.read(settingsProvider).planFirst, isTrue);
+    expect(find.byKey(const Key('plan-first-switch')), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('plan-first-switch')));
+    await tester.pumpAndSettle(
+      const Duration(milliseconds: 100),
+      EnginePhase.sendSemanticsUpdate,
+      const Duration(seconds: 15),
+    );
+    expect(container.read(settingsProvider).planFirst, isFalse);
+  });
+
   testWidgets('theme picker switches light/dark/system and persists', (
     WidgetTester tester,
   ) async {

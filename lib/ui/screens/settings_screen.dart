@@ -42,6 +42,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     bool? agentMode,
     bool? automationEnabled,
     bool? runUntilDone,
+    bool? planFirst,
     bool? runInBackground,
     Object? maxSteps,
     String? languageCode,
@@ -56,6 +57,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             agentMode: agentMode,
             automationEnabled: automationEnabled,
             runUntilDone: runUntilDone,
+            planFirst: planFirst,
             runInBackground: runInBackground,
             maxSteps: maxSteps ?? current.maxSteps,
             languageCode: languageCode,
@@ -181,6 +183,17 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     ),
                     value: settings.runUntilDone,
                     onChanged: (bool value) => _commit(runUntilDone: value),
+                  ),
+                  SwitchListTile(
+                    key: const Key('plan-first-switch'),
+                    contentPadding: EdgeInsets.zero,
+                    title: Text(strings.planFirstTitle),
+                    subtitle: Text(
+                      strings.planFirstSubtitle,
+                      style: TextStyle(fontSize: 12, color: palette.muted),
+                    ),
+                    value: settings.planFirst,
+                    onChanged: (bool value) => _commit(planFirst: value),
                   ),
                   const SizedBox(height: 4),
                   Text(

@@ -762,6 +762,235 @@ void main() {
       expect(container.read(runningSessionsProvider), isEmpty);
     },
   );
+
+  group('plan-first (todos)', () {
+    List<String> userTexts(List<Map<String, dynamic>> wire) => <String>[
+      for (final Map<String, dynamic> m in wire)
+        if (m['role'] == 'user') m['content'] as String,
+    ];
+
+    test(
+      'premature final answer is nudged until every todo is completed',
+      () async {
+        final FakeLlmClient llm = FakeLlmClient(<AssistantTurn>[
+          // 1. The model writes the plan.
+          AssistantTurn(
+            content: '',
+            toolCalls: <ToolCallRequest>[
+              ToolCallRequest(
+                id: 'p1',
+                name: 'todo_write',
+                argumentsJson: jsonEncode(<String, dynamic>{
+                  'todos': <dynamic>[
+                    <String, dynamic>{
+                      'content': 'research topic',
+                      'status': 'in_progress',
+                    },
+                    <String, dynamic>{
+                      'content': 'write report',
+                      'status': 'pending',
+                    },
+                  ],
+                }),
+              ),
+            ],
+          ),
+          // 2. Premature "final answer" while the plan is incomplete.
+          AssistantTurn(content: 'partially done…'),
+          // 3. After the nudge it finishes the remaining todo.
+          AssistantTurn(
+            content: '',
+            toolCalls: <ToolCallRequest>[
+              ToolCallRequest(
+                id: 'p2',
+                name: 'todo_write',
+                argumentsJson: jsonEncode(<String, dynamic>{
+                  'todos': <dynamic>[
+                    <String, dynamic>{
+                      'content': 'research topic',
+                      'status': 'completed',
+                    },
+                    <String, dynamic>{
+                      'content': 'write report',
+                      'status': 'completed',
+                    },
+                  ],
+                }),
+              ),
+            ],
+          ),
+          // 4. Real final answer.
+          AssistantTurn(content: 'all done'),
+        ]);
+        final ProviderContainer container = ProviderContainer(
+          overrides: testOverrides(
+            llm: llm,
+            dir: tempDir,
+            settings: AppSettings(apiKey: 'k'),
+          ),
+        );
+        addTearDown(container.dispose);
+
+        await container.read(chatControllerProvider.notifier).send('do a task');
+        expect(llm.calls, hasLength(4)); // plan, premature, continue, final
+
+        // The wire of the continuation call contains the wire-only nudge.
+        final List<String> nudged = userTexts(llm.calls[2]);
+        expect(
+          nudged.any((String t) => t.contains('plan is not finished')),
+          isTrue,
+          reason: 'an incomplete plan must keep the agent working',
+        );
+        expect(
+          nudged.any(
+            (String t) => t.contains('- [in_progress] research topic'),
+          ),
+          isTrue,
+        );
+        expect(
+          nudged.any((String t) => t.contains('- [pending] write report')),
+          isTrue,
+        );
+
+        // The nudge is wire-only: the visible transcript shows exactly one
+        // user message and ends with the real final answer.
+        final ChatState state = container.read(chatControllerProvider);
+        expect(
+          state.messages.where((ChatMessage m) => m.role == Role.user),
+          hasLength(1),
+        );
+        expect(state.messages.last.content, 'all done');
+        expect(state.isRunning, isFalse);
+        expect(state.error, isNull);
+
+        // Continuation semantics intact: still exactly one stored chat.
+        final List<ChatSummary> summaries = await container
+            .read(chatStoreProvider)
+            .listSummaries();
+        expect(summaries, hasLength(1));
+      },
+    );
+
+    test('a completed plan does not trigger the nudge', () async {
+      final FakeLlmClient llm = FakeLlmClient(<AssistantTurn>[
+        AssistantTurn(
+          content: '',
+          toolCalls: <ToolCallRequest>[
+            ToolCallRequest(
+              id: 'p1',
+              name: 'todo_write',
+              argumentsJson: jsonEncode(<String, dynamic>{
+                'todos': <dynamic>[
+                  <String, dynamic>{
+                    'content': 'only step',
+                    'status': 'completed',
+                  },
+                ],
+              }),
+            ),
+          ],
+        ),
+        AssistantTurn(content: 'done'),
+      ]);
+      final ProviderContainer container = ProviderContainer(
+        overrides: testOverrides(
+          llm: llm,
+          dir: tempDir,
+          settings: AppSettings(apiKey: 'k'),
+        ),
+      );
+      addTearDown(container.dispose);
+
+      await container.read(chatControllerProvider.notifier).send('quick task');
+      expect(llm.calls, hasLength(2)); // plan + final answer, no nudge round
+      expect(
+        container.read(chatControllerProvider).messages.last.content,
+        'done',
+      );
+    });
+
+    test('planFirst=false: no todo tool, no addendum, no nudge', () async {
+      final FakeLlmClient llm = FakeLlmClient(<AssistantTurn>[
+        AssistantTurn(
+          content: '',
+          toolCalls: <ToolCallRequest>[
+            ToolCallRequest(
+              id: 'p1',
+              name: 'todo_write',
+              argumentsJson: jsonEncode(<String, dynamic>{
+                'todos': <dynamic>[
+                  <String, dynamic>{
+                    'content': 'never finished',
+                    'status': 'pending',
+                  },
+                ],
+              }),
+            ),
+          ],
+        ),
+        AssistantTurn(content: 'stopping anyway'),
+      ]);
+      final ProviderContainer container = ProviderContainer(
+        overrides: testOverrides(
+          llm: llm,
+          dir: tempDir,
+          settings: AppSettings(apiKey: 'k', planFirst: false),
+        ),
+      );
+      addTearDown(container.dispose);
+
+      await container.read(chatControllerProvider.notifier).send('task');
+      expect(llm.calls, hasLength(2)); // premature answer accepted
+
+      final List<Map<String, dynamic>>? tools = llm.toolSets.first;
+      expect(tools, isNotNull);
+      expect(
+        tools!.where(
+          (Map<String, dynamic> t) => t['function']['name'] == 'todo_write',
+        ),
+        isEmpty,
+        reason: 'the planning tool must not be advertised',
+      );
+      expect(
+        llm.calls.first.first['content'] as String,
+        isNot(contains('Task planning (todos)')),
+      );
+      expect(
+        container.read(chatControllerProvider).messages.last.content,
+        'stopping anyway',
+      );
+    });
+
+    test(
+      'planFirst=true: todo_write is the first tool + prompt addendum',
+      () async {
+        final FakeLlmClient llm = FakeLlmClient(<AssistantTurn>[
+          AssistantTurn(content: 'ok'),
+        ]);
+        final ProviderContainer container = ProviderContainer(
+          overrides: testOverrides(
+            llm: llm,
+            dir: tempDir,
+            settings: AppSettings(apiKey: 'k'),
+          ),
+        );
+        addTearDown(container.dispose);
+
+        await container.read(chatControllerProvider.notifier).send('hello');
+        final List<Map<String, dynamic>>? tools = llm.toolSets.first;
+        final List<String> names = <String>[
+          for (final Map<String, dynamic> t in tools!)
+            t['function']['name'] as String,
+        ];
+        expect(names.first, 'todo_write');
+        expect(names, contains('browser_navigate'));
+        expect(
+          llm.calls.first.first['content'] as String,
+          contains('Task planning (todos)'),
+        );
+      },
+    );
+  });
 }
 
 /// LLM fake whose turns are gated behind completers for parallel-run tests.

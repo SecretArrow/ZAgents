@@ -32,6 +32,17 @@ void main() {
       expect(id.missingApiKey, contains('API key belum diisi'));
       expect(id.suggestions.length, appStringsFor('en').suggestions.length);
     });
+
+    test('plan-first strings are localized in both bundles', () {
+      final AppStrings en = appStringsFor('en');
+      final AppStrings id = appStringsFor('id');
+      expect(en.planFirstTitle, contains('Plan first'));
+      expect(en.planTitle, 'Plan');
+      expect(en.planProgress(2, 5), '2/5 done');
+      expect(id.planFirstTitle, contains('rencana'));
+      expect(id.planTitle, 'Rencana');
+      expect(id.planProgress(2, 5), '2/5 selesai');
+    });
   });
 
   group('AppSettings language persistence', () {

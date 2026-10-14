@@ -181,6 +181,9 @@ void main() {
     expect(find.byKey(const Key('max-steps-field')), findsOneWidget);
     // v1.8.0: "Run until done" switch sits right above the max-steps row.
     expect(find.byKey(const Key('run-until-done-switch')), findsOneWidget);
+    // v1.9.0: plan-first (Todos) switch sits right below it, on by default.
+    expect(find.byKey(const Key('plan-first-switch')), findsOneWidget);
+    expect(container.read(settingsProvider).planFirst, isTrue);
     await tester.dragUntilVisible(
       find.byKey(const Key('node-manager-tile')),
       find.byType(ListView),

@@ -11,6 +11,32 @@ import '../tools/tool_defs.dart';
 import 'background_service.dart';
 import 'llm_client.dart';
 
+/// Wire-only user message appended when the model tries to finish while
+/// its todo plan still has incomplete items (run-until-done + plan-first).
+/// Never persisted as a visible chat message — the next assistant turn
+/// simply continues working, like z.ai agent mode.
+String planNudgeText(List<TodoItem> todos) {
+  final StringBuffer buffer = StringBuffer(
+    'Your task plan is not finished yet, so the task is not done. '
+    'Incomplete todos:\n',
+  );
+  for (final TodoItem todo in todos) {
+    if (todo.status == TodoStatus.completed) continue;
+    final String status = todo.status == TodoStatus.inProgress
+        ? 'in_progress'
+        : 'pending';
+    buffer.writeln('- [$status] ${todo.content}');
+  }
+  buffer
+    ..writeln()
+    ..write(
+      'Continue working now: use your tools to complete the next todo, '
+      'call todo_write to update the plan, and only write the final '
+      'summary when every todo is completed.',
+    );
+  return buffer.toString();
+}
+
 /// Immutable UI state of the currently ACTIVE chat session.
 class ChatState {
   const ChatState({
@@ -324,7 +350,9 @@ class ChatController extends Notifier<ChatState> {
       apiKey: settings.apiKey,
       model: settings.model,
     );
-    final tools = settings.agentMode ? buildAgentTools() : null;
+    final tools = settings.agentMode
+        ? buildAgentTools(planFirst: settings.planFirst)
+        : null;
 
     final BackgroundRun background = ref.read(backgroundRunServiceProvider);
     final bool holdStarted = settings.runInBackground;
@@ -342,6 +370,13 @@ class ChatController extends Notifier<ChatState> {
       final int stepLimit = settings.runUntilDone
           ? unboundedStepLimit
           : settings.maxSteps;
+
+      // Latest plan state written via todo_write in THIS run. A plan from
+      // an earlier turn stays in the replayed history; a new user command
+      // is expected to re-plan, so the nudge only tracks the current run.
+      List<TodoItem> latestTodos = const <TodoItem>[];
+      int planNudges = 0;
+
       for (var step = 0; step < stepLimit; step++) {
         // 1. Stream one assistant turn.
         run.messages.add(ChatMessage.assistant('', isStreaming: true));
@@ -375,7 +410,26 @@ class ChatController extends Notifier<ChatState> {
         );
         _sync(run);
 
-        if (toolCalls.isEmpty) break; // Final answer reached.
+        if (toolCalls.isEmpty) {
+          // The model produced a final answer. With "run until done" +
+          // plan-first, an incomplete todo plan means the task is NOT
+          // done: nudge the model to keep working (z.ai agent mode
+          // behavior) instead of accepting a premature summary.
+          if (settings.runUntilDone &&
+              settings.planFirst &&
+              settings.agentMode &&
+              !run.stopRequested &&
+              hasIncompleteTodos(latestTodos) &&
+              planNudges < maxPlanNudges) {
+            planNudges++;
+            wire.add(<String, dynamic>{
+              'role': 'user',
+              'content': planNudgeText(latestTodos),
+            });
+            continue;
+          }
+          break; // Final answer reached.
+        }
 
         // 2. Execute each requested tool and feed results back.
         wire.add(<String, dynamic>{
@@ -406,6 +460,9 @@ class ChatController extends Notifier<ChatState> {
           call.status = result.ok ? ToolStatus.success : ToolStatus.error;
           call.resultText = result.llmOutput;
           call.screenshotPath = result.screenshotPath;
+          if (call.name == 'todo_write') {
+            latestTodos = parseTodoList(call.arguments['todos']);
+          }
           _sync(run);
 
           wire.add(<String, dynamic>{
@@ -449,11 +506,15 @@ class ChatController extends Notifier<ChatState> {
     }
   }
 
-  /// System message: agent prompt (agent mode) + enabled Context Manager
-  /// entries merged into ONE system message (some providers reject several).
+  /// System message: agent prompt (agent mode) + plan-first addendum +
+  /// enabled Context Manager entries merged into ONE system message (some
+  /// providers reject several).
   Map<String, dynamic> _systemWire(AppSettings settings) {
     final StringBuffer content = StringBuffer();
-    if (settings.agentMode) content.write(agentSystemPrompt);
+    if (settings.agentMode) {
+      content.write(agentSystemPrompt);
+      if (settings.planFirst) content.write(planFirstSystemPrompt);
+    }
     try {
       final List<ContextEntry> entries = ref
           .read(contextRepositoryProvider)

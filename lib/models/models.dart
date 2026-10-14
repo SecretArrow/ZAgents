@@ -174,6 +174,97 @@ class ChatMessage {
   );
 }
 
+/// Execution status of one todo in the agent's task plan.
+enum TodoStatus { pending, inProgress, completed }
+
+/// Accepts the wire spelling (`in_progress`) and the Dart spelling
+/// (`inProgress`); anything unknown degrades to [TodoStatus.pending].
+TodoStatus todoStatusFromName(String? name) {
+  switch (name) {
+    case 'in_progress':
+    case 'inProgress':
+      return TodoStatus.inProgress;
+    case 'completed':
+    case 'done':
+      return TodoStatus.completed;
+    default:
+      return TodoStatus.pending;
+  }
+}
+
+/// One step of the agent's task plan, written by the model through the
+/// `todo_write` tool. The full list is re-sent on every update, so the
+/// latest `todo_write` call always describes the current plan state.
+class TodoItem {
+  const TodoItem({required this.content, this.status = TodoStatus.pending});
+
+  final String content;
+  final TodoStatus status;
+
+  Map<String, dynamic> toJson() => <String, dynamic>{
+    'content': content,
+    'status': status == TodoStatus.inProgress ? 'in_progress' : status.name,
+  };
+
+  factory TodoItem.fromJson(Map<String, dynamic> json) => TodoItem(
+    content: json['content']?.toString() ?? '',
+    status: todoStatusFromName(json['status']?.toString()),
+  );
+}
+
+/// Upper bound for plan size: keeps a runaway model from flooding the
+/// chat (and the wire) with an endless todo list.
+const int maxTodoItems = 50;
+
+/// How many times per run the agent may be nudged to keep working when it
+/// tries to stop with an incomplete plan. A pure runaway guard — real
+/// plans finish far below this.
+const int maxPlanNudges = 20;
+
+/// Parses the `todos` argument of a `todo_write` tool call defensively:
+/// accepts the decoded JSON array, skips malformed entries, trims content
+/// and normalizes statuses. Returns only valid items (may be empty).
+List<TodoItem> parseTodoList(Object? raw) {
+  if (raw is! List<dynamic>) return const <TodoItem>[];
+  final List<TodoItem> out = <TodoItem>[];
+  for (final Object? entry in raw) {
+    if (out.length >= maxTodoItems) break;
+    if (entry is! Map<String, dynamic>) {
+      if (entry is Map) {
+        final TodoItem? item = _todoItemFromLoose(entry);
+        if (item != null) out.add(item);
+      }
+      continue;
+    }
+    final String content = (entry['content'] ?? entry['text'] ?? '')
+        .toString()
+        .trim();
+    if (content.isEmpty) continue;
+    out.add(
+      TodoItem(
+        content: content.length > 500 ? content.substring(0, 500) : content,
+        status: todoStatusFromName(entry['status']?.toString()),
+      ),
+    );
+  }
+  return out;
+}
+
+TodoItem? _todoItemFromLoose(Map<Object?, Object?> entry) {
+  final Object? content = entry['content'] ?? entry['text'];
+  final String text = content?.toString().trim() ?? '';
+  if (text.isEmpty) return null;
+  return TodoItem(
+    content: text.length > 500 ? text.substring(0, 500) : text,
+    status: todoStatusFromName(entry['status']?.toString()),
+  );
+}
+
+/// True when at least one todo is not completed yet — the signal the
+/// agent loop uses to keep working instead of stopping early.
+bool hasIncompleteTodos(List<TodoItem> todos) =>
+    todos.any((TodoItem t) => t.status != TodoStatus.completed);
+
 /// Lightweight entry shown in the drawer history.
 class ChatSummary {
   const ChatSummary({
@@ -433,6 +524,7 @@ class AppSettings {
     this.automationEnabled = true,
     this.maxSteps = defaultMaxSteps,
     this.runUntilDone = true,
+    this.planFirst = true,
     this.runInBackground = true,
     this.languageCode = defaultLanguageCode,
     this.themeMode = ThemeModeSetting.dark,
@@ -456,6 +548,11 @@ class AppSettings {
   /// pauses the work with a visible explanation instead of stopping
   /// silently.
   final bool runUntilDone;
+
+  /// When true (default) agent mode always starts a task by writing a
+  /// todo plan (`todo_write`) and keeps working through it: the loop
+  /// nudges the model to continue while any todo is still incomplete.
+  final bool planFirst;
 
   /// Keep the agent task running when the user leaves the app (Android
   /// foreground service + wake lock + progress notification).
@@ -498,6 +595,7 @@ class AppSettings {
     bool? automationEnabled,
     Object? maxSteps,
     bool? runUntilDone,
+    bool? planFirst,
     bool? runInBackground,
     String? languageCode,
     ThemeModeSetting? themeMode,
@@ -514,6 +612,7 @@ class AppSettings {
     automationEnabled: automationEnabled ?? this.automationEnabled,
     maxSteps: clampMaxSteps(maxSteps ?? this.maxSteps),
     runUntilDone: runUntilDone ?? this.runUntilDone,
+    planFirst: planFirst ?? this.planFirst,
     runInBackground: runInBackground ?? this.runInBackground,
     languageCode: languageCode ?? this.languageCode,
     themeMode: themeMode ?? this.themeMode,
@@ -532,6 +631,7 @@ class AppSettings {
     'automationEnabled': automationEnabled,
     'maxSteps': maxSteps,
     'runUntilDone': runUntilDone,
+    'planFirst': planFirst,
     'runInBackground': runInBackground,
     'languageCode': languageCode,
     'themeMode': themeMode.name,
@@ -551,6 +651,7 @@ class AppSettings {
       automationEnabled: json['automationEnabled'] as bool? ?? true,
       maxSteps: clampMaxSteps(json['maxSteps'] ?? defaultMaxSteps),
       runUntilDone: json['runUntilDone'] as bool? ?? true,
+      planFirst: json['planFirst'] as bool? ?? true,
       runInBackground: json['runInBackground'] as bool? ?? true,
       languageCode: json['languageCode'] as String? ?? defaultLanguageCode,
       themeMode: themeModeSettingFromName(json['themeMode'] as String?),
@@ -606,6 +707,7 @@ class AppSettings {
       automationEnabled: automationEnabled,
       maxSteps: maxSteps,
       runUntilDone: runUntilDone,
+      planFirst: planFirst,
       runInBackground: runInBackground,
       languageCode: languageCode,
       themeMode: themeMode,

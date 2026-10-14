@@ -241,6 +241,10 @@ abstract class AppStrings {
   String get runUntilDoneTitle;
   String get runUntilDoneSubtitle;
   String get runUntilDoneHint;
+  String get planFirstTitle;
+  String get planFirstSubtitle;
+  String get planTitle;
+  String planProgress(int done, int total);
   String maxStepsReachedMarkdown(int steps);
   String get agentSection;
   String get agentModeTitle;
@@ -658,6 +662,16 @@ class AppStringsEn implements AppStrings {
   String get runUntilDoneHint =>
       'Bypassed while “Run until done” is on — the agent works until the '
       'task is finished.';
+  @override
+  String get planFirstTitle => 'Plan first (Todos)';
+  @override
+  String get planFirstSubtitle =>
+      'The agent starts every task with a todo plan and keeps working '
+      'until all todos are completed (recommended).';
+  @override
+  String get planTitle => 'Plan';
+  @override
+  String planProgress(int done, int total) => '$done/$total done';
   @override
   String get agentSection => 'Agent';
   @override
@@ -1118,6 +1132,16 @@ class AppStringsId implements AppStrings {
   String get runUntilDoneHint =>
       'Dinonaktifkan selama “Jalankan sampai selesai” aktif — agent bekerja '
       'sampai tugas selesai.';
+  @override
+  String get planFirstTitle => 'Buat rencana dulu (Todos)';
+  @override
+  String get planFirstSubtitle =>
+      'Agent selalu memulai tugas dengan rencana todo dan terus bekerja '
+      'sampai semua todo selesai (disarankan).';
+  @override
+  String get planTitle => 'Rencana';
+  @override
+  String planProgress(int done, int total) => '$done/$total selesai';
   @override
   String get agentSection => 'Agent';
   @override

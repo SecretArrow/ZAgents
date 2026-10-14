@@ -243,4 +243,64 @@ void main() {
     expect(removed.ok, isTrue);
     expect(pkg.existsSync(), isFalse);
   });
+
+  group('todo_write (plan tool)', () {
+    test('valid plan returns progress json for the model', () async {
+      final ToolResult result = await executor.execute(
+        'todo_write',
+        <String, dynamic>{
+          'todos': <dynamic>[
+            <String, dynamic>{'content': 'research', 'status': 'completed'},
+            <String, dynamic>{'content': 'draft', 'status': 'in_progress'},
+            <String, dynamic>{'content': 'review', 'status': 'pending'},
+          ],
+        },
+      );
+      expect(result.ok, isTrue);
+      expect(result.llmOutput, contains('"total":3'));
+      expect(result.llmOutput, contains('"completed":1'));
+      expect(result.llmOutput, contains('"in_progress":1'));
+      expect(result.llmOutput, contains('"pending":1'));
+      expect(result.displayText, 'plan 1/3');
+    });
+
+    test(
+      'missing or empty todos is an error the model can retry from',
+      () async {
+        final ToolResult missing = await executor.execute(
+          'todo_write',
+          <String, dynamic>{},
+        );
+        expect(missing.ok, isFalse);
+        expect(missing.llmOutput, contains('todos'));
+
+        final ToolResult empty = await executor.execute(
+          'todo_write',
+          <String, dynamic>{
+            'todos': <dynamic>[
+              <String, dynamic>{'status': 'pending'},
+            ],
+          },
+        );
+        expect(empty.ok, isFalse);
+      },
+    );
+
+    test('todo_write is never gated by the automation switch', () async {
+      final ToolExecutor gated = ToolExecutor(
+        browser: fakeBrowser,
+        resolveBaseDir: () async => tempDir,
+        isAutomationEnabled: () => false,
+      );
+      final ToolResult result = await gated.execute(
+        'todo_write',
+        <String, dynamic>{
+          'todos': <dynamic>[
+            <String, dynamic>{'content': 'step', 'status': 'pending'},
+          ],
+        },
+      );
+      expect(result.ok, isTrue);
+    });
+  });
 }

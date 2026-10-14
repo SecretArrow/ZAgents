@@ -28,6 +28,10 @@ class FakeLlmClient implements LlmClient {
   /// Wire messages captured for every call.
   final List<List<Map<String, dynamic>>> calls = <List<Map<String, dynamic>>>[];
 
+  /// Tool schemas captured for every call (null = plain chat mode).
+  final List<List<Map<String, dynamic>>?> toolSets =
+      <List<Map<String, dynamic>>?>[];
+
   @override
   Future<AssistantTurn> complete({
     required LlmConfig config,
@@ -36,6 +40,7 @@ class FakeLlmClient implements LlmClient {
     void Function(String delta)? onDelta,
   }) async {
     calls.add(messages);
+    toolSets.add(tools);
     final AssistantTurn turn =
         turns[_index < turns.length - 1 ? _index++ : turns.length - 1];
     if (turn.content.isNotEmpty && onDelta != null) {

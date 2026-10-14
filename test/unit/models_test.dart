@@ -257,4 +257,89 @@ void main() {
       expect(decoded.attachments.first.name, 'x.txt');
     });
   });
+
+  group('todo plan (plan-first)', () {
+    test('planFirst defaults to true', () {
+      expect(AppSettings().planFirst, isTrue);
+    });
+
+    test('planFirst roundtrip + backward compatible default', () {
+      final AppSettings off = AppSettings(planFirst: false);
+      expect(AppSettings.fromJson(off.toJson()).planFirst, isFalse);
+      expect(
+        AppSettings.fromJson(<String, dynamic>{'apiKey': 'k'}).planFirst,
+        isTrue,
+        reason: 'legacy storage without the flag must keep plan-first on',
+      );
+      expect(off.copyWith(planFirst: true).planFirst, isTrue);
+    });
+
+    test('todoStatusFromName accepts wire and dart spellings', () {
+      expect(todoStatusFromName('pending'), TodoStatus.pending);
+      expect(todoStatusFromName('in_progress'), TodoStatus.inProgress);
+      expect(todoStatusFromName('inProgress'), TodoStatus.inProgress);
+      expect(todoStatusFromName('completed'), TodoStatus.completed);
+      expect(todoStatusFromName('done'), TodoStatus.completed);
+      expect(todoStatusFromName('weird'), TodoStatus.pending);
+      expect(todoStatusFromName(null), TodoStatus.pending);
+    });
+
+    test('parseTodoList validates, trims and normalizes entries', () {
+      final List<TodoItem> todos = parseTodoList(<dynamic>[
+        <String, dynamic>{'content': '  research  ', 'status': 'in_progress'},
+        <String, dynamic>{'content': 'write report', 'status': 'completed'},
+        <String, dynamic>{'text': 'legacy key works', 'status': 'pending'},
+        <String, dynamic>{'content': '', 'status': 'pending'},
+        <String, dynamic>{'status': 'pending'},
+        'junk',
+        <String, dynamic>{'content': 'odd status', 'status': 'nonsense'},
+      ]);
+      expect(todos, hasLength(4));
+      expect(todos[0].content, 'research');
+      expect(todos[0].status, TodoStatus.inProgress);
+      expect(todos[1].status, TodoStatus.completed);
+      expect(todos[2].content, 'legacy key works');
+      expect(todos[3].content, 'odd status');
+      expect(todos[3].status, TodoStatus.pending);
+    });
+
+    test('parseTodoList rejects non-list input and caps the size', () {
+      expect(parseTodoList(null), isEmpty);
+      expect(parseTodoList('nope'), isEmpty);
+      expect(parseTodoList(<String, dynamic>{'content': 'x'}), isEmpty);
+      final List<dynamic> oversized = <dynamic>[
+        for (var i = 0; i < maxTodoItems + 10; i++)
+          <String, dynamic>{'content': 't$i', 'status': 'pending'},
+      ];
+      expect(parseTodoList(oversized), hasLength(maxTodoItems));
+    });
+
+    test('hasIncompleteTodos detects unfinished plans', () {
+      expect(hasIncompleteTodos(const <TodoItem>[]), isFalse);
+      expect(
+        hasIncompleteTodos(<TodoItem>[
+          const TodoItem(content: 'a', status: TodoStatus.completed),
+        ]),
+        isFalse,
+      );
+      expect(
+        hasIncompleteTodos(<TodoItem>[
+          const TodoItem(content: 'a', status: TodoStatus.completed),
+          const TodoItem(content: 'b', status: TodoStatus.inProgress),
+        ]),
+        isTrue,
+      );
+    });
+
+    test('TodoItem json roundtrip keeps the wire status spelling', () {
+      const TodoItem item = TodoItem(
+        content: 'x',
+        status: TodoStatus.inProgress,
+      );
+      expect(item.toJson()['status'], 'in_progress');
+      final TodoItem decoded = TodoItem.fromJson(item.toJson());
+      expect(decoded.status, TodoStatus.inProgress);
+      expect(decoded.content, 'x');
+    });
+  });
 }
