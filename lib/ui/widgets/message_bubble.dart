@@ -1,6 +1,8 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 
 import '../../l10n/app_strings.dart';
@@ -33,140 +35,217 @@ class MessageBubble extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (message.role == Role.user) {
+      final bool hasText = message.content.trim().isNotEmpty;
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: 4),
-        child: Align(
-          alignment: Alignment.centerRight,
-          child: Container(
-            constraints: BoxConstraints(
-              maxWidth: MediaQuery.of(context).size.width * 0.8,
-            ),
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-            decoration: BoxDecoration(
-              gradient: kBrandGradient,
-              borderRadius: const BorderRadius.only(
-                topLeft: Radius.circular(18),
-                topRight: Radius.circular(18),
-                bottomLeft: Radius.circular(18),
-                bottomRight: Radius.circular(6),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: <Widget>[
+            Align(
+              alignment: Alignment.centerRight,
+              child: Container(
+                constraints: BoxConstraints(
+                  maxWidth: MediaQuery.of(context).size.width * 0.8,
+                ),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 10,
+                ),
+                decoration: BoxDecoration(
+                  gradient: kBrandGradient,
+                  borderRadius: const BorderRadius.only(
+                    topLeft: Radius.circular(18),
+                    topRight: Radius.circular(18),
+                    bottomLeft: Radius.circular(18),
+                    bottomRight: Radius.circular(6),
+                  ),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    if (message.attachments.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 6),
+                        child: Wrap(
+                          alignment: WrapAlignment.end,
+                          spacing: 6,
+                          runSpacing: 6,
+                          children: <Widget>[
+                            for (final ChatAttachment att
+                                in message.attachments)
+                              _AttachmentPreview(attachment: att),
+                          ],
+                        ),
+                      ),
+                    if (message.content.trim().isNotEmpty)
+                      SelectableText(
+                        message.content,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 15,
+                          height: 1.4,
+                        ),
+                      ),
+                  ],
+                ),
               ),
             ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              mainAxisSize: MainAxisSize.min,
-              children: <Widget>[
-                if (message.attachments.isNotEmpty)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 6),
-                    child: Wrap(
-                      alignment: WrapAlignment.end,
-                      spacing: 6,
-                      runSpacing: 6,
-                      children: <Widget>[
-                        for (final ChatAttachment att in message.attachments)
-                          _AttachmentPreview(attachment: att),
-                      ],
-                    ),
-                  ),
-                if (message.content.trim().isNotEmpty)
-                  SelectableText(
-                    message.content,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 15,
-                      height: 1.4,
-                    ),
-                  ),
-              ],
-            ),
-          ),
+            if (hasText) _CopyButton(text: message.content),
+          ],
         ),
       );
     }
 
     final bool hasToolCards = message.toolCalls.isNotEmpty;
     final bool showContent = message.content.trim().isNotEmpty;
+    // No copy control while the answer is still streaming — it appears
+    // together with the final text (and never on text-less tool bubbles).
+    final bool canCopy = showContent && !message.isStreaming;
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Align(
-        alignment: Alignment.centerLeft,
-        child: Container(
-          constraints: BoxConstraints(
-            maxWidth: MediaQuery.of(context).size.width * 0.88,
-          ),
-          padding: EdgeInsets.fromLTRB(
-            hasToolCards ? 10 : 14,
-            10,
-            hasToolCards ? 10 : 14,
-            hasToolCards ? 6 : 10,
-          ),
-          decoration: BoxDecoration(
-            color: context.zSurfaceAlt,
-            border: Border.all(color: context.zBorder),
-            borderRadius: const BorderRadius.only(
-              topLeft: Radius.circular(18),
-              topRight: Radius.circular(18),
-              bottomLeft: Radius.circular(6),
-              bottomRight: Radius.circular(18),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Container(
+              constraints: BoxConstraints(
+                maxWidth: MediaQuery.of(context).size.width * 0.88,
+              ),
+              padding: EdgeInsets.fromLTRB(
+                hasToolCards ? 10 : 14,
+                10,
+                hasToolCards ? 10 : 14,
+                hasToolCards ? 6 : 10,
+              ),
+              decoration: BoxDecoration(
+                color: context.zSurfaceAlt,
+                border: Border.all(color: context.zBorder),
+                borderRadius: const BorderRadius.only(
+                  topLeft: Radius.circular(18),
+                  topRight: Radius.circular(18),
+                  bottomLeft: Radius.circular(6),
+                  bottomRight: Radius.circular(18),
+                ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  for (final ToolCall call in message.toolCalls)
+                    if (call.name == 'todo_write' &&
+                        parseTodoList(call.arguments['todos']).isNotEmpty)
+                      TodoPlanCard(call: call)
+                    else
+                      ToolCallCard(call: call),
+                  if (showContent)
+                    MarkdownBody(
+                      data: message.content,
+                      selectable: true,
+                      styleSheet: MarkdownStyleSheet(
+                        p: TextStyle(
+                          fontSize: 15,
+                          height: 1.5,
+                          color: Theme.of(context).colorScheme.onSurface,
+                        ),
+                        h1: const TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.w700,
+                        ),
+                        h2: const TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w700,
+                        ),
+                        h3: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w700,
+                        ),
+                        codeblockDecoration: BoxDecoration(
+                          color: context.zBackground,
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: context.zBorder),
+                        ),
+                        code: TextStyle(
+                          fontSize: 13,
+                          fontFamily: 'monospace',
+                          color: Theme.of(context).brightness == Brightness.dark
+                              ? const Color(0xFFB8C4FF)
+                              : const Color(0xFF3D51B4),
+                        ),
+                        listBullet: TextStyle(
+                          fontSize: 15,
+                          height: 1.5,
+                          color: Theme.of(context).colorScheme.onSurface,
+                        ),
+                      ),
+                    ),
+                  if (message.isStreaming ||
+                      (agentWorking && message.role == Role.assistant))
+                    _ThinkingFooter(todos: todos),
+                ],
+              ),
             ),
           ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              for (final ToolCall call in message.toolCalls)
-                if (call.name == 'todo_write' &&
-                    parseTodoList(call.arguments['todos']).isNotEmpty)
-                  TodoPlanCard(call: call)
-                else
-                  ToolCallCard(call: call),
-              if (showContent)
-                MarkdownBody(
-                  data: message.content,
-                  selectable: true,
-                  styleSheet: MarkdownStyleSheet(
-                    p: TextStyle(
-                      fontSize: 15,
-                      height: 1.5,
-                      color: Theme.of(context).colorScheme.onSurface,
-                    ),
-                    h1: const TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.w700,
-                    ),
-                    h2: const TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w700,
-                    ),
-                    h3: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w700,
-                    ),
-                    codeblockDecoration: BoxDecoration(
-                      color: context.zBackground,
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: context.zBorder),
-                    ),
-                    code: TextStyle(
-                      fontSize: 13,
-                      fontFamily: 'monospace',
-                      color: Theme.of(context).brightness == Brightness.dark
-                          ? const Color(0xFFB8C4FF)
-                          : const Color(0xFF3D51B4),
-                    ),
-                    listBullet: TextStyle(
-                      fontSize: 15,
-                      height: 1.5,
-                      color: Theme.of(context).colorScheme.onSurface,
-                    ),
-                  ),
-                ),
-              if (message.isStreaming ||
-                  (agentWorking && message.role == Role.assistant))
-                _ThinkingFooter(todos: todos),
-            ],
-          ),
+          if (canCopy) _CopyButton(text: message.content),
+        ],
+      ),
+    );
+  }
+}
+
+/// Small copy control rendered under every message bubble (sent and
+/// received): one tap puts the raw text on the clipboard and the icon
+/// flips to a check mark for a moment as confirmation.
+class _CopyButton extends StatefulWidget {
+  const _CopyButton({required this.text});
+
+  /// Text placed on the clipboard (verbatim, unformatted).
+  final String text;
+
+  @override
+  State<_CopyButton> createState() => _CopyButtonState();
+}
+
+class _CopyButtonState extends State<_CopyButton> {
+  bool _copied = false;
+  Timer? _resetTimer;
+
+  void _copy() {
+    Clipboard.setData(ClipboardData(text: widget.text));
+    setState(() => _copied = true);
+    _resetTimer?.cancel();
+    _resetTimer = Timer(const Duration(seconds: 2), () {
+      if (mounted) {
+        setState(() => _copied = false);
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _resetTimer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final AppStrings strings = stringsOf(context);
+    return IconButton(
+      key: const Key('copy-message-button'),
+      tooltip: _copied ? strings.copied : strings.copyMessage,
+      onPressed: _copy,
+      visualDensity: VisualDensity.compact,
+      constraints: const BoxConstraints(minWidth: 30, minHeight: 26),
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      icon: AnimatedSwitcher(
+        duration: const Duration(milliseconds: 150),
+        child: Icon(
+          _copied ? Icons.check_rounded : Icons.copy_rounded,
+          key: ValueKey<bool>(_copied),
+          size: 15,
+          color: _copied ? const Color(0xFF4CC38A) : context.zMuted,
         ),
       ),
     );

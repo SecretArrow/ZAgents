@@ -99,6 +99,12 @@ OpenAI-compatible: **OpenRouter, InferHub, Z.AI, OpenAI, DeepSeek, Groq, dan lai
   mati). Jawaban sebagian tetap tampil dengan penanda *stopped*, run latar
   belakang dirilis dengan benar, dan tombol kirim tidak muncul selama run
   masih dalam proses berhenti (pesan tidak lagi tertelan diam-diam).
+- **Ikon salin di setiap pesan (v1.13.0)** — setiap gelembung chat
+  (yang **Anda kirim** maupun **balasan AI**) kini punya **ikon salin** di
+  bawahnya. Satu ketukan menyalin **teks asli** pesan (markdown utk balasan
+  AI) ke clipboard; ikon berubah jadi **centang** sebentar sebagai
+  konfirmasi. Ikon tidak muncul saat jawaban masih mengalir atau pada
+  pesan tanpa teks.
 - **Pencarian + paging universal (v1.6.0)** — SEMUA list di aplikasi memakai
   widget `PagedList` yang sama: **5 item per halaman** (termasuk dropdown model),
   kolom pencarian, pager first/prev/next/last, dan empty state "No results".

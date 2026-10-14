@@ -100,6 +100,15 @@ void main() {
     });
   });
 
+  test('copy-message strings are localized in both bundles', () {
+    final AppStrings en = appStringsFor('en');
+    final AppStrings id = appStringsFor('id');
+    expect(en.copyMessage, 'Copy');
+    expect(en.copied, 'Copied');
+    expect(id.copyMessage, 'Salin');
+    expect(id.copied, 'Tersalin');
+  });
+
   test('random UA prompt + creator strings are localized in both bundles', () {
     final AppStrings en = appStringsFor('en');
     final AppStrings id = appStringsFor('id');
@@ -113,7 +122,7 @@ void main() {
     expect(id.randomUaAccept, 'Ya, acak');
     expect(id.randomUaDecline, 'Pertahankan');
     expect(id.createdBy('Maragung'), 'Dibuat oleh Maragung');
-    expect(en.aboutBody, contains('v1.12.0'));
-    expect(id.aboutBody, contains('v1.12.0'));
+    expect(en.aboutBody, contains('v1.13.0'));
+    expect(id.aboutBody, contains('v1.13.0'));
   });
 }

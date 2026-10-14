@@ -259,6 +259,8 @@ abstract class AppStrings {
   String planProgress(int done, int total);
   String get showPlanTooltip;
   String get hidePlanTooltip;
+  String get copyMessage;
+  String get copied;
   String get activateProviderTitle;
   String activateProviderBody(String name);
   String get activateProviderConfirm;
@@ -722,6 +724,10 @@ class AppStringsEn implements AppStrings {
   @override
   String get hidePlanTooltip => 'Hide plan';
   @override
+  String get copyMessage => 'Copy';
+  @override
+  String get copied => 'Copied';
+  @override
   String get activateProviderTitle => 'Activate provider';
   @override
   String activateProviderBody(String name) =>
@@ -772,14 +778,15 @@ class AppStringsEn implements AppStrings {
   String get aboutSection => 'About';
   @override
   String get aboutBody =>
-      'ZAgents v1.12.0 — an Android clone of the chat.z.ai agent mode UI, '
+      'ZAgents v1.13.0 — an Android clone of the chat.z.ai agent mode UI, '
       'with custom OpenAI-compatible providers (OpenRouter, InferHub, '
       'Z.AI, OpenAI, DeepSeek, Groq, and more), per-provider API keys, '
       'light/dark themes, parallel multi-session chat with background '
-      'running, plan-first Todos, file uploads with zip extraction '
-      'including password-protected archives, a Context Manager, an '
-      'in-app file manager, and an embedded Node.js-style runtime with '
-      'npm package management. Your keys stay on this device.';
+      'running, plan-first Todos, one-tap copy on every message, file '
+      'uploads with zip extraction including password-protected '
+      'archives, a Context Manager, an in-app file manager, and an '
+      'embedded Node.js-style runtime with npm package management. '
+      'Your keys stay on this device.';
 
   @override
   String createdBy(String name) => 'Created by $name';
@@ -1237,6 +1244,10 @@ class AppStringsId implements AppStrings {
   @override
   String get hidePlanTooltip => 'Sembunyikan rencana';
   @override
+  String get copyMessage => 'Salin';
+  @override
+  String get copied => 'Tersalin';
+  @override
   String get activateProviderTitle => 'Aktifkan provider';
   @override
   String activateProviderBody(String name) =>
@@ -1287,14 +1298,15 @@ class AppStringsId implements AppStrings {
   String get aboutSection => 'Tentang';
   @override
   String get aboutBody =>
-      'ZAgents v1.12.0 — klon UI agent mode chat.z.ai untuk Android, '
+      'ZAgents v1.13.0 — klon UI agent mode chat.z.ai untuk Android, '
       'dengan custom provider OpenAI-compatible (OpenRouter, InferHub, '
       'Z.AI, OpenAI, DeepSeek, Groq, dan lainnya), API key per-provider, '
       'tema terang/gelap, multi-sesi paralel dengan proses latar '
-      'belakang, Todos perencanaan, unggah file dengan ekstraksi zip '
-      'termasuk arsip terproteksi kata sandi, Manajer Konteks, manajer '
-      'file, serta runtime bergaya Node.js tersemat dengan manajemen '
-      'package npm. Key Anda tetap di perangkat ini.';
+      'belakang, Todos perencanaan, salin satu ketukan di setiap pesan, '
+      'unggah file dengan ekstraksi zip termasuk arsip terproteksi kata '
+      'sandi, Manajer Konteks, manajer file, serta runtime bergaya '
+      'Node.js tersemat dengan manajemen package npm. Key Anda tetap di '
+      'perangkat ini.';
 
   @override
   String createdBy(String name) => 'Dibuat oleh $name';
