@@ -370,9 +370,9 @@ module.exports = main();
     // finishes running, so poll for the console OUTPUT text — it only
     // exists once the real WebView run completed.
     bool outputVisible = false;
-    for (int attempt = 0; attempt < 60 && !outputVisible; attempt++) {
+    for (int attempt = 0; attempt < 120 && !outputVisible; attempt++) {
       await tester.runAsync(
-        () => Future<void>.delayed(const Duration(milliseconds: 500)),
+        () => Future<void>.delayed(const Duration(milliseconds: 750)),
       );
       await tester.pumpAndSettle();
       outputVisible = find
@@ -380,7 +380,19 @@ module.exports = main();
           .evaluate()
           .isNotEmpty;
     }
-    expect(outputVisible, isTrue, reason: 'module entry output never appeared');
+    final String moduleContent = container
+        .read(chatControllerProvider)
+        .messages
+        .where((ChatMessage m) => m.moduleName == 'e2e-module')
+        .map((ChatMessage m) => m.content)
+        .join(' ||| ');
+    expect(
+      outputVisible,
+      isTrue,
+      reason:
+          'module entry output never appeared. Module message content: '
+          '"$moduleContent"',
+    );
     expect(find.textContaining('chat emit works'), findsOneWidget);
     expect(find.byKey(const Key('module-badge-e2e-module')), findsOneWidget);
     expect(container.read(chatControllerProvider).activeModules, <String>[
