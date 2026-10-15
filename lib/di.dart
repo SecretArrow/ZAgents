@@ -5,6 +5,7 @@ import 'package:path_provider/path_provider.dart';
 
 import 'models/models.dart';
 import 'services/agent_controller.dart';
+import 'services/backup_service.dart';
 import 'services/browser_automation.dart';
 import 'services/chat_store.dart';
 import 'services/context_repository.dart';
@@ -114,6 +115,17 @@ final sessionExporterProvider = Provider<SessionExporter>(
     resolveBaseDir: ref.watch(documentsDirProvider),
   ),
 );
+
+/// Encrypted whole-app backup & restore (v1.17.0): settings + chats +
+/// context entries into one passphrase-protected .zabak file.
+final backupServiceProvider = Provider<BackupService>((ref) {
+  return BackupService(
+    store: ref.watch(chatStoreProvider),
+    settingsRepository: ref.watch(settingsRepositoryProvider),
+    contextRepository: ref.watch(contextRepositoryProvider),
+    resolveBaseDir: ref.watch(documentsDirProvider),
+  );
+});
 
 final toolExecutorProvider = Provider<ToolExecutor>((ref) {
   final SessionSandbox sandbox = ref.watch(sessionSandboxProvider);

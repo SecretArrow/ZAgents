@@ -142,6 +142,20 @@ OpenAI-compatible: **OpenRouter, InferHub, Z.AI, OpenAI, DeepSeek, Groq, dan lai
   **diturunkan skalanya** (sisi panjang maks 1568px, rasio terjaga;
   PNG kecil tetap PNG) sebelum dikirim sebagai data URL, jadi foto
   resolusi tinggi tidak lagi menggembungkan setiap pesan.
+- **Ekspor chat Markdown (v1.17.0)** — menu drawer **Ekspor chat
+  (Markdown)** menulis percakapan aktif sebagai file `.md` yang rapi
+  (peran, model, timestamp, daftar tool call, lampiran) di folder
+  `exports/` — siap dibagikan atau diarsipkan.
+- **Backup terenkripsi .zabak (v1.17.0)** — **Pengaturan → Backup &
+  pulihkan**: satu file **AES-256 terenkripsi** (PBKDF2 150 ribu
+  iterasi + HMAC-SHA256, encrypt-then-MAC) berisi SEMUA chat, seluruh
+  pengaturan (termasuk API key) dan Manajer Konteks. Pulihkan =
+  verifikasi passphrase dulu, baru mengganti isi aplikasi.
+- **Statistik token (v1.17.0)** — menu drawer **Statistik token**:
+  total token prompt/jawaban, jumlah giliran, dan rincian **per model**
+  — dihitung dari pemakaian yang dilaporkan provider per permintaan
+  (`stream_options.include_usage` + fallback retry otomatis untuk
+  provider yang menolak parameter itu).
 - **Pencarian + paging universal (v1.6.0)** — SEMUA list di aplikasi memakai
   widget `PagedList` yang sama: **5 item per halaman** (termasuk dropdown model),
   kolom pencarian, pager first/prev/next/last, dan empty state "No results".

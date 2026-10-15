@@ -282,6 +282,40 @@ abstract class AppStrings {
   String exportDone(String path);
   String importDone(int count);
   String get importFailed;
+
+  // -- Markdown export, token stats & encrypted backup (v1.17.0) ---------
+  String get exportChatMarkdown;
+  String get exportChatMarkdownEmpty;
+  String exportChatMarkdownDone(String path);
+  String get tokenStatsMenuItem;
+  String get tokenStatsTitle;
+  String get statsNoData;
+  String get statsPromptTokens;
+  String get statsCompletionTokens;
+  String get statsTotalTokens;
+  String get statsTurns;
+  String get statsSessions;
+  String get statsPerModel;
+  String statsModelLine(
+    String prompt,
+    String completion,
+    String total,
+    int turns,
+  );
+  String get statsUsageHint;
+  String get backupSectionTitle;
+  String get backupCreate;
+  String get backupCreateHint;
+  String get backupPassphraseLabel;
+  String get backupRestore;
+  String get backupRestoreHint;
+  String get backupConfirmTitle;
+  String get backupConfirmBody;
+  String backupRestoreDone(int sessions, bool settings, int contexts);
+  String get backupWrongPassphrase;
+  String get backupFailed;
+  String get backupPassphraseShort;
+
   String get aboutSection;
   String get aboutBody;
 
@@ -802,11 +836,86 @@ class AppStringsEn implements AppStrings {
   String importDone(int count) => '$count session(s) imported.';
   @override
   String get importFailed => 'Import failed: not a valid export file.';
+
+  // -- Markdown export, token stats & encrypted backup (v1.17.0) ---------
+  @override
+  String get exportChatMarkdown => 'Export chat (Markdown)';
+  @override
+  String get exportChatMarkdownEmpty =>
+      'Nothing to export yet — this chat has no messages.';
+  @override
+  String exportChatMarkdownDone(String path) => 'Chat exported to $path';
+  @override
+  String get tokenStatsMenuItem => 'Token stats';
+  @override
+  String get tokenStatsTitle => 'Token stats';
+  @override
+  String get statsNoData =>
+      'No token usage recorded yet. Providers report usage per request; '
+      'stats appear here after your next conversation.';
+  @override
+  String get statsPromptTokens => 'Prompt tokens';
+  @override
+  String get statsCompletionTokens => 'Completion tokens';
+  @override
+  String get statsTotalTokens => 'Total tokens';
+  @override
+  String get statsTurns => 'Assistant turns';
+  @override
+  String get statsSessions => 'Sessions';
+  @override
+  String get statsPerModel => 'PER MODEL';
+  @override
+  String statsModelLine(
+    String prompt,
+    String completion,
+    String total,
+    int turns,
+  ) => '$total tokens across $turns turns ($prompt in / $completion out)';
+  @override
+  String get statsUsageHint =>
+      'Usage is counted only when the provider reports it per request. '
+      'Older conversations (before v1.17.0) are not included.';
+  @override
+  String get backupSectionTitle => 'Backup & restore';
+  @override
+  String get backupCreate => 'Create encrypted backup';
+  @override
+  String get backupCreateHint =>
+      'Saves every chat, all settings (including API keys) and the Context '
+      'Manager into one AES-256 encrypted .zabak file under exports/.';
+  @override
+  String get backupPassphraseLabel => 'Passphrase (min. 8 characters)';
+  @override
+  String get backupRestore => 'Restore from backup';
+  @override
+  String get backupRestoreHint =>
+      'Restoring REPLACES all current chats, settings and context entries '
+      'with the backup contents.';
+  @override
+  String get backupConfirmTitle => 'Restore this backup?';
+  @override
+  String get backupConfirmBody =>
+      'Your current chats, provider settings and context entries will be '
+      'REPLACED by the backup contents. This cannot be undone.';
+  @override
+  String backupRestoreDone(int sessions, bool settings, int contexts) =>
+      'Restored $sessions sessions, $contexts context entries'
+      '${settings ? ' and settings' : ''}.';
+  @override
+  String get backupWrongPassphrase =>
+      'Wrong passphrase or the file was tampered with.';
+  @override
+  String get backupFailed => 'Backup failed.';
+  @override
+  String get backupPassphraseShort =>
+      'Use a passphrase of at least 8 characters.';
+
   @override
   String get aboutSection => 'About';
   @override
   String get aboutBody =>
-      'ZAgents v1.16.0 — an Android clone of the chat.z.ai agent mode UI, '
+      'ZAgents v1.17.0 — an Android clone of the chat.z.ai agent mode UI, '
       'with custom OpenAI-compatible providers (OpenRouter, InferHub, '
       'Z.AI, OpenAI, DeepSeek, Groq, and more), per-provider API keys, '
       'light/dark themes, parallel multi-session chat with background '
@@ -814,7 +923,8 @@ class AppStringsEn implements AppStrings {
       'regenerate messages, global chat search, automatic conversation '
       'titles, a Prompt Library, a web_fetch tool, git tools (clone, '
       'status, commit, push, log) and automatic image downscaling for '
-      'vision models, session-isolated workspaces (each chat '
+      'vision models, Markdown chat export, whole-app encrypted backup, '
+      'token usage statistics, session-isolated workspaces (each chat '
       'has its own private file sandbox, like a browser private window), '
       'file uploads with zip extraction including password-protected '
       'archives, a Context Manager, an in-app file manager, and an '
@@ -1378,11 +1488,87 @@ class AppStringsId implements AppStrings {
   String importDone(int count) => '$count sesi diimpor.';
   @override
   String get importFailed => 'Impor gagal: file ekspor tidak valid.';
+
+  // -- Ekspor Markdown, statistik token & backup terenkripsi (v1.17.0) ---
+  @override
+  String get exportChatMarkdown => 'Ekspor chat (Markdown)';
+  @override
+  String get exportChatMarkdownEmpty =>
+      'Belum ada yang bisa diekspor — chat ini masih kosong.';
+  @override
+  String exportChatMarkdownDone(String path) => 'Chat diekspor ke $path';
+  @override
+  String get tokenStatsMenuItem => 'Statistik token';
+  @override
+  String get tokenStatsTitle => 'Statistik token';
+  @override
+  String get statsNoData =>
+      'Belum ada pemakaian token tercatat. Provider melaporkan pemakaian '
+      'per permintaan; statistik muncul di sini setelah percakapan '
+      'berikutnya.';
+  @override
+  String get statsPromptTokens => 'Token prompt';
+  @override
+  String get statsCompletionTokens => 'Token jawaban';
+  @override
+  String get statsTotalTokens => 'Total token';
+  @override
+  String get statsTurns => 'Giliran asisten';
+  @override
+  String get statsSessions => 'Sesi';
+  @override
+  String get statsPerModel => 'PER MODEL';
+  @override
+  String statsModelLine(
+    String prompt,
+    String completion,
+    String total,
+    int turns,
+  ) => '$total token dalam $turns giliran ($prompt masuk / $completion keluar)';
+  @override
+  String get statsUsageHint =>
+      'Pemakaian hanya dihitung saat provider melapkannya per permintaan. '
+      'Percakapan lama (sebelum v1.17.0) tidak ikut dihitung.';
+  @override
+  String get backupSectionTitle => 'Backup & pulihkan';
+  @override
+  String get backupCreate => 'Buat backup terenkripsi';
+  @override
+  String get backupCreateHint =>
+      'Menyimpan semua chat, seluruh pengaturan (termasuk API key) dan '
+      'Manajer Konteks ke satu file .zabak terenkripsi AES-256 di '
+      'folder exports/.';
+  @override
+  String get backupPassphraseLabel => 'Kata sandi (min. 8 karakter)';
+  @override
+  String get backupRestore => 'Pulihkan dari backup';
+  @override
+  String get backupRestoreHint =>
+      'Memulihkan akan MENGGANTI semua chat, pengaturan, dan entri konteks '
+      'saat ini dengan isi backup.';
+  @override
+  String get backupConfirmTitle => 'Pulihkan backup ini?';
+  @override
+  String get backupConfirmBody =>
+      'Chat, pengaturan provider, dan entri konteks Anda saat ini akan '
+      'DIGANTI dengan isi backup. Tindakan ini tidak bisa dibatalkan.';
+  @override
+  String backupRestoreDone(int sessions, bool settings, int contexts) =>
+      'Dipulihkan: $sessions sesi, $contexts entri konteks'
+      '${settings ? ' dan pengaturan' : ''}.';
+  @override
+  String get backupWrongPassphrase =>
+      'Kata sandi salah atau file pernah diubah.';
+  @override
+  String get backupFailed => 'Backup gagal.';
+  @override
+  String get backupPassphraseShort => 'Gunakan kata sandi minimal 8 karakter.';
+
   @override
   String get aboutSection => 'Tentang';
   @override
   String get aboutBody =>
-      'ZAgents v1.16.0 — klon UI agent mode chat.z.ai untuk Android, '
+      'ZAgents v1.17.0 — klon UI agent mode chat.z.ai untuk Android, '
       'dengan custom provider OpenAI-compatible (OpenRouter, InferHub, '
       'Z.AI, OpenAI, DeepSeek, Groq, dan lainnya), API key per-provider, '
       'tema terang/gelap, multi-sesi paralel dengan proses latar '
@@ -1390,7 +1576,8 @@ class AppStringsId implements AppStrings {
       'edit & buat ulang pesan, pencarian chat global, judul percakapan '
       'otomatis, Pustaka Prompt, tool web_fetch, tool git (clone, status, '
       'commit, push, log) dan penurunan skala gambar otomatis untuk model '
-      'vision, ruang kerja terisolasi per sesi '
+      'vision, ekspor chat Markdown, backup terenkripsi seluruh aplikasi, '
+      'statistik pemakaian token, ruang kerja terisolasi per sesi '
       '(setiap chat punya sandbox file pribadi, seperti jendela privat '
       'browser), unggah file dengan ekstraksi zip termasuk arsip '
       'terproteksi kata sandi, Manajer Konteks, manajer file, serta '

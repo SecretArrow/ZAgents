@@ -620,6 +620,8 @@ class ChatController extends Notifier<ChatState> {
         run.messages[run.messages.length - 1] = ChatMessage.assistant(
           turn.content,
           toolCalls: toolCalls,
+          model: settings.model,
+          usage: turn.usage,
         );
         _sync(run);
 

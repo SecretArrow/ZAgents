@@ -89,7 +89,45 @@ class ToolCall {
   );
 }
 
-/// A chat message, used both for UI display and (re)building the LLM wire format.
+/// Token usage reported by the provider for one assistant turn
+/// (OpenAI-compatible `usage` object). Nullable everywhere: providers that
+/// do not report usage simply leave it out, and statistics skip them.
+class TokenUsage {
+  const TokenUsage({
+    required this.promptTokens,
+    required this.completionTokens,
+  });
+
+  final int promptTokens;
+  final int completionTokens;
+
+  int get totalTokens => promptTokens + completionTokens;
+
+  /// Parses the OpenAI-compatible `usage` object defensively; returns null
+  /// when the shape is unusable (older exports, non-numeric values).
+  static TokenUsage? fromJson(Object? raw) {
+    if (raw is! Map<String, dynamic>) return null;
+    final int? prompt = (raw['prompt_tokens'] ?? raw['promptTokens']) is int
+        ? (raw['prompt_tokens'] ?? raw['promptTokens']) as int
+        : int.tryParse('${raw['prompt_tokens'] ?? raw['promptTokens']}');
+    final int? completion =
+        (raw['completion_tokens'] ?? raw['completionTokens']) is int
+        ? (raw['completion_tokens'] ?? raw['completionTokens']) as int
+        : int.tryParse(
+            '${raw['completion_tokens'] ?? raw['completionTokens']}',
+          );
+    if (prompt == null || completion == null) return null;
+    return TokenUsage(promptTokens: prompt, completionTokens: completion);
+  }
+
+  Map<String, dynamic> toJson() => <String, dynamic>{
+    'prompt_tokens': promptTokens,
+    'completion_tokens': completionTokens,
+  };
+}
+
+/// A chat message, used both for UI display and (re)building the LLM wire
+/// format.
 class ChatMessage {
   ChatMessage({
     required this.id,
@@ -101,6 +139,8 @@ class ChatMessage {
     required this.createdAt,
     this.isStreaming = false,
     this.attachments = const <ChatAttachment>[],
+    this.model,
+    this.usage,
   });
 
   final String id;
@@ -119,6 +159,12 @@ class ChatMessage {
   /// Files the user attached to this message (images / text / binary).
   final List<ChatAttachment> attachments;
 
+  /// Model id that produced this assistant turn (v1.17.0 statistics).
+  final String? model;
+
+  /// Token usage reported by the provider for this assistant turn.
+  final TokenUsage? usage;
+
   factory ChatMessage.user(
     String content, {
     List<ChatAttachment> attachments = const <ChatAttachment>[],
@@ -134,6 +180,8 @@ class ChatMessage {
     String content, {
     List<ToolCall> toolCalls = const <ToolCall>[],
     bool isStreaming = false,
+    String? model,
+    TokenUsage? usage,
   }) => ChatMessage(
     id: newId(),
     role: Role.assistant,
@@ -141,6 +189,8 @@ class ChatMessage {
     toolCalls: toolCalls,
     createdAt: DateTime.now(),
     isStreaming: isStreaming,
+    model: model,
+    usage: usage,
   );
 
   Map<String, dynamic> toJson() => <String, dynamic>{
@@ -152,6 +202,8 @@ class ChatMessage {
     if (attachments.isNotEmpty)
       'attachments': attachments.map((a) => a.toJson()).toList(),
     'createdAt': createdAt.toIso8601String(),
+    if (model != null) 'model': model,
+    if (usage != null) 'usage': usage!.toJson(),
   };
 
   factory ChatMessage.fromJson(Map<String, dynamic> json) => ChatMessage(
@@ -171,6 +223,8 @@ class ChatMessage {
         .whereType<Map<String, dynamic>>()
         .map(ChatAttachment.fromJson)
         .toList(),
+    model: json['model'] as String?,
+    usage: TokenUsage.fromJson(json['usage']),
   );
 }
 

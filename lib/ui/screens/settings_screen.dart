@@ -1,7 +1,11 @@
+import 'dart:io';
+
+import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../di.dart';
+import '../../services/backup_service.dart';
 import '../../l10n/app_strings.dart';
 import '../../models/models.dart';
 import '../../models/user_agent.dart';
@@ -75,6 +79,132 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           _maxSteps.text = '${current.maxSteps}';
         }
       });
+    }
+  }
+
+  /// Passphrase entry dialog shared by create/restore. Returns null when
+  /// the user cancelled.
+  Future<String?> _askPassphrase(
+    BuildContext context,
+    AppStrings strings,
+    String title,
+  ) async {
+    final TextEditingController controller = TextEditingController();
+    return showDialog<String>(
+      context: context,
+      builder: (BuildContext dialogContext) => AlertDialog(
+        title: Text(title),
+        content: TextField(
+          key: const Key('backup-passphrase-field'),
+          controller: controller,
+          obscureText: true,
+          autofocus: true,
+          decoration: InputDecoration(labelText: strings.backupPassphraseLabel),
+        ),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: Text(strings.cancel),
+          ),
+          FilledButton(
+            onPressed: () =>
+                Navigator.of(dialogContext).pop(controller.text.trim()),
+            child: Text(strings.backupCreate),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _snackHere(BuildContext context, String message) {
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  Future<void> _createBackup(BuildContext context) async {
+    final AppStrings strings = stringsOf(context);
+    final String? passphrase = await _askPassphrase(
+      context,
+      strings,
+      strings.backupCreate,
+    );
+    if (passphrase == null) return;
+    if (passphrase.length < 8) {
+      if (context.mounted) _snackHere(context, strings.backupPassphraseShort);
+      return;
+    }
+    try {
+      final File file = await ref
+          .read(backupServiceProvider)
+          .createBackup(passphrase: passphrase);
+      if (context.mounted) _snackHere(context, strings.exportDone(file.path));
+    } catch (_) {
+      if (context.mounted) _snackHere(context, strings.backupFailed);
+    }
+  }
+
+  Future<void> _restoreBackup(BuildContext context) async {
+    final AppStrings strings = stringsOf(context);
+    try {
+      final XFile? picked = await openFile();
+      if (picked == null) return;
+      if (!context.mounted) return;
+      final bool? confirmed = await showDialog<bool>(
+        context: context,
+        builder: (BuildContext dialogContext) => AlertDialog(
+          title: Text(strings.backupConfirmTitle),
+          content: Text(strings.backupConfirmBody),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: Text(strings.cancel),
+            ),
+            FilledButton(
+              key: const Key('backup-confirm-restore'),
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: Text(strings.backupRestore),
+            ),
+          ],
+        ),
+      );
+      if (confirmed != true) return;
+      if (!context.mounted) return;
+      final String? passphrase = await _askPassphrase(
+        context,
+        strings,
+        strings.backupRestore,
+      );
+      if (passphrase == null) return;
+      if (passphrase.length < 8) {
+        if (context.mounted) {
+          _snackHere(context, strings.backupPassphraseShort);
+        }
+        return;
+      }
+      final BackupRestoreResult result = await ref
+          .read(backupServiceProvider)
+          .restore(picked.path, passphrase: passphrase);
+      // Refresh every surface that mirrors the replaced state.
+      await ref
+          .read(settingsProvider.notifier)
+          .update(ref.read(settingsRepositoryProvider).load());
+      ref.invalidate(chatListProvider);
+      ref.invalidate(contextListProvider);
+      if (context.mounted) {
+        _snackHere(
+          context,
+          strings.backupRestoreDone(
+            result.sessions,
+            result.settingsApplied,
+            result.contextEntries,
+          ),
+        );
+      }
+    } on BackupAuthException {
+      if (context.mounted) _snackHere(context, strings.backupWrongPassphrase);
+    } catch (_) {
+      if (context.mounted) _snackHere(context, strings.backupFailed);
     }
   }
 
@@ -445,6 +575,40 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                         builder: (_) => const FilesScreen(),
                       ),
                     ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+
+            // -- Backup & restore (v1.17.0) --------------------------------
+            _sectionTitle(strings.backupSectionTitle),
+            _card(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Text(
+                    strings.backupCreateHint,
+                    style: TextStyle(fontSize: 12, color: palette.muted),
+                  ),
+                  ListTile(
+                    key: const Key('backup-create-tile'),
+                    contentPadding: EdgeInsets.zero,
+                    leading: const Icon(Icons.backup_outlined),
+                    title: Text(strings.backupCreate),
+                    onTap: () => _createBackup(context),
+                  ),
+                  const Divider(height: 1),
+                  Text(
+                    strings.backupRestoreHint,
+                    style: TextStyle(fontSize: 12, color: palette.muted),
+                  ),
+                  ListTile(
+                    key: const Key('backup-restore-tile'),
+                    contentPadding: EdgeInsets.zero,
+                    leading: const Icon(Icons.restore_rounded),
+                    title: Text(strings.backupRestore),
+                    onTap: () => _restoreBackup(context),
                   ),
                 ],
               ),

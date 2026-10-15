@@ -242,4 +242,117 @@ void main() {
       );
     },
   );
+
+  group('token usage capture (v1.17.0)', () {
+    test('SSE usage event (empty choices) is captured', () async {
+      final String sse = <String>[
+        'data: {"choices":[{"delta":{"content":"Hi"}}]}',
+        '',
+        'data: {"choices":[],"usage":{"prompt_tokens":11,"completion_tokens":7}}',
+        '',
+        'data: [DONE]',
+        '',
+      ].join('\n');
+      String? capturedBody;
+      final http.Client mockClient = MockClient.streaming((
+        http.BaseRequest request,
+        http.ByteStream bodyStream,
+      ) async {
+        capturedBody = await bodyStream.bytesToString();
+        return http.StreamedResponse(
+          Stream<List<int>>.value(utf8.encode(sse)),
+          200,
+          headers: <String, String>{'content-type': 'text/event-stream'},
+        );
+      });
+      final LlmClient client = LlmClient(client: mockClient);
+
+      final AssistantTurn turn = await client.complete(
+        config: _config,
+        messages: const <Map<String, dynamic>>[
+          <String, dynamic>{'role': 'user', 'content': 'hi'},
+        ],
+      );
+
+      expect(turn.content, 'Hi');
+      expect(turn.usage, isNotNull);
+      expect(turn.usage!.promptTokens, 11);
+      expect(turn.usage!.completionTokens, 7);
+      expect(turn.usage!.totalTokens, 18);
+      // The request asks providers for usage.
+      expect(capturedBody!, contains('stream_options'));
+      expect(capturedBody!, contains('include_usage'));
+    });
+
+    test('non-streaming JSON usage is captured', () async {
+      final http.Client mockClient = MockClient((http.Request request) async {
+        return http.Response(
+          jsonEncode(<String, dynamic>{
+            'choices': <Map<String, dynamic>>[
+              <String, dynamic>{
+                'message': <String, dynamic>{
+                  'role': 'assistant',
+                  'content': 'Plain',
+                },
+              },
+            ],
+            'usage': <String, dynamic>{
+              'prompt_tokens': 5,
+              'completion_tokens': 3,
+            },
+          }),
+          200,
+          headers: <String, String>{'content-type': 'application/json'},
+        );
+      });
+      final LlmClient client = LlmClient(client: mockClient);
+
+      final AssistantTurn turn = await client.complete(
+        config: _config,
+        messages: const <Map<String, dynamic>>[
+          <String, dynamic>{'role': 'user', 'content': 'hi'},
+        ],
+      );
+      expect(turn.content, 'Plain');
+      expect(turn.usage!.totalTokens, 8);
+    });
+
+    test('provider rejecting stream_options gets one clean retry', () async {
+      var calls = 0;
+      final http.Client mockClient = MockClient((http.Request request) async {
+        calls++;
+        if (calls == 1) {
+          return http.Response(
+            '{"error":{"message":"Unknown parameter: stream_options"}}',
+            400,
+          );
+        }
+        expect(request.body, isNot(contains('stream_options')));
+        return http.Response(
+          jsonEncode(<String, dynamic>{
+            'choices': <Map<String, dynamic>>[
+              <String, dynamic>{
+                'message': <String, dynamic>{
+                  'role': 'assistant',
+                  'content': 'Retry ok',
+                },
+              },
+            ],
+          }),
+          200,
+          headers: <String, String>{'content-type': 'application/json'},
+        );
+      });
+      final LlmClient client = LlmClient(client: mockClient);
+
+      final AssistantTurn turn = await client.complete(
+        config: _config,
+        messages: const <Map<String, dynamic>>[
+          <String, dynamic>{'role': 'user', 'content': 'hi'},
+        ],
+      );
+      expect(calls, 2);
+      expect(turn.content, 'Retry ok');
+    });
+  });
 }

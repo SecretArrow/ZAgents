@@ -83,4 +83,83 @@ class SessionExporter {
     }
     return imported;
   }
+
+  /// Exports ONE session as a human-readable Markdown file under
+  /// `<docs>/exports/` (v1.17.0). Returns the written file, or null when
+  /// the session id is unknown.
+  Future<File?> exportMarkdown(String sessionId) async {
+    final List<ChatSummary> summaries = await store.listSummaries();
+    ChatSummary? summary;
+    for (final ChatSummary s in summaries) {
+      if (s.id == sessionId) {
+        summary = s;
+        break;
+      }
+    }
+    if (summary == null) return null;
+    final List<ChatMessage>? messages = await store.load(sessionId);
+    if (messages == null) return null;
+
+    final StringBuffer md = StringBuffer()
+      ..writeln('# ${summary.title}')
+      ..writeln()
+      ..writeln(
+        '> Exported from ZAgents on '
+        '${DateTime.now().toIso8601String().substring(0, 19)} · '
+        '${messages.length} messages',
+      )
+      ..writeln();
+
+    for (final ChatMessage message in messages) {
+      final String when = message.createdAt.toIso8601String().substring(0, 19);
+      md.writeln('---');
+      switch (message.role) {
+        case Role.user:
+          md
+            ..writeln('**You** · $when')
+            ..writeln();
+          if (message.content.isNotEmpty) md.writeln(message.content);
+          for (final ChatAttachment att in message.attachments) {
+            md.writeln('- 📎 ${att.name}');
+          }
+        case Role.assistant:
+          final String model = message.model ?? 'assistant';
+          md
+            ..writeln('**$model** · $when')
+            ..writeln();
+          if (message.content.isNotEmpty) md.writeln(message.content);
+          for (final ToolCall call in message.toolCalls) {
+            final String status = switch (call.status) {
+              ToolStatus.success => '✓',
+              ToolStatus.error => '✗',
+              _ => '…',
+            };
+            md.writeln('- `$status ${call.name}`');
+          }
+        case Role.system:
+        case Role.tool:
+          break;
+      }
+      md.writeln();
+    }
+
+    final Directory base = await resolveBaseDir();
+    final Directory exportsDir = Directory(
+      '${base.path}${Platform.pathSeparator}exports',
+    );
+    if (!exportsDir.existsSync()) exportsDir.createSync(recursive: true);
+    final String stamp = DateTime.now()
+        .toIso8601String()
+        .replaceAll(RegExp(r'[:.]'), '-')
+        .substring(0, 19);
+    final String safeTitle = summary.title.replaceAll(
+      RegExp(r'[^A-Za-z0-9._-]+'),
+      '_',
+    );
+    final File file = File(
+      '${exportsDir.path}${Platform.pathSeparator}chat-$safeTitle-$stamp.md',
+    );
+    await file.writeAsString(md.toString());
+    return file;
+  }
 }

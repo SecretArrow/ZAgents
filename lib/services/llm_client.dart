@@ -3,6 +3,8 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 
+import '../models/models.dart';
+
 /// Connection settings for an OpenAI-compatible endpoint.
 class LlmConfig {
   const LlmConfig({
@@ -57,10 +59,15 @@ class AssistantTurn {
   AssistantTurn({
     required this.content,
     this.toolCalls = const <ToolCallRequest>[],
+    this.usage,
   });
 
   final String content;
   final List<ToolCallRequest> toolCalls;
+
+  /// Token usage reported by the provider for this turn (null when the
+  /// provider does not report it or the stream was cut short).
+  final TokenUsage? usage;
 
   bool get hasToolCalls => toolCalls.isNotEmpty;
 }
@@ -107,22 +114,40 @@ class LlmClient {
       'stream': true,
       if (tools != null && tools.isNotEmpty) 'tools': tools,
       if (tools != null && tools.isNotEmpty) 'tool_choice': 'auto',
+      // Ask for token usage on the stream (OpenAI-compatible). Providers
+      // that reject the parameter trigger one clean retry without it.
+      'stream_options': <String, dynamic>{'include_usage': true},
     };
-
-    final request = http.Request('POST', url)
-      ..headers['Authorization'] = 'Bearer ${config.apiKey}'
-      ..headers['Content-Type'] = 'application/json'
-      ..headers['Accept'] = 'text/event-stream'
-      // OpenRouter attribution (ignored by other providers).
-      ..headers['HTTP-Referer'] = 'https://github.com/SecretArrow/ZAgents'
-      ..headers['X-Title'] = 'ZAgents'
-      ..body = jsonEncode(requestBody);
 
     final http.StreamedResponse response;
     try {
-      response = await _client.send(request);
+      response = await _client.send(_buildRequest(config, url, requestBody));
     } catch (e) {
       throw LlmException('Could not connect to provider: $e');
+    }
+
+    if (response.statusCode == 400) {
+      // Some providers do not know stream_options: one quiet retry with a
+      // plain body keeps the chat working (usage simply stays null).
+      final String errorBody = await response.stream.bytesToString();
+      if (errorBody.contains('stream_options')) {
+        final Map<String, dynamic> retryBody = Map<String, dynamic>.of(
+          requestBody,
+        )..remove('stream_options');
+        try {
+          final http.StreamedResponse retry = await _client.send(
+            _buildRequest(config, url, retryBody),
+          );
+          if (retry.statusCode == 200) {
+            return await _consume(retry, onDelta, shouldAbort);
+          }
+        } catch (_) {
+          // Fall through to the normal error path below.
+        }
+      }
+      throw LlmException(
+        'HTTP ${response.statusCode}: ${_truncate(errorBody, 300)}',
+      );
     }
 
     if (response.statusCode != 200) {
@@ -132,6 +157,28 @@ class LlmClient {
       );
     }
 
+    return _consume(response, onDelta, shouldAbort);
+  }
+
+  http.Request _buildRequest(
+    LlmConfig config,
+    Uri url,
+    Map<String, dynamic> body,
+  ) => http.Request('POST', url)
+    ..headers['Authorization'] = 'Bearer ${config.apiKey}'
+    ..headers['Content-Type'] = 'application/json'
+    ..headers['Accept'] = 'text/event-stream'
+    // OpenRouter attribution (ignored by other providers).
+    ..headers['HTTP-Referer'] = 'https://github.com/SecretArrow/ZAgents'
+    ..headers['X-Title'] = 'ZAgents'
+    ..body = jsonEncode(body);
+
+  /// Shared response consumption: non-streaming JSON or SSE stream.
+  Future<AssistantTurn> _consume(
+    http.StreamedResponse response,
+    void Function(String delta)? onDelta,
+    bool Function()? shouldAbort,
+  ) async {
     final contentType = (response.headers['content-type'] ?? '').toLowerCase();
     if (!contentType.contains('text/event-stream')) {
       // Some providers ignore `stream: true`; parse a plain JSON response.
@@ -164,6 +211,7 @@ class LlmClient {
           return AssistantTurn(
             content: message['content']?.toString() ?? '',
             toolCalls: _parseFullToolCalls(message['tool_calls']),
+            usage: TokenUsage.fromJson(obj['usage']),
           );
         }
       }
@@ -182,6 +230,7 @@ class LlmClient {
   ) async {
     final contentBuffer = StringBuffer();
     final toolAccumulators = <int, _ToolAccumulator>{};
+    TokenUsage? usage;
     var lineBuffer = '';
     var done = false;
     var aborted = false;
@@ -217,6 +266,14 @@ class LlmClient {
             event = decoded;
           } catch (_) {
             continue;
+          }
+
+          // The usage event may arrive with an empty choices list (OpenAI
+          // compatible include_usage final chunk) — capture it BEFORE the
+          // choices guard below.
+          final Object? eventUsage = event['usage'];
+          if (eventUsage is Map<String, dynamic>) {
+            usage = TokenUsage.fromJson(eventUsage) ?? usage;
           }
 
           final choices = event['choices'];
@@ -277,6 +334,7 @@ class LlmClient {
       ..sort((a, b) => a.key.compareTo(b.key));
     return AssistantTurn(
       content: contentBuffer.toString(),
+      usage: usage,
       toolCalls: <ToolCallRequest>[
         for (final entry in ordered)
           if (entry.value.name != null) entry.value.toRequest(),

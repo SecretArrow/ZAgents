@@ -2,6 +2,8 @@ import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'dart:io';
+
 import '../../di.dart';
 import '../../l10n/app_strings.dart';
 import '../../models/models.dart';
@@ -9,6 +11,7 @@ import '../screens/files_screen.dart';
 import '../screens/prompt_library_screen.dart';
 import '../screens/search_screen.dart';
 import '../screens/settings_screen.dart';
+import '../screens/stats_screen.dart';
 import '../theme.dart';
 import 'paged_list.dart';
 
@@ -89,6 +92,35 @@ class ChatDrawer extends ConsumerWidget {
     await ref
         .read(chatControllerProvider.notifier)
         .renameChat(item.id, newName);
+  }
+
+  /// Exports the ACTIVE session as Markdown (v1.17.0). Guards the empty
+  /// state so a fresh draft never produces a pointless file.
+  Future<void> _exportActiveMarkdown(
+    BuildContext context,
+    WidgetRef ref,
+  ) async {
+    final AppStrings strings = stringsOf(context);
+    final String? sessionId = ref.read(chatControllerProvider).sessionId;
+    if (sessionId == null ||
+        ref.read(chatControllerProvider).messages.isEmpty) {
+      _snack(context, strings.exportChatMarkdownEmpty);
+      return;
+    }
+    try {
+      final File? file = await ref
+          .read(sessionExporterProvider)
+          .exportMarkdown(sessionId);
+      if (!context.mounted) return;
+      if (file == null) {
+        _snack(context, strings.exportChatMarkdownEmpty);
+        return;
+      }
+      _snack(context, strings.exportChatMarkdownDone(file.path));
+    } catch (_) {
+      if (!context.mounted) return;
+      _snack(context, strings.operationFailed);
+    }
   }
 
   Future<void> _exportSessions(BuildContext context, WidgetRef ref) async {
@@ -409,6 +441,32 @@ class ChatDrawer extends ConsumerWidget {
               onTap: () async {
                 Navigator.of(context).pop();
                 await _exportSessions(context, ref);
+              },
+            ),
+            ListTile(
+              dense: true,
+              leading: const Icon(Icons.article_outlined, size: 20),
+              title: Text(
+                strings.exportChatMarkdown,
+                style: const TextStyle(fontSize: 13),
+              ),
+              onTap: () async {
+                Navigator.of(context).pop();
+                await _exportActiveMarkdown(context, ref);
+              },
+            ),
+            ListTile(
+              dense: true,
+              leading: const Icon(Icons.bar_chart_rounded, size: 20),
+              title: Text(
+                strings.tokenStatsMenuItem,
+                style: const TextStyle(fontSize: 13),
+              ),
+              onTap: () {
+                Navigator.of(context).pop();
+                Navigator.of(context).push(
+                  MaterialPageRoute<void>(builder: (_) => const StatsScreen()),
+                );
               },
             ),
             ListTile(
