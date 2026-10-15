@@ -2,11 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
+import 'package:path_provider/path_provider.dart';
 
 import 'di.dart';
 import 'l10n/app_strings.dart';
 import 'models/models.dart';
 import 'services/context_repository.dart';
+import 'services/prompt_repository.dart';
 import 'services/settings_repository.dart';
 import 'ui/screens/home_shell.dart';
 import 'ui/theme.dart';
@@ -28,11 +30,15 @@ Future<void> main() async {
       await PrefsSettingsRepository.create();
   final PrefsContextRepository contextRepo =
       await PrefsContextRepository.create();
+  final FilePromptRepository promptRepo = FilePromptRepository(
+    resolveBaseDir: getApplicationDocumentsDirectory,
+  );
   runApp(
     ProviderScope(
       overrides: <Override>[
         settingsRepositoryProvider.overrideWithValue(settingsRepo),
         contextRepositoryProvider.overrideWithValue(contextRepo),
+        promptRepositoryProvider.overrideWithValue(promptRepo),
       ],
       child: const ZAgentsApp(),
     ),

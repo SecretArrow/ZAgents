@@ -97,4 +97,116 @@ class ChatStore {
       // Corrupted file: renaming must never crash the caller.
     }
   }
+
+  /// Global search across every stored conversation. A session matches
+  /// when its title or any message content contains [query]
+  /// case-insensitively; each session yields at most two hits (the title
+  /// hit + the first matching message). Title matches rank first, newest
+  /// conversations first within each group. Corrupted files are skipped.
+  Future<List<ChatSearchHit>> searchAll(String query, {int limit = 50}) async {
+    final String q = query.trim().toLowerCase();
+    if (q.isEmpty || limit <= 0) return const <ChatSearchHit>[];
+    final Directory dir = await _chatsDir();
+    final List<(ChatSearchHit, bool)> ranked = <(ChatSearchHit, bool)>[];
+    await for (final entity in dir.list()) {
+      if (entity is! File || !entity.path.endsWith('.json')) continue;
+      try {
+        final data =
+            jsonDecode(await entity.readAsString()) as Map<String, dynamic>;
+        final String id = data['id'] as String? ?? '';
+        if (id.isEmpty) continue;
+        final String title = (data['title'] as String?) ?? 'Untitled';
+        final DateTime updatedAt =
+            DateTime.tryParse(data['updatedAt'] as String? ?? '') ??
+            DateTime.fromMillisecondsSinceEpoch(0);
+        final bool titleMatch = title.toLowerCase().contains(q);
+        if (titleMatch) {
+          ranked.add((
+            ChatSearchHit(
+              sessionId: id,
+              title: title,
+              snippet: _previewOf(data['messages'], fallback: title),
+              role: null,
+              createdAt: updatedAt,
+            ),
+            true,
+          ));
+        }
+        // First matching message of the session (one hit per conversation
+        // keeps the result list diverse).
+        final Object? rawMessages = data['messages'];
+        if (rawMessages is List) {
+          for (final raw in rawMessages) {
+            if (raw is! Map<String, dynamic>) continue;
+            final String content = raw['content']?.toString() ?? '';
+            if (!content.toLowerCase().contains(q)) continue;
+            Role? role;
+            for (final Role r in Role.values) {
+              if (r.name == raw['role']) {
+                role = r;
+                break;
+              }
+            }
+            ranked.add((
+              ChatSearchHit(
+                sessionId: id,
+                title: title,
+                snippet: _snippetFor(content, q),
+                role: role,
+                createdAt:
+                    DateTime.tryParse(raw['createdAt']?.toString() ?? '') ??
+                    updatedAt,
+              ),
+              false,
+            ));
+            break;
+          }
+        }
+      } catch (_) {
+        // Skip corrupted files.
+      }
+    }
+    ranked.sort((a, b) {
+      if (a.$2 != b.$2) return a.$2 ? -1 : 1; // title matches first
+      return b.$1.createdAt.compareTo(a.$1.createdAt); // then newest
+    });
+    return <ChatSearchHit>[
+      for (final (ChatSearchHit, bool) entry in ranked.take(limit)) entry.$1,
+    ];
+  }
+
+  /// Short preview used for title-only hits: the first non-empty message
+  /// content, truncated; falls back to [fallback] when none exists.
+  static String _previewOf(Object? rawMessages, {required String fallback}) {
+    if (rawMessages is List) {
+      for (final raw in rawMessages) {
+        if (raw is! Map<String, dynamic>) continue;
+        final String content = raw['content']?.toString() ?? '';
+        final String trimmed = content.trim();
+        if (trimmed.isEmpty) continue;
+        return trimmed.length <= 120
+            ? trimmed
+            : '${trimmed.substring(0, 120)}…';
+      }
+    }
+    return fallback;
+  }
+
+  /// Up to ~120 characters of [content] around the first (case-insensitive)
+  /// occurrence of [query], always keeping the matched substring intact.
+  static String _snippetFor(String content, String query) {
+    final int index = content.toLowerCase().indexOf(query);
+    if (index < 0) {
+      // Defensive: the caller already verified a match — this only guards
+      // against case-mapping edge cases.
+      return content.length <= 120 ? content : '${content.substring(0, 120)}…';
+    }
+    int start = index - 40;
+    if (start < 0) start = 0;
+    int end = index + query.length + 80;
+    if (end > content.length) end = content.length;
+    final String prefix = start > 0 ? '…' : '';
+    final String suffix = end < content.length ? '…' : '';
+    return '$prefix${content.substring(start, end).trim()}$suffix';
+  }
 }

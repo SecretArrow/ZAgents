@@ -54,9 +54,12 @@ void main() {
     );
     expect(find.byType(SettingsScreen), findsOneWidget);
 
-    // The language section sits below the fold: scroll the settings list.
+    // The language section sits below the fold (and gained an extra switch
+    // tile above it in v1.15.0). The settings list is long, so the section
+    // header and its radio tiles may not fit the viewport TOGETHER anymore:
+    // scroll to the header first, assert it, then scroll to the radios.
     await tester.dragUntilVisible(
-      find.byKey(const Key('lang-en')),
+      find.text('LANGUAGE'),
       find.byType(ListView),
       const Offset(0, -250),
     );
@@ -65,14 +68,35 @@ void main() {
       EnginePhase.sendSemanticsUpdate,
       const Duration(seconds: 15),
     );
-
-    // Default: English wording everywhere.
     expect(find.text('Settings'), findsOneWidget);
     expect(find.text('LANGUAGE'), findsOneWidget); // section titles uppercase
+
+    await tester.dragUntilVisible(
+      find.byKey(const Key('lang-id')),
+      find.byType(ListView),
+      const Offset(0, -160),
+    );
+    await tester.pumpAndSettle(
+      const Duration(milliseconds: 100),
+      EnginePhase.sendSemanticsUpdate,
+      const Duration(seconds: 15),
+    );
     expect(find.text('English (default)'), findsOneWidget);
 
     // Switch to Indonesian via the radio tile.
     await tester.tap(find.byKey(const Key('lang-id')));
+    await tester.pumpAndSettle(
+      const Duration(milliseconds: 100),
+      EnginePhase.sendSemanticsUpdate,
+      const Duration(seconds: 15),
+    );
+
+    // The header may have scrolled out of the lazy viewport: bring it back.
+    await tester.dragUntilVisible(
+      find.text('BAHASA'),
+      find.byType(ListView),
+      const Offset(0, 250),
+    );
     await tester.pumpAndSettle(
       const Duration(milliseconds: 100),
       EnginePhase.sendSemanticsUpdate,

@@ -22,7 +22,7 @@ Future<ProviderContainer> _container(
     overrides: testOverrides(
       llm: FakeLlmClient(turns),
       dir: dir,
-      settings: settings ?? AppSettings(apiKey: 'test-key'),
+      settings: settings ?? AppSettings(apiKey: 'test-key', autoTitle: false),
     ),
   );
   addTearDown(container.dispose);
@@ -163,7 +163,12 @@ void main() {
       overrides: testOverrides(
         llm: fake,
         dir: tempDir,
-        settings: AppSettings(apiKey: 'k', maxSteps: 2, runUntilDone: false),
+        settings: AppSettings(
+          apiKey: 'k',
+          autoTitle: false,
+          maxSteps: 2,
+          runUntilDone: false,
+        ),
       ),
     );
     addTearDown(container.dispose);
@@ -185,7 +190,7 @@ void main() {
         overrides: testOverrides(
           llm: llm,
           dir: tempDir,
-          settings: AppSettings(apiKey: 'k'),
+          settings: AppSettings(apiKey: 'k', autoTitle: false),
         ),
       );
       addTearDown(container.dispose);
@@ -246,7 +251,7 @@ void main() {
     final ProviderContainer container = await _container(
       <AssistantTurn>[AssistantTurn(content: 'hi there')],
       tempDir,
-      settings: AppSettings(apiKey: 'k'),
+      settings: AppSettings(apiKey: 'k', autoTitle: false),
     );
     addTearDown(container.dispose);
     final notifier = container.read(chatControllerProvider.notifier);
@@ -267,7 +272,7 @@ void main() {
       final ProviderContainer container = await _container(
         <AssistantTurn>[AssistantTurn(content: 'ok')],
         tempDir,
-        settings: AppSettings(apiKey: 'k'),
+        settings: AppSettings(apiKey: 'k', autoTitle: false),
       );
       addTearDown(container.dispose);
 
@@ -317,7 +322,12 @@ void main() {
         llm: llm,
         dir: tempDir,
         // maxSteps=2 would normally cut the loop after two turns.
-        settings: AppSettings(apiKey: 'k', maxSteps: 2, runUntilDone: true),
+        settings: AppSettings(
+          apiKey: 'k',
+          autoTitle: false,
+          maxSteps: 2,
+          runUntilDone: true,
+        ),
       ),
     );
     addTearDown(container.dispose);
@@ -347,7 +357,12 @@ void main() {
       overrides: testOverrides(
         llm: llm,
         dir: tempDir,
-        settings: AppSettings(apiKey: 'k', maxSteps: 2, runUntilDone: false),
+        settings: AppSettings(
+          apiKey: 'k',
+          autoTitle: false,
+          maxSteps: 2,
+          runUntilDone: false,
+        ),
       ),
     );
     addTearDown(container.dispose);
@@ -399,7 +414,7 @@ void main() {
         ...testOverrides(
           llm: FakeLlmClient(<AssistantTurn>[AssistantTurn(content: 'ok')]),
           dir: tempDir,
-          settings: AppSettings(apiKey: 'test-key'),
+          settings: AppSettings(apiKey: 'test-key', autoTitle: false),
         ),
         chatStoreProvider.overrideWithValue(ThrowingChatStore()),
       ],
@@ -427,7 +442,7 @@ void main() {
           ...testOverrides(
             llm: FakeLlmClient(<AssistantTurn>[AssistantTurn(content: 'ok')]),
             dir: tempDir,
-            settings: AppSettings(apiKey: 'test-key'),
+            settings: AppSettings(apiKey: 'test-key', autoTitle: false),
           ),
           chatStoreProvider.overrideWithValue(ThrowingChatStore()),
         ],
@@ -461,7 +476,7 @@ void main() {
             AssistantTurn(content: 'done'),
           ]),
           dir: tempDir,
-          settings: AppSettings(apiKey: 'k'),
+          settings: AppSettings(apiKey: 'k', autoTitle: false),
         ),
         backgroundRunServiceProvider.overrideWithValue(background),
       ],
@@ -495,7 +510,7 @@ void main() {
         ...testOverrides(
           llm: _ThrowingLlmClient(),
           dir: tempDir,
-          settings: AppSettings(apiKey: 'k'),
+          settings: AppSettings(apiKey: 'k', autoTitle: false),
         ),
         backgroundRunServiceProvider.overrideWithValue(background),
       ],
@@ -525,7 +540,7 @@ void main() {
         ...testOverrides(
           llm: llm,
           dir: tempDir,
-          settings: AppSettings(apiKey: 'k'),
+          settings: AppSettings(apiKey: 'k', autoTitle: false),
         ),
         backgroundRunServiceProvider.overrideWithValue(background),
       ],
@@ -573,7 +588,7 @@ void main() {
       overrides: testOverrides(
         llm: llm,
         dir: tempDir,
-        settings: AppSettings(apiKey: 'k'),
+        settings: AppSettings(apiKey: 'k', autoTitle: false),
       ),
     );
     addTearDown(container.dispose);
@@ -597,7 +612,11 @@ void main() {
         ...testOverrides(
           llm: FakeLlmClient(<AssistantTurn>[AssistantTurn(content: 'ok')]),
           dir: tempDir,
-          settings: AppSettings(apiKey: 'k', runInBackground: false),
+          settings: AppSettings(
+            apiKey: 'k',
+            autoTitle: false,
+            runInBackground: false,
+          ),
         ),
         backgroundRunServiceProvider.overrideWithValue(background),
       ],
@@ -618,7 +637,7 @@ void main() {
         overrides: testOverrides(
           llm: llm,
           dir: tempDir,
-          settings: AppSettings(apiKey: 'k'),
+          settings: AppSettings(apiKey: 'k', autoTitle: false),
           contexts: <ContextEntry>[
             const ContextEntry(
               id: 'c1',
@@ -654,7 +673,7 @@ void main() {
       overrides: testOverrides(
         llm: llm,
         dir: tempDir,
-        settings: AppSettings(apiKey: 'k'),
+        settings: AppSettings(apiKey: 'k', autoTitle: false),
       ),
     );
     addTearDown(container.dispose);
@@ -691,7 +710,7 @@ void main() {
       overrides: testOverrides(
         llm: llm,
         dir: tempDir,
-        settings: AppSettings(apiKey: 'k'),
+        settings: AppSettings(apiKey: 'k', autoTitle: false),
       ),
     );
     addTearDown(container.dispose);
@@ -740,7 +759,7 @@ void main() {
         overrides: testOverrides(
           llm: llm,
           dir: tempDir,
-          settings: AppSettings(apiKey: 'k'),
+          settings: AppSettings(apiKey: 'k', autoTitle: false),
         ),
       );
       addTearDown(container.dispose);
@@ -820,7 +839,7 @@ void main() {
         overrides: testOverrides(
           llm: llm,
           dir: tempDir,
-          settings: AppSettings(apiKey: 'k'),
+          settings: AppSettings(apiKey: 'k', autoTitle: false),
         ),
       );
       addTearDown(container.dispose);
@@ -907,7 +926,7 @@ void main() {
           overrides: testOverrides(
             llm: llm,
             dir: tempDir,
-            settings: AppSettings(apiKey: 'k'),
+            settings: AppSettings(apiKey: 'k', autoTitle: false),
           ),
         );
         addTearDown(container.dispose);
@@ -985,7 +1004,7 @@ void main() {
         overrides: testOverrides(
           llm: llm,
           dir: tempDir,
-          settings: AppSettings(apiKey: 'k'),
+          settings: AppSettings(apiKey: 'k', autoTitle: false),
         ),
       );
       addTearDown(container.dispose);
@@ -1023,7 +1042,11 @@ void main() {
         overrides: testOverrides(
           llm: llm,
           dir: tempDir,
-          settings: AppSettings(apiKey: 'k', planFirst: false),
+          settings: AppSettings(
+            apiKey: 'k',
+            autoTitle: false,
+            planFirst: false,
+          ),
         ),
       );
       addTearDown(container.dispose);
@@ -1060,7 +1083,7 @@ void main() {
           overrides: testOverrides(
             llm: llm,
             dir: tempDir,
-            settings: AppSettings(apiKey: 'k'),
+            settings: AppSettings(apiKey: 'k', autoTitle: false),
           ),
         );
         addTearDown(container.dispose);
@@ -1090,7 +1113,7 @@ void main() {
         overrides: testOverrides(
           llm: llm,
           dir: tempDir,
-          settings: AppSettings(apiKey: 'k'),
+          settings: AppSettings(apiKey: 'k', autoTitle: false),
         ),
       );
       addTearDown(container.dispose);
@@ -1138,7 +1161,7 @@ void main() {
         overrides: testOverrides(
           llm: llm,
           dir: tempDir,
-          settings: AppSettings(apiKey: 'k'),
+          settings: AppSettings(apiKey: 'k', autoTitle: false),
         ),
       );
       addTearDown(container.dispose);
@@ -1177,7 +1200,7 @@ void main() {
         overrides: testOverrides(
           llm: llm,
           dir: tempDir,
-          settings: AppSettings(apiKey: 'k'),
+          settings: AppSettings(apiKey: 'k', autoTitle: false),
         ),
       );
       addTearDown(container.dispose);
@@ -1189,6 +1212,373 @@ void main() {
           t['function']['name'] as String,
       ];
       expect(names, containsAll(<String>['zip_file', 'unzip_file']));
+    });
+  });
+
+  group('edit user message (v1.15.0)', () {
+    test('truncates history after the message and re-runs the loop', () async {
+      final File dataFile = File('${tempDir.path}/numbers.csv');
+      await dataFile.writeAsString('a,b\n1,2');
+      final FakeLlmClient llm = FakeLlmClient(<AssistantTurn>[
+        AssistantTurn(content: 'first answer'),
+        AssistantTurn(content: 'EDITED ANSWER MARKER'),
+      ]);
+      final ProviderContainer container = ProviderContainer(
+        overrides: testOverrides(
+          llm: llm,
+          dir: tempDir,
+          settings: AppSettings(apiKey: 'k', autoTitle: false),
+        ),
+      );
+      addTearDown(container.dispose);
+      final notifier = container.read(chatControllerProvider.notifier);
+
+      await notifier.send(
+        'first question',
+        attachments: <ChatAttachment>[
+          ChatAttachment(
+            name: 'numbers.csv',
+            path: dataFile.path,
+            sizeBytes: 8,
+            kind: AttachmentKind.text,
+          ),
+        ],
+      );
+      final String id = container.read(chatControllerProvider).sessionId!;
+      expect(llm.calls, hasLength(1));
+
+      final bool ok = await notifier.editUserMessage(id, 0, 'edited question');
+      expect(ok, isTrue);
+      final ChatState state = container.read(chatControllerProvider);
+      expect(state.isRunning, isFalse);
+      expect(state.error, isNull);
+      expect(state.messages, hasLength(2));
+      expect(state.messages.first.content, 'edited question');
+      // The edited message keeps its attachments.
+      expect(state.messages.first.attachments.single.name, 'numbers.csv');
+      expect(state.messages.last.content, 'EDITED ANSWER MARKER');
+
+      // The replay wire carried ONLY the truncated transcript.
+      expect(llm.calls, hasLength(2));
+      final List<String> userTexts = <String>[
+        for (final Map<String, dynamic> m in llm.calls.last)
+          if (m['role'] == 'user')
+            (m['content'] as String).contains('edited question')
+                ? 'edited question'
+                : 'other',
+      ];
+      expect(userTexts, contains('edited question'));
+      expect(
+        llm.calls.last.map((m) => m['content']).join('\n'),
+        isNot(contains('first answer')),
+      );
+      expect(
+        llm.calls.last.map((m) => m['content']).join('\n'),
+        contains('a,b\n1,2'),
+        reason: 'the attachment body must reach the model again',
+      );
+
+      // Persisted messages reflect the truncated transcript.
+      final List<ChatMessage>? stored = await container
+          .read(chatStoreProvider)
+          .load(id);
+      expect(stored, hasLength(2));
+      expect(stored!.first.content, 'edited question');
+      expect(stored.last.content, 'EDITED ANSWER MARKER');
+    });
+
+    test('works on a session freshly opened from history', () async {
+      final FakeLlmClient llm = FakeLlmClient(<AssistantTurn>[
+        AssistantTurn(content: 'old answer'),
+        AssistantTurn(content: 'new answer'),
+      ]);
+      final ProviderContainer container = ProviderContainer(
+        overrides: testOverrides(
+          llm: llm,
+          dir: tempDir,
+          settings: AppSettings(apiKey: 'k', autoTitle: false),
+        ),
+      );
+      addTearDown(container.dispose);
+      final notifier = container.read(chatControllerProvider.notifier);
+
+      await notifier.send('question one');
+      final String id = container.read(chatControllerProvider).sessionId!;
+      await notifier.newChat();
+      await notifier.openChat(
+        ChatSummary(id: id, title: 'question one', updatedAt: DateTime.now()),
+      );
+      // No live run exists yet: the edit must materialize from disk first.
+      final bool ok = await notifier.editUserMessage(id, 0, 'question edited');
+      expect(ok, isTrue);
+      final ChatState state = container.read(chatControllerProvider);
+      expect(state.sessionId, id, reason: 'editing must not fork a new chat');
+      expect(state.messages.first.content, 'question edited');
+      expect(state.messages.last.content, 'new answer');
+      expect(llm.calls, hasLength(2));
+    });
+
+    test('guards: wrong role, unknown session, bad index', () async {
+      final FakeLlmClient llm = FakeLlmClient(<AssistantTurn>[
+        AssistantTurn(content: 'answer'),
+      ]);
+      final ProviderContainer container = ProviderContainer(
+        overrides: testOverrides(
+          llm: llm,
+          dir: tempDir,
+          settings: AppSettings(apiKey: 'k', autoTitle: false),
+        ),
+      );
+      addTearDown(container.dispose);
+      final notifier = container.read(chatControllerProvider.notifier);
+
+      expect(await notifier.editUserMessage('missing', 0, 'x'), isFalse);
+      await notifier.send('hello');
+      final String id = container.read(chatControllerProvider).sessionId!;
+      // Index 1 is the assistant answer — only user messages are editable.
+      expect(await notifier.editUserMessage(id, 1, 'x'), isFalse);
+      expect(await notifier.editUserMessage(id, 99, 'x'), isFalse);
+      expect(await notifier.editUserMessage(id, 0, '   '), isFalse);
+      expect(llm.calls, hasLength(1), reason: 'rejected edits must not re-run');
+    });
+
+    test('returns false while the session is running', () async {
+      final List<Completer<AssistantTurn>> gates =
+          List<Completer<AssistantTurn>>.generate(
+            2,
+            (_) => Completer<AssistantTurn>(),
+          );
+      int turn = 0;
+      final _GatedLlmClient llm = _GatedLlmClient(gates, () => turn++);
+      final ProviderContainer container = ProviderContainer(
+        overrides: testOverrides(
+          llm: llm,
+          dir: tempDir,
+          settings: AppSettings(apiKey: 'k', autoTitle: false),
+        ),
+      );
+      addTearDown(container.dispose);
+      final notifier = container.read(chatControllerProvider.notifier);
+
+      final Future<void> run = notifier.send('busy');
+      await Future<void>.delayed(Duration.zero);
+      final String id = container.read(chatControllerProvider).sessionId!;
+      expect(container.read(chatControllerProvider).isRunning, isTrue);
+
+      expect(await notifier.editUserMessage(id, 0, 'nope'), isFalse);
+      expect(await notifier.regenerate(id), isFalse);
+
+      gates[0].complete(AssistantTurn(content: 'done'));
+      await run;
+      gates[1].complete(AssistantTurn(content: 'after-edit'));
+      expect(await notifier.editUserMessage(id, 0, 'after'), isTrue);
+    });
+  });
+
+  group('regenerate (v1.15.0)', () {
+    test('drops only the trailing assistant answer and re-runs', () async {
+      final FakeLlmClient llm = FakeLlmClient(<AssistantTurn>[
+        AssistantTurn(content: 'first answer'),
+        AssistantTurn(content: 'REGENERATED MARKER'),
+      ]);
+      final ProviderContainer container = ProviderContainer(
+        overrides: testOverrides(
+          llm: llm,
+          dir: tempDir,
+          settings: AppSettings(apiKey: 'k', autoTitle: false),
+        ),
+      );
+      addTearDown(container.dispose);
+      final notifier = container.read(chatControllerProvider.notifier);
+
+      await notifier.send('the question');
+      final String id = container.read(chatControllerProvider).sessionId!;
+
+      final bool ok = await notifier.regenerate(id);
+      expect(ok, isTrue);
+      final ChatState state = container.read(chatControllerProvider);
+      expect(state.isRunning, isFalse);
+      expect(state.error, isNull);
+      // Same user message, brand-new assistant answer.
+      expect(state.messages, hasLength(2));
+      expect(state.messages.first.role, Role.user);
+      expect(state.messages.first.content, 'the question');
+      expect(state.messages.last.content, 'REGENERATED MARKER');
+
+      // The replay wire contained the kept user message, not the old answer.
+      final List<Map<String, dynamic>> wire = llm.calls.last;
+      expect(
+        wire.map((m) => m['content']).join('\n'),
+        isNot(contains('first answer')),
+      );
+
+      final List<ChatMessage>? stored = await container
+          .read(chatStoreProvider)
+          .load(id);
+      expect(stored!.last.content, 'REGENERATED MARKER');
+      expect(stored.first.content, 'the question');
+    });
+
+    test('returns false without a user message or unknown session', () async {
+      final FakeLlmClient llm = FakeLlmClient(<AssistantTurn>[
+        AssistantTurn(content: 'answer'),
+      ]);
+      final ProviderContainer container = ProviderContainer(
+        overrides: testOverrides(
+          llm: llm,
+          dir: tempDir,
+          settings: AppSettings(apiKey: 'k', autoTitle: false),
+        ),
+      );
+      addTearDown(container.dispose);
+      final notifier = container.read(chatControllerProvider.notifier);
+
+      expect(await notifier.regenerate('missing'), isFalse);
+      await notifier.send('hello');
+      expect(
+        await notifier.regenerate(
+          container.read(chatControllerProvider).sessionId!,
+        ),
+        isTrue,
+      );
+      // After regenerating there is still a user message, but a session
+      // without any user message can never regenerate: craft one via a
+      // stored file with only an assistant message.
+      final String id = 'assistant-only';
+      await container
+          .read(chatStoreProvider)
+          .save(
+            id: id,
+            title: 'lonely',
+            messages: <ChatMessage>[ChatMessage.assistant('hi')],
+          );
+      await notifier.newChat();
+      await notifier.openChat(
+        ChatSummary(id: id, title: 'lonely', updatedAt: DateTime.now()),
+      );
+      expect(await notifier.regenerate(id), isFalse);
+    });
+  });
+
+  group('auto-title (v1.15.0)', () {
+    test('renames the session with the sanitized model title', () async {
+      final _AutoTitleLlmClient llm = _AutoTitleLlmClient(
+        chatTurn: AssistantTurn(content: 'a good reply'),
+        titleContent: ' "Judul Bagus" ',
+      );
+      final ProviderContainer container = ProviderContainer(
+        overrides: testOverrides(
+          llm: llm,
+          dir: tempDir,
+          // autoTitle defaults to true — nothing to enable.
+          settings: AppSettings(apiKey: 'k'),
+        ),
+      );
+      addTearDown(container.dispose);
+
+      await container.read(chatControllerProvider.notifier).send('halo agent');
+      final ChatState state = container.read(chatControllerProvider);
+      expect(state.title, 'Judul Bagus');
+      expect(llm.calls, hasLength(2), reason: 'chat turn + title turn');
+      // The title call is a plain two-message request without tools.
+      expect(llm.toolSets.last, isNull);
+      expect(llm.calls.last, hasLength(2));
+      expect(llm.calls.last.first['role'], 'system');
+      expect(llm.calls.last.last['content'], contains('halo agent'));
+      expect(llm.calls.last.last['content'], contains('a good reply'));
+
+      final List<ChatSummary> summaries = await container
+          .read(chatStoreProvider)
+          .listSummaries();
+      expect(summaries.single.title, 'Judul Bagus');
+    });
+
+    test('disabled setting makes exactly one LLM call', () async {
+      final FakeLlmClient llm = FakeLlmClient(<AssistantTurn>[
+        AssistantTurn(content: 'answer'),
+      ]);
+      final ProviderContainer container = ProviderContainer(
+        overrides: testOverrides(
+          llm: llm,
+          dir: tempDir,
+          settings: AppSettings(apiKey: 'k', autoTitle: false),
+        ),
+      );
+      addTearDown(container.dispose);
+
+      await container.read(chatControllerProvider.notifier).send('hello');
+      expect(llm.calls, hasLength(1));
+      expect(container.read(chatControllerProvider).title, 'hello');
+    });
+
+    test(
+      'a failing title call keeps the old title, no error surfaced',
+      () async {
+        final _AutoTitleLlmClient llm = _AutoTitleLlmClient(
+          chatTurn: AssistantTurn(content: 'a good reply'),
+          titleError: 'provider exploded',
+        );
+        final ProviderContainer container = ProviderContainer(
+          overrides: testOverrides(
+            llm: llm,
+            dir: tempDir,
+            settings: AppSettings(apiKey: 'k'),
+          ),
+        );
+        addTearDown(container.dispose);
+
+        await container
+            .read(chatControllerProvider.notifier)
+            .send('halo agent');
+        final ChatState state = container.read(chatControllerProvider);
+        expect(state.error, isNull, reason: 'title failure must stay silent');
+        expect(state.title, 'halo agent');
+        final List<ChatSummary> summaries = await container
+            .read(chatStoreProvider)
+            .listSummaries();
+        expect(summaries.single.title, 'halo agent');
+      },
+    );
+
+    test('a manual rename blocks the automatic title', () async {
+      final _AutoTitleLlmClient llm = _AutoTitleLlmClient(
+        chatTurn: AssistantTurn(content: 'a good reply'),
+        titleContent: 'Model Title',
+      );
+      final ProviderContainer container = ProviderContainer(
+        overrides: testOverrides(
+          llm: llm,
+          dir: tempDir,
+          settings: AppSettings(apiKey: 'k'),
+        ),
+      );
+      addTearDown(container.dispose);
+      final notifier = container.read(chatControllerProvider.notifier);
+
+      // First turn: the title model returns '' → the prompt prefix stays.
+      llm.titleContent = '';
+      await notifier.send('halo agent');
+      expect(container.read(chatControllerProvider).title, 'halo agent');
+
+      // Manual rename is authoritative…
+      await notifier.renameChat(
+        container.read(chatControllerProvider).sessionId!,
+        'Manual Title',
+      );
+      // …and reopening (like the drawer does) picks the stored name up, so
+      // the second turn never triggers a retitle.
+      final List<ChatSummary> renamed = await container.read(
+        chatListProvider.future,
+      );
+      await notifier.newChat();
+      await notifier.openChat(renamed.first);
+      llm.titleContent = 'Model Title';
+      await notifier.send('second question');
+      final List<ChatSummary> summaries = await container
+          .read(chatStoreProvider)
+          .listSummaries();
+      expect(summaries.single.title, 'Manual Title');
+      expect(summaries, hasLength(1));
     });
   });
 }
@@ -1221,4 +1611,39 @@ class _ThrowingLlmClient implements LlmClient {
     void Function(String delta)? onDelta,
     bool Function()? shouldAbort,
   }) async => throw const SocketException('provider unreachable');
+}
+
+/// LLM fake for the auto-title tests: the agent chat (tools != null) gets
+/// [chatTurn]; the tool-less title request gets [titleContent] or throws.
+class _AutoTitleLlmClient implements LlmClient {
+  _AutoTitleLlmClient({
+    required this.chatTurn,
+    this.titleContent = '',
+    this.titleError,
+  });
+
+  AssistantTurn chatTurn;
+  String titleContent;
+  String? titleError;
+
+  final List<List<Map<String, dynamic>>> calls = <List<Map<String, dynamic>>>[];
+  final List<List<Map<String, dynamic>>?> toolSets =
+      <List<Map<String, dynamic>>?>[];
+
+  @override
+  Future<AssistantTurn> complete({
+    required LlmConfig config,
+    required List<Map<String, dynamic>> messages,
+    List<Map<String, dynamic>>? tools,
+    void Function(String delta)? onDelta,
+    bool Function()? shouldAbort,
+  }) async {
+    calls.add(messages);
+    toolSets.add(tools);
+    if (tools == null) {
+      if (titleError != null) throw LlmException(titleError!);
+      return AssistantTurn(content: titleContent);
+    }
+    return chatTurn;
+  }
 }

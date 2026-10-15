@@ -3,7 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../di.dart';
 import '../../models/models.dart';
-import '../../services/agent_controller.dart' show ChatState;
+import '../../services/agent_controller.dart' show ChatController, ChatState;
 import 'empty_state.dart';
 import 'message_bubble.dart';
 
@@ -18,17 +18,53 @@ class ChatBody extends ConsumerWidget {
       return const EmptyState();
     }
     final List<ChatMessage> items = state.messages.reversed.toList();
+
+    // Edit/regenerate visibility (v1.15.0): the edit button shows on every
+    // non-empty USER bubble while the session is idle; the regenerate
+    // button only under the LAST assistant bubble when a preceding user
+    // message exists. Both hide while the agent is running.
+    final String? sessionId = state.sessionId;
+    final bool idle = !state.isRunning && sessionId != null;
+    final int lastAssistantIndex = state.messages.lastIndexWhere(
+      (ChatMessage m) => m.role == Role.assistant,
+    );
+    final ChatController controller = ref.read(chatControllerProvider.notifier);
+
     return ListView.builder(
       key: const Key('message-list'),
       reverse: true,
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       itemCount: items.length,
-      itemBuilder: (BuildContext context, int index) => MessageBubble(
-        message: items[index],
-        // Live plan for the thinking indicator's show/hide panel.
-        todos: state.todos,
-        agentWorking: state.isRunning && index == 0,
-      ),
+      itemBuilder: (BuildContext context, int index) {
+        final ChatMessage message = items[index];
+        // The list is reversed: translate back to the transcript index the
+        // controller uses for editUserMessage.
+        final int messageIndex = items.length - 1 - index;
+        final bool canEdit =
+            idle &&
+            message.role == Role.user &&
+            message.content.trim().isNotEmpty;
+        final bool canRegenerate =
+            idle &&
+            messageIndex == lastAssistantIndex &&
+            messageIndex > 0 &&
+            state.messages
+                .take(messageIndex)
+                .any((ChatMessage m) => m.role == Role.user);
+        return MessageBubble(
+          message: message,
+          // Live plan for the thinking indicator's show/hide panel.
+          todos: state.todos,
+          agentWorking: state.isRunning && index == 0,
+          onEdit: canEdit
+              ? (String newText) =>
+                    controller.editUserMessage(sessionId, messageIndex, newText)
+              : null,
+          onRegenerate: canRegenerate
+              ? () => controller.regenerate(sessionId)
+              : null,
+        );
+      },
     );
   }
 }

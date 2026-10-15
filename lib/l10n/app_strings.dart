@@ -285,6 +285,34 @@ abstract class AppStrings {
   String get aboutSection;
   String get aboutBody;
 
+  // -- Message actions (v1.15.0) ----------------------------------------
+  String get editMessageAction;
+  String get editDialogTitle;
+  String get regenerate;
+
+  // -- Global chat search (v1.15.0) -------------------------------------
+  String get searchChats;
+  String get searchHint;
+  String get noSearchResults;
+  String get searchInitialHint;
+
+  // -- Automatic conversation titles (v1.15.0) --------------------------
+  String get autoTitleTitle;
+  String get autoTitleSubtitle;
+
+  // -- Prompt library (v1.15.0) -----------------------------------------
+  String get promptLibrary;
+  String get promptLibraryEmpty;
+  String get newPrompt;
+  String get editPrompt;
+  String get promptTitleLabel;
+  String get promptContentLabel;
+  String get insertPrompt;
+  String get deletePromptTitle;
+  String get deletePromptBody;
+  String get promptSaved;
+  String get promptDeleted;
+
   // -- Controller messages (no BuildContext available) -----------------
   String get missingApiKey;
   String get modelNotSet;
@@ -778,20 +806,72 @@ class AppStringsEn implements AppStrings {
   String get aboutSection => 'About';
   @override
   String get aboutBody =>
-      'ZAgents v1.14.0 — an Android clone of the chat.z.ai agent mode UI, '
+      'ZAgents v1.15.0 — an Android clone of the chat.z.ai agent mode UI, '
       'with custom OpenAI-compatible providers (OpenRouter, InferHub, '
       'Z.AI, OpenAI, DeepSeek, Groq, and more), per-provider API keys, '
       'light/dark themes, parallel multi-session chat with background '
-      'running, plan-first Todos, one-tap copy on every message, '
-      'session-isolated workspaces (each chat has its own private file '
-      'sandbox, like a browser private window), file uploads with zip '
-      'extraction including password-protected archives, a Context '
-      'Manager, an in-app file manager, and an embedded Node.js-style '
-      'runtime with npm package management. Your keys stay on this '
-      'device.';
+      'running, plan-first Todos, one-tap copy on every message, edit & '
+      'regenerate messages, global chat search, automatic conversation '
+      'titles, a Prompt Library, session-isolated workspaces (each chat '
+      'has its own private file sandbox, like a browser private window), '
+      'file uploads with zip extraction including password-protected '
+      'archives, a Context Manager, an in-app file manager, and an '
+      'embedded Node.js-style runtime with npm package management. Your '
+      'keys stay on this device.';
 
   @override
   String createdBy(String name) => 'Created by $name';
+
+  // -- Message actions (v1.15.0) ----------------------------------------
+  @override
+  String get editMessageAction => 'Edit message';
+  @override
+  String get editDialogTitle => 'Edit message';
+  @override
+  String get regenerate => 'Regenerate';
+
+  // -- Global chat search (v1.15.0) -------------------------------------
+  @override
+  String get searchChats => 'Search chats';
+  @override
+  String get searchHint => 'Search all conversations…';
+  @override
+  String get noSearchResults => 'No conversations found.';
+  @override
+  String get searchInitialHint =>
+      'Type to search your conversation titles and messages.';
+
+  // -- Automatic conversation titles (v1.15.0) --------------------------
+  @override
+  String get autoTitleTitle => 'Automatic titles';
+  @override
+  String get autoTitleSubtitle =>
+      'Name new conversations automatically with a short model-generated '
+      'title after the first answer.';
+
+  // -- Prompt library (v1.15.0) -----------------------------------------
+  @override
+  String get promptLibrary => 'Prompt library';
+  @override
+  String get promptLibraryEmpty => 'No prompts yet.';
+  @override
+  String get newPrompt => 'New prompt';
+  @override
+  String get editPrompt => 'Edit prompt';
+  @override
+  String get promptTitleLabel => 'Title';
+  @override
+  String get promptContentLabel => 'Prompt content';
+  @override
+  String get insertPrompt => 'Insert from prompt library';
+  @override
+  String get deletePromptTitle => 'Delete prompt?';
+  @override
+  String get deletePromptBody => 'This prompt will be permanently removed.';
+  @override
+  String get promptSaved => 'Prompt saved.';
+  @override
+  String get promptDeleted => 'Prompt deleted.';
 
   // -- Controller messages ----------------------------------------------
   @override
@@ -1300,19 +1380,72 @@ class AppStringsId implements AppStrings {
   String get aboutSection => 'Tentang';
   @override
   String get aboutBody =>
-      'ZAgents v1.14.0 — klon UI agent mode chat.z.ai untuk Android, '
+      'ZAgents v1.15.0 — klon UI agent mode chat.z.ai untuk Android, '
       'dengan custom provider OpenAI-compatible (OpenRouter, InferHub, '
       'Z.AI, OpenAI, DeepSeek, Groq, dan lainnya), API key per-provider, '
       'tema terang/gelap, multi-sesi paralel dengan proses latar '
       'belakang, Todos perencanaan, salin satu ketukan di setiap pesan, '
-      'ruang kerja terisolasi per sesi (setiap chat punya sandbox file '
-      'pribadi, seperti jendela privat browser), unggah file dengan '
-      'ekstraksi zip termasuk arsip terproteksi kata sandi, Manajer '
-      'Konteks, manajer file, serta runtime bergaya Node.js tersemat '
-      'dengan manajemen package npm. Key Anda tetap di perangkat ini.';
+      'edit & buat ulang pesan, pencarian chat global, judul percakapan '
+      'otomatis, Pustaka Prompt, ruang kerja terisolasi per sesi '
+      '(setiap chat punya sandbox file pribadi, seperti jendela privat '
+      'browser), unggah file dengan ekstraksi zip termasuk arsip '
+      'terproteksi kata sandi, Manajer Konteks, manajer file, serta '
+      'runtime bergaya Node.js tersemat dengan manajemen package npm. '
+      'Key Anda tetap di perangkat ini.';
 
   @override
   String createdBy(String name) => 'Dibuat oleh $name';
+
+  // -- Message actions (v1.15.0) ----------------------------------------
+  @override
+  String get editMessageAction => 'Edit pesan';
+  @override
+  String get editDialogTitle => 'Edit pesan';
+  @override
+  String get regenerate => 'Buat ulang';
+
+  // -- Global chat search (v1.15.0) -------------------------------------
+  @override
+  String get searchChats => 'Cari chat';
+  @override
+  String get searchHint => 'Cari semua percakapan…';
+  @override
+  String get noSearchResults => 'Tidak ada percakapan yang cocok.';
+  @override
+  String get searchInitialHint =>
+      'Ketik untuk mencari judul dan isi percakapan Anda.';
+
+  // -- Automatic conversation titles (v1.15.0) --------------------------
+  @override
+  String get autoTitleTitle => 'Judul otomatis';
+  @override
+  String get autoTitleSubtitle =>
+      'Beri nama percakapan baru secara otomatis dengan judul singkat '
+      'buatan model setelah jawaban pertama.';
+
+  // -- Prompt library (v1.15.0) -----------------------------------------
+  @override
+  String get promptLibrary => 'Pustaka prompt';
+  @override
+  String get promptLibraryEmpty => 'Belum ada prompt.';
+  @override
+  String get newPrompt => 'Prompt baru';
+  @override
+  String get editPrompt => 'Edit prompt';
+  @override
+  String get promptTitleLabel => 'Judul';
+  @override
+  String get promptContentLabel => 'Isi prompt';
+  @override
+  String get insertPrompt => 'Sisipkan dari pustaka prompt';
+  @override
+  String get deletePromptTitle => 'Hapus prompt?';
+  @override
+  String get deletePromptBody => 'Prompt ini akan dihapus permanen.';
+  @override
+  String get promptSaved => 'Prompt tersimpan.';
+  @override
+  String get promptDeleted => 'Prompt terhapus.';
 
   // -- Controller messages ----------------------------------------------
   @override

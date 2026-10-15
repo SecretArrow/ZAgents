@@ -81,13 +81,23 @@ class ChatState {
 /// in parallel: each keeps its own message list so switching to another
 /// chat never interrupts the loop.
 class _SessionRun {
-  _SessionRun({required this.sessionId, required this.title});
+  _SessionRun({
+    required this.sessionId,
+    required this.title,
+    bool running = true,
+  }) : isRunning = running;
 
   final String sessionId;
   String title;
   final List<ChatMessage> messages = <ChatMessage>[];
   bool isRunning = true;
   bool stopRequested = false;
+
+  /// True while the session title still came from the automatic
+  /// `_titleFor(prompt)` path (fresh session or history fallback): the
+  /// first successful answer then triggers the model-generated title.
+  /// A user rename flips this off permanently.
+  bool autoTitlePending = false;
 
   /// Set when the user deletes the session mid-run: the final persist is
   /// skipped so the conversation cannot resurrect itself.
@@ -185,6 +195,7 @@ class ChatController extends Notifier<ChatState> {
       } else {
         final String sessionId = newId();
         run = _SessionRun(sessionId: sessionId, title: _titleFor(trimmed));
+        run.autoTitlePending = true;
         _runs[sessionId] = run;
         _activeSessionId = sessionId;
         state = ChatState(
@@ -197,6 +208,131 @@ class ChatController extends Notifier<ChatState> {
     } else {
       state = state.copyWith(isRunning: true, error: null);
     }
+
+    await _executeRun(run, settings, prompt: trimmed, attachments: attachments);
+  }
+
+  /// Rewrites a previously sent user message and REGENERATES everything
+  /// after it: the message content is replaced (attachments kept) and
+  /// every later message is dropped, then the agent loop replays the
+  /// truncated history. Works on live sessions and on sessions freshly
+  /// opened from history. Returns false when the request is invalid
+  /// (unknown session, still running, no user message at that index).
+  Future<bool> editUserMessage(
+    String sessionId,
+    int messageIndex,
+    String newText,
+  ) async {
+    final String trimmed = newText.trim();
+    if (trimmed.isEmpty) return false;
+    _SessionRun? run = _runs[sessionId];
+    if (run == null) {
+      if (_activeSessionId != sessionId) return false;
+      run = await _materializeSession(sessionId);
+      if (run == null) return false;
+      _runs[sessionId] = run;
+    }
+    if (run.isRunning || (_activeSessionId == sessionId && state.isRunning)) {
+      return false;
+    }
+    if (messageIndex < 0 || messageIndex >= run.messages.length) {
+      return false;
+    }
+    final ChatMessage target = run.messages[messageIndex];
+    if (target.role != Role.user) return false;
+    if (!_passesConnectionChecks()) return false;
+
+    // Replace the content, keep the attachments, drop everything after.
+    run.messages[messageIndex] = ChatMessage(
+      id: target.id,
+      role: Role.user,
+      content: trimmed,
+      createdAt: target.createdAt,
+      attachments: target.attachments,
+    );
+    if (messageIndex < run.messages.length - 1) {
+      run.messages.removeRange(messageIndex + 1, run.messages.length);
+    }
+    run.latestTodos = const <TodoItem>[];
+    _showRunningTranscript(run);
+    await _executeRun(run, ref.read(settingsProvider));
+    return true;
+  }
+
+  /// Regenerates the answer to the LAST user message: trailing assistant
+  /// messages are dropped (the user message is kept) and the agent loop
+  /// replays the history from there. Returns false when the request is
+  /// invalid (unknown session, still running, no user message).
+  Future<bool> regenerate(String sessionId) async {
+    _SessionRun? run = _runs[sessionId];
+    if (run == null) {
+      if (_activeSessionId != sessionId) return false;
+      run = await _materializeSession(sessionId);
+      if (run == null) return false;
+      _runs[sessionId] = run;
+    }
+    if (run.isRunning || (_activeSessionId == sessionId && state.isRunning)) {
+      return false;
+    }
+    int lastUser = -1;
+    for (var i = run.messages.length - 1; i >= 0; i--) {
+      if (run.messages[i].role == Role.user) {
+        lastUser = i;
+        break;
+      }
+    }
+    if (lastUser < 0) return false;
+    if (!_passesConnectionChecks()) return false;
+
+    if (lastUser < run.messages.length - 1) {
+      run.messages.removeRange(lastUser + 1, run.messages.length);
+    }
+    run.latestTodos = const <TodoItem>[];
+    _showRunningTranscript(run);
+    await _executeRun(run, ref.read(settingsProvider));
+    return true;
+  }
+
+  /// API key/model validation shared by send/edit/regenerate. Surfaces a
+  /// localized error on the chat state when something is missing.
+  bool _passesConnectionChecks() {
+    final settings = ref.read(settingsProvider);
+    final AppStrings strings = appStringsFor(settings.languageCode);
+    if (settings.apiKey.trim().isEmpty) {
+      state = state.copyWith(error: strings.missingApiKey);
+      return false;
+    }
+    if (settings.model.trim().isEmpty) {
+      state = state.copyWith(error: strings.modelNotSet);
+      return false;
+    }
+    return true;
+  }
+
+  /// Puts an (edited) transcript on screen and flips the session into the
+  /// running state — the same visual contract a normal send has.
+  void _showRunningTranscript(_SessionRun run) {
+    if (_activeSessionId != run.sessionId) return;
+    state = state.copyWith(
+      sessionId: run.sessionId,
+      title: run.title,
+      messages: [...run.messages],
+      isRunning: true,
+      error: null,
+    );
+  }
+
+  /// Shared run scaffolding for send / edit / regenerate: background hold,
+  /// the agent loop itself, final state + persistence, auto-title.
+  /// [prompt] null = replay-only (edit/regenerate); a non-null prompt is
+  /// appended as a new user message first.
+  Future<void> _executeRun(
+    _SessionRun run,
+    AppSettings settings, {
+    String? prompt,
+    List<ChatAttachment> attachments = const <ChatAttachment>[],
+  }) async {
+    run.isRunning = true;
     _markRunning();
 
     // Preload attachment contents (text bodies + image data URLs) and the
@@ -207,7 +343,7 @@ class ChatController extends Notifier<ChatState> {
     final _RunResult result = await _runLoop(
       run,
       settings,
-      trimmed,
+      prompt,
       attachments,
     );
 
@@ -222,6 +358,9 @@ class ChatController extends Notifier<ChatState> {
         );
       }
       await _persist(run);
+      if (result.error == null && !run.stopRequested) {
+        await _maybeAutoTitle(run, settings);
+      }
     }
     _runs.remove(run.sessionId);
     _markRunning();
@@ -235,9 +374,29 @@ class ChatController extends Notifier<ChatState> {
   /// to an empty transcript when the stored file is unreadable — the
   /// conversation keeps its id and title either way.
   Future<_SessionRun> _adoptSession(String sessionId, String prompt) async {
+    final _SessionRun run =
+        await _materializeSession(sessionId) ??
+        _SessionRun(sessionId: sessionId, title: '');
+    // When the screen had no title the run was titled from the prompt —
+    // exactly the automatic-title path, so the model may rename it later.
+    if (state.title.isEmpty) {
+      run.title = _titleFor(prompt);
+      run.autoTitlePending = true;
+    }
+    return run;
+  }
+
+  /// Builds a [_SessionRun] from the STORED history of [sessionId] so
+  /// edit/regenerate work on freshly opened sessions too (and _adoptSession
+  /// can share the logic). Returns null when the run could not be built —
+  /// storage failures degrade to an empty transcript, never an exception.
+  Future<_SessionRun?> _materializeSession(String sessionId) async {
+    // Materialized history is NOT running — edit/regenerate check this
+    // flag before reshaping the transcript.
     final _SessionRun run = _SessionRun(
       sessionId: sessionId,
-      title: state.title.isNotEmpty ? state.title : _titleFor(prompt),
+      title: state.title.isNotEmpty ? state.title : '',
+      running: false,
     );
     try {
       final List<ChatMessage>? history = await ref
@@ -255,7 +414,7 @@ class ChatController extends Notifier<ChatState> {
       }
     } catch (_) {
       // Storage failure: continue with whatever is on screen (possibly
-      // empty) rather than blocking the user's message.
+      // empty) rather than blocking the user's request.
     }
     return run;
   }
@@ -376,12 +535,17 @@ class ChatController extends Notifier<ChatState> {
   Future<_RunResult> _runLoop(
     _SessionRun run,
     AppSettings settings,
-    String prompt,
+    String? prompt,
     List<ChatAttachment> attachments,
   ) async {
     final AppStrings strings = appStringsFor(settings.languageCode);
-    run.messages.add(ChatMessage.user(prompt, attachments: attachments));
-    _sync(run);
+    // A null prompt means REPLAY: edit/regenerate already reshaped the
+    // transcript, so no new user message is appended — the wire rebuilds
+    // from run.messages below and truncation "just works".
+    if (prompt != null) {
+      run.messages.add(ChatMessage.user(prompt, attachments: attachments));
+      _sync(run);
+    }
 
     final wire = <Map<String, dynamic>>[
       _systemWire(settings),
@@ -704,6 +868,100 @@ class ChatController extends Notifier<ChatState> {
     }
   }
 
+  /// Model-generated conversation title (v1.15.0). Runs ONCE per session,
+  /// after the first successful answer, when the title still came from the
+  /// automatic prompt-prefix path and the user has not renamed the chat.
+  /// Every failure keeps the old title and never surfaces an error.
+  Future<void> _maybeAutoTitle(_SessionRun run, AppSettings settings) async {
+    try {
+      if (!settings.autoTitle || !run.autoTitlePending) return;
+      ChatMessage? firstUser;
+      ChatMessage? firstAssistant;
+      for (final ChatMessage m in run.messages) {
+        if (m.role == Role.user &&
+            firstUser == null &&
+            m.content.trim().isNotEmpty) {
+          firstUser = m;
+        }
+        if (m.role == Role.assistant &&
+            firstAssistant == null &&
+            m.content.trim().isNotEmpty &&
+            !m.isStreaming) {
+          firstAssistant = m;
+        }
+        if (firstUser != null && firstAssistant != null) break;
+      }
+      if (firstUser == null || firstAssistant == null) return;
+
+      final AssistantTurn turn = await ref
+          .read(llmClientProvider)
+          .complete(
+            config: LlmConfig(
+              baseUrl: settings.baseUrl,
+              apiKey: settings.apiKey,
+              model: settings.model,
+            ),
+            tools: null,
+            messages: <Map<String, dynamic>>[
+              <String, dynamic>{
+                'role': 'system',
+                'content':
+                    'You write short conversation titles. Reply with '
+                    'ONLY the title: max 6 words, no quotes, no punctuation '
+                    'at the end, same language as the conversation.',
+              },
+              <String, dynamic>{
+                'role': 'user',
+                'content':
+                    '${_capForTitle(firstUser.content, 500)}\n\n'
+                    'Assistant reply:\n'
+                    '${_capForTitle(firstAssistant.content, 500)}',
+              },
+            ],
+          );
+
+      final String title = _sanitizeTitle(turn.content);
+      if (title.isEmpty || title == run.title) return;
+      run.title = title;
+      run.autoTitlePending = false;
+      if (_activeSessionId == run.sessionId) {
+        state = state.copyWith(title: title);
+      }
+      try {
+        await ref.read(chatStoreProvider).rename(run.sessionId, title);
+        ref.invalidate(chatListProvider);
+      } catch (_) {
+        // The UI already shows the new title; storage stays best-effort.
+      }
+    } catch (_) {
+      // Title generation is a pure nicety: any failure (API, parsing,
+      // storage) keeps the existing title silently.
+    }
+  }
+
+  /// Cleans a model-proposed title: trims, strips wrapping quotes, joins
+  /// newlines and caps the length. Returns '' when nothing usable remains.
+  static String _sanitizeTitle(String raw) {
+    String title = raw.trim();
+    if (title.length >= 2) {
+      const List<String> quotes = <String>['"', "'", '“', '”', '«', '»'];
+      for (final String q in quotes) {
+        if (title.startsWith(q) && title.endsWith(q)) {
+          title = title.substring(1, title.length - 1).trim();
+          break;
+        }
+      }
+    }
+    title = title.replaceAll(RegExp(r'\s+'), ' ').trim();
+    if (title.length > 80) title = title.substring(0, 80);
+    return title.trim();
+  }
+
+  static String _capForTitle(String text, int max) {
+    final String trimmed = text.trim();
+    return trimmed.length > max ? trimmed.substring(0, max) : trimmed;
+  }
+
   /// Starts a fresh draft. Any in-flight session keeps running in the
   /// background and can be reopened from history.
   Future<void> newChat() async {
@@ -778,6 +1036,8 @@ class ChatController extends Notifier<ChatState> {
     final _SessionRun? run = _runs[id];
     if (run != null) {
       run.title = _titleFor(trimmed);
+      // A manual rename is authoritative: no automatic retitle afterwards.
+      run.autoTitlePending = false;
       if (_activeSessionId == id) {
         state = state.copyWith(title: run.title);
       }

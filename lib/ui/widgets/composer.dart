@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../di.dart';
 import '../../l10n/app_strings.dart';
 import '../../models/models.dart';
+import '../screens/prompt_library_screen.dart';
 import '../theme.dart';
 
 /// Bottom composer: attachment chips, rounded input, gradient send /
@@ -21,11 +22,13 @@ class Composer extends ConsumerStatefulWidget {
 
 class _ComposerState extends ConsumerState<Composer> {
   final TextEditingController _controller = TextEditingController();
+  final FocusNode _focusNode = FocusNode();
   bool _picking = false;
 
   @override
   void dispose() {
     _controller.dispose();
+    _focusNode.dispose();
     super.dispose();
   }
 
@@ -86,6 +89,144 @@ class _ComposerState extends ConsumerState<Composer> {
     } finally {
       if (mounted) setState(() => _picking = false);
     }
+  }
+
+  /// Appends the chosen prompt's content to the composer text (at the
+  /// cursor end) and keeps the keyboard focus.
+  void _insertPrompt(PromptEntry entry) {
+    final String base = _controller.text;
+    final String merged = base.isEmpty
+        ? entry.content
+        : base.endsWith('\n')
+        ? '$base${entry.content}'
+        : '$base\n${entry.content}';
+    _controller.text = merged;
+    _controller.selection = TextSelection.collapsed(offset: merged.length);
+    _focusNode.requestFocus();
+  }
+
+  /// Bottom sheet listing the Prompt Library entries; tapping one inserts
+  /// it into the composer. Includes a shortcut into the library screen.
+  Future<void> _openPromptSheet() async {
+    final AppStrings strings = stringsOf(context);
+    ref.invalidate(promptListProvider);
+    await showModalBottomSheet<void>(
+      context: context,
+      builder: (BuildContext sheetContext) => Consumer(
+        builder: (BuildContext context, WidgetRef sheetRef, _) {
+          final AsyncValue<List<PromptEntry>> prompts = sheetRef.watch(
+            promptListProvider,
+          );
+          return SafeArea(
+            child: prompts.when(
+              loading: () => const SizedBox(
+                height: 160,
+                child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+              ),
+              error: (Object e, StackTrace s) => SizedBox(
+                height: 120,
+                child: Center(
+                  child: Text(
+                    strings.operationFailed,
+                    style: TextStyle(color: context.zMuted),
+                  ),
+                ),
+              ),
+              data: (List<PromptEntry> items) => Column(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 14, 16, 6),
+                    child: Row(
+                      children: <Widget>[
+                        Expanded(
+                          child: Text(
+                            strings.promptLibrary,
+                            style: const TextStyle(fontWeight: FontWeight.w700),
+                          ),
+                        ),
+                        TextButton.icon(
+                          key: const Key('prompt-sheet-manage'),
+                          onPressed: () {
+                            Navigator.of(sheetContext).pop();
+                            Navigator.of(this.context).push(
+                              MaterialPageRoute<void>(
+                                builder: (_) => const PromptLibraryScreen(),
+                              ),
+                            );
+                          },
+                          icon: const Icon(Icons.bookmarks_rounded, size: 16),
+                          label: Text(strings.edit),
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (items.isEmpty)
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 4, 16, 20),
+                      child: Column(
+                        children: <Widget>[
+                          Text(
+                            strings.promptLibraryEmpty,
+                            style: TextStyle(color: context.zMuted),
+                          ),
+                          const SizedBox(height: 8),
+                          TextButton.icon(
+                            key: const Key('prompt-sheet-open-library'),
+                            onPressed: () {
+                              Navigator.of(sheetContext).pop();
+                              Navigator.of(this.context).push(
+                                MaterialPageRoute<void>(
+                                  builder: (_) => const PromptLibraryScreen(),
+                                ),
+                              );
+                            },
+                            icon: const Icon(Icons.add_rounded, size: 16),
+                            label: Text(strings.newPrompt),
+                          ),
+                        ],
+                      ),
+                    )
+                  else
+                    Flexible(
+                      child: ListView.builder(
+                        key: const Key('prompt-sheet-list'),
+                        shrinkWrap: true,
+                        itemCount: items.length,
+                        itemBuilder: (BuildContext context, int index) {
+                          final PromptEntry entry = items[index];
+                          return ListTile(
+                            key: Key('prompt-sheet-item-${entry.id}'),
+                            dense: true,
+                            leading: const Icon(Icons.notes_rounded, size: 18),
+                            title: Text(
+                              entry.title,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            subtitle: entry.content.isEmpty
+                                ? null
+                                : Text(
+                                    entry.content,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                            onTap: () {
+                              Navigator.of(sheetContext).pop();
+                              _insertPrompt(entry);
+                            },
+                          );
+                        },
+                      ),
+                    ),
+                  const SizedBox(height: 8),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
   }
 
   @override
@@ -153,10 +294,17 @@ class _ComposerState extends ConsumerState<Composer> {
                       )
                     : Icon(Icons.attach_file_rounded, color: context.zMuted),
               ),
+              IconButton(
+                key: const Key('prompt-insert-button'),
+                tooltip: strings.insertPrompt,
+                onPressed: _openPromptSheet,
+                icon: Icon(Icons.notes_rounded, color: context.zMuted),
+              ),
               Expanded(
                 child: TextField(
                   key: const Key('composer-field'),
                   controller: _controller,
+                  focusNode: _focusNode,
                   minLines: 1,
                   maxLines: 5,
                   textCapitalization: TextCapitalization.sentences,

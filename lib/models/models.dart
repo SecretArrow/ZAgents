@@ -277,6 +277,67 @@ class ChatSummary {
   final DateTime updatedAt;
 }
 
+/// One result of the global chat search: the session it belongs to, a
+/// short snippet around the first match (title hits carry no [role]),
+/// and the message timestamp used for ordering.
+class ChatSearchHit {
+  const ChatSearchHit({
+    required this.sessionId,
+    required this.title,
+    required this.snippet,
+    this.role,
+    required this.createdAt,
+  });
+
+  final String sessionId;
+  final String title;
+  final String snippet;
+
+  /// Role of the matching message; null when the match was the title.
+  final Role? role;
+  final DateTime createdAt;
+}
+
+/// A reusable prompt stored in the Prompt Library and insertable into the
+/// composer with one tap (see Composer's bookmark button).
+class PromptEntry {
+  const PromptEntry({
+    required this.id,
+    required this.title,
+    this.content = '',
+    required this.createdAt,
+  });
+
+  final String id;
+  final String title;
+  final String content;
+  final DateTime createdAt;
+
+  Map<String, dynamic> toJson() => <String, dynamic>{
+    'id': id,
+    'title': title,
+    'content': content,
+    'createdAt': createdAt.toIso8601String(),
+  };
+
+  factory PromptEntry.fromJson(Map<String, dynamic> json) => PromptEntry(
+    id: json['id'] as String? ?? newId(),
+    title: json['title'] as String? ?? 'Prompt',
+    content: _clampContent(json['content'] as String? ?? ''),
+    createdAt:
+        DateTime.tryParse(json['createdAt'] as String? ?? '') ?? DateTime.now(),
+  );
+
+  /// Upper bound for a stored prompt: keeps a runaway paste from bloating
+  /// the prompts.json file (and the composer) forever.
+  static const int maxContentLength = 8000;
+
+  static String _clampContent(String content) =>
+      content.length > maxContentLength
+      ? content.substring(0, maxContentLength)
+      : content;
+}
+
 /// App appearance: light, dark (original look) or follow the system.
 enum ThemeModeSetting { system, light, dark }
 
@@ -527,6 +588,7 @@ class AppSettings {
     this.planFirst = true,
     this.runInBackground = true,
     this.askRandomUa = true,
+    this.autoTitle = true,
     this.languageCode = defaultLanguageCode,
     this.themeMode = ThemeModeSetting.dark,
     this.uaMode = UaMode.auto,
@@ -563,6 +625,11 @@ class AppSettings {
   /// the embedded browser should switch to a different, randomly picked
   /// User-Agent for the next conversation. Disable to skip the prompt.
   final bool askRandomUa;
+
+  /// When true (default) conversations created from the automatic prompt
+  /// prefix get a short model-generated title after the first answer.
+  /// Renamed conversations are never retitled.
+  final bool autoTitle;
 
   /// UI language: 'en' (default) or 'id'. See lib/l10n/app_strings.dart.
   final String languageCode;
@@ -604,6 +671,7 @@ class AppSettings {
     bool? planFirst,
     bool? runInBackground,
     bool? askRandomUa,
+    bool? autoTitle,
     String? languageCode,
     ThemeModeSetting? themeMode,
     UaMode? uaMode,
@@ -622,6 +690,7 @@ class AppSettings {
     planFirst: planFirst ?? this.planFirst,
     runInBackground: runInBackground ?? this.runInBackground,
     askRandomUa: askRandomUa ?? this.askRandomUa,
+    autoTitle: autoTitle ?? this.autoTitle,
     languageCode: languageCode ?? this.languageCode,
     themeMode: themeMode ?? this.themeMode,
     uaMode: uaMode ?? this.uaMode,
@@ -642,6 +711,7 @@ class AppSettings {
     'planFirst': planFirst,
     'runInBackground': runInBackground,
     'askRandomUa': askRandomUa,
+    'autoTitle': autoTitle,
     'languageCode': languageCode,
     'themeMode': themeMode.name,
     'uaMode': uaMode.name,
@@ -663,6 +733,7 @@ class AppSettings {
       planFirst: json['planFirst'] as bool? ?? true,
       runInBackground: json['runInBackground'] as bool? ?? true,
       askRandomUa: json['askRandomUa'] as bool? ?? true,
+      autoTitle: json['autoTitle'] as bool? ?? true,
       languageCode: json['languageCode'] as String? ?? defaultLanguageCode,
       themeMode: themeModeSettingFromName(json['themeMode'] as String?),
       uaMode: uaModeFromName(json['uaMode'] as String?),
@@ -720,6 +791,7 @@ class AppSettings {
       planFirst: planFirst,
       runInBackground: runInBackground,
       askRandomUa: askRandomUa,
+      autoTitle: autoTitle,
       languageCode: languageCode,
       themeMode: themeMode,
       uaMode: uaMode,

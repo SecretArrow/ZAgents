@@ -19,6 +19,8 @@ class MessageBubble extends StatelessWidget {
     required this.message,
     this.todos = const <TodoItem>[],
     this.agentWorking = false,
+    this.onEdit,
+    this.onRegenerate,
   });
 
   final ChatMessage message;
@@ -31,6 +33,15 @@ class MessageBubble extends StatelessWidget {
   /// newest message: keeps the thinking indicator (and its plan toggle)
   /// visible while tools execute, not just while text streams.
   final bool agentWorking;
+
+  /// Invoked with the new text when the user saves the edit dialog on a
+  /// USER bubble. Null hides the edit button entirely (running session,
+  /// empty content or no editable session).
+  final ValueChanged<String>? onEdit;
+
+  /// Invoked when the user taps the regenerate button under the LAST
+  /// ASSISTANT bubble. Null hides the button entirely.
+  final VoidCallback? onRegenerate;
 
   @override
   Widget build(BuildContext context) {
@@ -91,7 +102,15 @@ class MessageBubble extends StatelessWidget {
                 ),
               ),
             ),
-            if (hasText) _CopyButton(text: message.content),
+            if (hasText)
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: <Widget>[
+                  if (onEdit != null)
+                    _EditButton(initialText: message.content, onEdit: onEdit!),
+                  _CopyButton(text: message.content),
+                ],
+              ),
           ],
         ),
       );
@@ -189,8 +208,93 @@ class MessageBubble extends StatelessWidget {
             ),
           ),
           if (canCopy) _CopyButton(text: message.content),
+          if (onRegenerate != null)
+            _RegenerateButton(onRegenerate: onRegenerate!),
         ],
       ),
+    );
+  }
+}
+
+/// Small edit control under a USER bubble: opens a multiline dialog
+/// pre-filled with the sent text; saving triggers editUserMessage, which
+/// truncates everything after the message and regenerates the answer.
+class _EditButton extends StatelessWidget {
+  const _EditButton({required this.initialText, required this.onEdit});
+
+  /// The message's current text — pre-fills the edit dialog.
+  final String initialText;
+
+  final ValueChanged<String> onEdit;
+
+  Future<void> _openDialog(BuildContext context) async {
+    final AppStrings strings = stringsOf(context);
+    final TextEditingController controller = TextEditingController(
+      text: initialText,
+    );
+    final String? newText = await showDialog<String>(
+      context: context,
+      builder: (BuildContext dialogContext) => AlertDialog(
+        backgroundColor: context.zSurface,
+        title: Text(strings.editDialogTitle),
+        content: TextField(
+          key: const Key('edit-message-field'),
+          controller: controller,
+          autofocus: true,
+          maxLines: 5,
+          minLines: 2,
+        ),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: Text(strings.cancel),
+          ),
+          TextButton(
+            key: const Key('edit-message-save'),
+            onPressed: () => Navigator.of(dialogContext).pop(controller.text),
+            child: Text(strings.save),
+          ),
+        ],
+      ),
+    );
+    if (newText != null && newText.trim().isNotEmpty) {
+      onEdit(newText);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final AppStrings strings = stringsOf(context);
+    return IconButton(
+      key: const Key('edit-message-button'),
+      tooltip: strings.editMessageAction,
+      onPressed: () => _openDialog(context),
+      visualDensity: VisualDensity.compact,
+      constraints: const BoxConstraints(minWidth: 30, minHeight: 26),
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      icon: Icon(Icons.edit_rounded, size: 15, color: context.zMuted),
+    );
+  }
+}
+
+/// Regenerate control under the LAST assistant bubble: one tap drops the
+/// answer and replays the conversation from the preceding user message.
+class _RegenerateButton extends StatelessWidget {
+  const _RegenerateButton({required this.onRegenerate});
+
+  final VoidCallback onRegenerate;
+
+  @override
+  Widget build(BuildContext context) {
+    final AppStrings strings = stringsOf(context);
+    return IconButton(
+      key: const Key('regenerate-button'),
+      tooltip: strings.regenerate,
+      onPressed: onRegenerate,
+      visualDensity: VisualDensity.compact,
+      constraints: const BoxConstraints(minWidth: 30, minHeight: 26),
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      icon: Icon(Icons.refresh_rounded, size: 16, color: context.zMuted),
     );
   }
 }

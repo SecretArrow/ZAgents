@@ -11,6 +11,7 @@ import 'package:zagents/services/chat_store.dart';
 import 'package:zagents/services/context_repository.dart';
 import 'package:zagents/services/js_runtime.dart';
 import 'package:zagents/services/llm_client.dart';
+import 'package:zagents/services/prompt_repository.dart';
 import 'package:zagents/services/settings_repository.dart';
 
 /// Minimal valid 1x1 PNG used as fake screenshot bytes.
@@ -176,6 +177,10 @@ class ThrowingChatStore implements ChatStore {
   Future<List<ChatSummary>> listSummaries() async => <ChatSummary>[];
 
   @override
+  Future<List<ChatSearchHit>> searchAll(String query, {int limit = 50}) async =>
+      <ChatSearchHit>[];
+
+  @override
   Future<void> save({
     required String id,
     required String title,
@@ -279,6 +284,7 @@ List<Override> testOverrides({
   AppSettings? settings,
   bool writeScreenshots = true,
   List<ContextEntry>? contexts,
+  List<PromptEntry>? prompts,
   FakeJsRuntime? js,
 }) => <Override>[
   settingsRepositoryProvider.overrideWithValue(
@@ -287,6 +293,7 @@ List<Override> testOverrides({
   contextRepositoryProvider.overrideWithValue(
     MemoryContextRepository(contexts),
   ),
+  promptRepositoryProvider.overrideWithValue(MemoryPromptRepository(prompts)),
   documentsDirProvider.overrideWithValue(() async => dir),
   if (llm != null) llmClientProvider.overrideWithValue(llm),
   // Widget tests run in a fake-async zone: awaiting the real method

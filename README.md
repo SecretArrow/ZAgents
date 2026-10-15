@@ -114,6 +114,21 @@ OpenAI-compatible: **OpenRouter, InferHub, Z.AI, OpenAI, DeepSeek, Groq, dan lai
   dipindahkan ke workspace chat terakhir Anda (sekali saja). **npm
   tetap global** (package dipakai bersama), begitu juga riwayat chat,
   Context Manager, dan User-Agent.
+- **Edit & regenerate pesan (v1.15.0)** — koreksi pesan yang sudah
+  dikirim: ketuk **ikon pensil** di bawah gelembung pesan Anda, ubah
+  teksnya, dan percakapan dilanjutkan dari titik itu (pesan setelahnya
+  dipangkas). **Ikon regenerate** di balasan AI terakhir mengulang
+  jawaban tanpa harus mengetik ulang.
+- **Pencarian global chat (v1.15.0)** — ikon **cari** di drawer membuka
+  pencarian di **semua sesi** (judul + isi pesan), lengkap dengan
+  potongan kalimat yang di-*highlight*. Ketuk hasil untuk langsung
+  membuka percakapan tersebut.
+- **Judul sesi otomatis (v1.15.0)** — setelah balasan pertama selesai,
+  sesi baru otomatis diberi **judul ringkas** oleh model (bisa dimatikan
+  di Pengaturan lewat saklar *Auto title*). Rename manual tetap dihormati.
+- **Perpustakaan prompt (v1.15.0)** — simpan prompt favorit (judul +
+  isi) di **Prompt library** (dari drawer), lalu sisipkan ke composer
+  dengan satu ketukan lewat ikon bookmark di bar input.
 - **Pencarian + paging universal (v1.6.0)** — SEMUA list di aplikasi memakai
   widget `PagedList` yang sama: **5 item per halaman** (termasuk dropdown model),
   kolom pencarian, pager first/prev/next/last, dan empty state "No results".

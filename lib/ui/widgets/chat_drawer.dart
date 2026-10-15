@@ -6,6 +6,8 @@ import '../../di.dart';
 import '../../l10n/app_strings.dart';
 import '../../models/models.dart';
 import '../screens/files_screen.dart';
+import '../screens/prompt_library_screen.dart';
+import '../screens/search_screen.dart';
 import '../screens/settings_screen.dart';
 import '../theme.dart';
 import 'paged_list.dart';
@@ -204,6 +206,25 @@ class ChatDrawer extends ConsumerWidget {
                       ],
                     ),
                   ),
+                  // Global chat search (v1.15.0).
+                  IconButton(
+                    key: const Key('drawer-search'),
+                    tooltip: strings.searchChats,
+                    visualDensity: VisualDensity.compact,
+                    onPressed: () {
+                      Navigator.of(context).pop();
+                      Navigator.of(context).push(
+                        MaterialPageRoute<void>(
+                          builder: (_) => const SearchScreen(),
+                        ),
+                      );
+                    },
+                    icon: const Icon(
+                      Icons.search_rounded,
+                      color: Colors.white,
+                      size: 20,
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -228,6 +249,23 @@ class ChatDrawer extends ConsumerWidget {
                   Navigator.of(context).push(
                     MaterialPageRoute<void>(
                       builder: (_) => const FilesScreen(),
+                    ),
+                  );
+                },
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: ListTile(
+                key: const Key('drawer-prompts'),
+                dense: true,
+                leading: const Icon(Icons.bookmarks_rounded, size: 20),
+                title: Text(strings.promptLibrary),
+                onTap: () {
+                  Navigator.of(context).pop();
+                  Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => const PromptLibraryScreen(),
                     ),
                   );
                 },

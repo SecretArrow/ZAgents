@@ -109,6 +109,41 @@ void main() {
     expect(id.copied, 'Tersalin');
   });
 
+  test('edit/regenerate message strings are localized in both bundles', () {
+    final AppStrings en = appStringsFor('en');
+    final AppStrings id = appStringsFor('id');
+    expect(en.editMessageAction, 'Edit message');
+    expect(en.editDialogTitle, 'Edit message');
+    expect(en.regenerate, 'Regenerate');
+    expect(id.editMessageAction, 'Edit pesan');
+    expect(id.editDialogTitle, 'Edit pesan');
+    expect(id.regenerate, 'Buat ulang');
+  });
+
+  test('global search strings are localized in both bundles', () {
+    final AppStrings en = appStringsFor('en');
+    final AppStrings id = appStringsFor('id');
+    expect(en.searchChats, 'Search chats');
+    expect(en.searchHint, 'Search all conversations…');
+    expect(en.noSearchResults, contains('conversations'));
+    expect(id.searchChats, 'Cari chat');
+    expect(id.searchHint, 'Cari semua percakapan…');
+    expect(id.noSearchResults, contains('percakapan'));
+  });
+
+  test('auto-title + prompt library strings are localized in both bundles', () {
+    final AppStrings en = appStringsFor('en');
+    final AppStrings id = appStringsFor('id');
+    expect(en.autoTitleTitle, 'Automatic titles');
+    expect(en.promptLibrary, 'Prompt library');
+    expect(en.newPrompt, 'New prompt');
+    expect(en.insertPrompt, contains('prompt library'));
+    expect(id.autoTitleTitle, 'Judul otomatis');
+    expect(id.promptLibrary, 'Pustaka prompt');
+    expect(id.newPrompt, 'Prompt baru');
+    expect(id.insertPrompt, contains('pustaka prompt'));
+  });
+
   test('random UA prompt + creator strings are localized in both bundles', () {
     final AppStrings en = appStringsFor('en');
     final AppStrings id = appStringsFor('id');
@@ -122,7 +157,7 @@ void main() {
     expect(id.randomUaAccept, 'Ya, acak');
     expect(id.randomUaDecline, 'Pertahankan');
     expect(id.createdBy('Maragung'), 'Dibuat oleh Maragung');
-    expect(en.aboutBody, contains('v1.14.0'));
-    expect(id.aboutBody, contains('v1.14.0'));
+    expect(en.aboutBody, contains('v1.15.0'));
+    expect(id.aboutBody, contains('v1.15.0'));
   });
 }

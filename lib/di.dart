@@ -12,6 +12,7 @@ import 'services/js_runtime.dart';
 import 'services/llm_client.dart';
 import 'services/model_catalog.dart';
 import 'services/npm_service.dart';
+import 'services/prompt_repository.dart';
 import 'services/session_export.dart';
 import 'services/session_sandbox.dart';
 import 'services/settings_repository.dart';
@@ -29,6 +30,13 @@ final settingsRepositoryProvider = Provider<SettingsRepository>((ref) {
 final contextRepositoryProvider = Provider<ContextRepository>((ref) {
   throw UnimplementedError(
     'contextRepositoryProvider must be overridden in main()',
+  );
+});
+
+/// Must be overridden in main() with a real repository.
+final promptRepositoryProvider = Provider<PromptRepository>((ref) {
+  throw UnimplementedError(
+    'promptRepositoryProvider must be overridden in main()',
   );
 });
 
@@ -140,4 +148,9 @@ final chatListProvider = FutureProvider<List<ChatSummary>>(
 /// Current Context Manager entries (reactive across screens).
 final contextListProvider = FutureProvider<List<ContextEntry>>(
   (ref) async => ref.watch(contextRepositoryProvider).load(),
+);
+
+/// Prompt Library entries (reactive across screens).
+final promptListProvider = FutureProvider<List<PromptEntry>>(
+  (ref) => ref.watch(promptRepositoryProvider).load(),
 );

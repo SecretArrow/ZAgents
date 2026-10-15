@@ -45,6 +45,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     bool? planFirst,
     bool? runInBackground,
     bool? askRandomUa,
+    bool? autoTitle,
     Object? maxSteps,
     String? languageCode,
     ThemeModeSetting? themeMode,
@@ -61,6 +62,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             planFirst: planFirst,
             runInBackground: runInBackground,
             askRandomUa: askRandomUa,
+            autoTitle: autoTitle,
             maxSteps: maxSteps ?? current.maxSteps,
             languageCode: languageCode,
             themeMode: themeMode,
@@ -196,6 +198,17 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     ),
                     value: settings.planFirst,
                     onChanged: (bool value) => _commit(planFirst: value),
+                  ),
+                  SwitchListTile(
+                    key: const Key('auto-title-switch'),
+                    contentPadding: EdgeInsets.zero,
+                    title: Text(strings.autoTitleTitle),
+                    subtitle: Text(
+                      strings.autoTitleSubtitle,
+                      style: TextStyle(fontSize: 12, color: palette.muted),
+                    ),
+                    value: settings.autoTitle,
+                    onChanged: (bool value) => _commit(autoTitle: value),
                   ),
                   const SizedBox(height: 4),
                   Text(
