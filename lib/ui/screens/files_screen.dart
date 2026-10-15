@@ -25,6 +25,11 @@ class _FilesScreenState extends ConsumerState<FilesScreen> {
   bool _loading = true;
   ({String path, bool cut})? _clipboard;
 
+  /// File workspace of the ACTIVE chat session — every session browses
+  /// only its own sandbox (like a browser private window).
+  FileSystemService get _fs =>
+      ref.read(sessionSandboxProvider).fsFor(ref.read(activeSessionIdProvider));
+
   /// Bumped on every successful listing so the paged list returns to its
   /// first page when the folder content changes.
   int _generation = 0;
@@ -38,9 +43,7 @@ class _FilesScreenState extends ConsumerState<FilesScreen> {
   Future<void> _refresh() async {
     setState(() => _loading = true);
     try {
-      final List<FsEntry> entries = await ref
-          .read(fileSystemServiceProvider)
-          .list(_current);
+      final List<FsEntry> entries = await _fs.list(_current);
       if (!mounted) return;
       setState(() {
         _entries = entries;
@@ -116,9 +119,7 @@ class _FilesScreenState extends ConsumerState<FilesScreen> {
       'webp',
       'gif',
     ].contains(entry.extension)) {
-      final String? abs = await ref
-          .read(fileSystemServiceProvider)
-          .resolve(entry.relativePath);
+      final String? abs = await _fs.resolve(entry.relativePath);
       if (abs == null || !mounted) return;
       await showDialog<void>(
         context: context,
@@ -155,9 +156,7 @@ class _FilesScreenState extends ConsumerState<FilesScreen> {
       'toml',
     ].contains(entry.extension)) {
       try {
-        final String text = await ref
-            .read(fileSystemServiceProvider)
-            .readText(entry.relativePath);
+        final String text = await _fs.readText(entry.relativePath);
         if (!mounted) return;
         await showDialog<void>(
           context: context,
@@ -190,9 +189,7 @@ class _FilesScreenState extends ConsumerState<FilesScreen> {
   }
 
   Future<void> _share(FsEntry entry) async {
-    final String? abs = await ref
-        .read(fileSystemServiceProvider)
-        .resolve(entry.relativePath);
+    final String? abs = await _fs.resolve(entry.relativePath);
     if (abs == null) return;
     try {
       await SharePlus.instance.share(ShareParams(files: <XFile>[XFile(abs)]));
@@ -233,9 +230,7 @@ class _FilesScreenState extends ConsumerState<FilesScreen> {
       return;
     }
     await _guard(
-      () async => ref
-          .read(fileSystemServiceProvider)
-          .rename(entry.relativePath, newName.trim()),
+      () async => _fs.rename(entry.relativePath, newName.trim()),
       null,
     );
   }
@@ -261,10 +256,7 @@ class _FilesScreenState extends ConsumerState<FilesScreen> {
       ),
     );
     if (confirmed != true) return;
-    await _guard(
-      () => ref.read(fileSystemServiceProvider).delete(entry.relativePath),
-      null,
-    );
+    await _guard(() => _fs.delete(entry.relativePath), null);
   }
 
   Future<void> _newFolder() async {
@@ -298,7 +290,7 @@ class _FilesScreenState extends ConsumerState<FilesScreen> {
     final String rel = _current.isEmpty
         ? name.trim()
         : '$_current/${name.trim()}';
-    await _guard(() => ref.read(fileSystemServiceProvider).mkdir(rel), null);
+    await _guard(() => _fs.mkdir(rel), null);
   }
 
   void _copyEntry(FsEntry entry) {
@@ -326,17 +318,14 @@ class _FilesScreenState extends ConsumerState<FilesScreen> {
       final String destCopy =
           '${path.substring(0, path.lastIndexOf('/') + 1)}'
           '${name.substring(0, dot)}_copy${name.substring(dot)}';
-      await _guard(
-        () => ref.read(fileSystemServiceProvider).copy(path, destCopy),
-        stringsOf(context).pastedOk,
-      );
+      await _guard(() => _fs.copy(path, destCopy), stringsOf(context).pastedOk);
       return;
     }
     await _guard(() async {
       if (cut) {
-        await ref.read(fileSystemServiceProvider).move(path, dest);
+        await _fs.move(path, dest);
       } else {
-        await ref.read(fileSystemServiceProvider).copy(path, dest);
+        await _fs.copy(path, dest);
       }
     }, stringsOf(context).pastedOk);
     if (mounted) setState(() => _clipboard = null);
@@ -344,13 +333,13 @@ class _FilesScreenState extends ConsumerState<FilesScreen> {
 
   Future<void> _compress(FsEntry entry) async {
     await _guard(
-      () => ref.read(fileSystemServiceProvider).zip(entry.relativePath),
+      () => _fs.zip(entry.relativePath),
       stringsOf(context).zipCreatedOk,
     );
   }
 
   Future<void> _extract(FsEntry entry) async {
-    final FileSystemService service = ref.read(fileSystemServiceProvider);
+    final FileSystemService service = _fs;
     try {
       await _runExtract(service, entry, null);
     } on ZipPasswordRequiredException {

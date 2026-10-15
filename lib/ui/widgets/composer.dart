@@ -50,9 +50,13 @@ class _ComposerState extends ConsumerState<Composer> {
     try {
       final XFile? picked = await openFile();
       if (picked == null) return;
-      final Directory docs = await ref.read(documentsDirProvider)();
+      // Uploads live in the ACTIVE session's own workspace — files never
+      // mix between chats (private-window isolation).
+      final Directory root = await ref
+          .read(sessionSandboxProvider)
+          .rootFor(ref.read(activeSessionIdProvider));
       final Directory uploads = Directory(
-        '${docs.path}${Platform.pathSeparator}uploads',
+        '${root.path}${Platform.pathSeparator}uploads',
       );
       if (!uploads.existsSync()) uploads.createSync(recursive: true);
       final String stamp = DateTime.now().millisecondsSinceEpoch.toString();

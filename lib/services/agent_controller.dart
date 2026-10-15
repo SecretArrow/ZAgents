@@ -514,7 +514,11 @@ class ChatController extends Notifier<ChatState> {
           // Live progress in the foreground-service notification.
           await background.updateStatus(strings.notifStep(step + 1, call.name));
 
-          final result = await executor.execute(call.name, call.arguments);
+          final result = await executor.execute(
+            call.name,
+            call.arguments,
+            sessionId: run.sessionId,
+          );
           call.status = result.ok ? ToolStatus.success : ToolStatus.error;
           call.resultText = result.llmOutput;
           call.screenshotPath = result.screenshotPath;

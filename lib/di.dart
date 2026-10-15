@@ -8,12 +8,12 @@ import 'services/agent_controller.dart';
 import 'services/browser_automation.dart';
 import 'services/chat_store.dart';
 import 'services/context_repository.dart';
-import 'services/file_system_service.dart';
 import 'services/js_runtime.dart';
 import 'services/llm_client.dart';
 import 'services/model_catalog.dart';
 import 'services/npm_service.dart';
 import 'services/session_export.dart';
+import 'services/session_sandbox.dart';
 import 'services/settings_repository.dart';
 import 'services/tool_executor.dart';
 import 'services/user_agent_manager.dart';
@@ -83,8 +83,16 @@ final npmServiceProvider = Provider<NpmService>(
   (ref) => NpmService(resolveBaseDir: ref.watch(documentsDirProvider)),
 );
 
-final fileSystemServiceProvider = Provider<FileSystemService>(
-  (ref) => FileSystemService(resolveBaseDir: ref.watch(documentsDirProvider)),
+/// Per-session isolated workspaces ("private window" per chat): uploads,
+/// agent files, archives and screenshots live under
+/// `documents/sessions/<sessionId>/` and never mix between sessions.
+final sessionSandboxProvider = Provider<SessionSandbox>((ref) {
+  return SessionSandbox(resolveDocumentsDir: ref.watch(documentsDirProvider));
+});
+
+/// Id of the chat session currently open in the UI (null = none yet).
+final activeSessionIdProvider = Provider<String?>(
+  (ref) => ref.watch(chatControllerProvider).sessionId,
 );
 
 final chatStoreProvider = Provider<ChatStore>(
@@ -98,16 +106,19 @@ final sessionExporterProvider = Provider<SessionExporter>(
   ),
 );
 
-final toolExecutorProvider = Provider<ToolExecutor>(
-  (ref) => ToolExecutor(
+final toolExecutorProvider = Provider<ToolExecutor>((ref) {
+  final SessionSandbox sandbox = ref.watch(sessionSandboxProvider);
+  return ToolExecutor(
     browser: ref.watch(browserAutomationProvider),
-    resolveBaseDir: ref.watch(documentsDirProvider),
+    // Session-scoped root: file tools only ever see their own chat's
+    // workspace (null falls back to the legacy documents root).
+    resolveBaseDir: sandbox.rootFor,
     isAutomationEnabled: () => ref.read(settingsProvider).automationEnabled,
     js: ref.watch(jsRuntimeProvider),
     npm: ref.watch(npmServiceProvider),
-    fs: ref.watch(fileSystemServiceProvider),
-  ),
-);
+    fsFor: sandbox.fsFor,
+  );
+});
 
 final chatControllerProvider = NotifierProvider<ChatController, ChatState>(
   ChatController.new,

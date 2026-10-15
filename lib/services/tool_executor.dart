@@ -39,10 +39,15 @@ class ToolExecutor {
     this.js,
     this.npm,
     this.fs,
+    this.fsFor,
   });
 
   final BrowserAutomation browser;
-  final Future<Directory> Function() resolveBaseDir;
+
+  /// Yields the workspace root for the given chat session id — isolated
+  /// per session ("private window"). `null` = legacy shared root
+  /// (documents dir), used by call sites that predate sessions.
+  final Future<Directory> Function(String? sessionId) resolveBaseDir;
   final bool Function() isAutomationEnabled;
 
   /// Embedded JS runtime + npm manager. Nullable so existing tests and
@@ -54,6 +59,10 @@ class ToolExecutor {
   /// tests; the zip tools degrade gracefully when absent.
   final FileSystemService? fs;
 
+  /// Session-aware workspace factory, preferred over [fs] when set:
+  /// archive tools operate on the calling session's own sandbox.
+  final FileSystemService? Function(String? sessionId)? fsFor;
+
   static const Set<String> _browserTools = <String>{
     'browser_navigate',
     'browser_click',
@@ -64,7 +73,11 @@ class ToolExecutor {
     'run_js',
   };
 
-  Future<ToolResult> execute(String name, Map<String, dynamic> args) async {
+  Future<ToolResult> execute(
+    String name,
+    Map<String, dynamic> args, {
+    String? sessionId,
+  }) async {
     try {
       switch (name) {
         case 'todo_write':
@@ -78,21 +91,21 @@ class ToolExecutor {
         case 'browser_scroll':
           return await _scroll(args);
         case 'browser_screenshot':
-          return await _screenshot();
+          return await _screenshot(sessionId);
         case 'browser_extract_text':
           return await _extract(args);
         case 'run_js':
           return await _runJs(args);
         case 'read_file':
-          return await _readFile(args);
+          return await _readFile(args, sessionId);
         case 'write_file':
-          return await _writeFile(args);
+          return await _writeFile(args, sessionId);
         case 'unzip_file':
-          return await _unzipFile(args);
+          return await _unzipFile(args, sessionId);
         case 'zip_file':
-          return await _zipFile(args);
+          return await _zipFile(args, sessionId);
         case 'node_run':
-          return await _nodeRun(args);
+          return await _nodeRun(args, sessionId);
         case 'node_install':
           return await _nodeInstall(args);
         case 'node_remove':
@@ -165,10 +178,10 @@ class ToolExecutor {
     return ToolResult(ok: result['ok'] == true, llmOutput: jsonEncode(result));
   }
 
-  Future<ToolResult> _screenshot() async {
+  Future<ToolResult> _screenshot(String? sessionId) async {
     final guard = _automationGuard('browser_screenshot');
     if (guard != null) return guard;
-    final base = await resolveBaseDir();
+    final base = await resolveBaseDir(sessionId);
     final shotsDir = '${base.path}${Platform.pathSeparator}browser_shots';
     final path = await browser.screenshot(saveDir: shotsDir);
     if (path == null) {
@@ -209,7 +222,8 @@ class ToolExecutor {
     return ToolResult(ok: true, llmOutput: result);
   }
 
-  Future<Directory> _safeBaseDir() async => resolveBaseDir();
+  Future<Directory> _safeBaseDir(String? sessionId) async =>
+      resolveBaseDir(sessionId);
 
   /// Resolves [requested] under [base], rejecting path traversal.
   File? _resolveFile(Directory base, String requested) {
@@ -226,8 +240,11 @@ class ToolExecutor {
     }
   }
 
-  Future<ToolResult> _readFile(Map<String, dynamic> args) async {
-    final base = await _safeBaseDir();
+  Future<ToolResult> _readFile(
+    Map<String, dynamic> args,
+    String? sessionId,
+  ) async {
+    final base = await _safeBaseDir(sessionId);
     final file = _resolveFile(base, args['path']?.toString() ?? '');
     if (file == null) {
       return const ToolResult(ok: false, llmOutput: 'Invalid path.');
@@ -255,8 +272,11 @@ class ToolExecutor {
     );
   }
 
-  Future<ToolResult> _writeFile(Map<String, dynamic> args) async {
-    final base = await _safeBaseDir();
+  Future<ToolResult> _writeFile(
+    Map<String, dynamic> args,
+    String? sessionId,
+  ) async {
+    final base = await _safeBaseDir(sessionId);
     final file = _resolveFile(base, args['path']?.toString() ?? '');
     if (file == null) {
       return const ToolResult(ok: false, llmOutput: 'Invalid path.');
@@ -300,8 +320,11 @@ class ToolExecutor {
     return out;
   }
 
-  Future<ToolResult> _unzipFile(Map<String, dynamic> args) async {
-    final FileSystemService? service = fs;
+  Future<ToolResult> _unzipFile(
+    Map<String, dynamic> args,
+    String? sessionId,
+  ) async {
+    final FileSystemService? service = fsFor != null ? fsFor!(sessionId) : fs;
     if (service == null) {
       return const ToolResult(
         ok: false,
@@ -357,8 +380,11 @@ class ToolExecutor {
     );
   }
 
-  Future<ToolResult> _zipFile(Map<String, dynamic> args) async {
-    final FileSystemService? service = fs;
+  Future<ToolResult> _zipFile(
+    Map<String, dynamic> args,
+    String? sessionId,
+  ) async {
+    final FileSystemService? service = fsFor != null ? fsFor!(sessionId) : fs;
     if (service == null) {
       return const ToolResult(
         ok: false,
@@ -416,7 +442,10 @@ class ToolExecutor {
 
   // -- Embedded Node.js-style runtime ------------------------------------
 
-  Future<ToolResult> _nodeRun(Map<String, dynamic> args) async {
+  Future<ToolResult> _nodeRun(
+    Map<String, dynamic> args,
+    String? sessionId,
+  ) async {
     final JsRuntime? runtime = js;
     if (runtime == null) {
       return const ToolResult(
@@ -428,9 +457,13 @@ class ToolExecutor {
     if (code.trim().isEmpty) {
       return const ToolResult(ok: false, llmOutput: 'Parameter code is empty.');
     }
-    final Directory base = await _safeBaseDir();
+    // node_run works inside the session workspace, but packages stay in
+    // the GLOBAL npm library (documents/node_modules) — installs are
+    // shared across sessions, scripts are not.
+    final Directory base = await _safeBaseDir(sessionId);
+    final Directory global = await _safeBaseDir(null);
     final String modulesRoot =
-        '${base.path}${Platform.pathSeparator}node_modules';
+        '${global.path}${Platform.pathSeparator}node_modules';
     final result = await runtime.run(
       code,
       moduleRoots: <String>[modulesRoot],

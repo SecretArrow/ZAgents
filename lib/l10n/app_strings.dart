@@ -448,8 +448,8 @@ class AppStringsEn implements AppStrings {
   String get filesEmpty => 'No files yet.';
   @override
   String get filesHint =>
-      'Files created by the agent (write_file) and your uploads live here. '
-      'Copy, paste, zip and share them.';
+      'This workspace is private to the current chat — files from other '
+      'chats never mix in. Copy, paste, zip and share them.';
   @override
   String get newFolder => 'New folder';
   @override
@@ -778,15 +778,17 @@ class AppStringsEn implements AppStrings {
   String get aboutSection => 'About';
   @override
   String get aboutBody =>
-      'ZAgents v1.13.0 — an Android clone of the chat.z.ai agent mode UI, '
+      'ZAgents v1.14.0 — an Android clone of the chat.z.ai agent mode UI, '
       'with custom OpenAI-compatible providers (OpenRouter, InferHub, '
       'Z.AI, OpenAI, DeepSeek, Groq, and more), per-provider API keys, '
       'light/dark themes, parallel multi-session chat with background '
-      'running, plan-first Todos, one-tap copy on every message, file '
-      'uploads with zip extraction including password-protected '
-      'archives, a Context Manager, an in-app file manager, and an '
-      'embedded Node.js-style runtime with npm package management. '
-      'Your keys stay on this device.';
+      'running, plan-first Todos, one-tap copy on every message, '
+      'session-isolated workspaces (each chat has its own private file '
+      'sandbox, like a browser private window), file uploads with zip '
+      'extraction including password-protected archives, a Context '
+      'Manager, an in-app file manager, and an embedded Node.js-style '
+      'runtime with npm package management. Your keys stay on this '
+      'device.';
 
   @override
   String createdBy(String name) => 'Created by $name';
@@ -966,8 +968,8 @@ class AppStringsId implements AppStrings {
   String get filesEmpty => 'Belum ada file.';
   @override
   String get filesHint =>
-      'File yang dibuat agent (write_file) dan hasil unggahan Anda ada di '
-      'sini. Salin, tempel, zip, dan bagikan.';
+      'Ruang kerja ini khusus untuk chat saat ini — file dari chat lain '
+      'tidak akan tercampur. Salin, tempel, zip, dan bagikan.';
   @override
   String get newFolder => 'Folder baru';
   @override
@@ -1298,15 +1300,16 @@ class AppStringsId implements AppStrings {
   String get aboutSection => 'Tentang';
   @override
   String get aboutBody =>
-      'ZAgents v1.13.0 — klon UI agent mode chat.z.ai untuk Android, '
+      'ZAgents v1.14.0 — klon UI agent mode chat.z.ai untuk Android, '
       'dengan custom provider OpenAI-compatible (OpenRouter, InferHub, '
       'Z.AI, OpenAI, DeepSeek, Groq, dan lainnya), API key per-provider, '
       'tema terang/gelap, multi-sesi paralel dengan proses latar '
       'belakang, Todos perencanaan, salin satu ketukan di setiap pesan, '
-      'unggah file dengan ekstraksi zip termasuk arsip terproteksi kata '
-      'sandi, Manajer Konteks, manajer file, serta runtime bergaya '
-      'Node.js tersemat dengan manajemen package npm. Key Anda tetap di '
-      'perangkat ini.';
+      'ruang kerja terisolasi per sesi (setiap chat punya sandbox file '
+      'pribadi, seperti jendela privat browser), unggah file dengan '
+      'ekstraksi zip termasuk arsip terproteksi kata sandi, Manajer '
+      'Konteks, manajer file, serta runtime bergaya Node.js tersemat '
+      'dengan manajemen package npm. Key Anda tetap di perangkat ini.';
 
   @override
   String createdBy(String name) => 'Dibuat oleh $name';

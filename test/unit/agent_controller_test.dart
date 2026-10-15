@@ -124,7 +124,9 @@ void main() {
       contains('belajar flutter'),
     );
 
-    final File file = File('${tempDir.path}/notes/todo.txt');
+    // The file lives inside THIS session's isolated workspace now.
+    final String sid = container.read(chatControllerProvider).sessionId!;
+    final File file = File('${tempDir.path}/sessions/$sid/notes/todo.txt');
     expect(await file.exists(), isTrue);
     expect(await file.readAsString(), 'belajar flutter');
   });

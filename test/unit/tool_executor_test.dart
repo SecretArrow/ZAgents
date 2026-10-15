@@ -20,7 +20,7 @@ void main() {
     fakeBrowser = FakeBrowserAutomation(tempDir.path);
     executor = ToolExecutor(
       browser: fakeBrowser,
-      resolveBaseDir: () async => tempDir,
+      resolveBaseDir: (_) async => tempDir,
       isAutomationEnabled: () => true,
     );
   });
@@ -76,7 +76,7 @@ void main() {
   test('browser tools blocked when automation disabled', () async {
     final ToolExecutor guarded = ToolExecutor(
       browser: fakeBrowser,
-      resolveBaseDir: () async => tempDir,
+      resolveBaseDir: (_) async => tempDir,
       isAutomationEnabled: () => false,
     );
     final ToolResult result = await guarded.execute(
@@ -107,7 +107,7 @@ void main() {
   test('browser platform failure degrades to error result, no crash', () async {
     final ToolExecutor crashing = ToolExecutor(
       browser: ThrowingBrowserAutomation(),
-      resolveBaseDir: () async => tempDir,
+      resolveBaseDir: (_) async => tempDir,
       isAutomationEnabled: () => true,
     );
     for (final String tool in <String>[
@@ -161,7 +161,7 @@ void main() {
     );
     final ToolExecutor nodeExecutor = ToolExecutor(
       browser: fakeBrowser,
-      resolveBaseDir: () async => tempDir,
+      resolveBaseDir: (_) async => tempDir,
       isAutomationEnabled: () => true,
       js: js,
     );
@@ -181,7 +181,7 @@ void main() {
     );
     final ToolExecutor nodeExecutor = ToolExecutor(
       browser: fakeBrowser,
-      resolveBaseDir: () async => tempDir,
+      resolveBaseDir: (_) async => tempDir,
       isAutomationEnabled: () => true,
       js: js,
     );
@@ -221,7 +221,7 @@ void main() {
     );
     final ToolExecutor nodeExecutor = ToolExecutor(
       browser: fakeBrowser,
-      resolveBaseDir: () async => tempDir,
+      resolveBaseDir: (_) async => tempDir,
       isAutomationEnabled: () => true,
       npm: npm,
     );
@@ -290,7 +290,7 @@ void main() {
     test('todo_write is never gated by the automation switch', () async {
       final ToolExecutor gated = ToolExecutor(
         browser: fakeBrowser,
-        resolveBaseDir: () async => tempDir,
+        resolveBaseDir: (_) async => tempDir,
         isAutomationEnabled: () => false,
       );
       final ToolResult result = await gated.execute(
@@ -311,7 +311,7 @@ void main() {
     setUp(() {
       fsExecutor = ToolExecutor(
         browser: fakeBrowser,
-        resolveBaseDir: () async => tempDir,
+        resolveBaseDir: (_) async => tempDir,
         isAutomationEnabled: () => true,
         fs: FileSystemService(resolveBaseDir: () async => tempDir),
       );
@@ -447,4 +447,147 @@ void main() {
       expect(empty.ok, isFalse);
     });
   });
+
+  group('per-session workspace isolation', () {
+    late Map<String, Directory> roots;
+
+    setUp(() async {
+      roots = <String, Directory>{
+        'a': Directory('${tempDir.path}/sessions/a'),
+        'b': Directory('${tempDir.path}/sessions/b'),
+      };
+      for (final Directory dir in roots.values) {
+        await dir.create(recursive: true);
+      }
+    });
+
+    FileSystemService fsForSid(String? sid) => FileSystemService(
+      resolveBaseDir: () async => sid == null ? tempDir : roots[sid] ?? tempDir,
+    );
+
+    test('write_file in one session is invisible to another session', () async {
+      final ToolExecutor executor = ToolExecutor(
+        browser: fakeBrowser,
+        resolveBaseDir: (String? sid) async =>
+            sid == null ? tempDir : roots[sid] ?? tempDir,
+        isAutomationEnabled: () => true,
+        fsFor: fsForSid,
+      );
+
+      final ToolResult write = await executor.execute(
+        'write_file',
+        <String, dynamic>{'path': 'notes.txt', 'content': 'secret-a'},
+        sessionId: 'a',
+      );
+      expect(write.ok, isTrue);
+
+      final ToolResult readA = await executor.execute(
+        'read_file',
+        <String, dynamic>{'path': 'notes.txt'},
+        sessionId: 'a',
+      );
+      expect(readA.ok, isTrue);
+      expect(readA.llmOutput, 'secret-a');
+
+      final ToolResult readB = await executor.execute(
+        'read_file',
+        <String, dynamic>{'path': 'notes.txt'},
+        sessionId: 'b',
+      );
+      expect(readB.ok, isFalse);
+      expect(readB.llmOutput, contains('File not found'));
+    });
+
+    test('zip_file archives stay inside their own session workspace', () async {
+      final ToolExecutor executor = ToolExecutor(
+        browser: fakeBrowser,
+        resolveBaseDir: (String? sid) async =>
+            sid == null ? tempDir : roots[sid] ?? tempDir,
+        isAutomationEnabled: () => true,
+        fsFor: fsForSid,
+      );
+      Directory('${roots['a']!.path}/proj').createSync();
+      File('${roots['a']!.path}/proj/data.txt').writeAsStringSync('data');
+
+      final ToolResult zip = await executor.execute(
+        'zip_file',
+        <String, dynamic>{'path': 'proj'},
+        sessionId: 'a',
+      );
+      expect(zip.ok, isTrue);
+
+      final ToolResult readB = await executor.execute(
+        'read_file',
+        <String, dynamic>{'path': 'proj.zip'},
+        sessionId: 'b',
+      );
+      expect(readB.ok, isFalse);
+      expect(readB.llmOutput, contains('File not found'));
+    });
+
+    test('browser screenshots land in the session workspace', () async {
+      final ToolExecutor executor = ToolExecutor(
+        browser: fakeBrowser,
+        resolveBaseDir: (String? sid) async =>
+            sid == null ? tempDir : roots[sid] ?? tempDir,
+        isAutomationEnabled: () => true,
+      );
+      final ToolResult shot = await executor.execute(
+        'browser_screenshot',
+        <String, dynamic>{},
+        sessionId: 'a',
+      );
+      expect(shot.ok, isTrue);
+      expect(
+        Directory('${roots['a']!.path}/browser_shots').existsSync(),
+        isTrue,
+      );
+      expect(
+        Directory('${roots['b']!.path}/browser_shots').existsSync(),
+        isFalse,
+      );
+    });
+
+    test('node_run works inside the session but npm stays global', () async {
+      final RecordingJsRuntime js = RecordingJsRuntime();
+      final ToolExecutor executor = ToolExecutor(
+        browser: fakeBrowser,
+        resolveBaseDir: (String? sid) async =>
+            sid == null ? tempDir : roots[sid] ?? tempDir,
+        isAutomationEnabled: () => true,
+        js: js,
+      );
+      final ToolResult run = await executor.execute(
+        'node_run',
+        <String, dynamic>{'code': 'return 1;'},
+        sessionId: 'a',
+      );
+      expect(run.ok, isTrue);
+      expect(js.workingDirs.single, roots['a']!.path);
+      expect(js.moduleRoots.single, <String>[
+        '${tempDir.path}${Platform.pathSeparator}node_modules',
+      ]);
+    });
+  });
+}
+
+/// JsRuntime fake that records workingDir/moduleRoots for isolation tests.
+class RecordingJsRuntime implements JsRuntime {
+  final List<String?> workingDirs = <String?>[];
+  final List<List<String>> moduleRoots = <List<String>>[];
+
+  @override
+  Future<JsRunResult> run(
+    String code, {
+    List<String> moduleRoots = const <String>[],
+    String? workingDir,
+    Duration timeout = const Duration(seconds: 20),
+  }) async {
+    workingDirs.add(workingDir);
+    this.moduleRoots.add(moduleRoots);
+    return const JsRunResult(output: 'ok', result: '"ok"');
+  }
+
+  @override
+  void dispose() {}
 }

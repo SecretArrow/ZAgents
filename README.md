@@ -105,6 +105,15 @@ OpenAI-compatible: **OpenRouter, InferHub, Z.AI, OpenAI, DeepSeek, Groq, dan lai
   AI) ke clipboard; ikon berubah jadi **centang** sebentar sebagai
   konfirmasi. Ikon tidak muncul saat jawaban masih mengalir atau pada
   pesan tanpa teks.
+- **Ruang kerja terisolasi per sesi (v1.14.0)** — seperti **jendela privat
+  browser**: setiap sesi chat kini punya **sandbox file sendiri** di
+  `sessions/<id>/`. Unggahan, file yang dibuat agent, arsip zip, dan
+  screenshot **tidak tercampur antar chat** — File Manager hanya
+  menampilkan ruang kerja chat yang sedang aktif, dan agent hanya bisa
+  melihat file sesinya sendiri. File lama dari versi sebelumnya otomatis
+  dipindahkan ke workspace chat terakhir Anda (sekali saja). **npm
+  tetap global** (package dipakai bersama), begitu juga riwayat chat,
+  Context Manager, dan User-Agent.
 - **Pencarian + paging universal (v1.6.0)** — SEMUA list di aplikasi memakai
   widget `PagedList` yang sama: **5 item per halaman** (termasuk dropdown model),
   kolom pencarian, pager first/prev/next/last, dan empty state "No results".
