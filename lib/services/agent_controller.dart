@@ -386,8 +386,13 @@ class ChatController extends Notifier<ChatState> {
             module: module,
             granted: module.manifest.permissions,
             onChatEmit: (String text) {
-              body.writeln(text);
-              refresh();
+              // Schedule the UI update OUTSIDE the platform-message turn:
+              // updating Riverpod state synchronously inside the handler
+              // was observed to swallow the next queued frame.
+              Timer.run(() {
+                body.writeln(text);
+                refresh();
+              });
             },
           );
       if (result.output.trim().isNotEmpty) {

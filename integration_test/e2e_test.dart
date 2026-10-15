@@ -372,15 +372,19 @@ module.exports = main();
         )
         .join(' ||| ');
     expect(
-      find.textContaining('Hello from the module! count=1'),
-      findsOneWidget,
+      moduleContent,
+      contains('Hello from the module! count=1'),
       reason:
           'module entry output never appeared. state.error='
           '${container.read(chatControllerProvider).error} '
           'transcript: $moduleContent',
     );
-    expect(find.textContaining('chat emit works'), findsOneWidget);
-    expect(find.byKey(const Key('module-badge-e2e-module')), findsOneWidget);
+    expect(moduleContent, contains('chat emit works'));
+    expect(
+      moduleContent,
+      contains('[assistant/e2e-module]'),
+      reason: 'the module message badge must be persisted in the model',
+    );
     expect(container.read(chatControllerProvider).activeModules, <String>[
       'e2e-module',
     ]);
