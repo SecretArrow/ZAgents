@@ -3,6 +3,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'di.dart';
 import 'l10n/app_strings.dart';
@@ -10,6 +11,7 @@ import 'models/models.dart';
 import 'services/context_repository.dart';
 import 'services/prompt_repository.dart';
 import 'services/settings_repository.dart';
+import 'ui/lock_gate.dart';
 import 'ui/screens/home_shell.dart';
 import 'ui/theme.dart';
 
@@ -33,12 +35,14 @@ Future<void> main() async {
   final FilePromptRepository promptRepo = FilePromptRepository(
     resolveBaseDir: getApplicationDocumentsDirectory,
   );
+  final SharedPreferences appLockPrefs = await SharedPreferences.getInstance();
   runApp(
     ProviderScope(
       overrides: <Override>[
         settingsRepositoryProvider.overrideWithValue(settingsRepo),
         contextRepositoryProvider.overrideWithValue(contextRepo),
         promptRepositoryProvider.overrideWithValue(promptRepo),
+        appLockPrefsProvider.overrideWithValue(appLockPrefs),
       ],
       child: const ZAgentsApp(),
     ),
@@ -79,7 +83,7 @@ class ZAgentsApp extends ConsumerWidget {
         GlobalWidgetsLocalizations.delegate,
         GlobalCupertinoLocalizations.delegate,
       ],
-      home: const HomeShell(),
+      home: const LockGate(child: HomeShell()),
     );
   }
 }

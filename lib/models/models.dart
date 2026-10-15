@@ -643,6 +643,8 @@ class AppSettings {
     this.runInBackground = true,
     this.askRandomUa = true,
     this.autoTitle = true,
+    this.appLockEnabled = false,
+    this.notifyOnDone = true,
     this.languageCode = defaultLanguageCode,
     this.themeMode = ThemeModeSetting.dark,
     this.uaMode = UaMode.auto,
@@ -679,6 +681,16 @@ class AppSettings {
   /// the embedded browser should switch to a different, randomly picked
   /// User-Agent for the next conversation. Disable to skip the prompt.
   final bool askRandomUa;
+
+  /// When true the app shows a lock screen (biometric, PIN fallback)
+  /// on app start and every time it is resumed from the background
+  /// (v1.18.0). The PIN itself is stored OUTSIDE [AppSettings] — see
+  /// AppLockService — so it never travels inside settings backups.
+  final bool appLockEnabled;
+
+  /// When true (default) a local notification is posted when an agent run
+  /// finishes while the app is in the background (v1.18.0).
+  final bool notifyOnDone;
 
   /// When true (default) conversations created from the automatic prompt
   /// prefix get a short model-generated title after the first answer.
@@ -726,6 +738,8 @@ class AppSettings {
     bool? runInBackground,
     bool? askRandomUa,
     bool? autoTitle,
+    bool? appLockEnabled,
+    bool? notifyOnDone,
     String? languageCode,
     ThemeModeSetting? themeMode,
     UaMode? uaMode,
@@ -745,6 +759,8 @@ class AppSettings {
     runInBackground: runInBackground ?? this.runInBackground,
     askRandomUa: askRandomUa ?? this.askRandomUa,
     autoTitle: autoTitle ?? this.autoTitle,
+    appLockEnabled: appLockEnabled ?? this.appLockEnabled,
+    notifyOnDone: notifyOnDone ?? this.notifyOnDone,
     languageCode: languageCode ?? this.languageCode,
     themeMode: themeMode ?? this.themeMode,
     uaMode: uaMode ?? this.uaMode,
@@ -766,6 +782,8 @@ class AppSettings {
     'runInBackground': runInBackground,
     'askRandomUa': askRandomUa,
     'autoTitle': autoTitle,
+    'appLockEnabled': appLockEnabled,
+    'notifyOnDone': notifyOnDone,
     'languageCode': languageCode,
     'themeMode': themeMode.name,
     'uaMode': uaMode.name,
@@ -788,6 +806,8 @@ class AppSettings {
       runInBackground: json['runInBackground'] as bool? ?? true,
       askRandomUa: json['askRandomUa'] as bool? ?? true,
       autoTitle: json['autoTitle'] as bool? ?? true,
+      appLockEnabled: json['appLockEnabled'] as bool? ?? false,
+      notifyOnDone: json['notifyOnDone'] as bool? ?? true,
       languageCode: json['languageCode'] as String? ?? defaultLanguageCode,
       themeMode: themeModeSettingFromName(json['themeMode'] as String?),
       uaMode: uaModeFromName(json['uaMode'] as String?),
@@ -846,6 +866,8 @@ class AppSettings {
       runInBackground: runInBackground,
       askRandomUa: askRandomUa,
       autoTitle: autoTitle,
+      appLockEnabled: appLockEnabled,
+      notifyOnDone: notifyOnDone,
       languageCode: languageCode,
       themeMode: themeMode,
       uaMode: uaMode,

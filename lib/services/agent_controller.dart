@@ -362,9 +362,35 @@ class ChatController extends Notifier<ChatState> {
       if (result.error == null && !run.stopRequested) {
         await _maybeAutoTitle(run, settings);
       }
+      await _maybeNotifyDone(run, settings, result.error);
     }
     _runs.remove(run.sessionId);
     _markRunning();
+  }
+
+  /// Posts a local "task finished" notification when a run completes while
+  /// the app is in the background (v1.18.0). Skipped when the user turned
+  /// notifications off, when the app is on screen, or when the user/Stop
+  /// ended the run — those already have their own feedback.
+  Future<void> _maybeNotifyDone(
+    _SessionRun run,
+    AppSettings settings,
+    String? error,
+  ) async {
+    try {
+      if (!settings.notifyOnDone || run.stopRequested) return;
+      if (ref.read(appInForegroundProvider)) return;
+      final AppStrings strings = appStringsFor(settings.languageCode);
+      await ref
+          .read(backgroundRunServiceProvider)
+          .notifyDone(
+            title: strings.notifDoneTitle,
+            text: strings.notifDoneBody(run.title, error),
+            sessionId: run.deleted ? null : run.sessionId,
+          );
+    } catch (_) {
+      // A failed notification must never disturb the finished run.
+    }
   }
 
   static String _titleFor(String text) =>

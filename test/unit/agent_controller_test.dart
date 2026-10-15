@@ -1581,6 +1581,78 @@ void main() {
       expect(summaries, hasLength(1));
     });
   });
+
+  group('done notification (v1.18.0)', () {
+    test('fires when the run ends while the app is backgrounded', () async {
+      final RecordingBackgroundRun background = RecordingBackgroundRun();
+      final ProviderContainer container = ProviderContainer(
+        overrides: <Override>[
+          ...testOverrides(
+            llm: FakeLlmClient(<AssistantTurn>[AssistantTurn(content: 'ok')]),
+            dir: tempDir,
+            settings: AppSettings(apiKey: 'k', autoTitle: false),
+          ),
+          backgroundRunServiceProvider.overrideWithValue(background),
+          appInForegroundProvider.overrideWith((Ref ref) => false),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      await container.read(chatControllerProvider.notifier).send('go');
+
+      expect(background.doneNotifications, hasLength(1));
+      final List<String> parts = background.doneNotifications.single.split('|');
+      expect(parts.first, appStringsFor('en').notifDoneTitle);
+      expect(
+        parts.last.length,
+        greaterThanOrEqualTo(10),
+        reason: 'session id is attached for the tap deep link',
+      );
+    });
+
+    test('stays silent while the app is in the foreground', () async {
+      final RecordingBackgroundRun background = RecordingBackgroundRun();
+      final ProviderContainer container = ProviderContainer(
+        overrides: <Override>[
+          ...testOverrides(
+            llm: FakeLlmClient(<AssistantTurn>[AssistantTurn(content: 'ok')]),
+            dir: tempDir,
+            settings: AppSettings(apiKey: 'k', autoTitle: false),
+          ),
+          backgroundRunServiceProvider.overrideWithValue(background),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      await container.read(chatControllerProvider.notifier).send('go');
+
+      expect(background.doneNotifications, isEmpty);
+    });
+
+    test('stays silent when the user turned notifications off', () async {
+      final RecordingBackgroundRun background = RecordingBackgroundRun();
+      final ProviderContainer container = ProviderContainer(
+        overrides: <Override>[
+          ...testOverrides(
+            llm: FakeLlmClient(<AssistantTurn>[AssistantTurn(content: 'ok')]),
+            dir: tempDir,
+            settings: AppSettings(
+              apiKey: 'k',
+              autoTitle: false,
+              notifyOnDone: false,
+            ),
+          ),
+          backgroundRunServiceProvider.overrideWithValue(background),
+          appInForegroundProvider.overrideWith((Ref ref) => false),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      await container.read(chatControllerProvider.notifier).send('go');
+
+      expect(background.doneNotifications, isEmpty);
+    });
+  });
 }
 
 /// LLM fake whose turns are gated behind completers for parallel-run tests.

@@ -316,6 +316,27 @@ abstract class AppStrings {
   String get backupFailed;
   String get backupPassphraseShort;
 
+  // -- App lock & done notifications (v1.18.0) ---------------------------
+  String get appLockSection;
+  String get appLockTitle;
+  String get appLockEnableTitle;
+  String get appLockEnableSubtitle;
+  String get appLockSetPinTitle;
+  String get appLockPinField;
+  String get appLockPinTooShort;
+  String get appLockPinMismatch;
+  String get appLockConfirmPin;
+  String get appLockDisableConfirm;
+  String get appLockPinHint;
+  String get appLockWrongPin;
+  String get appLockUnlock;
+  String get appLockUseBiometric;
+  String get appLockBiometricReason;
+  String get notifyOnDoneTitle;
+  String get notifyOnDoneSubtitle;
+  String get notifDoneTitle;
+  String notifDoneBody(String sessionTitle, String? error);
+
   String get aboutSection;
   String get aboutBody;
 
@@ -911,11 +932,58 @@ class AppStringsEn implements AppStrings {
   String get backupPassphraseShort =>
       'Use a passphrase of at least 8 characters.';
 
+  // -- App lock & done notifications (v1.18.0) ---------------------------
+  @override
+  String get appLockSection => 'App lock';
+  @override
+  String get appLockTitle => 'ZAgents is locked';
+  @override
+  String get appLockEnableTitle => 'Lock the app';
+  @override
+  String get appLockEnableSubtitle =>
+      'Ask for your fingerprint or PIN on app start and when returning '
+      'from the background. Set a PIN as the fallback first.';
+  @override
+  String get appLockSetPinTitle => 'Set fallback PIN';
+  @override
+  String get appLockPinField => 'PIN (4-8 digits)';
+  @override
+  String get appLockPinTooShort => 'The PIN needs 4-8 digits.';
+  @override
+  String get appLockPinMismatch => 'The two PINs do not match.';
+  @override
+  String get appLockConfirmPin => 'Confirm PIN';
+  @override
+  String get appLockDisableConfirm =>
+      'Turning the lock off removes the stored PIN. Continue?';
+  @override
+  String get appLockPinHint => 'PIN';
+  @override
+  String get appLockWrongPin => 'Wrong PIN';
+  @override
+  String get appLockUnlock => 'Unlock';
+  @override
+  String get appLockUseBiometric => 'Use biometrics';
+  @override
+  String get appLockBiometricReason => 'Unlock ZAgents';
+  @override
+  String get notifyOnDoneTitle => 'Notify when a task finishes';
+  @override
+  String get notifyOnDoneSubtitle =>
+      'Shows a local notification when an agent run ends while you are '
+      'away; tapping it reopens that conversation.';
+  @override
+  String get notifDoneTitle => 'Agent task finished';
+  @override
+  String notifDoneBody(String sessionTitle, String? error) => error == null
+      ? '\u201C$sessionTitle\u201D is done — tap to open it.'
+      : '\u201C$sessionTitle\u201D stopped with an error — tap to open it.';
+
   @override
   String get aboutSection => 'About';
   @override
   String get aboutBody =>
-      'ZAgents v1.17.0 — an Android clone of the chat.z.ai agent mode UI, '
+      'ZAgents v1.18.0 — an Android clone of the chat.z.ai agent mode UI, '
       'with custom OpenAI-compatible providers (OpenRouter, InferHub, '
       'Z.AI, OpenAI, DeepSeek, Groq, and more), per-provider API keys, '
       'light/dark themes, parallel multi-session chat with background '
@@ -924,7 +992,8 @@ class AppStringsEn implements AppStrings {
       'titles, a Prompt Library, a web_fetch tool, git tools (clone, '
       'status, commit, push, log) and automatic image downscaling for '
       'vision models, Markdown chat export, whole-app encrypted backup, '
-      'token usage statistics, session-isolated workspaces (each chat '
+      'token usage statistics, an optional app lock (biometric or PIN) and '
+      'background task-completion notifications, session-isolated workspaces (each chat '
       'has its own private file sandbox, like a browser private window), '
       'file uploads with zip extraction including password-protected '
       'archives, a Context Manager, an in-app file manager, and an '
@@ -1564,11 +1633,58 @@ class AppStringsId implements AppStrings {
   @override
   String get backupPassphraseShort => 'Gunakan kata sandi minimal 8 karakter.';
 
+  // -- Kunci aplikasi & notifikasi selesai (v1.18.0) ---------------------
+  @override
+  String get appLockSection => 'Kunci aplikasi';
+  @override
+  String get appLockTitle => 'ZAgents terkunci';
+  @override
+  String get appLockEnableTitle => 'Kunci aplikasi';
+  @override
+  String get appLockEnableSubtitle =>
+      'Minta sidik jari atau PIN saat aplikasi dibuka dan kembali dari '
+      'latar belakang. Atur PIN sebagai cadangan terlebih dahulu.';
+  @override
+  String get appLockSetPinTitle => 'Atur PIN cadangan';
+  @override
+  String get appLockPinField => 'PIN (4-8 digit)';
+  @override
+  String get appLockPinTooShort => 'PIN perlu 4-8 digit.';
+  @override
+  String get appLockPinMismatch => 'Kedua PIN tidak sama.';
+  @override
+  String get appLockConfirmPin => 'Konfirmasi PIN';
+  @override
+  String get appLockDisableConfirm =>
+      'Mematikan kunci akan menghapus PIN tersimpan. Lanjutkan?';
+  @override
+  String get appLockPinHint => 'PIN';
+  @override
+  String get appLockWrongPin => 'PIN salah';
+  @override
+  String get appLockUnlock => 'Buka kunci';
+  @override
+  String get appLockUseBiometric => 'Gunakan biometrik';
+  @override
+  String get appLockBiometricReason => 'Buka kunci ZAgents';
+  @override
+  String get notifyOnDoneTitle => 'Beri tahu saat tugas selesai';
+  @override
+  String get notifyOnDoneSubtitle =>
+      'Menampilkan notifikasi lokal saat proses agent selesai saat Anda '
+      'di luar aplikasi; ketuk untuk membuka kembali percakapan itu.';
+  @override
+  String get notifDoneTitle => 'Tugas agent selesai';
+  @override
+  String notifDoneBody(String sessionTitle, String? error) => error == null
+      ? '\u201C$sessionTitle\u201D selesai — ketuk untuk membuka.'
+      : '\u201C$sessionTitle\u201D berhenti karena error — ketuk untuk membuka.';
+
   @override
   String get aboutSection => 'Tentang';
   @override
   String get aboutBody =>
-      'ZAgents v1.17.0 — klon UI agent mode chat.z.ai untuk Android, '
+      'ZAgents v1.18.0 — klon UI agent mode chat.z.ai untuk Android, '
       'dengan custom provider OpenAI-compatible (OpenRouter, InferHub, '
       'Z.AI, OpenAI, DeepSeek, Groq, dan lainnya), API key per-provider, '
       'tema terang/gelap, multi-sesi paralel dengan proses latar '
@@ -1577,7 +1693,8 @@ class AppStringsId implements AppStrings {
       'otomatis, Pustaka Prompt, tool web_fetch, tool git (clone, status, '
       'commit, push, log) dan penurunan skala gambar otomatis untuk model '
       'vision, ekspor chat Markdown, backup terenkripsi seluruh aplikasi, '
-      'statistik pemakaian token, ruang kerja terisolasi per sesi '
+      'statistik pemakaian token, kunci aplikasi opsional (biometrik atau '
+      'PIN) dan notifikasi tugas latar selesai, ruang kerja terisolasi per sesi '
       '(setiap chat punya sandbox file pribadi, seperti jendela privat '
       'browser), unggah file dengan ekstraksi zip termasuk arsip '
       'terproteksi kata sandi, Manajer Konteks, manajer file, serta '

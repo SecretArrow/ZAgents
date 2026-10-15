@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../di.dart';
+import '../../services/app_lock_service.dart';
 import '../../services/backup_service.dart';
 import '../../l10n/app_strings.dart';
 import '../../models/models.dart';
@@ -50,6 +51,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     bool? runInBackground,
     bool? askRandomUa,
     bool? autoTitle,
+    bool? appLockEnabled,
+    bool? notifyOnDone,
     Object? maxSteps,
     String? languageCode,
     ThemeModeSetting? themeMode,
@@ -67,6 +70,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             runInBackground: runInBackground,
             askRandomUa: askRandomUa,
             autoTitle: autoTitle,
+            appLockEnabled: appLockEnabled,
+            notifyOnDone: notifyOnDone,
             maxSteps: maxSteps ?? current.maxSteps,
             languageCode: languageCode,
             themeMode: themeMode,
@@ -208,6 +213,111 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     }
   }
 
+  /// App lock toggle (v1.18.0): enabling walks through a set-PIN dialog
+  /// (4-8 digits, entered twice); disabling confirms and wipes the PIN.
+  Future<void> _toggleAppLock(BuildContext context, bool enable) async {
+    final AppStrings strings = stringsOf(context);
+    final AppLockService lock = ref.read(appLockServiceProvider);
+    if (!enable) {
+      final bool? confirmed = await showDialog<bool>(
+        context: context,
+        builder: (BuildContext dialogContext) => AlertDialog(
+          title: Text(strings.appLockEnableTitle),
+          content: Text(strings.appLockDisableConfirm),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: Text(strings.cancel),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: Text(strings.menu),
+            ),
+          ],
+        ),
+      );
+      if (confirmed != true) return;
+      await lock.clearPin();
+      _commit(appLockEnabled: false);
+      return;
+    }
+    final String? pin = await _askPin(context, strings);
+    if (pin == null) return;
+    final bool stored = await lock.setPin(pin);
+    if (!stored) {
+      if (context.mounted) _snackHere(context, strings.appLockPinTooShort);
+      return;
+    }
+    _commit(appLockEnabled: true);
+  }
+
+  /// PIN entry + confirmation dialog for enabling the lock. Returns the
+  /// accepted PIN, or null when cancelled/mismatched.
+  Future<String?> _askPin(BuildContext context, AppStrings strings) async {
+    final TextEditingController pin = TextEditingController();
+    final TextEditingController confirm = TextEditingController();
+    return showDialog<String>(
+      context: context,
+      builder: (BuildContext dialogContext) => AlertDialog(
+        title: Text(strings.appLockSetPinTitle),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            TextField(
+              key: const Key('lock-set-pin-field'),
+              controller: pin,
+              obscureText: true,
+              keyboardType: TextInputType.number,
+              maxLength: 8,
+              decoration: InputDecoration(
+                labelText: strings.appLockPinField,
+                counterText: '',
+              ),
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              key: const Key('lock-confirm-pin-field'),
+              controller: confirm,
+              obscureText: true,
+              keyboardType: TextInputType.number,
+              maxLength: 8,
+              decoration: InputDecoration(
+                labelText: strings.appLockConfirmPin,
+                counterText: '',
+              ),
+            ),
+          ],
+        ),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: Text(strings.cancel),
+          ),
+          FilledButton(
+            key: const Key('lock-save-pin'),
+            onPressed: () {
+              final String value = pin.text.trim();
+              if (value.length < 4 || value.length > 8) {
+                ScaffoldMessenger.of(dialogContext).showSnackBar(
+                  SnackBar(content: Text(strings.appLockPinTooShort)),
+                );
+                return;
+              }
+              if (value != confirm.text.trim()) {
+                ScaffoldMessenger.of(dialogContext).showSnackBar(
+                  SnackBar(content: Text(strings.appLockPinMismatch)),
+                );
+                return;
+              }
+              Navigator.of(dialogContext).pop(value);
+            },
+            child: Text(strings.appLockSetPinTitle),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final AppStrings strings = stringsOf(context);
@@ -306,6 +416,17 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     ),
                     value: settings.runInBackground,
                     onChanged: (bool value) => _commit(runInBackground: value),
+                  ),
+                  SwitchListTile(
+                    key: const Key('notify-on-done-switch'),
+                    contentPadding: EdgeInsets.zero,
+                    title: Text(strings.notifyOnDoneTitle),
+                    subtitle: Text(
+                      strings.notifyOnDoneSubtitle,
+                      style: TextStyle(fontSize: 12, color: palette.muted),
+                    ),
+                    value: settings.notifyOnDone,
+                    onChanged: (bool value) => _commit(notifyOnDone: value),
                   ),
                   SwitchListTile(
                     key: const Key('run-until-done-switch'),
@@ -609,6 +730,27 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     leading: const Icon(Icons.restore_rounded),
                     title: Text(strings.backupRestore),
                     onTap: () => _restoreBackup(context),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+
+            // -- App lock (v1.18.0) ----------------------------------------
+            _sectionTitle(strings.appLockSection),
+            _card(
+              child: Column(
+                children: <Widget>[
+                  SwitchListTile(
+                    key: const Key('app-lock-switch'),
+                    contentPadding: EdgeInsets.zero,
+                    title: Text(strings.appLockEnableTitle),
+                    subtitle: Text(
+                      strings.appLockEnableSubtitle,
+                      style: TextStyle(fontSize: 12, color: palette.muted),
+                    ),
+                    value: settings.appLockEnabled,
+                    onChanged: (bool value) => _toggleAppLock(context, value),
                   ),
                 ],
               ),

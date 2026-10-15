@@ -3,8 +3,10 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:zagents/di.dart';
 import 'package:zagents/models/models.dart';
+import 'package:zagents/services/app_lock_service.dart';
 import 'package:zagents/services/background_service.dart';
 import 'package:zagents/services/browser_automation.dart';
 import 'package:zagents/services/chat_store.dart';
@@ -253,6 +255,12 @@ class RecordingBackgroundRun implements BackgroundRun {
   final List<String> calls = <String>[];
   bool _active = false;
 
+  /// Recorded "task finished" notifications (v1.18.0).
+  final List<String> doneNotifications = <String>[];
+
+  /// Value returned by [drainPendingSession].
+  String? pendingSession;
+
   @override
   bool get isActive => _active;
 
@@ -272,12 +280,63 @@ class RecordingBackgroundRun implements BackgroundRun {
     calls.add('stop');
     _active = false;
   }
+
+  @override
+  Future<bool> notifyDone({
+    required String title,
+    required String text,
+    String? sessionId,
+  }) async {
+    doneNotifications.add('$title|$text|$sessionId');
+    return true;
+  }
+
+  @override
+  Future<String?> drainPendingSession() async {
+    final String? value = pendingSession;
+    pendingSession = null;
+    return value;
+  }
 }
 
 /// Standard test overrides for the app's provider scope.
 ///
 /// Set [writeScreenshots] to false for widget tests: the fake-async zone
 /// cannot complete real file IO or image codec decoding.
+/// In-memory SharedPreferences stand-in: AppLockService only needs
+/// getString/setString/remove; everything else is explicitly unsupported.
+class _MemoryPrefs implements SharedPreferences {
+  final Map<String, String> _store = <String, String>{};
+
+  @override
+  String? getString(String key) => _store[key];
+
+  @override
+  Future<bool> setString(String key, String value) async {
+    _store[key] = value;
+    return true;
+  }
+
+  @override
+  Future<bool> remove(String key) async {
+    _store.remove(key);
+    return true;
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) =>
+      throw UnsupportedError('not used in tests');
+}
+
+/// Biometric fake for widget tests: never available, never prompts.
+class _LockedOutBiometric implements BiometricAuth {
+  @override
+  Future<bool> canAuthenticate() async => false;
+
+  @override
+  Future<bool> authenticate(String localizedReason) async => false;
+}
+
 List<Override> testOverrides({
   LlmClient? llm,
   required Directory dir,
@@ -301,6 +360,10 @@ List<Override> testOverrides({
   // the zone). Always plug in the recording fake instead; tests that
   // assert on the background hold override it again explicitly.
   backgroundRunServiceProvider.overrideWithValue(RecordingBackgroundRun()),
+  appLockServiceProvider.overrideWith(
+    (Ref ref) =>
+        AppLockService(prefs: _MemoryPrefs(), biometric: _LockedOutBiometric()),
+  ),
   browserAutomationProvider.overrideWithValue(
     FakeBrowserAutomation(
       '${dir.path}${Platform.pathSeparator}shots',

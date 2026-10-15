@@ -1,10 +1,13 @@
 import 'dart:io';
 
+import 'package:shared_preferences/shared_preferences.dart';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
 
 import 'models/models.dart';
 import 'services/agent_controller.dart';
+import 'services/app_lock_service.dart';
 import 'services/backup_service.dart';
 import 'services/browser_automation.dart';
 import 'services/chat_store.dart';
@@ -99,6 +102,21 @@ final npmServiceProvider = Provider<NpmService>(
 final sessionSandboxProvider = Provider<SessionSandbox>((ref) {
   return SessionSandbox(resolveDocumentsDir: ref.watch(documentsDirProvider));
 });
+
+/// Must be overridden in main() — SharedPreferences is async at boot.
+final appLockPrefsProvider = Provider<SharedPreferences>((ref) {
+  throw UnimplementedError('appLockPrefsProvider must be overridden in main()');
+});
+
+/// App lock service (v1.18.0): PIN hashing/verification + biometric prompt.
+final appLockServiceProvider = Provider<AppLockService>((ref) {
+  return AppLockService(prefs: ref.watch(appLockPrefsProvider));
+});
+
+/// Whether the Flutter app is currently visible to the user. Updated by
+/// the lifecycle observer in LockGate; the agent loop reads it when a run
+/// finishes to decide whether a completion notification is needed.
+final appInForegroundProvider = StateProvider<bool>((ref) => true);
 
 /// Id of the chat session currently open in the UI (null = none yet).
 final activeSessionIdProvider = Provider<String?>(

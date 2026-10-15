@@ -156,6 +156,14 @@ OpenAI-compatible: **OpenRouter, InferHub, Z.AI, OpenAI, DeepSeek, Groq, dan lai
   — dihitung dari pemakaian yang dilaporkan provider per permintaan
   (`stream_options.include_usage` + fallback retry otomatis untuk
   provider yang menolak parameter itu).
+- **Kunci aplikasi (v1.18.0)** — **Pengaturan → Kunci aplikasi**:
+  aktifkan lock screen dengan **sidik jari/biometrik** + **PIN
+  cadangan** (hash SHA-256 bergaram, disimpan di luar backup).
+  Terkunci saat aplikasi dibuka & kembali dari latar belakang.
+- **Notifikasi tugas selesai (v1.18.0)** — saat proses agent selesai
+  **di latar belakang**, muncul notifikasi lokal "Tugas agent
+  selesai"; ketuk untuk langsung membuka percakapan terkait. Bisa
+  dimatikan lewat saklar *Notify when a task finishes*.
 - **Pencarian + paging universal (v1.6.0)** — SEMUA list di aplikasi memakai
   widget `PagedList` yang sama: **5 item per halaman** (termasuk dropdown model),
   kolom pencarian, pager first/prev/next/last, dan empty state "No results".

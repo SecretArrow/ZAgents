@@ -25,6 +25,21 @@ abstract class BackgroundRun {
 
   /// Whether the background hold is considered active right now.
   bool get isActive;
+
+  /// Posts a local "task finished" notification (v1.18.0). Used when an
+  /// agent run completes while the app is NOT in the foreground. [title]
+  /// and [text] are the notification strings; [sessionId] is attached to
+  /// the tap intent so the app can reopen that conversation.
+  Future<bool> notifyDone({
+    required String title,
+    required String text,
+    String? sessionId,
+  });
+
+  /// Returns the session id carried by the launch/tap intent (set when
+  /// the user taps a done-notification), or null. Draining CONSUMES the
+  /// pending value.
+  Future<String?> drainPendingSession();
 }
 
 class BackgroundRunService implements BackgroundRun {
@@ -88,6 +103,35 @@ class BackgroundRunService implements BackgroundRun {
       // Even if the channel call fails, the Dart side considers the hold
       // released; the native side also has safety valves (wake lock
       // timeout, service stop on task completion).
+    }
+  }
+
+  @override
+  Future<bool> notifyDone({
+    required String title,
+    required String text,
+    String? sessionId,
+  }) async {
+    try {
+      return await _channel.invokeMethod<bool>('notifyDone', <String, dynamic>{
+            'title': title,
+            'text': text,
+            'sessionId': sessionId,
+          }) ??
+          false;
+    } catch (_) {
+      // Notifications are best-effort: a missing platform handler (tests)
+      // or an OEM restriction must never surface as an app error.
+      return false;
+    }
+  }
+
+  @override
+  Future<String?> drainPendingSession() async {
+    try {
+      return await _channel.invokeMethod<String>('getPendingSession');
+    } catch (_) {
+      return null;
     }
   }
 }
