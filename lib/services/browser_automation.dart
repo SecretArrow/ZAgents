@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:collection';
 import 'dart:io';
 import 'dart:typed_data';
 import 'dart:ui' show Size;
@@ -70,6 +71,21 @@ abstract class BrowserAutomation {
 
   Future<String> runJs(String code, {String? sessionId});
 
+  /// Wipes every shared web-side cache the platform WebView keeps across
+  /// all WebViews of the process: the HTTP/disk cache, web storage
+  /// (localStorage / sessionStorage / IndexedDB / AppCache). Part of the
+  /// private-window guarantee — called by the isolation layer whenever the
+  /// active chat session changes, so cached authenticated content of the
+  /// outgoing session is unreachable for the incoming one.
+  Future<void> purgeSiteData();
+
+  /// Async storage reconciliation at the CURRENT origin (must be called
+  /// with the origin's page loaded): clears web storage, deletes every
+  /// IndexedDB database, unregisters this origin's service workers, then
+  /// re-injects [payloadJson] ({"local":{},"session":{}}) as the calling
+  /// session's snapshot. Returns a status string ("reconciled").
+  Future<String> reconcileOriginStorage(String payloadJson);
+
   Future<void> resetSession();
 
   void dispose();
@@ -124,6 +140,18 @@ class WebViewAutomation implements BrowserAutomation {
       initialSize: const Size(1080, 1920),
       initialUrlRequest: URLRequest(url: WebUri('about:blank')),
       initialSettings: _settingsFor(ua),
+      // Private-window hardening (v1.20.0): new service-worker
+      // registrations are rejected at document start in every frame, so a
+      // site's worker registered while one chat is logged in can never
+      // intercept another chat's requests. Existing registrations are
+      // unregistered per origin during storage reconciliation.
+      initialUserScripts: UnmodifiableListView<UserScript>(<UserScript>[
+        UserScript(
+          source: _swBlockScript,
+          injectionTime: UserScriptInjectionTime.AT_DOCUMENT_START,
+          forMainFrameOnly: false,
+        ),
+      ]),
       onLoadStop: (InAppWebViewController controller, WebUri? url) {
         final completer = _navCompleter;
         if (completer != null && !completer.isCompleted) {
@@ -435,6 +463,86 @@ class WebViewAutomation implements BrowserAutomation {
       // Best effort.
     }
   }
+
+  @override
+  Future<void> purgeSiteData() async {
+    try {
+      await InAppWebViewController.clearAllCache();
+    } catch (_) {
+      // Best effort: cache alone degrades to slower loads, not leaks.
+    }
+    try {
+      // Android WebStorage.deleteAllData(): wipes localStorage,
+      // sessionStorage, IndexedDB and AppCache for ALL origins in the
+      // shared profile — sessions re-inject their own snapshots during
+      // reconciliation, so nothing survives a session switch.
+      await WebStorageManager().deleteAllData();
+    } catch (_) {
+      // Best effort.
+    }
+  }
+
+  @override
+  Future<String> reconcileOriginStorage(String payloadJson) async {
+    try {
+      final controller = await _ensure();
+      Object? data;
+      try {
+        data = jsonDecode(payloadJson);
+      } catch (_) {
+        data = const <String, dynamic>{};
+      }
+      // callAsyncJavaScript awaits the returned Promise (unlike plain
+      // evaluateJavascript), so the IndexedDB deletions and service-worker
+      // unregistrations below actually complete before we reload the page.
+      final result = await controller.callAsyncJavaScript(
+        functionBody: _reconcileBody,
+        arguments: <String, dynamic>{'data': data},
+      );
+      final value = result?.value;
+      return value == null ? 'reconciled' : value.toString();
+    } catch (_) {
+      return 'reconciled';
+    }
+  }
+
+  /// Runs at document start in every frame: service-worker registration
+  /// is stubbed out (private windows never register workers).
+  static const String _swBlockScript =
+      '(function(){try{if(navigator.serviceWorker){'
+      'navigator.serviceWorker.register=function(){'
+      'return Promise.reject(new Error("service workers are disabled in '
+      'private mode"))};}}catch(e){}})()';
+
+  /// Body of the async reconcile function executed by
+  /// [reconcileOriginStorage] via callAsyncJavaScript (`data` argument:
+  /// {"local":{},"session":{}}).
+  static const String _reconcileBody = '''
+try { sessionStorage.clear(); } catch (e) {}
+try { localStorage.clear(); } catch (e) {}
+try {
+  if (window.indexedDB && indexedDB.databases) {
+    var dbs = await indexedDB.databases();
+    for (var i = 0; i < dbs.length; i++) {
+      var name = dbs[i] && dbs[i].name;
+      if (name) { try { indexedDB.deleteDatabase(name); } catch (e) {} }
+    }
+  }
+} catch (e) {}
+try {
+  if (navigator.serviceWorker && navigator.serviceWorker.getRegistrations) {
+    var regs = await navigator.serviceWorker.getRegistrations();
+    for (var j = 0; j < regs.length; j++) {
+      try { regs[j].unregister(); } catch (e) {}
+    }
+  }
+} catch (e) {}
+var own = data || {};
+var l = own.local || {}, s = own.session || {};
+for (var k in l) { try { localStorage.setItem(k, l[k]); } catch (e) {} }
+for (var m in s) { try { sessionStorage.setItem(m, s[m]); } catch (e) {} }
+return "reconciled";
+''';
 
   @override
   void dispose() {

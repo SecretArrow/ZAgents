@@ -50,6 +50,12 @@ abstract class JsRuntime {
 ///  3. The script result, console output and `fs`/`fetch` traffic travel
 ///     through the `zagentsNode` JavaScript handler; [run] awaits the
 ///     final `done` frame with a timeout.
+///
+/// Privacy guarantee (v1.20.0): every [run] boots a FRESH WebView — the
+/// CommonJS cache, `window` globals and the module registry of a previous
+/// run (possibly from a different chat session, e.g. git tokens embedded
+/// in pushed scripts) are destroyed, matching real Node semantics where
+/// each `node script.js` starts a clean process.
 class WebViewJsRuntime implements JsRuntime {
   WebViewJsRuntime({this.fetchProxy, this.resolveUserAgent});
 
@@ -442,7 +448,12 @@ window.__zDone = false;
     String? workingDir,
     Duration timeout = const Duration(seconds: 20),
   }) async {
+    // Fresh context per run (v1.20.0): dispose whatever WebView exists —
+    // its JS heap holds the previous run's module cache, window globals
+    // and __zRegistry (which contains literal script sources, including
+    // any credentials embedded there) — then boot a clean one.
     try {
+      await _recycle();
       await _ensureRunning();
     } catch (e) {
       return JsRunResult(output: '', error: 'JS runtime failed to start: $e');
@@ -505,6 +516,43 @@ window.__zDone = false;
   void dispose() {
     _recycle();
   }
+}
+
+/// Serializes executions through an inner [JsRuntime] so parallel calls
+/// (node_run from multiple chat sessions running at once) never interleave
+/// inside one hidden WebView: each run completes before the next starts,
+/// and a failing run never poisons the queue.
+///
+/// Combined with [WebViewJsRuntime]'s fresh-context-per-run this is the
+/// cross-chat privacy guarantee for the embedded Node.js runtime.
+class SerializedJsRuntime implements JsRuntime {
+  SerializedJsRuntime(this._inner);
+
+  final JsRuntime _inner;
+
+  Future<void> _tail = Future<void>.value();
+
+  @override
+  Future<JsRunResult> run(
+    String code, {
+    List<String> moduleRoots = const <String>[],
+    String? workingDir,
+    Duration timeout = const Duration(seconds: 20),
+  }) {
+    final Future<JsRunResult> run = _tail.then(
+      (_) => _inner.run(
+        code,
+        moduleRoots: moduleRoots,
+        workingDir: workingDir,
+        timeout: timeout,
+      ),
+    );
+    _tail = run.then<void>((_) {}, onError: (Object _) {});
+    return run;
+  }
+
+  @override
+  void dispose() => _inner.dispose();
 }
 
 /// Records executions instead of running JS — for unit/widget tests.

@@ -169,6 +169,17 @@ class FakeBrowserAutomation implements BrowserAutomation {
   }
 
   @override
+  Future<void> purgeSiteData() async {
+    calls.add('purge_site_data');
+  }
+
+  @override
+  Future<String> reconcileOriginStorage(String payloadJson) async {
+    calls.add('reconcile_origin:$payloadJson');
+    return 'reconciled';
+  }
+
+  @override
   Future<void> resetSession() async {}
 
   @override
@@ -257,6 +268,14 @@ class ThrowingBrowserAutomation implements BrowserAutomation {
 
   @override
   Future<String> runJs(String code, {String? sessionId}) async =>
+      throw const SocketException('browser exploded');
+
+  @override
+  Future<void> purgeSiteData() async =>
+      throw const SocketException('browser exploded');
+
+  @override
+  Future<String> reconcileOriginStorage(String payloadJson) async =>
       throw const SocketException('browser exploded');
 
   @override

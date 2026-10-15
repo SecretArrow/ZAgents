@@ -92,6 +92,9 @@ final userAgentManagerProvider = Provider<UserAgentManager>(
 );
 
 /// Hidden-WebView JavaScript runtime for the embedded Node.js-style tools.
+/// Serialized: node_run calls from parallel chat sessions execute one at a
+/// time, and every run boots a fresh JS context (no module cache, window
+/// globals or registry can survive from one chat into another).
 final jsRuntimeProvider = Provider<JsRuntime>((ref) {
   final runtime = WebViewJsRuntime(
     resolveUserAgent: () {
@@ -100,7 +103,7 @@ final jsRuntimeProvider = Provider<JsRuntime>((ref) {
     },
   );
   ref.onDispose(runtime.dispose);
-  return runtime;
+  return SerializedJsRuntime(runtime);
 });
 
 final npmServiceProvider = Provider<NpmService>(

@@ -262,16 +262,6 @@ class IsolatedBrowserAutomation implements BrowserAutomation {
       'cookie:document.cookie||"",local:dump(window.localStorage),'
       'session:dump(window.sessionStorage)});})()';
 
-  /// JS that wipes web storage for the current origin and re-injects the
-  /// given session snapshot (built by [reconcileScript]).
-  static String reconcileScript(String payloadJson) =>
-      '(function(data){try{sessionStorage.clear();}catch(e){}'
-      'try{localStorage.clear();}catch(e){}'
-      'var l=data.local||{},s=data.session||{};'
-      'for(var k in l){try{localStorage.setItem(k,l[k]);}catch(e){}}'
-      'for(var k in s){try{sessionStorage.setItem(k,s[k]);}catch(e){}}'
-      'return "reconciled";})($payloadJson)';
-
   @override
   Future<BrowserPageInfo> navigate(
     String url, {
@@ -280,7 +270,11 @@ class IsolatedBrowserAutomation implements BrowserAutomation {
   }) {
     return _mutex.protect(() async {
       await _activate(sessionId);
-      final first = await inner.navigate(url, timeout: timeout);
+      final first = await inner.navigate(
+        url,
+        timeout: timeout,
+        sessionId: sessionId,
+      );
       final landing = first.url.isNotEmpty ? first.url : url;
       final origin = _originOf(landing);
       if (origin == null || !_reconciled.add(origin)) {
@@ -291,7 +285,11 @@ class IsolatedBrowserAutomation implements BrowserAutomation {
       // from other chats, re-inject this session's snapshot, then reload so
       // the page boots with the right identity.
       await _reconcileStorage(sessionId, origin);
-      final reloaded = await inner.navigate(url, timeout: timeout);
+      final reloaded = await inner.navigate(
+        url,
+        timeout: timeout,
+        sessionId: sessionId,
+      );
       await _capture(sessionId);
       return reloaded;
     });
@@ -304,7 +302,11 @@ class IsolatedBrowserAutomation implements BrowserAutomation {
     String? sessionId,
   }) {
     return _scoped(sessionId, () async {
-      final result = await inner.click(selector: selector, text: text);
+      final result = await inner.click(
+        selector: selector,
+        text: text,
+        sessionId: sessionId,
+      );
       await _capture(sessionId);
       return result;
     });
@@ -318,7 +320,12 @@ class IsolatedBrowserAutomation implements BrowserAutomation {
     String? sessionId,
   }) {
     return _scoped(sessionId, () async {
-      final result = await inner.type(text, selector: selector, clear: clear);
+      final result = await inner.type(
+        text,
+        selector: selector,
+        clear: clear,
+        sessionId: sessionId,
+      );
       await _capture(sessionId);
       return result;
     });
@@ -331,7 +338,11 @@ class IsolatedBrowserAutomation implements BrowserAutomation {
     String? sessionId,
   }) {
     return _scoped(sessionId, () async {
-      final result = await inner.scroll(direction: direction, amount: amount);
+      final result = await inner.scroll(
+        direction: direction,
+        amount: amount,
+        sessionId: sessionId,
+      );
       await _capture(sessionId);
       return result;
     });
@@ -339,18 +350,24 @@ class IsolatedBrowserAutomation implements BrowserAutomation {
 
   @override
   Future<String?> screenshot({required String saveDir, String? sessionId}) {
-    return _scoped(sessionId, () => inner.screenshot(saveDir: saveDir));
+    return _scoped(
+      sessionId,
+      () => inner.screenshot(saveDir: saveDir, sessionId: sessionId),
+    );
   }
 
   @override
   Future<String> extractText({int maxLength = 8000, String? sessionId}) {
-    return _scoped(sessionId, () => inner.extractText(maxLength: maxLength));
+    return _scoped(
+      sessionId,
+      () => inner.extractText(maxLength: maxLength, sessionId: sessionId),
+    );
   }
 
   @override
   Future<String> runJs(String code, {String? sessionId}) {
     return _scoped(sessionId, () async {
-      final result = await inner.runJs(code);
+      final result = await inner.runJs(code, sessionId: sessionId);
       await _capture(sessionId);
       return result;
     });
@@ -358,6 +375,13 @@ class IsolatedBrowserAutomation implements BrowserAutomation {
 
   @override
   Future<void> resetSession() => inner.resetSession();
+
+  @override
+  Future<void> purgeSiteData() => inner.purgeSiteData();
+
+  @override
+  Future<String> reconcileOriginStorage(String payloadJson) =>
+      inner.reconcileOriginStorage(payloadJson);
 
   @override
   void dispose() => inner.dispose();
@@ -382,6 +406,12 @@ class IsolatedBrowserAutomation implements BrowserAutomation {
     }
     final target = await store.load(sessionId);
     await cookies.clearAll();
+    // Private-window hardening (v1.20.0): while the identities are
+    // swapped, also wipe the shared HTTP cache and ALL web storage
+    // (localStorage / sessionStorage / IndexedDB / AppCache). Auth tokens
+    // hidden in IndexedDB or cached authenticated responses of the
+    // outgoing chat are destroyed, not just its cookies.
+    await inner.purgeSiteData();
     for (final origin in target.origins.keys) {
       final o = target.origins[origin]!;
       if (o.cookies.isNotEmpty) {
@@ -399,7 +429,7 @@ class IsolatedBrowserAutomation implements BrowserAutomation {
   /// state. Safe to call repeatedly; skips cleanly when no page is loaded.
   Future<void> _capture(String? sessionId) async {
     final state = await store.load(sessionId);
-    final raw = await inner.runJs(captureJs);
+    final raw = await inner.runJs(captureJs, sessionId: sessionId);
     final data = _decodeMap(raw);
     if (data == null) {
       await store.save(sessionId, state);
@@ -444,7 +474,11 @@ class IsolatedBrowserAutomation implements BrowserAutomation {
       'local': o?.localStorage ?? const <String, String>{},
       'session': o?.sessionStorage ?? const <String, String>{},
     });
-    await inner.runJs(reconcileScript(payload));
+    // v1.20.0: reconciliation is async now — it also deletes this
+    // origin's IndexedDB databases and unregisters its service workers
+    // before re-injecting the session snapshot (awaited on the page, then
+    // the caller reloads so the site boots with the right identity).
+    await inner.reconcileOriginStorage(payload);
   }
 
   static Map<String, dynamic>? _decodeMap(Object? raw) {

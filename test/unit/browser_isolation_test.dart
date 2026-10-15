@@ -48,11 +48,33 @@ class _FakeInner implements BrowserAutomation {
   /// `href` defaults to the current [pageUrl] like a real page would.
   Map<String, dynamic> capture = <String, dynamic>{};
 
+  /// Session that owns the currently loaded page — like a real browser,
+  /// the page keeps its identity until the NEXT session navigates, so a
+  /// session-switch flush capture still reports the OUTGOING session's
+  /// page (set by [navigate] from its sessionId argument).
+  String? pageSession;
+
+  /// Optional per-session capture payloads (what each session's page
+  /// would report for web storage). When set and the current [pageSession]
+  /// has an entry, it overrides [capture].
+  Map<String, Map<String, dynamic>>? captureBySession;
+
+  /// When true, the capture payload's cookie header is derived from the
+  /// cookie gateway for the current page — a real page reports whatever
+  /// the shared jar holds for its URL (document.cookie).
+  bool cookieFromJar = false;
+
   /// Runs when any other JS (e.g. agent-provided) executes.
   Object? Function(String code)? onOtherJs;
 
   bool _isCapture(String code) => code.contains('location.href');
-  bool _isReconcile(String code) => code.contains('localStorage.clear()');
+
+  /// Payloads passed to [reconcileOriginStorage] (one per first visit of
+  /// an origin per activation).
+  final List<String> reconcilePayloads = <String>[];
+
+  int get purgeCalls =>
+      calls.where((String c) => c == 'purge_site_data').length;
 
   @override
   Future<BrowserPageInfo> navigate(
@@ -62,6 +84,7 @@ class _FakeInner implements BrowserAutomation {
   }) async {
     calls.add('navigate:$url');
     pageUrl = url;
+    pageSession = sessionId;
     if (site != null && siteCookies.isNotEmpty) {
       await site!.writeForUrl(url, siteCookies);
     }
@@ -118,17 +141,39 @@ class _FakeInner implements BrowserAutomation {
   Future<String> runJs(String code, {String? sessionId}) async {
     if (_isCapture(code)) {
       calls.add('capture');
-      final payload = <String, dynamic>{...capture};
+      final bySession = captureBySession;
+      Map<String, dynamic> payload;
+      if (bySession != null &&
+          pageSession != null &&
+          bySession.containsKey(pageSession)) {
+        payload = <String, dynamic>{...bySession[pageSession!]!};
+      } else {
+        payload = <String, dynamic>{...capture};
+      }
       payload.putIfAbsent('href', () => pageUrl);
+      if (cookieFromJar && site != null) {
+        final jarCookies = await site!.readForUrl(pageUrl);
+        payload['cookie'] = jarCookies.entries
+            .map((e) => '${e.key}=${e.value}')
+            .join('; ');
+      }
       return jsonEncode(payload);
-    }
-    if (_isReconcile(code)) {
-      calls.add('reconcile:${code.substring(code.indexOf('(') + 1)}');
-      return 'reconciled';
     }
     calls.add('js');
     final r = onOtherJs?.call(code);
     return r == null ? 'null' : jsonEncode(r);
+  }
+
+  @override
+  Future<void> purgeSiteData() async {
+    calls.add('purge_site_data');
+  }
+
+  @override
+  Future<String> reconcileOriginStorage(String payloadJson) async {
+    calls.add('reconcile_origin');
+    reconcilePayloads.add(payloadJson);
+    return 'reconciled';
   }
 
   @override
@@ -336,9 +381,7 @@ void main() {
           2,
           reason: 'initial load + reload after storage reconcile',
         );
-        final reconcile = inner.calls
-            .firstWhere((c) => c.startsWith('reconcile:'))
-            .substring('reconcile:'.length);
+        final reconcile = inner.reconcilePayloads.last;
         expect(reconcile, contains('"jwt"'));
         expect(reconcile, contains('"abc"'));
       },
@@ -358,10 +401,7 @@ void main() {
         inner.capture = pageJson(href: 'https://shared.test/app', local: {});
         await isolated.navigate('https://shared.test/app', sessionId: 'sB');
 
-        final reconcile = inner.calls.lastWhere(
-          (c) => c.startsWith('reconcile:'),
-        );
-        expect(reconcile.contains('"leak"'), isFalse);
+        expect(inner.reconcilePayloads.last.contains('"leak"'), isFalse);
         final b = await store.load('sB');
         expect(
           b.origins['https://shared.test']!.localStorage.containsKey('a'),
@@ -373,16 +413,84 @@ void main() {
     test('storage reconcile runs once per origin per activation', () async {
       inner.capture = pageJson(href: 'https://s.test/p');
       await isolated.navigate('https://s.test/p', sessionId: 's1');
-      final reconcilesAfterFirst = inner.calls
-          .where((c) => c.startsWith('reconcile:'))
-          .length;
+      final reconcilesAfterFirst = inner.reconcilePayloads.length;
       await isolated.click(text: 'btn', sessionId: 's1');
       await isolated.navigate('https://s.test/p2', sessionId: 's1');
-      expect(
-        inner.calls.where((c) => c.startsWith('reconcile:')).length,
-        reconcilesAfterFirst,
-      );
+      expect(inner.reconcilePayloads.length, reconcilesAfterFirst);
     });
+
+    test('same site, two accounts: logins stay bound to their own chat '
+        '(user regression scenario)', () async {
+      // The fake models a real site: cookies live in the shared jar and
+      // document.cookie mirrors the jar; each session's page reports its
+      // own storage snapshot until the next session actually navigates.
+      inner.site = cookies;
+      inner.cookieFromJar = true;
+      inner.captureBySession = <String, Map<String, dynamic>>{
+        'chat1': pageJson(href: 'https://same.test/app', local: {'user': 'A'}),
+        'chat2': pageJson(href: 'https://same.test/app', local: {'user': 'B'}),
+      };
+
+      // Chat 1: the user asks the agent to log into account A.
+      inner.siteCookies = <String, String>{'sid': 'account-A'};
+      await isolated.navigate('https://same.test/app', sessionId: 'chat1');
+      await isolated.type('user A', sessionId: 'chat1');
+
+      // Chat 2: log into a DIFFERENT account on the SAME site.
+      inner.siteCookies = <String, String>{'sid': 'account-B'};
+      await isolated.navigate('https://same.test/app', sessionId: 'chat2');
+      await isolated.type('user B', sessionId: 'chat2');
+
+      // Back to chat 1: it must see account A again — cookie restored
+      // from its own sandbox, B's cookie gone from the shared jar.
+      inner.siteCookies = const <String, String>{};
+      await isolated.navigate('https://same.test/app', sessionId: 'chat1');
+
+      expect(
+        cookies.jar['https://same.test/app']!['sid'],
+        'account-A',
+        reason: 'chat1 session switch restores ITS OWN login',
+      );
+      final chat1 = await store.load('chat1');
+      final chat2 = await store.load('chat2');
+      expect(chat1.origins['https://same.test']!.cookies['sid'], 'account-A');
+      expect(chat1.origins['https://same.test']!.localStorage['user'], 'A');
+      expect(chat2.origins['https://same.test']!.cookies['sid'], 'account-B');
+      expect(chat2.origins['https://same.test']!.localStorage['user'], 'B');
+    });
+
+    test(
+      'session switch purges shared cache and web storage exactly once',
+      () async {
+        inner.capture = pageJson(href: 'https://a.test/home');
+        await isolated.navigate('https://a.test/home', sessionId: 'sA');
+        expect(
+          inner.purgeCalls,
+          1,
+          reason:
+              'first activation also purges stale data from previous '
+              'app runs (the WebView profile outlives the process)',
+        );
+
+        // Same session: no purge churn.
+        await isolated.click(text: 'btn', sessionId: 'sA');
+        expect(inner.purgeCalls, 1);
+
+        // Switch to sB: the shared cache + storage are wiped once.
+        inner.capture = pageJson(href: 'https://b.test/app');
+        await isolated.extractText(sessionId: 'sB');
+        expect(inner.purgeCalls, 2);
+
+        // Staying in sB: no additional purge.
+        await isolated.scroll(sessionId: 'sB');
+        expect(inner.purgeCalls, 2);
+
+        // Back to sA: another switch, another purge.
+        inner.capture = pageJson(href: 'https://a.test/home2');
+        await isolated.navigate('https://a.test/home2', sessionId: 'sA');
+        expect(inner.purgeCalls, 3);
+      },
+    );
 
     test(
       'parallel operations from different sessions never interleave',

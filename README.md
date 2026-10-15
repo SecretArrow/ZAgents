@@ -172,6 +172,16 @@ OpenAI-compatible: **OpenRouter, InferHub, Z.AI, OpenAI, DeepSeek, Groq, dan lai
   terpisah meski situsnya sama; state browser tiap chat juga bertahan
   setelah aplikasi ditutup. Browser antar chat paralel tetap aman
   (operasi browser diserialisasi otomatis di belakang layar).
+- **Pengerasan jendela privat (v1.20.0)** — setiap pergantian sesi chat
+  kini juga **membersihkan cache HTTP bersama, seluruh web storage
+  (termasuk IndexedDB) dan mendaftarkan-ulang service worker**, sehingga
+  token login yang disimpan situs di IndexedDB atau respons ter-cache
+  tidak bisa mengalir antar chat; registrasi service worker baru diblokir
+  di browser tersemat. Runtime Node (`node_run`) kini **konteks segar
+  untuk setiap eksekusi** — variabel, modul ter-cache, dan skript
+  sebelumnya (termasuk rahasianya) tidak pernah bertahan lintas run
+  maupun lintas chat, dan eksekusi paralel dari beberapa chat otomatis
+  diserialisasi.
 - **Pencarian + paging universal (v1.6.0)** — SEMUA list di aplikasi memakai
   widget `PagedList` yang sama: **5 item per halaman** (termasuk dropdown model),
   kolom pencarian, pager first/prev/next/last, dan empty state "No results".

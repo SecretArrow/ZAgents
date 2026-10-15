@@ -983,7 +983,7 @@ class AppStringsEn implements AppStrings {
   String get aboutSection => 'About';
   @override
   String get aboutBody =>
-      'ZAgents v1.19.0 — an Android clone of the chat.z.ai agent mode UI, '
+      'ZAgents v1.20.0 — an Android clone of the chat.z.ai agent mode UI, '
       'with custom OpenAI-compatible providers (OpenRouter, InferHub, '
       'Z.AI, OpenAI, DeepSeek, Groq, and more), per-provider API keys, '
       'light/dark themes, parallel multi-session chat with background '
@@ -996,8 +996,10 @@ class AppStringsEn implements AppStrings {
       'background task-completion notifications, session-isolated workspaces (each chat '
       'has its own private file sandbox, like a browser private window), '
       'per-chat browser isolation (cookies and logins captured in one chat '
-      'never leak into another), file uploads with zip extraction including '
-      'password-protected '
+      'never leak into another, and every session switch also purges the '
+      'shared cache, IndexedDB and service workers), a fresh Node runtime '
+      'for every script run so nothing crosses chats, file uploads with '
+      'zip extraction including password-protected '
       'archives, a Context Manager, an in-app file manager, and an '
       'embedded Node.js-style runtime with npm package management. Your '
       'keys stay on this device.';
@@ -1686,7 +1688,7 @@ class AppStringsId implements AppStrings {
   String get aboutSection => 'Tentang';
   @override
   String get aboutBody =>
-      'ZAgents v1.19.0 — klon UI agent mode chat.z.ai untuk Android, '
+      'ZAgents v1.20.0 — klon UI agent mode chat.z.ai untuk Android, '
       'dengan custom provider OpenAI-compatible (OpenRouter, InferHub, '
       'Z.AI, OpenAI, DeepSeek, Groq, dan lainnya), API key per-provider, '
       'tema terang/gelap, multi-sesi paralel dengan proses latar '
@@ -1699,7 +1701,10 @@ class AppStringsId implements AppStrings {
       'PIN) dan notifikasi tugas latar selesai, ruang kerja terisolasi per sesi '
       '(setiap chat punya sandbox file pribadi, seperti jendela privat '
       'browser), isolasi browser per chat (cookie dan login di satu chat '
-      'tidak pernah bocor ke chat lain), unggah file dengan ekstraksi zip '
+      'tidak pernah bocor ke chat lain, dan setiap pergantian sesi juga '
+      'membersihkan cache bersama, IndexedDB dan service worker), runtime '
+      'Node segar untuk setiap eksekusi skript sehingga tidak ada yang '
+      'melintas antar chat, unggah file dengan ekstraksi zip '
       'termasuk arsip terproteksi kata sandi, Manajer Konteks, manajer '
       'file, serta runtime bergaya Node.js tersemat dengan manajemen '
       'package npm. '
