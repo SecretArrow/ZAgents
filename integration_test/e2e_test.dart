@@ -264,7 +264,6 @@ async function main() {
   const previous = (await zagents.storage.get('count')) || 0;
   await zagents.storage.set('count', previous + 1);
   await zagents.chat.emit('Hello from the module! count=' + (previous + 1));
-  await zagents.chat.emit('chat emit works');
   return { count: previous + 1 };
 }
 module.exports = main();
@@ -379,7 +378,6 @@ module.exports = main();
           '${container.read(chatControllerProvider).error} '
           'transcript: $moduleContent',
     );
-    expect(moduleContent, contains('chat emit works'));
     expect(
       moduleContent,
       contains('[assistant/e2e-module]'),
