@@ -983,7 +983,7 @@ class AppStringsEn implements AppStrings {
   String get aboutSection => 'About';
   @override
   String get aboutBody =>
-      'ZAgents v1.18.0 — an Android clone of the chat.z.ai agent mode UI, '
+      'ZAgents v1.19.0 — an Android clone of the chat.z.ai agent mode UI, '
       'with custom OpenAI-compatible providers (OpenRouter, InferHub, '
       'Z.AI, OpenAI, DeepSeek, Groq, and more), per-provider API keys, '
       'light/dark themes, parallel multi-session chat with background '
@@ -995,7 +995,9 @@ class AppStringsEn implements AppStrings {
       'token usage statistics, an optional app lock (biometric or PIN) and '
       'background task-completion notifications, session-isolated workspaces (each chat '
       'has its own private file sandbox, like a browser private window), '
-      'file uploads with zip extraction including password-protected '
+      'per-chat browser isolation (cookies and logins captured in one chat '
+      'never leak into another), file uploads with zip extraction including '
+      'password-protected '
       'archives, a Context Manager, an in-app file manager, and an '
       'embedded Node.js-style runtime with npm package management. Your '
       'keys stay on this device.';
@@ -1684,7 +1686,7 @@ class AppStringsId implements AppStrings {
   String get aboutSection => 'Tentang';
   @override
   String get aboutBody =>
-      'ZAgents v1.18.0 — klon UI agent mode chat.z.ai untuk Android, '
+      'ZAgents v1.19.0 — klon UI agent mode chat.z.ai untuk Android, '
       'dengan custom provider OpenAI-compatible (OpenRouter, InferHub, '
       'Z.AI, OpenAI, DeepSeek, Groq, dan lainnya), API key per-provider, '
       'tema terang/gelap, multi-sesi paralel dengan proses latar '
@@ -1696,9 +1698,11 @@ class AppStringsId implements AppStrings {
       'statistik pemakaian token, kunci aplikasi opsional (biometrik atau '
       'PIN) dan notifikasi tugas latar selesai, ruang kerja terisolasi per sesi '
       '(setiap chat punya sandbox file pribadi, seperti jendela privat '
-      'browser), unggah file dengan ekstraksi zip termasuk arsip '
-      'terproteksi kata sandi, Manajer Konteks, manajer file, serta '
-      'runtime bergaya Node.js tersemat dengan manajemen package npm. '
+      'browser), isolasi browser per chat (cookie dan login di satu chat '
+      'tidak pernah bocor ke chat lain), unggah file dengan ekstraksi zip '
+      'termasuk arsip terproteksi kata sandi, Manajer Konteks, manajer '
+      'file, serta runtime bergaya Node.js tersemat dengan manajemen '
+      'package npm. '
       'Key Anda tetap di perangkat ini.';
 
   @override

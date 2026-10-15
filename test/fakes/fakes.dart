@@ -95,8 +95,9 @@ class FakeBrowserAutomation implements BrowserAutomation {
   Future<BrowserPageInfo> navigate(
     String url, {
     Duration timeout = const Duration(seconds: 25),
+    String? sessionId,
   }) async {
-    calls.add('navigate:$url');
+    calls.add('navigate:$url${sessionId == null ? '' : ' @$sessionId'}');
     if (url.trim().isEmpty) {
       return BrowserPageInfo(url: '', title: '', text: '', error: 'URL kosong');
     }
@@ -108,7 +109,11 @@ class FakeBrowserAutomation implements BrowserAutomation {
   }
 
   @override
-  Future<Map<String, dynamic>> click({String? selector, String? text}) async {
+  Future<Map<String, dynamic>> click({
+    String? selector,
+    String? text,
+    String? sessionId,
+  }) async {
     calls.add('click:${text ?? selector}');
     return <String, dynamic>{'ok': true, 'clicked': text ?? selector ?? ''};
   }
@@ -118,6 +123,7 @@ class FakeBrowserAutomation implements BrowserAutomation {
     String text, {
     String? selector,
     bool clear = true,
+    String? sessionId,
   }) async {
     calls.add('type:$text');
     return <String, dynamic>{'ok': true, 'typed': text};
@@ -127,13 +133,17 @@ class FakeBrowserAutomation implements BrowserAutomation {
   Future<Map<String, dynamic>> scroll({
     String direction = 'down',
     int amount = 800,
+    String? sessionId,
   }) async {
     calls.add('scroll:$direction:$amount');
     return <String, dynamic>{'ok': true, 'scrollY': amount};
   }
 
   @override
-  Future<String?> screenshot({required String saveDir}) async {
+  Future<String?> screenshot({
+    required String saveDir,
+    String? sessionId,
+  }) async {
     calls.add('screenshot');
     final String path =
         '$saveDir${Platform.pathSeparator}fake_shot_${DateTime.now().microsecondsSinceEpoch}.png';
@@ -145,7 +155,7 @@ class FakeBrowserAutomation implements BrowserAutomation {
   }
 
   @override
-  Future<String> extractText({int maxLength = 8000}) async {
+  Future<String> extractText({int maxLength = 8000, String? sessionId}) async {
     calls.add('extract');
     const String text =
         'Example Domain\nThis domain is for use in illustrative examples.';
@@ -153,7 +163,7 @@ class FakeBrowserAutomation implements BrowserAutomation {
   }
 
   @override
-  Future<String> runJs(String code) async {
+  Future<String> runJs(String code, {String? sessionId}) async {
     calls.add('run_js:$code');
     return '"ok"';
   }
@@ -210,35 +220,43 @@ class ThrowingBrowserAutomation implements BrowserAutomation {
   Future<BrowserPageInfo> navigate(
     String url, {
     Duration timeout = const Duration(seconds: 25),
+    String? sessionId,
   }) async => throw const SocketException('browser exploded');
 
   @override
-  Future<Map<String, dynamic>> click({String? selector, String? text}) async =>
-      throw const SocketException('browser exploded');
+  Future<Map<String, dynamic>> click({
+    String? selector,
+    String? text,
+    String? sessionId,
+  }) async => throw const SocketException('browser exploded');
 
   @override
   Future<Map<String, dynamic>> type(
     String text, {
     String? selector,
     bool clear = true,
+    String? sessionId,
   }) async => throw const SocketException('browser exploded');
 
   @override
   Future<Map<String, dynamic>> scroll({
     String direction = 'down',
     int amount = 800,
+    String? sessionId,
   }) async => throw const SocketException('browser exploded');
 
   @override
-  Future<String?> screenshot({required String saveDir}) async =>
+  Future<String?> screenshot({
+    required String saveDir,
+    String? sessionId,
+  }) async => throw const SocketException('browser exploded');
+
+  @override
+  Future<String> extractText({int maxLength = 8000, String? sessionId}) async =>
       throw const SocketException('browser exploded');
 
   @override
-  Future<String> extractText({int maxLength = 8000}) async =>
-      throw const SocketException('browser exploded');
-
-  @override
-  Future<String> runJs(String code) async =>
+  Future<String> runJs(String code, {String? sessionId}) async =>
       throw const SocketException('browser exploded');
 
   @override

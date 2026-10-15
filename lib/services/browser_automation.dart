@@ -31,25 +31,44 @@ class BrowserPageInfo {
 }
 
 /// Abstraction over the embedded browser used by the agent.
+///
+/// Every method takes an optional [sessionId]: the chat session the call
+/// belongs to. Implementations that hold login state (cookies, web
+/// storage) use it to keep each session's browser identity separate —
+/// the private-window guarantee (see IsolatedBrowserAutomation). The raw
+/// WebViewAutomation ignores it: it owns no state.
 abstract class BrowserAutomation {
-  Future<BrowserPageInfo> navigate(String url, {Duration timeout});
+  Future<BrowserPageInfo> navigate(
+    String url, {
+    Duration timeout,
+    String? sessionId,
+  });
 
-  Future<Map<String, dynamic>> click({String? selector, String? text});
+  Future<Map<String, dynamic>> click({
+    String? selector,
+    String? text,
+    String? sessionId,
+  });
 
   Future<Map<String, dynamic>> type(
     String text, {
     String? selector,
     bool clear,
+    String? sessionId,
   });
 
-  Future<Map<String, dynamic>> scroll({String direction, int amount});
+  Future<Map<String, dynamic>> scroll({
+    String direction,
+    int amount,
+    String? sessionId,
+  });
 
   /// Captures the current page and saves a PNG under [saveDir]. Returns path.
-  Future<String?> screenshot({required String saveDir});
+  Future<String?> screenshot({required String saveDir, String? sessionId});
 
-  Future<String> extractText({int maxLength});
+  Future<String> extractText({int maxLength, String? sessionId});
 
-  Future<String> runJs(String code);
+  Future<String> runJs(String code, {String? sessionId});
 
   Future<void> resetSession();
 
@@ -154,6 +173,7 @@ class WebViewAutomation implements BrowserAutomation {
   Future<BrowserPageInfo> navigate(
     String url, {
     Duration timeout = const Duration(seconds: 25),
+    String? sessionId,
   }) async {
     if (url.trim().isEmpty) {
       return BrowserPageInfo(
@@ -237,7 +257,11 @@ class WebViewAutomation implements BrowserAutomation {
   }
 
   @override
-  Future<Map<String, dynamic>> click({String? selector, String? text}) async {
+  Future<Map<String, dynamic>> click({
+    String? selector,
+    String? text,
+    String? sessionId,
+  }) async {
     try {
       final controller = await _ensure();
       final raw = await controller.evaluateJavascript(
@@ -282,6 +306,7 @@ class WebViewAutomation implements BrowserAutomation {
     String text, {
     String? selector,
     bool clear = true,
+    String? sessionId,
   }) async {
     try {
       final controller = await _ensure();
@@ -330,6 +355,7 @@ class WebViewAutomation implements BrowserAutomation {
   Future<Map<String, dynamic>> scroll({
     String direction = 'down',
     int amount = 800,
+    String? sessionId,
   }) async {
     try {
       final controller = await _ensure();
@@ -347,7 +373,7 @@ class WebViewAutomation implements BrowserAutomation {
   }
 
   @override
-  Future<String> extractText({int maxLength = 8000}) async {
+  Future<String> extractText({int maxLength = 8000, String? sessionId}) async {
     try {
       final controller = await _ensure();
       final raw = await controller.evaluateJavascript(
@@ -363,7 +389,7 @@ class WebViewAutomation implements BrowserAutomation {
   }
 
   @override
-  Future<String> runJs(String code) async {
+  Future<String> runJs(String code, {String? sessionId}) async {
     try {
       final controller = await _ensure();
       final result = await controller.evaluateJavascript(source: code);
@@ -376,7 +402,10 @@ class WebViewAutomation implements BrowserAutomation {
   }
 
   @override
-  Future<String?> screenshot({required String saveDir}) async {
+  Future<String?> screenshot({
+    required String saveDir,
+    String? sessionId,
+  }) async {
     Uint8List? bytes;
     try {
       final controller = await _ensure();

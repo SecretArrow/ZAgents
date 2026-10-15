@@ -164,6 +164,14 @@ OpenAI-compatible: **OpenRouter, InferHub, Z.AI, OpenAI, DeepSeek, Groq, dan lai
   **di latar belakang**, muncul notifikasi lokal "Tugas agent
   selesai"; ketuk untuk langsung membuka percakapan terkait. Bisa
   dimatikan lewat saklar *Notify when a task finishes*.
+- **Isolasi browser per chat (v1.19.0)** — jendela privat kini
+  **benar-benar privat**: cookie, **login**, dan storage situs
+  (localStorage/sessionStorage) yang ditangkap agent di satu chat
+  disimpan di sandbox chat itu sendiri dan **tidak pernah terlihat
+  chat lain**. Login akun A di chat 1 dan akun B di chat 2 tetap
+  terpisah meski situsnya sama; state browser tiap chat juga bertahan
+  setelah aplikasi ditutup. Browser antar chat paralel tetap aman
+  (operasi browser diserialisasi otomatis di belakang layar).
 - **Pencarian + paging universal (v1.6.0)** — SEMUA list di aplikasi memakai
   widget `PagedList` yang sama: **5 item per halaman** (termasuk dropdown model),
   kolom pencarian, pager first/prev/next/last, dan empty state "No results".

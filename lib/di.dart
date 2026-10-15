@@ -10,6 +10,7 @@ import 'services/agent_controller.dart';
 import 'services/app_lock_service.dart';
 import 'services/backup_service.dart';
 import 'services/browser_automation.dart';
+import 'services/browser_session_isolation.dart';
 import 'services/chat_store.dart';
 import 'services/context_repository.dart';
 import 'services/js_runtime.dart';
@@ -64,14 +65,24 @@ final modelCatalogProvider = Provider<ModelCatalogClient>(
 );
 
 final browserAutomationProvider = Provider<BrowserAutomation>((ref) {
-  final automation = WebViewAutomation(
+  final webview = WebViewAutomation(
     pickUserAgent: () {
       final AppSettings settings = ref.read(settingsProvider);
       return ref.read(userAgentManagerProvider).resolve(settings.uaMode);
     },
   );
-  ref.onDispose(automation.dispose);
-  return automation;
+  // Private-window guarantee (v1.19.0): cookies, web storage and login
+  // state are swapped per chat session under a lock and persisted inside
+  // each session's own sandbox — one chat never sees another chat's login.
+  final isolated = IsolatedBrowserAutomation(
+    inner: webview,
+    store: BrowserStateStore(
+      rootFor: ref.watch(sessionSandboxProvider).rootFor,
+    ),
+    cookies: const InAppCookieGateway(),
+  );
+  ref.onDispose(webview.dispose);
+  return isolated;
 });
 
 /// Resolves the User-Agent applied to embedded browser surfaces according
