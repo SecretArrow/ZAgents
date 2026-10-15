@@ -346,7 +346,7 @@ class WebViewJsRuntime implements JsRuntime {
   /// console capture — used by BOTH plain runs and module runs.
   static String get _coreJs =>
       '''
-  function post(msg){ try { window.flutter_inappwebview.callHandler('$_handlerName', msg); } catch(e){} }
+  function post(msg){ try { return window.flutter_inappwebview.callHandler('$_handlerName', msg); } catch(e){ return Promise.resolve(null); } }
   function fmt(v){
     if (v === undefined) return 'undefined';
     if (v === null) return 'null';
@@ -386,15 +386,15 @@ class WebViewJsRuntime implements JsRuntime {
     return module.exports;
   }
   window.console = {
-    log: function(){ post({op:'log', text: Array.prototype.map.call(arguments, fmt).join(' ')}); },
-    info: function(){ post({op:'log', text: Array.prototype.map.call(arguments, fmt).join(' ')}); },
-    warn: function(){ post({op:'log', text: 'WARN ' + Array.prototype.map.call(arguments, fmt).join(' ')}); },
-    error: function(){ post({op:'log', text: 'ERROR ' + Array.prototype.map.call(arguments, fmt).join(' ')}); }
+    log: function(){ return post({op:'log', text: Array.prototype.map.call(arguments, fmt).join(' ')}); },
+    info: function(){ return post({op:'log', text: Array.prototype.map.call(arguments, fmt).join(' ')}); },
+    warn: function(){ return post({op:'log', text: 'WARN ' + Array.prototype.map.call(arguments, fmt).join(' ')}); },
+    error: function(){ return post({op:'log', text: 'ERROR ' + Array.prototype.map.call(arguments, fmt).join(' ')}); }
   };
   window.__zRun = function(entryPath){
     return (async function(){ return exec(entryPath); })().then(
-      function(v){ post({op:'done', ok:true, result: fmt(v)}); },
-      function(e){ post({op:'done', ok:false, error: (e && e.message) ? e.message : String(e)}); }
+      async function(v){ await post({op:'done', ok:true, result: fmt(v)}); },
+      async function(e){ await post({op:'done', ok:false, error: (e && e.message) ? e.message : String(e)}); }
     );
   };
 ''';
@@ -440,7 +440,7 @@ window.__zDone = false;
   }
   window.zagents = {
     info: window.__zInfo,
-    log: function(){ window.console.log.apply(null, arguments); },
+    log: function(){ return window.console.log.apply(null, arguments); },
     chat: {
       emit: function(text){
         if (!zHas('chat')) return zDeny('chat');

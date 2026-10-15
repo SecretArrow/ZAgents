@@ -262,7 +262,7 @@ void main() {
 async function main() {
   const previous = (await zagents.storage.get('count')) || 0;
   await zagents.storage.set('count', previous + 1);
-  zagents.log('Hello from the module! count=' + (previous + 1));
+  await zagents.log('Hello from the module! count=' + (previous + 1));
   await zagents.chat.emit('chat emit works');
   return { count: previous + 1 };
 }
