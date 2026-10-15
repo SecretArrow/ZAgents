@@ -39,6 +39,10 @@ class _RunContext {
   final String moduleName;
   final Set<String> permissions;
   final List<String>? allowedHosts;
+
+  /// Console lines captured through the bridge (`zagents.log`) — the same
+  /// delivery path as every other SDK call.
+  final List<String> consoleLines = <String>[];
   bool cancelled = false;
   void Function(String text)? onChatEmit;
 }
@@ -190,7 +194,13 @@ class ModuleRuntime implements ModuleBridge {
           timeout: module.manifest.timeout,
         ),
       );
-      output = _capOutput(run.output);
+      // Console lines captured through the bridge + whatever the runtime
+      // itself captured (core console.log frames).
+      final List<String> outputParts = <String>[
+        ...context.consoleLines,
+        if (run.output.trim().isNotEmpty) run.output,
+      ];
+      output = _capOutput(outputParts.join('\n'));
       error = run.error;
       result = run.result;
     } finally {
@@ -259,6 +269,12 @@ class ModuleRuntime implements ModuleBridge {
     }
     final String op = request['zop']?.toString() ?? '';
     switch (op) {
+      case 'log':
+        // Always available (no permission): mirrors console output into
+        // the run result. Yield once so the reply is never instantaneous.
+        await Future<void>.delayed(Duration.zero);
+        context.consoleLines.add(request['text']?.toString() ?? '');
+        return const <String, dynamic>{'ok': true};
       case 'chat.emit':
         if (!context.permissions.contains('chat')) return _denied('chat');
         if (context.cancelled) return const <String, dynamic>{'ok': true};

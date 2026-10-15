@@ -221,10 +221,6 @@ class WebViewJsRuntime implements JsRuntime {
           }
           return const <String, dynamic>{'ok': true};
         }
-        if (request['zop'] == 'log') {
-          _console.add(request['text']?.toString() ?? '');
-          return const <String, dynamic>{'ok': true};
-        }
         final ModuleBridge? bridge = _moduleBridge;
         if (bridge == null) {
           return <String, dynamic>{
