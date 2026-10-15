@@ -211,6 +211,20 @@ class WebViewJsRuntime implements JsRuntime {
         }
         return null;
       case 'zapi':
+        // Module-mode runs report their final frame over the same zapi
+        // channel as every other SDK call (single guaranteed-delivery
+        // path); plain post() frames proved lossy under the integration
+        // test binding.
+        if (request['zop'] == 'done') {
+          if (!(_done?.isCompleted ?? true)) {
+            _done!.complete(jsonEncode(request));
+          }
+          return const <String, dynamic>{'ok': true};
+        }
+        if (request['zop'] == 'log') {
+          _console.add(request['text']?.toString() ?? '');
+          return const <String, dynamic>{'ok': true};
+        }
         final ModuleBridge? bridge = _moduleBridge;
         if (bridge == null) {
           return <String, dynamic>{
@@ -438,9 +452,19 @@ window.__zDone = false;
       return res ? res.data : null;
     });
   }
+  // Module runs deliver their completion frame + logs over the zapi
+  // channel (awaited, guaranteed) instead of the fire-and-forget post().
+  window.__zRun = function(entryPath){
+    return (async function(){ return exec(entryPath); })().then(
+      async function(v){ await zCall('done', { ok: true, result: fmt(v) }); },
+      async function(e){ await zCall('done', { ok: false, error: (e && e.message) ? e.message : String(e) }); }
+    );
+  };
   window.zagents = {
     info: window.__zInfo,
-    log: function(){ return window.console.log.apply(null, arguments); },
+    log: function(){
+      return zCall('log', { text: Array.prototype.map.call(arguments, fmt).join(' ') });
+    },
     chat: {
       emit: function(text){
         if (!zHas('chat')) return zDeny('chat');
