@@ -157,7 +157,7 @@ void main() {
     expect(id.randomUaAccept, 'Ya, acak');
     expect(id.randomUaDecline, 'Pertahankan');
     expect(id.createdBy('Maragung'), 'Dibuat oleh Maragung');
-    expect(en.aboutBody, contains('v1.15.0'));
-    expect(id.aboutBody, contains('v1.15.0'));
+    expect(en.aboutBody, contains('v1.16.0'));
+    expect(id.aboutBody, contains('v1.16.0'));
   });
 }

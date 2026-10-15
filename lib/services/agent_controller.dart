@@ -9,6 +9,7 @@ import '../l10n/app_strings.dart';
 import '../models/models.dart';
 import '../tools/tool_defs.dart';
 import 'background_service.dart';
+import 'image_downscale.dart';
 import 'llm_client.dart';
 
 /// Wire-only user message appended when the model tries to finish while
@@ -437,9 +438,13 @@ class ChatController extends Notifier<ChatState> {
         switch (att.kind) {
           case AttachmentKind.image:
             final List<int> bytes = await file.readAsBytes();
-            final String mime = _mimeForName(att.name);
+            // Vision hardening (v1.16.0): cap the long edge and re-encode
+            // so a full-resolution photo never becomes megabytes of base64
+            // in the wire. Mime follows the OUTPUT format (a downscaled
+            // JPEG may no longer match the original file extension).
+            final DownscaledImage prepared = await downscaleForUpload(bytes);
             run.dataUrlCache[att.path] =
-                'data:$mime;base64,${base64Encode(bytes)}';
+                'data:${prepared.mime};base64,${base64Encode(prepared.bytes)}';
           case AttachmentKind.text:
             final String content = await file.readAsString();
             run.textCache[att.path] = content.length > 20000
@@ -453,20 +458,6 @@ class ChatController extends Notifier<ChatState> {
         // Unreadable attachment: skip silently, message text still sends.
       }
     }
-  }
-
-  static String _mimeForName(String name) {
-    final String ext = name.contains('.')
-        ? name.split('.').last.toLowerCase()
-        : '';
-    return switch (ext) {
-      'png' => 'image/png',
-      'jpg' || 'jpeg' => 'image/jpeg',
-      'webp' => 'image/webp',
-      'gif' => 'image/gif',
-      'bmp' => 'image/bmp',
-      _ => 'application/octet-stream',
-    };
   }
 
   /// Composes the effective user text: prompt + text-attachment blocks.

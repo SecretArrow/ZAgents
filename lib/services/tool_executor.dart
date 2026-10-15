@@ -6,6 +6,7 @@ import 'browser_automation.dart';
 import 'file_system_service.dart';
 import 'js_runtime.dart';
 import 'npm_service.dart';
+import 'web_fetcher.dart';
 
 /// Result of executing one tool.
 class ToolResult {
@@ -40,6 +41,7 @@ class ToolExecutor {
     this.npm,
     this.fs,
     this.fsFor,
+    this.fetcher,
   });
 
   final BrowserAutomation browser;
@@ -62,6 +64,10 @@ class ToolExecutor {
   /// Session-aware workspace factory, preferred over [fs] when set:
   /// archive tools operate on the calling session's own sandbox.
   final FileSystemService? Function(String? sessionId)? fsFor;
+
+  /// Server-side URL fetcher behind the `web_fetch` tool. Nullable for
+  /// legacy tests; the tool degrades gracefully when absent.
+  final WebFetcher? fetcher;
 
   static const Set<String> _browserTools = <String>{
     'browser_navigate',
@@ -110,6 +116,18 @@ class ToolExecutor {
           return await _nodeInstall(args);
         case 'node_remove':
           return await _nodeRemove(args);
+        case 'web_fetch':
+          return await _webFetch(args);
+        case 'git_clone':
+          return await _gitClone(args, sessionId);
+        case 'git_status':
+          return await _gitStatus(args, sessionId);
+        case 'git_commit':
+          return await _gitCommit(args, sessionId);
+        case 'git_push':
+          return await _gitPush(args, sessionId);
+        case 'git_log':
+          return await _gitLog(args, sessionId);
         default:
           return ToolResult(ok: false, llmOutput: 'Unknown tool: $name');
       }
@@ -537,4 +555,355 @@ class ToolExecutor {
       displayText: removed ? 'removed $pkg' : 'not installed',
     );
   }
+
+  // -- Server-side web fetch ----------------------------------------------
+
+  Future<ToolResult> _webFetch(Map<String, dynamic> args) async {
+    final WebFetcher? service = fetcher;
+    if (service == null) {
+      return const ToolResult(
+        ok: false,
+        llmOutput: 'web_fetch is not available in this build.',
+      );
+    }
+    final String url = args['url']?.toString() ?? '';
+    if (url.trim().isEmpty) {
+      return const ToolResult(ok: false, llmOutput: 'Parameter url is empty.');
+    }
+    final int maxLength =
+        (args['maxLength'] as int?) ?? WebFetcher.defaultMaxLength;
+    final WebFetchResult result = await service.fetch(
+      url,
+      maxLength: maxLength,
+    );
+    return ToolResult(
+      ok: result.ok,
+      llmOutput: result.output,
+      displayText: result.ok
+          ? 'fetched ${Uri.tryParse(url.trim())?.host ?? url.trim()}'
+          : 'fetch failed',
+    );
+  }
+
+  // -- Git tools (isomorphic-git through the embedded JS runtime) ---------
+
+  /// Cached outcome of the isomorphic-git availability check (null until the
+  /// first git tool call). npm packages are GLOBAL, so one app-lifetime
+  /// check is enough.
+  bool? _isoGitAvailable;
+
+  /// Makes sure `isomorphic-git` is installed in the global npm library —
+  /// the git tools are thin JS wrappers around it. Installs on first use.
+  Future<bool> _ensureIsoGit() async {
+    final NpmService? service = npm;
+    if (service == null) return false;
+    final bool? cached = _isoGitAvailable;
+    if (cached != null) return cached;
+    try {
+      final List<InstalledModule> installed = await service.listInstalled();
+      if (installed.any((InstalledModule m) => m.name == 'isomorphic-git')) {
+        return _isoGitAvailable = true;
+      }
+    } catch (_) {
+      // Listing failed: fall through and try an install.
+    }
+    try {
+      final result = await service.install('isomorphic-git');
+      return _isoGitAvailable = result.ok;
+    } catch (_) {
+      return _isoGitAvailable = false;
+    }
+  }
+
+  /// Resolves [requested] as a directory under [base], rejecting path
+  /// traversal (git repos must stay inside the session workspace).
+  Directory? _resolveDir(Directory base, String requested) {
+    final String rel = requested.trim().isEmpty ? '.' : requested.trim();
+    try {
+      final String resolved = base.uri.resolve(rel).toFilePath();
+      final String normalizedBase = base.path.endsWith(Platform.pathSeparator)
+          ? base.path
+          : '${base.path}${Platform.pathSeparator}';
+      if (!resolved.startsWith(normalizedBase)) return null;
+      return Directory(resolved);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Shared runner for all git tools: guarantees the runtime + package are
+  /// available, then executes the generated script with the session
+  /// workspace as workingDir and the GLOBAL npm library for modules.
+  Future<ToolResult> _gitRun(
+    String op,
+    Map<String, dynamic> payload,
+    String? sessionId,
+  ) async {
+    final JsRuntime? runtime = js;
+    if (runtime == null) {
+      return const ToolResult(
+        ok: false,
+        llmOutput: 'The embedded JS runtime is not available in this build.',
+      );
+    }
+    if (!await _ensureIsoGit()) {
+      return const ToolResult(
+        ok: false,
+        llmOutput:
+            'Could not make isomorphic-git available (npm unavailable or '
+            'offline). Git tools need it — try again once connected.',
+      );
+    }
+    final Directory base = await _safeBaseDir(sessionId);
+    final Directory global = await _safeBaseDir(null);
+    final result = await runtime.run(
+      _gitScript(op, payload),
+      moduleRoots: <String>[
+        '${global.path}${Platform.pathSeparator}node_modules',
+      ],
+      workingDir: base.path,
+    );
+    final String output = result.output;
+    if (!result.ok) {
+      return ToolResult(
+        ok: false,
+        llmOutput: output.isEmpty
+            ? 'git $op failed: ${result.error}'
+            : '$output\ngit $op failed: ${result.error}',
+        displayText: 'git $op failed',
+      );
+    }
+    return ToolResult(
+      ok: true,
+      llmOutput: output.isEmpty
+          ? (result.result == 'undefined' || result.result == null
+                ? 'git $op finished (no output).'
+                : '=> ${result.result}')
+          : output,
+      displayText: 'git $op',
+    );
+  }
+
+  /// Builds the JavaScript source for one git operation. [payload] carries
+  /// pre-validated, Dart-resolved values (absolute `dir`, sanitized url…).
+  /// Network clients prefer the browser build of isomorphic-git (fetch is
+  /// available in the embedded runtime) and fall back to the node build.
+  String _gitScript(String op, Map<String, dynamic> payload) {
+    final String args = jsonEncode(payload);
+    final String prelude =
+        '''
+const ARGS = $args;
+const git = require('isomorphic-git');
+const fs = require('fs');
+let http = null;
+function gitHttp() {
+  if (http) return http;
+  try { http = require('isomorphic-git/http/web'); } catch (e) {}
+  if (!http) { try { http = require('isomorphic-git/http/node'); } catch (e) {} }
+  return http;
+}
+''';
+    switch (op) {
+      case 'clone':
+        return '''
+$prelude
+await git.clone({
+  fs, http: gitHttp(), dir: ARGS.dir, url: ARGS.url,
+  singleBranch: true, depth: ARGS.depth || 1,
+  onAuth: () => ({ username: 'x-access-token', password: ARGS.token || '' }),
+});
+let files = [];
+try { files = fs.readdirSync(ARGS.dir).filter((f) => f !== '.git'); } catch (e) {}
+console.log('Cloned ' + (files.length) + ' top-level entries into ' + ARGS.dir);
+return files.slice(0, 50).join('\\n');
+''';
+      case 'status':
+        return '''
+$prelude
+const branch = (await git.currentBranch({ fs, dir: ARGS.dir })) || '(detached HEAD)';
+const rows = await git.statusMatrix({ fs, dir: ARGS.dir });
+const changed = [];
+for (const row of rows) {
+  const file = row[0], head = row[1], workdir = row[2];
+  if (head === 1 && workdir === 1) continue;
+  if (head === 0 && workdir === 2) changed.push('+ ' + file);
+  else if (workdir === 0) changed.push('- ' + file);
+  else changed.push('~ ' + file);
+}
+console.log('branch: ' + branch);
+console.log(changed.length === 0 ? 'working tree clean' : changed.slice(0, 100).join('\\n'));
+return 'branch ' + branch + ', ' + changed.length + ' change(s)';
+''';
+      case 'commit':
+        return '''
+$prelude
+await git.add({ fs, dir: ARGS.dir, filepath: '.' });
+const sha = await git.commit({
+  fs, dir: ARGS.dir, message: ARGS.message,
+  author: { name: ARGS.authorName, email: ARGS.authorEmail },
+});
+console.log('Staged all changes.');
+return 'Committed ' + sha;
+''';
+      case 'push':
+        return '''
+$prelude
+let ref = ARGS.branch;
+if (!ref) { ref = await git.currentBranch({ fs, dir: ARGS.dir }); }
+if (!ref) throw new Error('No branch to push (detached HEAD?).');
+await git.push({
+  fs, http: gitHttp(), dir: ARGS.dir,
+  remote: ARGS.remote || 'origin', ref,
+  onAuth: () => ({ username: 'x-access-token', password: ARGS.token || '' }),
+});
+console.log('Pushed ' + ref + ' to ' + (ARGS.remote || 'origin'));
+return 'pushed ' + ref;
+''';
+      default: // log
+        return '''
+$prelude
+const commits = await git.log({ fs, dir: ARGS.dir, depth: ARGS.limit || 10 });
+if (commits.length === 0) { console.log('No commits yet.'); return 'empty history'; }
+for (const c of commits) {
+  const when = new Date(c.commit.author.timestamp * 1000).toISOString().slice(0, 10);
+  console.log(c.oid.slice(0, 7) + ' ' + when + ' ' + c.commit.author.name + ': ' + String(c.commit.message).split('\\n')[0]);
+}
+return commits.length + ' commit(s)';
+''';
+    }
+  }
+
+  Future<ToolResult> _gitClone(
+    Map<String, dynamic> args,
+    String? sessionId,
+  ) async {
+    final String url = args['url']?.toString().trim() ?? '';
+    if (url.isEmpty) {
+      return const ToolResult(ok: false, llmOutput: 'Parameter url is empty.');
+    }
+    final Uri? uri = Uri.tryParse(url);
+    if (uri == null || (uri.scheme != 'https' && uri.scheme != 'http')) {
+      return const ToolResult(
+        ok: false,
+        llmOutput: 'git_clone needs an http(s) repository URL.',
+      );
+    }
+    final Directory base = await _safeBaseDir(sessionId);
+    final String requested = args['destination']?.toString() ?? '';
+    String dest = requested.trim();
+    if (dest.isEmpty) {
+      final String last = uri.pathSegments.lastWhere(
+        (String s) => s.isNotEmpty,
+        orElse: () => 'repo',
+      );
+      dest = last.endsWith('.git') ? last.substring(0, last.length - 4) : last;
+      dest = dest.replaceAll(RegExp(r'[^A-Za-z0-9._-]'), '_');
+    }
+    final Directory? target = _resolveDir(base, dest);
+    if (target == null) {
+      return const ToolResult(
+        ok: false,
+        llmOutput:
+            'Invalid destination (must stay inside this chat workspace).',
+      );
+    }
+    if (target.existsSync() && target.listSync().isNotEmpty) {
+      return ToolResult(
+        ok: false,
+        llmOutput: 'Destination already exists and is not empty: $dest',
+      );
+    }
+    return _gitRun('clone', <String, dynamic>{
+      'dir': target.path,
+      'url': url,
+      'token': args['token']?.toString() ?? '',
+      'depth': (args['depth'] as int?) ?? 1,
+    }, sessionId);
+  }
+
+  Future<ToolResult> _gitRepo(
+    Map<String, dynamic> args,
+    String? sessionId,
+    String op,
+    Map<String, dynamic> Function(String dir) payloadFor,
+  ) async {
+    final Directory base = await _safeBaseDir(sessionId);
+    final Directory? repo = _resolveDir(
+      base,
+      args['repoPath']?.toString() ?? '.',
+    );
+    if (repo == null || !repo.existsSync()) {
+      return ToolResult(
+        ok: false,
+        llmOutput:
+            'Repository folder not found inside this chat workspace '
+            '(use git_clone first).',
+      );
+    }
+    return _gitRun(op, payloadFor(repo.path), sessionId);
+  }
+
+  Future<ToolResult> _gitStatus(Map<String, dynamic> args, String? sessionId) =>
+      _gitRepo(
+        args,
+        sessionId,
+        'status',
+        (String dir) => <String, dynamic>{'dir': dir},
+      );
+
+  Future<ToolResult> _gitCommit(Map<String, dynamic> args, String? sessionId) {
+    final String message = args['message']?.toString().trim() ?? '';
+    if (message.isEmpty) {
+      return Future.value(
+        const ToolResult(ok: false, llmOutput: 'Parameter message is empty.'),
+      );
+    }
+    final String authorName = args['authorName']?.toString().trim() ?? '';
+    final String authorEmail = args['authorEmail']?.toString().trim() ?? '';
+    if (authorName.isEmpty || authorEmail.isEmpty) {
+      return Future.value(
+        const ToolResult(
+          ok: false,
+          llmOutput:
+              'git_commit needs authorName and authorEmail '
+              '(ask the user for their identity).',
+        ),
+      );
+    }
+    return _gitRepo(
+      args,
+      sessionId,
+      'commit',
+      (String dir) => <String, dynamic>{
+        'dir': dir,
+        'message': message,
+        'authorName': authorName,
+        'authorEmail': authorEmail,
+      },
+    );
+  }
+
+  Future<ToolResult> _gitPush(Map<String, dynamic> args, String? sessionId) =>
+      _gitRepo(
+        args,
+        sessionId,
+        'push',
+        (String dir) => <String, dynamic>{
+          'dir': dir,
+          'token': args['token']?.toString() ?? '',
+          'branch': args['branch']?.toString() ?? '',
+          'remote': args['remote']?.toString() ?? '',
+        },
+      );
+
+  Future<ToolResult> _gitLog(Map<String, dynamic> args, String? sessionId) =>
+      _gitRepo(
+        args,
+        sessionId,
+        'log',
+        (String dir) => <String, dynamic>{
+          'dir': dir,
+          'limit': (args['limit'] as int?) ?? 10,
+        },
+      );
 }

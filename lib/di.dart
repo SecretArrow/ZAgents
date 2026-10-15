@@ -18,6 +18,7 @@ import 'services/session_sandbox.dart';
 import 'services/settings_repository.dart';
 import 'services/tool_executor.dart';
 import 'services/user_agent_manager.dart';
+import 'services/web_fetcher.dart';
 
 /// Must be overridden in main() with a real repository.
 final settingsRepositoryProvider = Provider<SettingsRepository>((ref) {
@@ -125,6 +126,14 @@ final toolExecutorProvider = Provider<ToolExecutor>((ref) {
     js: ref.watch(jsRuntimeProvider),
     npm: ref.watch(npmServiceProvider),
     fsFor: sandbox.fsFor,
+    // Server-side fetcher behind the `web_fetch` tool; it carries the same
+    // User-Agent identity the embedded browser uses.
+    fetcher: WebFetcher(
+      resolveUserAgent: () {
+        final AppSettings settings = ref.read(settingsProvider);
+        return ref.read(userAgentManagerProvider).resolve(settings.uaMode).ua;
+      },
+    ),
   );
 });
 

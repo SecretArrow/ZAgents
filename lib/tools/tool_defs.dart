@@ -14,6 +14,8 @@ Guidelines:
 - Files the user attaches are saved under uploads/ in that session workspace. Binary attachments (zip, pdf, ...) are not inlined: unzip_file archives first, then use read_file, node_run or zip_file on the extracted files. JavaScript files (.js) can be executed with node_run — require local files by relative path, e.g. require('./uploads/project/lib/util.js'). npm packages are shared across sessions, but scripts and files are not.
 - unzip_file supports encrypted archives (ZipCrypto and WinZip AES). If an archive is password-protected, ask the user for the password and call unzip_file again passing it in the password argument.
 - The node_run tool executes JavaScript in an embedded runtime with CommonJS modules. If a package is missing, install it with node_install first; remove unneeded packages with node_remove to save space.
+- Use web_fetch to read a URL (HTML page, JSON API, or plain text) directly without opening the embedded browser whenever you only need the text or JSON of that URL; keep the browser tools for pages that require JavaScript rendering or interaction.
+- Git tools (git_clone, git_status, git_commit, git_push, git_log) operate on repositories inside THIS session's private workspace: clone with git_clone (private repos need a token from the user), inspect and commit locally with an author name and email, then push with a token the user provides.
 - When the user attaches files, images travel as vision parts and text files are inlined; reference attachments by name.
 - When you have enough information, stop calling tools and write the final answer in Markdown.
 - Always answer in the same language the user writes in.
@@ -55,212 +57,320 @@ Map<String, dynamic> _fn(
 ///
 /// With [planFirst] the `todo_write` planning tool is included first so
 /// the model writes a task plan before working (z.ai agent-mode style).
-List<Map<String, dynamic>> buildAgentTools({bool planFirst = true}) =>
-    <Map<String, dynamic>>[
-      if (planFirst)
-        _fn(
-          'todo_write',
-          'Create or update the todo list (task plan) for the current task. '
-              'Send the FULL updated list every time — each item carries its '
-              'status. Plan before starting work, then update progress after '
-              'every completed step.',
-          <String, dynamic>{
-            'todos': <String, dynamic>{
-              'type': 'array',
-              'description':
-                  'The complete updated todo list (max 50 items), in order.',
-              'items': <String, dynamic>{
-                'type': 'object',
-                'properties': <String, dynamic>{
-                  'content': <String, dynamic>{
-                    'type': 'string',
-                    'description': 'Short, imperative description of the step',
-                  },
-                  'status': <String, dynamic>{
-                    'type': 'string',
-                    'enum': <String>['pending', 'in_progress', 'completed'],
-                    'description':
-                        'pending = not started, in_progress = currently '
-                        'working on, completed = fully done',
-                  },
-                },
-                'required': <String>['content', 'status'],
+List<Map<String, dynamic>> buildAgentTools({
+  bool planFirst = true,
+}) => <Map<String, dynamic>>[
+  if (planFirst)
+    _fn(
+      'todo_write',
+      'Create or update the todo list (task plan) for the current task. '
+          'Send the FULL updated list every time — each item carries its '
+          'status. Plan before starting work, then update progress after '
+          'every completed step.',
+      <String, dynamic>{
+        'todos': <String, dynamic>{
+          'type': 'array',
+          'description':
+              'The complete updated todo list (max 50 items), in order.',
+          'items': <String, dynamic>{
+            'type': 'object',
+            'properties': <String, dynamic>{
+              'content': <String, dynamic>{
+                'type': 'string',
+                'description': 'Short, imperative description of the step',
+              },
+              'status': <String, dynamic>{
+                'type': 'string',
+                'enum': <String>['pending', 'in_progress', 'completed'],
+                'description':
+                    'pending = not started, in_progress = currently '
+                    'working on, completed = fully done',
               },
             },
-          },
-          <String>['todos'],
-        ),
-      _fn(
-        'browser_navigate',
-        'Open a URL in the embedded browser. Returns page title, URL and a text preview.',
-        <String, dynamic>{
-          'url': <String, dynamic>{
-            'type': 'string',
-            'description': 'Full URL, e.g. https://example.com',
+            'required': <String>['content', 'status'],
           },
         },
-        <String>['url'],
-      ),
-      _fn(
-        'browser_click',
-        'Click an element in the current page, either by CSS selector or by visible text.',
-        <String, dynamic>{
-          'selector': <String, dynamic>{
-            'type': 'string',
-            'description': 'CSS selector of the element',
-          },
-          'text': <String, dynamic>{
-            'type': 'string',
-            'description': 'Visible text to search for (link/button label)',
-          },
-        },
-        const <String>[],
-      ),
-      _fn(
-        'browser_type',
-        'Type text into an input/textarea/contenteditable, by CSS selector or the currently focused element.',
-        <String, dynamic>{
-          'text': <String, dynamic>{
-            'type': 'string',
-            'description': 'Text to type',
-          },
-          'selector': <String, dynamic>{
-            'type': 'string',
-            'description': 'CSS selector; omit to use the focused element',
-          },
-          'clear': <String, dynamic>{
-            'type': 'boolean',
-            'description': 'Clear existing value first (default true)',
-          },
-        },
-        <String>['text'],
-      ),
-      _fn('browser_scroll', 'Scroll the page up or down.', <String, dynamic>{
-        'direction': <String, dynamic>{
-          'type': 'string',
-          'enum': <String>['up', 'down'],
-        },
-        'amount': <String, dynamic>{
-          'type': 'integer',
-          'description': 'Pixels to scroll (default 800)',
-        },
-      }, const <String>[]),
-      _fn(
-        'browser_screenshot',
-        'Capture a screenshot of the current page. The image is shown to the user in the chat.',
-        <String, dynamic>{},
-        const <String>[],
-      ),
-      _fn(
-        'browser_extract_text',
-        'Extract readable text from the current page for analysis.',
-        <String, dynamic>{
-          'maxLength': <String, dynamic>{
-            'type': 'integer',
-            'description': 'Max characters to return (default 8000)',
-          },
-        },
-        const <String>[],
-      ),
-      _fn(
-        'run_js',
-        'Evaluate arbitrary JavaScript in the page context. Returns the serialized result.',
-        <String, dynamic>{
-          'code': <String, dynamic>{
-            'type': 'string',
-            'description': 'JavaScript source to run',
-          },
-        },
-        <String>['code'],
-      ),
-      _fn(
-        'read_file',
-        'Read a text file from the app documents folder.',
-        <String, dynamic>{
-          'path': <String, dynamic>{
-            'type': 'string',
-            'description': 'Relative path, e.g. notes/todo.txt',
-          },
-        },
-        <String>['path'],
-      ),
-      _fn(
-        'write_file',
-        'Create or overwrite a text file in the app documents folder (parent folders are created).',
-        <String, dynamic>{
-          'path': <String, dynamic>{
-            'type': 'string',
-            'description': 'Relative path',
-          },
-          'content': <String, dynamic>{
-            'type': 'string',
-            'description': 'File content',
-          },
-        },
-        <String>['path', 'content'],
-      ),
-      _fn(
-        'unzip_file',
-        'Extract a .zip archive stored in the app documents folder (for example an uploaded file under uploads/) into a folder next to it. Supports encrypted archives (ZipCrypto or WinZip AES) via the optional password. Returns the destination folder and the list of extracted files so their contents can be read or executed afterwards.',
-        <String, dynamic>{
-          'path': <String, dynamic>{
-            'type': 'string',
-            'description':
-                'Relative path of the zip archive, e.g. uploads/1_project.zip',
-          },
-          'password': <String, dynamic>{
-            'type': 'string',
-            'description': 'Password for encrypted archives (ZipCrypto or WinZip AES). Omit for plain zips; if extraction reports a missing or wrong password, ask the user and retry with this argument.',
-          },
-        },
-        <String>['path'],
-      ),
-      _fn(
-        'zip_file',
-        'Compress a file or a whole folder from the app documents folder into a .zip archive created next to it. Returns the archive path.',
-        <String, dynamic>{
-          'path': <String, dynamic>{
-            'type': 'string',
-            'description': 'Relative path of the file or folder to compress',
-          },
-        },
-        <String>['path'],
-      ),
-      _fn(
-        'node_run',
-        'Run JavaScript code in the embedded Node.js-style runtime. Supports CommonJS modules (require) from installed packages, console output, an fs-like file bridge and fetch. Use it for data processing, parsing, calculations and automation the other tools cannot do.',
-        <String, dynamic>{
-          'code': <String, dynamic>{
-            'type': 'string',
-            'description': 'JavaScript source. The final expression is the return value; use console.log for progress.',
-          },
-        },
-        <String>['code'],
-      ),
-      _fn(
-        'node_install',
-        'Install an npm package (and its runtime dependencies) into the embedded runtime so node_run can require it. Pure-JavaScript packages only.',
-        <String, dynamic>{
-          'package': <String, dynamic>{
-            'type': 'string',
-            'description': 'Package name, e.g. lodash or dayjs',
-          },
-          'version': <String, dynamic>{
-            'type': 'string',
-            'description': 'Optional exact version (default latest)',
-          },
-        },
-        <String>['package'],
-      ),
-      _fn(
-        'node_remove',
-        'Remove an installed npm package from the embedded runtime when it is no longer needed.',
-        <String, dynamic>{
-          'package': <String, dynamic>{
-            'type': 'string',
-            'description': 'Package name to remove',
-          },
-        },
-        <String>['package'],
-      ),
-    ];
+      },
+      <String>['todos'],
+    ),
+  _fn(
+    'browser_navigate',
+    'Open a URL in the embedded browser. Returns page title, URL and a text preview.',
+    <String, dynamic>{
+      'url': <String, dynamic>{
+        'type': 'string',
+        'description': 'Full URL, e.g. https://example.com',
+      },
+    },
+    <String>['url'],
+  ),
+  _fn(
+    'browser_click',
+    'Click an element in the current page, either by CSS selector or by visible text.',
+    <String, dynamic>{
+      'selector': <String, dynamic>{
+        'type': 'string',
+        'description': 'CSS selector of the element',
+      },
+      'text': <String, dynamic>{
+        'type': 'string',
+        'description': 'Visible text to search for (link/button label)',
+      },
+    },
+    const <String>[],
+  ),
+  _fn(
+    'browser_type',
+    'Type text into an input/textarea/contenteditable, by CSS selector or the currently focused element.',
+    <String, dynamic>{
+      'text': <String, dynamic>{
+        'type': 'string',
+        'description': 'Text to type',
+      },
+      'selector': <String, dynamic>{
+        'type': 'string',
+        'description': 'CSS selector; omit to use the focused element',
+      },
+      'clear': <String, dynamic>{
+        'type': 'boolean',
+        'description': 'Clear existing value first (default true)',
+      },
+    },
+    <String>['text'],
+  ),
+  _fn('browser_scroll', 'Scroll the page up or down.', <String, dynamic>{
+    'direction': <String, dynamic>{
+      'type': 'string',
+      'enum': <String>['up', 'down'],
+    },
+    'amount': <String, dynamic>{
+      'type': 'integer',
+      'description': 'Pixels to scroll (default 800)',
+    },
+  }, const <String>[]),
+  _fn(
+    'browser_screenshot',
+    'Capture a screenshot of the current page. The image is shown to the user in the chat.',
+    <String, dynamic>{},
+    const <String>[],
+  ),
+  _fn(
+    'browser_extract_text',
+    'Extract readable text from the current page for analysis.',
+    <String, dynamic>{
+      'maxLength': <String, dynamic>{
+        'type': 'integer',
+        'description': 'Max characters to return (default 8000)',
+      },
+    },
+    const <String>[],
+  ),
+  _fn(
+    'run_js',
+    'Evaluate arbitrary JavaScript in the page context. Returns the serialized result.',
+    <String, dynamic>{
+      'code': <String, dynamic>{
+        'type': 'string',
+        'description': 'JavaScript source to run',
+      },
+    },
+    <String>['code'],
+  ),
+  _fn(
+    'web_fetch',
+    'Fetch a URL (HTML page, JSON API, or plain text) server-side and return readable text. Use it for research, API calls and reading docs. Do not use it for sites that require JavaScript rendering — use the browser tools instead.',
+    <String, dynamic>{
+      'url': <String, dynamic>{
+        'type': 'string',
+        'description': 'Full URL, e.g. https://api.example.com/data.json',
+      },
+      'maxLength': <String, dynamic>{
+        'type': 'integer',
+        'description': 'Max characters to return (default 8000, cap 20000)',
+      },
+    },
+    <String>['url'],
+  ),
+  _fn(
+    'read_file',
+    'Read a text file from the app documents folder.',
+    <String, dynamic>{
+      'path': <String, dynamic>{
+        'type': 'string',
+        'description': 'Relative path, e.g. notes/todo.txt',
+      },
+    },
+    <String>['path'],
+  ),
+  _fn(
+    'write_file',
+    'Create or overwrite a text file in the app documents folder (parent folders are created).',
+    <String, dynamic>{
+      'path': <String, dynamic>{
+        'type': 'string',
+        'description': 'Relative path',
+      },
+      'content': <String, dynamic>{
+        'type': 'string',
+        'description': 'File content',
+      },
+    },
+    <String>['path', 'content'],
+  ),
+  _fn(
+    'unzip_file',
+    'Extract a .zip archive stored in the app documents folder (for example an uploaded file under uploads/) into a folder next to it. Supports encrypted archives (ZipCrypto or WinZip AES) via the optional password. Returns the destination folder and the list of extracted files so their contents can be read or executed afterwards.',
+    <String, dynamic>{
+      'path': <String, dynamic>{
+        'type': 'string',
+        'description':
+            'Relative path of the zip archive, e.g. uploads/1_project.zip',
+      },
+      'password': <String, dynamic>{
+        'type': 'string',
+        'description': 'Password for encrypted archives (ZipCrypto or WinZip AES). Omit for plain zips; if extraction reports a missing or wrong password, ask the user and retry with this argument.',
+      },
+    },
+    <String>['path'],
+  ),
+  _fn(
+    'zip_file',
+    'Compress a file or a whole folder from the app documents folder into a .zip archive created next to it. Returns the archive path.',
+    <String, dynamic>{
+      'path': <String, dynamic>{
+        'type': 'string',
+        'description': 'Relative path of the file or folder to compress',
+      },
+    },
+    <String>['path'],
+  ),
+  _fn(
+    'node_run',
+    'Run JavaScript code in the embedded Node.js-style runtime. Supports CommonJS modules (require) from installed packages, console output, an fs-like file bridge and fetch. Use it for data processing, parsing, calculations and automation the other tools cannot do.',
+    <String, dynamic>{
+      'code': <String, dynamic>{
+        'type': 'string',
+        'description': 'JavaScript source. The final expression is the return value; use console.log for progress.',
+      },
+    },
+    <String>['code'],
+  ),
+  _fn(
+    'node_install',
+    'Install an npm package (and its runtime dependencies) into the embedded runtime so node_run can require it. Pure-JavaScript packages only.',
+    <String, dynamic>{
+      'package': <String, dynamic>{
+        'type': 'string',
+        'description': 'Package name, e.g. lodash or dayjs',
+      },
+      'version': <String, dynamic>{
+        'type': 'string',
+        'description': 'Optional exact version (default latest)',
+      },
+    },
+    <String>['package'],
+  ),
+  _fn(
+    'node_remove',
+    'Remove an installed npm package from the embedded runtime when it is no longer needed.',
+    <String, dynamic>{
+      'package': <String, dynamic>{
+        'type': 'string',
+        'description': 'Package name to remove',
+      },
+    },
+    <String>['package'],
+  ),
+  _fn(
+    'git_clone',
+    'Clone a git repository into THIS chat session\'s private workspace, under <workspace>/<destination or repository name>. Use it before the other git tools.',
+    <String, dynamic>{
+      'url': <String, dynamic>{
+        'type': 'string',
+        'description': 'Repository URL (https). It may already embed a token.',
+      },
+      'destination': <String, dynamic>{
+        'type': 'string',
+        'description':
+            'Optional folder name for the clone (default: repository name)',
+      },
+      'token': <String, dynamic>{
+        'type': 'string',
+        'description': 'Optional access token injected as basic-auth username. Used in memory only — never logged or written.',
+      },
+    },
+    <String>['url'],
+  ),
+  _fn(
+    'git_status',
+    'Show the current branch and the changed files of a git repository inside this chat session workspace.',
+    <String, dynamic>{
+      'repoPath': <String, dynamic>{
+        'type': 'string',
+        'description': 'Relative repository path in the workspace; omit when it is the only one',
+      },
+    },
+    const <String>[],
+  ),
+  _fn(
+    'git_commit',
+    'Stage ALL changes and create a commit in a git repository inside this chat session workspace.',
+    <String, dynamic>{
+      'message': <String, dynamic>{
+        'type': 'string',
+        'description': 'Commit message',
+      },
+      'authorName': <String, dynamic>{
+        'type': 'string',
+        'description': 'Author name recorded on the commit',
+      },
+      'authorEmail': <String, dynamic>{
+        'type': 'string',
+        'description': 'Author email recorded on the commit',
+      },
+      'repoPath': <String, dynamic>{
+        'type': 'string',
+        'description': 'Relative repository path in the workspace; omit when it is the only one',
+      },
+    },
+    <String>['message', 'authorName', 'authorEmail'],
+  ),
+  _fn(
+    'git_push',
+    'Push the commits of a git repository to its remote. Needs an access token (injected in memory only) or a remote URL that already contains credentials.',
+    <String, dynamic>{
+      'repoPath': <String, dynamic>{
+        'type': 'string',
+        'description': 'Relative repository path in the workspace; omit when it is the only one',
+      },
+      'token': <String, dynamic>{
+        'type': 'string',
+        'description': 'Optional access token injected as basic-auth username',
+      },
+      'branch': <String, dynamic>{
+        'type': 'string',
+        'description': 'Branch to push (default: current branch)',
+      },
+      'remote': <String, dynamic>{
+        'type': 'string',
+        'description': 'Remote name (default origin)',
+      },
+    },
+    const <String>[],
+  ),
+  _fn(
+    'git_log',
+    'Show the recent commits (short hash, author, date, subject) of a git repository inside this chat session workspace.',
+    <String, dynamic>{
+      'repoPath': <String, dynamic>{
+        'type': 'string',
+        'description': 'Relative repository path in the workspace; omit when it is the only one',
+      },
+      'limit': <String, dynamic>{
+        'type': 'integer',
+        'description': 'How many commits to list (default 10)',
+      },
+    },
+    const <String>[],
+  ),
+];

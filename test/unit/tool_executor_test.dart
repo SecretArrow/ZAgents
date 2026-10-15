@@ -7,6 +7,7 @@ import 'package:zagents/services/file_system_service.dart';
 import 'package:zagents/services/js_runtime.dart';
 import 'package:zagents/services/npm_service.dart';
 import 'package:zagents/services/tool_executor.dart';
+import 'package:zagents/services/web_fetcher.dart';
 
 import '../fakes/fakes.dart';
 
@@ -569,6 +570,213 @@ void main() {
       ]);
     });
   });
+
+  group('web_fetch + git tools (v1.16.0)', () {
+    test('web_fetch returns the fetcher output', () async {
+      final ToolExecutor withFetcher = ToolExecutor(
+        browser: fakeBrowser,
+        resolveBaseDir: (_) async => tempDir,
+        isAutomationEnabled: () => true,
+        fetcher: WebFetcher(
+          client: MockClient(
+            (http.Request request) async => http.Response(
+              'hello web world',
+              200,
+              headers: <String, String>{'content-type': 'text/plain'},
+            ),
+          ),
+        ),
+      );
+      final ToolResult result = await withFetcher.execute(
+        'web_fetch',
+        <String, dynamic>{'url': 'https://example.test/page'},
+      );
+      expect(result.ok, isTrue);
+      expect(result.llmOutput, 'hello web world');
+      expect(result.displayText, contains('example.test'));
+    });
+
+    test('web_fetch without a fetcher degrades gracefully', () async {
+      final ToolResult result = await executor.execute(
+        'web_fetch',
+        <String, dynamic>{'url': 'https://example.test/page'},
+      );
+      expect(result.ok, isFalse);
+      expect(result.llmOutput, contains('not available'));
+    });
+
+    test(
+      'git_clone builds an isomorphic-git script inside the sandbox',
+      () async {
+        final ScriptedJsRuntime js = ScriptedJsRuntime(
+          (String code) => const JsRunResult(
+            output: 'Cloned 3 top-level entries',
+            result: '"clone ok"',
+          ),
+        );
+        final ToolExecutor gitExecutor = ToolExecutor(
+          browser: fakeBrowser,
+          resolveBaseDir: (_) async => tempDir,
+          isAutomationEnabled: () => true,
+          js: js,
+          npm: _FakeNpm(hasIsoGit: true),
+        );
+        final ToolResult result = await gitExecutor.execute(
+          'git_clone',
+          <String, dynamic>{'url': 'https://github.com/user/repo.git'},
+          sessionId: 'a',
+        );
+        expect(result.ok, isTrue);
+        expect(js.scripts.single, contains('git.clone'));
+        expect(js.scripts.single, contains('isomorphic-git'));
+        // Destination defaults to the repo name, inside the session sandbox.
+        expect(
+          js.scripts.single,
+          contains('${tempDir.path}${Platform.pathSeparator}repo'),
+        );
+        expect(js.workingDirs.single, tempDir.path);
+        expect(js.moduleRoots.single, <String>[
+          '${tempDir.path}${Platform.pathSeparator}node_modules',
+        ]);
+      },
+    );
+
+    test('git tools auto-install isomorphic-git when missing', () async {
+      final _FakeNpm npm = _FakeNpm(hasIsoGit: false);
+      final ToolExecutor gitExecutor = ToolExecutor(
+        browser: fakeBrowser,
+        resolveBaseDir: (_) async => tempDir,
+        isAutomationEnabled: () => true,
+        js: ScriptedJsRuntime(
+          (String code) => const JsRunResult(output: 'branch: main'),
+        ),
+        npm: npm,
+      );
+      final ToolResult result = await gitExecutor.execute(
+        'git_status',
+        <String, dynamic>{},
+        sessionId: 'a',
+      );
+      expect(result.ok, isTrue);
+      expect(npm.installed, <String>['isomorphic-git']);
+      expect(result.llmOutput, contains('branch: main'));
+    });
+
+    test(
+      'git tools fail with a clear error when npm cannot provide the package',
+      () async {
+        final ToolExecutor gitExecutor = ToolExecutor(
+          browser: fakeBrowser,
+          resolveBaseDir: (_) async => tempDir,
+          isAutomationEnabled: () => true,
+          js: ScriptedJsRuntime((String code) => const JsRunResult(output: '')),
+          npm: _FakeNpm(hasIsoGit: false, installOk: false),
+        );
+        final ToolResult result = await gitExecutor.execute(
+          'git_log',
+          <String, dynamic>{},
+          sessionId: 'a',
+        );
+        expect(result.ok, isFalse);
+        expect(result.llmOutput, contains('isomorphic-git'));
+      },
+    );
+
+    test('git_commit requires message + author identity', () async {
+      final ToolExecutor gitExecutor = ToolExecutor(
+        browser: fakeBrowser,
+        resolveBaseDir: (_) async => tempDir,
+        isAutomationEnabled: () => true,
+        js: ScriptedJsRuntime((String code) => const JsRunResult(output: 'x')),
+        npm: _FakeNpm(hasIsoGit: true),
+      );
+      final ToolResult noAuthor = await gitExecutor.execute(
+        'git_commit',
+        <String, dynamic>{'message': 'hi'},
+        sessionId: 'a',
+      );
+      expect(noAuthor.ok, isFalse);
+      expect(noAuthor.llmOutput, contains('authorName'));
+    });
+
+    test('git_clone rejects destination traversal', () async {
+      final ToolExecutor gitExecutor = ToolExecutor(
+        browser: fakeBrowser,
+        resolveBaseDir: (_) async => tempDir,
+        isAutomationEnabled: () => true,
+        js: ScriptedJsRuntime((String code) => const JsRunResult(output: 'x')),
+        npm: _FakeNpm(hasIsoGit: true),
+      );
+      final ToolResult result = await gitExecutor.execute(
+        'git_clone',
+        <String, dynamic>{
+          'url': 'https://github.com/user/repo.git',
+          'destination': '../escape',
+        },
+        sessionId: 'a',
+      );
+      expect(result.ok, isFalse);
+      expect(result.llmOutput, contains('Invalid destination'));
+    });
+  });
+}
+
+/// NpmService fake: reports whether isomorphic-git is already installed and
+/// records installs instead of touching the registry.
+class _FakeNpm extends NpmService {
+  _FakeNpm({required this.hasIsoGit, this.installOk = true})
+    : super(resolveBaseDir: () async => Directory.systemTemp);
+
+  final bool hasIsoGit;
+  final bool installOk;
+  final List<String> installed = <String>[];
+
+  @override
+  Future<List<InstalledModule>> listInstalled() async => hasIsoGit
+      ? <InstalledModule>[
+          InstalledModule(
+            name: 'isomorphic-git',
+            version: '1.25.0',
+            path: '/fake/isomorphic-git',
+          ),
+        ]
+      : const <InstalledModule>[];
+
+  @override
+  Future<NpmInstallResult> install(String name, {String? version}) async {
+    installed.add(name);
+    return NpmInstallResult(
+      ok: installOk,
+      message: installOk ? 'installed $name' : 'registry offline',
+    );
+  }
+}
+
+/// JsRuntime fake that records generated scripts (assertions run on the
+/// isomorphic-git calls) and returns canned results.
+class ScriptedJsRuntime implements JsRuntime {
+  ScriptedJsRuntime(this.respond);
+
+  final JsRunResult Function(String code) respond;
+  final List<String> scripts = <String>[];
+  final List<String?> workingDirs = <String?>[];
+  final List<List<String>> moduleRoots = <List<String>>[];
+
+  @override
+  Future<JsRunResult> run(
+    String code, {
+    List<String> moduleRoots = const <String>[],
+    String? workingDir,
+    Duration timeout = const Duration(seconds: 20),
+  }) async {
+    scripts.add(code);
+    workingDirs.add(workingDir);
+    this.moduleRoots.add(moduleRoots);
+    return respond(code);
+  }
+
+  @override
+  void dispose() {}
 }
 
 /// JsRuntime fake that records workingDir/moduleRoots for isolation tests.

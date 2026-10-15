@@ -129,6 +129,19 @@ OpenAI-compatible: **OpenRouter, InferHub, Z.AI, OpenAI, DeepSeek, Groq, dan lai
 - **Perpustakaan prompt (v1.15.0)** — simpan prompt favorit (judul +
   isi) di **Prompt library** (dari drawer), lalu sisipkan ke composer
   dengan satu ketukan lewat ikon bookmark di bar input.
+- **Tool web_fetch (v1.16.0)** — agent kini bisa mengambil URL langsung
+  (halaman HTML, API JSON, teks) tanpa membuka browser tersemat: script
+  & tag dibuang otomatis, JSON di-*pretty-print*, batas 1 MB + timeout
+  20 detik. User-Agent sama dengan browser tersemat.
+- **Tool git (v1.16.0)** — `git_clone`, `git_status`, `git_commit`,
+  `git_push`, `git_log` bekerja di **workspace sesi aktif** (terisolasi
+  per chat) lewat isomorphic-git di runtime JS tersemat; package
+  terpasang otomatis saat pertama dipakai. Token repo dilewatkan
+  lewat argumen (tidak pernah ditulis ke disk).
+- **Vision hemat payload (v1.16.0)** — gambar terlampir otomatis
+  **diturunkan skalanya** (sisi panjang maks 1568px, rasio terjaga;
+  PNG kecil tetap PNG) sebelum dikirim sebagai data URL, jadi foto
+  resolusi tinggi tidak lagi menggembungkan setiap pesan.
 - **Pencarian + paging universal (v1.6.0)** — SEMUA list di aplikasi memakai
   widget `PagedList` yang sama: **5 item per halaman** (termasuk dropdown model),
   kolom pencarian, pager first/prev/next/last, dan empty state "No results".

@@ -806,13 +806,15 @@ class AppStringsEn implements AppStrings {
   String get aboutSection => 'About';
   @override
   String get aboutBody =>
-      'ZAgents v1.15.0 — an Android clone of the chat.z.ai agent mode UI, '
+      'ZAgents v1.16.0 — an Android clone of the chat.z.ai agent mode UI, '
       'with custom OpenAI-compatible providers (OpenRouter, InferHub, '
       'Z.AI, OpenAI, DeepSeek, Groq, and more), per-provider API keys, '
       'light/dark themes, parallel multi-session chat with background '
       'running, plan-first Todos, one-tap copy on every message, edit & '
       'regenerate messages, global chat search, automatic conversation '
-      'titles, a Prompt Library, session-isolated workspaces (each chat '
+      'titles, a Prompt Library, a web_fetch tool, git tools (clone, '
+      'status, commit, push, log) and automatic image downscaling for '
+      'vision models, session-isolated workspaces (each chat '
       'has its own private file sandbox, like a browser private window), '
       'file uploads with zip extraction including password-protected '
       'archives, a Context Manager, an in-app file manager, and an '
@@ -1380,13 +1382,15 @@ class AppStringsId implements AppStrings {
   String get aboutSection => 'Tentang';
   @override
   String get aboutBody =>
-      'ZAgents v1.15.0 — klon UI agent mode chat.z.ai untuk Android, '
+      'ZAgents v1.16.0 — klon UI agent mode chat.z.ai untuk Android, '
       'dengan custom provider OpenAI-compatible (OpenRouter, InferHub, '
       'Z.AI, OpenAI, DeepSeek, Groq, dan lainnya), API key per-provider, '
       'tema terang/gelap, multi-sesi paralel dengan proses latar '
       'belakang, Todos perencanaan, salin satu ketukan di setiap pesan, '
       'edit & buat ulang pesan, pencarian chat global, judul percakapan '
-      'otomatis, Pustaka Prompt, ruang kerja terisolasi per sesi '
+      'otomatis, Pustaka Prompt, tool web_fetch, tool git (clone, status, '
+      'commit, push, log) dan penurunan skala gambar otomatis untuk model '
+      'vision, ruang kerja terisolasi per sesi '
       '(setiap chat punya sandbox file pribadi, seperti jendela privat '
       'browser), unggah file dengan ekstraksi zip termasuk arsip '
       'terproteksi kata sandi, Manajer Konteks, manajer file, serta '
