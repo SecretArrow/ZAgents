@@ -22,6 +22,24 @@ import '../test/support/test_doubles.dart';
 /// End-to-end flows executed on a real Android emulator via GitHub Actions.
 /// External dependencies (LLM, browser) are replaced with deterministic test doubles
 /// so the suite is fast and hermetic.
+
+/// Scrolls a lazy ListView until [key] is built and visible, then taps it
+/// (dragUntilVisible builds offscreen items; ensureVisible aligns the
+/// exact offset after the language switch reflows the list).
+Future<void> tapScrollable(WidgetTester tester, Key key) async {
+  if (find.byKey(key).evaluate().isEmpty) {
+    await tester.dragUntilVisible(
+      find.byKey(key),
+      find.byType(ListView),
+      const Offset(0, -250),
+    );
+  }
+  await tester.ensureVisible(find.byKey(key));
+  await tester.pumpAndSettle();
+  await tester.tap(find.byKey(key));
+  await tester.pumpAndSettle();
+}
+
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
@@ -155,22 +173,17 @@ void main() {
     expect(find.byType(SettingsScreen), findsOneWidget);
 
     // 5. Language option: English is the default, Bahasa Indonesia switches
-    // the whole UI and the choice persists in settings. The module manager
-    // tile (v1.21.0) shifts section heights, so each language button is
-    // explicitly scrolled into view before tapping.
-    await tester.ensureVisible(find.byKey(const Key('lang-id')));
-    await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const Key('lang-id')));
-    await tester.pumpAndSettle();
+    // the whole UI and the choice persists in settings. The settings list
+    // is lazy and the module manager tile (v1.21.0) shifts section
+    // heights, so each language button may need scrolling (and building)
+    // before it can be tapped.
+    await tapScrollable(tester, const Key('lang-id'));
     expect(find.text('Pengaturan'), findsOneWidget);
     expect(
       ProviderScope.containerOf(context).read(settingsProvider).languageCode,
       'id',
     );
-    await tester.ensureVisible(find.byKey(const Key('lang-en')));
-    await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const Key('lang-en')));
-    await tester.pumpAndSettle();
+    await tapScrollable(tester, const Key('lang-en'));
     expect(find.text('Settings'), findsOneWidget);
     expect(
       ProviderScope.containerOf(context).read(settingsProvider).languageCode,
@@ -353,23 +366,23 @@ module.exports = main();
       'what did the module say?',
     );
     await tester.tap(find.byKey(const Key('send-button')));
-    bool moduleMessageVisible = false;
-    for (int attempt = 0; attempt < 30 && !moduleMessageVisible; attempt++) {
+    // The module message (with its badge) is appended BEFORE the entry
+    // finishes running, so poll for the console OUTPUT text — it only
+    // exists once the real WebView run completed.
+    bool outputVisible = false;
+    for (int attempt = 0; attempt < 60 && !outputVisible; attempt++) {
       await tester.runAsync(
         () => Future<void>.delayed(const Duration(milliseconds: 500)),
       );
       await tester.pumpAndSettle();
-      moduleMessageVisible = find
-          .byKey(const Key('module-badge-e2e-module'))
+      outputVisible = find
+          .textContaining('Hello from the module! count=1')
           .evaluate()
           .isNotEmpty;
     }
-    expect(moduleMessageVisible, isTrue);
-    expect(
-      find.textContaining('Hello from the module! count=1'),
-      findsOneWidget,
-    );
+    expect(outputVisible, isTrue, reason: 'module entry output never appeared');
     expect(find.textContaining('chat emit works'), findsOneWidget);
+    expect(find.byKey(const Key('module-badge-e2e-module')), findsOneWidget);
     expect(container.read(chatControllerProvider).activeModules, <String>[
       'e2e-module',
     ]);
