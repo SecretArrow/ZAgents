@@ -386,12 +386,40 @@ module.exports = main();
         .where((ChatMessage m) => m.moduleName == 'e2e-module')
         .map((ChatMessage m) => m.content)
         .join(' ||| ');
+
+    // Direct probe on a FRESH runtime (bypasses the UI and any queue the
+    // controller's run may still hold) — pins the failure to the runtime
+    // or the controller path.
+    final ModuleRuntime probeRuntime = ModuleRuntime(
+      js: WebViewJsRuntime(),
+      resolveSandboxRoot: sandbox.rootFor,
+      resolveModulePath: (String name) async =>
+          (await registry.get(name))?.path,
+      resolveSdkSource: () async =>
+          rootBundle.loadString('assets/modules/zagents-sdk.js'),
+      resolveNpmModulesRoot: () async =>
+          '${tempDir.path}${Platform.pathSeparator}node_modules',
+    );
+    final ModuleRunResult probe = (await tester.runAsync(
+      () => probeRuntime.run(
+        sessionId: 'probe-session',
+        module: installed.module!,
+        granted: installed.module!.manifest.permissions,
+      ),
+    ))!;
+    debugPrint(
+      'PROBE ok=${probe.ok} terminated=${probe.terminated} '
+      'error=${probe.error} result=${probe.result} '
+      'output=[${probe.output}]',
+    );
+
     expect(
       outputVisible,
       isTrue,
       reason:
           'module entry output never appeared. Module message content: '
-          '"$moduleContent"',
+          '"$moduleContent" PROBE ok=${probe.ok} error=${probe.error} '
+          'output=[${probe.output}]',
     );
     expect(find.textContaining('chat emit works'), findsOneWidget);
     expect(find.byKey(const Key('module-badge-e2e-module')), findsOneWidget);
