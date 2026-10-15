@@ -9,11 +9,11 @@ import 'package:zagents/models/models.dart';
 import 'package:zagents/services/model_catalog.dart';
 import 'package:zagents/ui/widgets/model_picker.dart';
 
-import '../../test/fakes/fakes.dart';
+import '../../test/support/test_doubles.dart';
 
 /// Scripted catalog: returns [models] or throws [error].
-class FakeModelCatalog implements ModelCatalogClient {
-  FakeModelCatalog({this.models = const <RemoteModel>[], this.error});
+class ScriptedModelCatalog implements ModelCatalogClient {
+  ScriptedModelCatalog({this.models = const <RemoteModel>[], this.error});
 
   final List<RemoteModel> models;
   final Object? error;
@@ -73,7 +73,7 @@ void main() {
 
   Future<ProviderContainer> openSheet(
     WidgetTester tester, {
-    required FakeModelCatalog catalog,
+    required ScriptedModelCatalog catalog,
     AppSettings? settings,
   }) async {
     late ProviderContainer container;
@@ -114,7 +114,10 @@ void main() {
   testWidgets('fetches and lists the live catalog with paging', (
     WidgetTester tester,
   ) async {
-    await openSheet(tester, catalog: FakeModelCatalog(models: bigCatalog()));
+    await openSheet(
+      tester,
+      catalog: ScriptedModelCatalog(models: bigCatalog()),
+    );
 
     // Page 1 of 5: indicator shown, first item visible, page-2 item absent.
     expect(inSheet(find.byKey(const Key('model-list-page-0'))), findsOneWidget);
@@ -148,7 +151,7 @@ void main() {
   ) async {
     await openSheet(
       tester,
-      catalog: FakeModelCatalog(
+      catalog: ScriptedModelCatalog(
         models: <RemoteModel>[
           m('z-ai/glm-4.6', name: 'Z.AI: GLM 4.6'),
           m('google/gemini-2.5-pro', name: 'Gemini 2.5 Pro'),
@@ -193,7 +196,7 @@ void main() {
   testWidgets('filter chips narrow the catalog', (WidgetTester tester) async {
     await openSheet(
       tester,
-      catalog: FakeModelCatalog(
+      catalog: ScriptedModelCatalog(
         models: <RemoteModel>[
           m('paid/tool-model', tools: true),
           m('paid/plain-model'),
@@ -238,7 +241,7 @@ void main() {
   ) async {
     final ProviderContainer container = await openSheet(
       tester,
-      catalog: FakeModelCatalog(
+      catalog: ScriptedModelCatalog(
         models: <RemoteModel>[m('chosen/model-1'), m('chosen/model-2')],
       ),
     );
@@ -258,7 +261,7 @@ void main() {
   testWidgets('without an API key shows the hint and offline suggestions', (
     WidgetTester tester,
   ) async {
-    final FakeModelCatalog catalog = FakeModelCatalog(
+    final ScriptedModelCatalog catalog = ScriptedModelCatalog(
       models: <RemoteModel>[m('should/not-be-fetched')],
     );
     await openSheet(
@@ -288,7 +291,7 @@ void main() {
   testWidgets('fetch failure shows error card with retry and suggestions', (
     WidgetTester tester,
   ) async {
-    final FakeModelCatalog catalog = FakeModelCatalog(
+    final ScriptedModelCatalog catalog = ScriptedModelCatalog(
       error: ModelCatalogException('Unauthorized — check the API key.'),
     );
     await openSheet(tester, catalog: catalog);
@@ -308,7 +311,7 @@ void main() {
     );
     expect(inSheet(find.text('z-ai/glm-4.6')), findsOneWidget);
 
-    // Retry re-invokes the catalog; the fake still throws, so the error
+    // Retry re-invokes the catalog; the scripted double still throws, so the error
     // card remains visible.
     await tester.tap(find.byKey(const Key('model-retry-button')));
     await tester.pumpAndSettle(
@@ -328,7 +331,9 @@ void main() {
   ) async {
     final ProviderContainer localContainer = await openSheet(
       tester,
-      catalog: FakeModelCatalog(models: <RemoteModel>[m('inferhub/model-1')]),
+      catalog: ScriptedModelCatalog(
+        models: <RemoteModel>[m('inferhub/model-1')],
+      ),
       settings: AppSettings(
         providerName: 'InferHub',
         baseUrl: 'https://api.inferhub.dev/v1',
@@ -351,7 +356,7 @@ void main() {
   ) async {
     final ProviderContainer localContainer = await openSheet(
       tester,
-      catalog: FakeModelCatalog(
+      catalog: ScriptedModelCatalog(
         models: <RemoteModel>[m('vendor/fresh-1'), m('vendor/fresh-2')],
       ),
     );
@@ -378,7 +383,7 @@ void main() {
   testWidgets('when the fetch fails, the cached provider list is shown', (
     WidgetTester tester,
   ) async {
-    final FakeModelCatalog catalog = FakeModelCatalog(
+    final ScriptedModelCatalog catalog = ScriptedModelCatalog(
       error: ModelCatalogException('Offline.'),
     );
     await openSheet(
@@ -425,7 +430,7 @@ void main() {
   ) async {
     await openSheet(
       tester,
-      catalog: FakeModelCatalog(),
+      catalog: ScriptedModelCatalog(),
       settings: AppSettings(apiKey: '', model: 'default/model-x'),
     );
 

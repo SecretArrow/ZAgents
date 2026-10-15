@@ -16,14 +16,14 @@ import 'package:zagents/services/llm_client.dart';
 import 'package:zagents/services/prompt_repository.dart';
 import 'package:zagents/services/settings_repository.dart';
 
-/// Minimal valid 1x1 PNG used as fake screenshot bytes.
+/// Minimal valid 1x1 PNG used as scripted screenshot bytes.
 const String tinyPngBase64 =
     'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
 
 /// Scripted LLM client for tests: returns queued turns in order
 /// (last turn repeats when the queue is exhausted).
-class FakeLlmClient implements LlmClient {
-  FakeLlmClient(this.turns, {this.onFirstDelta, this.onTurnComplete});
+class ScriptedLlmClient implements LlmClient {
+  ScriptedLlmClient(this.turns, {this.onFirstDelta, this.onTurnComplete});
 
   final List<AssistantTurn> turns;
   int _index = 0;
@@ -81,11 +81,13 @@ class FakeLlmClient implements LlmClient {
   }
 }
 
-/// Recording fake browser for tests. Screenshot writes a tiny PNG to disk
-/// when [writeScreenshot] is true (real IO — only safe outside fake-async);
-/// otherwise it returns a path without touching the filesystem.
-class FakeBrowserAutomation implements BrowserAutomation {
-  FakeBrowserAutomation(this.saveDir, {this.writeScreenshot = true});
+/// Scripted browser for tests: records every call and returns
+/// deterministic page data. Screenshot writes a tiny PNG to disk
+/// when [writeScreenshot] is true (real IO — only safe outside the async
+/// test zone); otherwise it returns a path without touching the
+/// filesystem.
+class ScriptedBrowserAutomation implements BrowserAutomation {
+  ScriptedBrowserAutomation(this.saveDir, {this.writeScreenshot = true});
 
   final String saveDir;
   final bool writeScreenshot;
@@ -146,7 +148,7 @@ class FakeBrowserAutomation implements BrowserAutomation {
   }) async {
     calls.add('screenshot');
     final String path =
-        '$saveDir${Platform.pathSeparator}fake_shot_${DateTime.now().microsecondsSinceEpoch}.png';
+        '$saveDir${Platform.pathSeparator}test_shot_${DateTime.now().microsecondsSinceEpoch}.png';
     if (!writeScreenshot) return path;
     final Directory dir = Directory(saveDir);
     if (!dir.existsSync()) dir.createSync(recursive: true);
@@ -186,9 +188,10 @@ class FakeBrowserAutomation implements BrowserAutomation {
   void dispose() {}
 }
 
-/// ChatStore fake whose [load]/[delete] throw — proves the chat controller
-/// converts storage failures into localized error messages instead of
-/// crashing (these futures are invoked without await from the UI).
+/// ChatStore test double whose [load]/[delete] throw — proves the chat
+/// controller converts storage failures into localized error messages
+/// instead of crashing (these futures are invoked without await from the
+/// UI).
 class ThrowingChatStore implements ChatStore {
   @override
   Future<Directory> Function() get resolveBaseDir => _explode;
@@ -208,11 +211,18 @@ class ThrowingChatStore implements ChatStore {
     required String id,
     required String title,
     required List<ChatMessage> messages,
+    List<String> modules = const <String>[],
   }) async {}
 
   @override
   Future<List<ChatMessage>?> load(String id) async =>
       throw const FileSystemException('disk exploded');
+
+  @override
+  Future<List<String>> loadModules(String id) async => const <String>[];
+
+  @override
+  Future<void> saveModules(String id, List<String> modules) async {}
 
   @override
   Future<void> delete(String id) async =>
@@ -223,7 +233,7 @@ class ThrowingChatStore implements ChatStore {
       throw const FileSystemException('disk exploded');
 }
 
-/// Browser fake whose every method throws — used to prove the tool
+/// Browser test double whose every method throws — used to prove the tool
 /// executor degrades platform failures into error results instead of
 /// crashing the agent loop.
 class ThrowingBrowserAutomation implements BrowserAutomation {
@@ -285,9 +295,9 @@ class ThrowingBrowserAutomation implements BrowserAutomation {
   void dispose() {}
 }
 
-/// Recording fake for the background-run hold: captures every call so
-/// tests can assert the foreground service is started/stopped around the
-/// agent loop and receives per-step progress updates.
+/// Recording test double for the background-run hold: captures every call
+/// so tests can assert the foreground service is started/stopped around
+/// the agent loop and receives per-step progress updates.
 class RecordingBackgroundRun implements BackgroundRun {
   final List<String> calls = <String>[];
   bool _active = false;
@@ -336,9 +346,58 @@ class RecordingBackgroundRun implements BackgroundRun {
   }
 }
 
+/// Scripted JS runtime for tests: records executed code and module
+/// invocations instead of spinning up a WebView, returning either queued
+/// results or a fixed [nextResult].
+class ScriptedJsRuntime implements JsRuntime {
+  ScriptedJsRuntime([this.nextResult]);
+
+  JsRunResult? nextResult;
+
+  /// Queue of results consumed by [run]/[runModule] before falling back
+  /// to [nextResult] (which itself defaults to a successful no-op).
+  final List<JsRunResult> resultQueue = <JsRunResult>[];
+
+  final List<String> runs = <String>[];
+
+  /// Every module invocation captured by [runModule], in order.
+  final List<ModuleInvocation> moduleInvocations = <ModuleInvocation>[];
+
+  /// Optional async hook awaited INSIDE [runModule] while the caller's
+  /// execution context is still live — lets tests drive the module bridge
+  /// exactly like a real serialized execution would.
+  Future<void> Function(ModuleInvocation invocation)? onModuleInvocation;
+
+  JsRunResult _pop() {
+    if (resultQueue.isNotEmpty) return resultQueue.removeAt(0);
+    return nextResult ?? JsRunResult(output: 'ok', result: '"ok"');
+  }
+
+  @override
+  Future<JsRunResult> run(
+    String code, {
+    List<String> moduleRoots = const <String>[],
+    String? workingDir,
+    Duration timeout = const Duration(seconds: 20),
+  }) async {
+    runs.add(code);
+    return _pop();
+  }
+
+  @override
+  Future<JsRunResult> runModule(ModuleInvocation invocation) async {
+    moduleInvocations.add(invocation);
+    await onModuleInvocation?.call(invocation);
+    return _pop();
+  }
+
+  @override
+  void dispose() {}
+}
+
 /// Standard test overrides for the app's provider scope.
 ///
-/// Set [writeScreenshots] to false for widget tests: the fake-async zone
+/// Set [writeScreenshots] to false for widget tests: the async test zone
 /// cannot complete real file IO or image codec decoding.
 /// In-memory SharedPreferences stand-in: AppLockService only needs
 /// getString/setString/remove; everything else is explicitly unsupported.
@@ -365,7 +424,8 @@ class _MemoryPrefs implements SharedPreferences {
       throw UnsupportedError('not used in tests');
 }
 
-/// Biometric fake for widget tests: never available, never prompts.
+/// Biometric test double for widget tests: never available, never
+/// prompts.
 class _LockedOutBiometric implements BiometricAuth {
   @override
   Future<bool> canAuthenticate() async => false;
@@ -381,7 +441,7 @@ List<Override> testOverrides({
   bool writeScreenshots = true,
   List<ContextEntry>? contexts,
   List<PromptEntry>? prompts,
-  FakeJsRuntime? js,
+  ScriptedJsRuntime? js,
 }) => <Override>[
   settingsRepositoryProvider.overrideWithValue(
     MemorySettingsRepository(settings),
@@ -392,9 +452,9 @@ List<Override> testOverrides({
   promptRepositoryProvider.overrideWithValue(MemoryPromptRepository(prompts)),
   documentsDirProvider.overrideWithValue(() async => dir),
   if (llm != null) llmClientProvider.overrideWithValue(llm),
-  // Widget tests run in a fake-async zone: awaiting the real method
+  // Widget tests run in an async test zone: awaiting the real method
   // channel would hang forever (the engine reply never arrives inside
-  // the zone). Always plug in the recording fake instead; tests that
+  // the zone). Always plug in the recording double instead; tests that
   // assert on the background hold override it again explicitly.
   backgroundRunServiceProvider.overrideWithValue(RecordingBackgroundRun()),
   appLockServiceProvider.overrideWith(
@@ -402,12 +462,13 @@ List<Override> testOverrides({
         AppLockService(prefs: _MemoryPrefs(), biometric: _LockedOutBiometric()),
   ),
   browserAutomationProvider.overrideWithValue(
-    FakeBrowserAutomation(
+    ScriptedBrowserAutomation(
       '${dir.path}${Platform.pathSeparator}shots',
       writeScreenshot: writeScreenshots,
     ),
   ),
   // The real JS runtime spins up a headless WebView — never available in
-  // the test zone. Every test gets a deterministic fake by default.
-  jsRuntimeProvider.overrideWithValue(js ?? FakeJsRuntime()),
+  // the test zone. Every test gets a deterministic scripted double by
+  // default.
+  jsRuntimeProvider.overrideWithValue(js ?? ScriptedJsRuntime()),
 ];

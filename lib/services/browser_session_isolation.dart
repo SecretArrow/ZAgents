@@ -93,7 +93,7 @@ class BrowserState {
 /// state in memory only (legacy/global surface).
 ///
 /// All disk IO is synchronous on purpose (see session_sandbox.dart): async
-/// directory scans never complete inside fake-async widget tests.
+/// directory scans never complete inside async-test widget tests.
 class BrowserStateStore {
   BrowserStateStore({required this.rootFor});
 

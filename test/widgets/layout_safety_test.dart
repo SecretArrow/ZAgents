@@ -8,8 +8,8 @@ import 'package:zagents/main.dart';
 import 'package:zagents/models/models.dart';
 import 'package:zagents/services/model_catalog.dart';
 
-import '../fakes/fakes.dart';
-import 'model_picker_test.dart' show FakeModelCatalog;
+import '../support/test_doubles.dart';
+import 'model_picker_test.dart' show ScriptedModelCatalog;
 
 /// Layout-safety regression tests: the app must render without layout
 /// overflows (RenderFlex exceptions) on small screens and with long model
@@ -103,7 +103,7 @@ void main() {
         settings: AppSettings(apiKey: 'k', model: 'z-ai/glm-4.6'),
         extra: <Override>[
           modelCatalogProvider.overrideWithValue(
-            FakeModelCatalog(
+            ScriptedModelCatalog(
               models: <RemoteModel>[
                 for (var i = 0; i < 25; i++)
                   RemoteModel(

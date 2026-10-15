@@ -1,20 +1,26 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:archive/archive.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:zagents/di.dart';
 import 'package:zagents/main.dart';
 import 'package:zagents/models/models.dart';
+import 'package:zagents/services/js_runtime.dart';
 import 'package:zagents/services/llm_client.dart';
+import 'package:zagents/services/module_registry.dart';
+import 'package:zagents/services/module_runtime.dart';
+import 'package:zagents/services/session_sandbox.dart';
 import 'package:zagents/ui/screens/settings_screen.dart';
 
-import '../test/fakes/fakes.dart';
+import '../test/support/test_doubles.dart';
 
 /// End-to-end flows executed on a real Android emulator via GitHub Actions.
-/// External dependencies (LLM, browser) are replaced with deterministic fakes
+/// External dependencies (LLM, browser) are replaced with deterministic test doubles
 /// so the suite is fast and hermetic.
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
@@ -27,7 +33,7 @@ void main() {
       () => Directory.systemTemp.createTemp('zagents_e2e'),
     ))!;
 
-    final FakeLlmClient llm = FakeLlmClient(<AssistantTurn>[
+    final ScriptedLlmClient llm = ScriptedLlmClient(<AssistantTurn>[
       AssistantTurn(
         content: '',
         toolCalls: <ToolCallRequest>[
@@ -221,6 +227,181 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('ua-mode-dropdown')), findsOneWidget);
     expect(find.byKey(const Key('ua-rotate-button')), findsOneWidget);
+
+    try {
+      await tester.runAsync(() => tempDir.delete(recursive: true));
+    } catch (_) {}
+  });
+
+  testWidgets('e2e: module installs from ZIP, runs on the real embedded '
+      'runtime with the zagents SDK, and stays per-chat isolated', (
+    WidgetTester tester,
+  ) async {
+    final Directory tempDir = (await tester.runAsync<Directory>(
+      () => Directory.systemTemp.createTemp('zagents_e2e_module'),
+    ))!;
+
+    // -- 1. Build a module ZIP on disk (real IO). -------------------------
+    const String manifestJson =
+        '{"name":"e2e-module","version":"1.0.0","title":"E2E Module",'
+        '"description":"Counts activations per chat",'
+        '"permissions":["storage","chat"],"entry":"main.js"}';
+    const String entrySource = '''
+async function main() {
+  const previous = (await zagents.storage.get('count')) || 0;
+  await zagents.storage.set('count', previous + 1);
+  zagents.log('Hello from the module! count=' + (previous + 1));
+  await zagents.chat.emit('chat emit works');
+  return { count: previous + 1 };
+}
+module.exports = main();
+''';
+    final File zipFile = File(
+      '${tempDir.path}${Platform.pathSeparator}e2e-module.zip',
+    );
+    await tester.runAsync(() async {
+      final Archive archive = Archive()
+        ..addFile(
+          ArchiveFile(
+            'module.json',
+            utf8.encode(manifestJson).length,
+            utf8.encode(manifestJson),
+          ),
+        )
+        ..addFile(
+          ArchiveFile(
+            'main.js',
+            utf8.encode(entrySource).length,
+            utf8.encode(entrySource),
+          ),
+        );
+      zipFile.writeAsBytesSync(ZipEncoder().encode(archive));
+    });
+
+    // -- 2. App with the REAL registry + REAL WebView-backed runtime. ----
+    final ModuleRegistry registry = ModuleRegistry(
+      resolveBaseDir: () async => tempDir,
+    );
+    final ModuleInstallResult installed = (await tester.runAsync(
+      () => registry.installFromZip(zipFile.path),
+    ))!;
+    expect(installed.ok, isTrue, reason: installed.message);
+
+    final ScriptedLlmClient llm = ScriptedLlmClient(<AssistantTurn>[
+      AssistantTurn(content: 'Module output acknowledged.'),
+    ]);
+    final SessionSandbox sandbox = SessionSandbox(
+      resolveDocumentsDir: () async => tempDir,
+    );
+
+    final ProviderContainer container = ProviderContainer(
+      overrides: <Override>[
+        ...testOverrides(
+          llm: llm,
+          dir: tempDir,
+          settings: AppSettings(apiKey: 'e2e-key', autoTitle: false),
+          writeScreenshots: false,
+        ),
+        moduleRegistryProvider.overrideWithValue(registry),
+        moduleRuntimeProvider.overrideWith(
+          (Ref ref) => ModuleRuntime(
+            // The REAL hidden-WebView runtime: exercises the module
+            // bootstrap, the zagents SDK global and the Dart bridge.
+            js: SerializedJsRuntime(WebViewJsRuntime()),
+            resolveSandboxRoot: sandbox.rootFor,
+            resolveModulePath: (String name) async =>
+                (await registry.get(name))?.path,
+            resolveSdkSource: () async =>
+                rootBundle.loadString('assets/modules/zagents-sdk.js'),
+            resolveNpmModulesRoot: () async =>
+                '${tempDir.path}${Platform.pathSeparator}node_modules',
+          ),
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: const ZAgentsApp(),
+      ),
+    );
+    await tester.pumpAndSettle(const Duration(seconds: 1));
+
+    // -- 3. /plugins e2e-module → consent → activation on a new chat. ----
+    await tester.enterText(
+      find.byKey(const Key('composer-field')),
+      '/plugins e2e-module',
+    );
+    await tester.tap(find.byKey(const Key('send-button')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('module-permission-allow')), findsOneWidget);
+    await tester.tap(find.byKey(const Key('module-permission-allow')));
+
+    // The entry point runs on the real WebView — poll for its output.
+    bool outputVisible = false;
+    for (int attempt = 0; attempt < 20 && !outputVisible; attempt++) {
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 500)),
+      );
+      await tester.pumpAndSettle();
+      outputVisible = find
+          .textContaining('Hello from the module! count=1')
+          .evaluate()
+          .isNotEmpty;
+    }
+    expect(outputVisible, isTrue, reason: 'module entry output never appeared');
+    expect(find.textContaining('chat emit works'), findsOneWidget);
+    expect(container.read(chatControllerProvider).pendingModule, 'e2e-module');
+    expect(
+      container.read(chatControllerProvider).activeModules,
+      isEmpty, // draft: staged, not yet active
+    );
+
+    // -- 4. First message: module activates with the transcript reading
+    //       user → module output → assistant reply. ----------------------
+    await tester.enterText(
+      find.byKey(const Key('composer-field')),
+      'what did the module say?',
+    );
+    await tester.tap(find.byKey(const Key('send-button')));
+    bool moduleMessageVisible = false;
+    for (int attempt = 0; attempt < 20 && !moduleMessageVisible; attempt++) {
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 500)),
+      );
+      await tester.pumpAndSettle();
+      moduleMessageVisible = find
+          .byKey(const Key('module-badge-e2e-module'))
+          .evaluate()
+          .isNotEmpty;
+    }
+    expect(moduleMessageVisible, isTrue);
+    expect(
+      find.textContaining('Hello from the module! count=1'),
+      findsOneWidget,
+    );
+    expect(container.read(chatControllerProvider).activeModules, <String>[
+      'e2e-module',
+    ]);
+
+    // Per-chat state was materialized inside the session sandbox.
+    final Directory instanceDir = (await tester.runAsync(
+      () => sandbox
+          .rootFor(container.read(chatControllerProvider).sessionId!)
+          .then(
+            (Directory root) => Directory(
+              '${root.path}${Platform.pathSeparator}modules'
+              '${Platform.pathSeparator}e2e-module',
+            ),
+          ),
+    ))!;
+    expect(instanceDir.existsSync(), isTrue);
+    final File storage = File(
+      '${instanceDir.path}${Platform.pathSeparator}storage.json',
+    );
+    expect(storage.existsSync(), isTrue);
+    expect(storage.readAsStringSync(), contains('"count":1'));
 
     try {
       await tester.runAsync(() => tempDir.delete(recursive: true));

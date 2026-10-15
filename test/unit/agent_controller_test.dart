@@ -11,7 +11,7 @@ import 'package:zagents/services/agent_controller.dart';
 import 'package:zagents/services/background_service.dart';
 import 'package:zagents/services/llm_client.dart';
 
-import '../fakes/fakes.dart';
+import '../support/test_doubles.dart';
 
 Future<ProviderContainer> _container(
   List<AssistantTurn> turns,
@@ -20,7 +20,7 @@ Future<ProviderContainer> _container(
 }) async {
   final ProviderContainer container = ProviderContainer(
     overrides: testOverrides(
-      llm: FakeLlmClient(turns),
+      llm: ScriptedLlmClient(turns),
       dir: dir,
       settings: settings ?? AppSettings(apiKey: 'test-key', autoTitle: false),
     ),
@@ -147,7 +147,7 @@ void main() {
   });
 
   test('maxSteps bounds the number of LLM turns (runUntilDone off)', () async {
-    final FakeLlmClient fake = FakeLlmClient(<AssistantTurn>[
+    final ScriptedLlmClient scripted = ScriptedLlmClient(<AssistantTurn>[
       AssistantTurn(
         content: '',
         toolCalls: <ToolCallRequest>[
@@ -161,7 +161,7 @@ void main() {
     ]);
     final ProviderContainer container = ProviderContainer(
       overrides: testOverrides(
-        llm: fake,
+        llm: scripted,
         dir: tempDir,
         settings: AppSettings(
           apiKey: 'k',
@@ -174,7 +174,7 @@ void main() {
     addTearDown(container.dispose);
 
     await container.read(chatControllerProvider.notifier).send('loop terus');
-    expect(fake.calls, hasLength(2)); // exactly maxSteps turns
+    expect(scripted.calls, hasLength(2)); // exactly maxSteps turns
     final ChatState state = container.read(chatControllerProvider);
     expect(state.isRunning, isFalse);
     expect(state.error, isNull);
@@ -183,7 +183,7 @@ void main() {
   test(
     'sending to an opened history chat continues it instead of forking',
     () async {
-      final FakeLlmClient llm = FakeLlmClient(<AssistantTurn>[
+      final ScriptedLlmClient llm = ScriptedLlmClient(<AssistantTurn>[
         AssistantTurn(content: 'first reply'),
       ]);
       final ProviderContainer container = ProviderContainer(
@@ -284,7 +284,7 @@ void main() {
   );
 
   test('runUntilDone ignores maxSteps and works to the final answer', () async {
-    final FakeLlmClient llm = FakeLlmClient(<AssistantTurn>[
+    final ScriptedLlmClient llm = ScriptedLlmClient(<AssistantTurn>[
       AssistantTurn(
         content: '',
         toolCalls: <ToolCallRequest>[
@@ -341,7 +341,7 @@ void main() {
   });
 
   test('maxSteps cap with runUntilDone=false appends a visible note', () async {
-    final FakeLlmClient llm = FakeLlmClient(<AssistantTurn>[
+    final ScriptedLlmClient llm = ScriptedLlmClient(<AssistantTurn>[
       AssistantTurn(
         content: '',
         toolCalls: <ToolCallRequest>[
@@ -412,7 +412,7 @@ void main() {
     final ProviderContainer container = ProviderContainer(
       overrides: <Override>[
         ...testOverrides(
-          llm: FakeLlmClient(<AssistantTurn>[AssistantTurn(content: 'ok')]),
+          llm: ScriptedLlmClient(<AssistantTurn>[AssistantTurn(content: 'ok')]),
           dir: tempDir,
           settings: AppSettings(apiKey: 'test-key', autoTitle: false),
         ),
@@ -440,7 +440,9 @@ void main() {
       final ProviderContainer container = ProviderContainer(
         overrides: <Override>[
           ...testOverrides(
-            llm: FakeLlmClient(<AssistantTurn>[AssistantTurn(content: 'ok')]),
+            llm: ScriptedLlmClient(<AssistantTurn>[
+              AssistantTurn(content: 'ok'),
+            ]),
             dir: tempDir,
             settings: AppSettings(apiKey: 'test-key', autoTitle: false),
           ),
@@ -460,7 +462,7 @@ void main() {
     final ProviderContainer container = ProviderContainer(
       overrides: <Override>[
         ...testOverrides(
-          llm: FakeLlmClient(<AssistantTurn>[
+          llm: ScriptedLlmClient(<AssistantTurn>[
             AssistantTurn(
               content: '',
               toolCalls: <ToolCallRequest>[
@@ -529,7 +531,7 @@ void main() {
   test('stop during streaming aborts the turn and marks it stopped', () async {
     final RecordingBackgroundRun background = RecordingBackgroundRun();
     late final ProviderContainer container;
-    final FakeLlmClient llm = FakeLlmClient(
+    final ScriptedLlmClient llm = ScriptedLlmClient(
       <AssistantTurn>[AssistantTurn(content: 'a long answer')],
       // Stop the run as soon as the first token arrives.
       onFirstDelta: () =>
@@ -564,7 +566,7 @@ void main() {
 
   test('stop between steps prevents the next LLM call', () async {
     late final ProviderContainer container;
-    final FakeLlmClient llm = FakeLlmClient(
+    final ScriptedLlmClient llm = ScriptedLlmClient(
       <AssistantTurn>[
         AssistantTurn(
           content: '',
@@ -610,7 +612,7 @@ void main() {
     final ProviderContainer container = ProviderContainer(
       overrides: <Override>[
         ...testOverrides(
-          llm: FakeLlmClient(<AssistantTurn>[AssistantTurn(content: 'ok')]),
+          llm: ScriptedLlmClient(<AssistantTurn>[AssistantTurn(content: 'ok')]),
           dir: tempDir,
           settings: AppSettings(
             apiKey: 'k',
@@ -630,7 +632,7 @@ void main() {
   test(
     'enabled context entries are injected into the system message',
     () async {
-      final FakeLlmClient llm = FakeLlmClient(<AssistantTurn>[
+      final ScriptedLlmClient llm = ScriptedLlmClient(<AssistantTurn>[
         AssistantTurn(content: 'ok'),
       ]);
       final ProviderContainer container = ProviderContainer(
@@ -666,7 +668,7 @@ void main() {
   );
 
   test('text attachments travel inline in the user wire message', () async {
-    final FakeLlmClient llm = FakeLlmClient(<AssistantTurn>[
+    final ScriptedLlmClient llm = ScriptedLlmClient(<AssistantTurn>[
       AssistantTurn(content: 'parsed'),
     ]);
     final ProviderContainer container = ProviderContainer(
@@ -703,7 +705,7 @@ void main() {
   });
 
   test('image attachments become OpenAI vision content parts', () async {
-    final FakeLlmClient llm = FakeLlmClient(<AssistantTurn>[
+    final ScriptedLlmClient llm = ScriptedLlmClient(<AssistantTurn>[
       AssistantTurn(content: 'nice picture'),
     ]);
     final ProviderContainer container = ProviderContainer(
@@ -872,7 +874,7 @@ void main() {
     test(
       'premature final answer is nudged until every todo is completed',
       () async {
-        final FakeLlmClient llm = FakeLlmClient(<AssistantTurn>[
+        final ScriptedLlmClient llm = ScriptedLlmClient(<AssistantTurn>[
           // 1. The model writes the plan.
           AssistantTurn(
             content: '',
@@ -980,7 +982,7 @@ void main() {
     );
 
     test('a completed plan does not trigger the nudge', () async {
-      final FakeLlmClient llm = FakeLlmClient(<AssistantTurn>[
+      final ScriptedLlmClient llm = ScriptedLlmClient(<AssistantTurn>[
         AssistantTurn(
           content: '',
           toolCalls: <ToolCallRequest>[
@@ -1018,7 +1020,7 @@ void main() {
     });
 
     test('planFirst=false: no todo tool, no addendum, no nudge', () async {
-      final FakeLlmClient llm = FakeLlmClient(<AssistantTurn>[
+      final ScriptedLlmClient llm = ScriptedLlmClient(<AssistantTurn>[
         AssistantTurn(
           content: '',
           toolCalls: <ToolCallRequest>[
@@ -1076,7 +1078,7 @@ void main() {
     test(
       'planFirst=true: todo_write is the first tool + prompt addendum',
       () async {
-        final FakeLlmClient llm = FakeLlmClient(<AssistantTurn>[
+        final ScriptedLlmClient llm = ScriptedLlmClient(<AssistantTurn>[
           AssistantTurn(content: 'ok'),
         ]);
         final ProviderContainer container = ProviderContainer(
@@ -1106,7 +1108,7 @@ void main() {
 
   group('binary attachments expose their documents path', () {
     test('zip attachments advertise the uploads path + unzip_file hint on the wire', () async {
-      final FakeLlmClient llm = FakeLlmClient(<AssistantTurn>[
+      final ScriptedLlmClient llm = ScriptedLlmClient(<AssistantTurn>[
         AssistantTurn(content: 'extracted'),
       ]);
       final ProviderContainer container = ProviderContainer(
@@ -1154,7 +1156,7 @@ void main() {
     });
 
     test('non-zip binaries get the generic processing hint', () async {
-      final FakeLlmClient llm = FakeLlmClient(<AssistantTurn>[
+      final ScriptedLlmClient llm = ScriptedLlmClient(<AssistantTurn>[
         AssistantTurn(content: 'noted'),
       ]);
       final ProviderContainer container = ProviderContainer(
@@ -1193,7 +1195,7 @@ void main() {
     });
 
     test('agent tool list includes zip_file and unzip_file', () async {
-      final FakeLlmClient llm = FakeLlmClient(<AssistantTurn>[
+      final ScriptedLlmClient llm = ScriptedLlmClient(<AssistantTurn>[
         AssistantTurn(content: 'ok'),
       ]);
       final ProviderContainer container = ProviderContainer(
@@ -1219,7 +1221,7 @@ void main() {
     test('truncates history after the message and re-runs the loop', () async {
       final File dataFile = File('${tempDir.path}/numbers.csv');
       await dataFile.writeAsString('a,b\n1,2');
-      final FakeLlmClient llm = FakeLlmClient(<AssistantTurn>[
+      final ScriptedLlmClient llm = ScriptedLlmClient(<AssistantTurn>[
         AssistantTurn(content: 'first answer'),
         AssistantTurn(content: 'EDITED ANSWER MARKER'),
       ]);
@@ -1288,7 +1290,7 @@ void main() {
     });
 
     test('works on a session freshly opened from history', () async {
-      final FakeLlmClient llm = FakeLlmClient(<AssistantTurn>[
+      final ScriptedLlmClient llm = ScriptedLlmClient(<AssistantTurn>[
         AssistantTurn(content: 'old answer'),
         AssistantTurn(content: 'new answer'),
       ]);
@@ -1319,7 +1321,7 @@ void main() {
     });
 
     test('guards: wrong role, unknown session, bad index', () async {
-      final FakeLlmClient llm = FakeLlmClient(<AssistantTurn>[
+      final ScriptedLlmClient llm = ScriptedLlmClient(<AssistantTurn>[
         AssistantTurn(content: 'answer'),
       ]);
       final ProviderContainer container = ProviderContainer(
@@ -1377,7 +1379,7 @@ void main() {
 
   group('regenerate (v1.15.0)', () {
     test('drops only the trailing assistant answer and re-runs', () async {
-      final FakeLlmClient llm = FakeLlmClient(<AssistantTurn>[
+      final ScriptedLlmClient llm = ScriptedLlmClient(<AssistantTurn>[
         AssistantTurn(content: 'first answer'),
         AssistantTurn(content: 'REGENERATED MARKER'),
       ]);
@@ -1420,7 +1422,7 @@ void main() {
     });
 
     test('returns false without a user message or unknown session', () async {
-      final FakeLlmClient llm = FakeLlmClient(<AssistantTurn>[
+      final ScriptedLlmClient llm = ScriptedLlmClient(<AssistantTurn>[
         AssistantTurn(content: 'answer'),
       ]);
       final ProviderContainer container = ProviderContainer(
@@ -1494,7 +1496,7 @@ void main() {
     });
 
     test('disabled setting makes exactly one LLM call', () async {
-      final FakeLlmClient llm = FakeLlmClient(<AssistantTurn>[
+      final ScriptedLlmClient llm = ScriptedLlmClient(<AssistantTurn>[
         AssistantTurn(content: 'answer'),
       ]);
       final ProviderContainer container = ProviderContainer(
@@ -1588,7 +1590,9 @@ void main() {
       final ProviderContainer container = ProviderContainer(
         overrides: <Override>[
           ...testOverrides(
-            llm: FakeLlmClient(<AssistantTurn>[AssistantTurn(content: 'ok')]),
+            llm: ScriptedLlmClient(<AssistantTurn>[
+              AssistantTurn(content: 'ok'),
+            ]),
             dir: tempDir,
             settings: AppSettings(apiKey: 'k', autoTitle: false),
           ),
@@ -1615,7 +1619,9 @@ void main() {
       final ProviderContainer container = ProviderContainer(
         overrides: <Override>[
           ...testOverrides(
-            llm: FakeLlmClient(<AssistantTurn>[AssistantTurn(content: 'ok')]),
+            llm: ScriptedLlmClient(<AssistantTurn>[
+              AssistantTurn(content: 'ok'),
+            ]),
             dir: tempDir,
             settings: AppSettings(apiKey: 'k', autoTitle: false),
           ),
@@ -1634,7 +1640,9 @@ void main() {
       final ProviderContainer container = ProviderContainer(
         overrides: <Override>[
           ...testOverrides(
-            llm: FakeLlmClient(<AssistantTurn>[AssistantTurn(content: 'ok')]),
+            llm: ScriptedLlmClient(<AssistantTurn>[
+              AssistantTurn(content: 'ok'),
+            ]),
             dir: tempDir,
             settings: AppSettings(
               apiKey: 'k',
@@ -1655,7 +1663,7 @@ void main() {
   });
 }
 
-/// LLM fake whose turns are gated behind completers for parallel-run tests.
+/// LLM test double whose turns are gated behind completers for parallel-run tests.
 class _GatedLlmClient implements LlmClient {
   _GatedLlmClient(this.gates, this.nextTurn);
 
@@ -1672,7 +1680,7 @@ class _GatedLlmClient implements LlmClient {
   }) => gates[nextTurn() % gates.length].future;
 }
 
-/// LLM fake whose complete() always throws — proves the controller
+/// LLM test double whose complete() always throws — proves the controller
 /// releases the background hold on the error path.
 class _ThrowingLlmClient implements LlmClient {
   @override
@@ -1685,7 +1693,7 @@ class _ThrowingLlmClient implements LlmClient {
   }) async => throw const SocketException('provider unreachable');
 }
 
-/// LLM fake for the auto-title tests: the agent chat (tools != null) gets
+/// LLM test double for the auto-title tests: the agent chat (tools != null) gets
 /// [chatTurn]; the tool-less title request gets [titleContent] or throws.
 class _AutoTitleLlmClient implements LlmClient {
   _AutoTitleLlmClient({

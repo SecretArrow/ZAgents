@@ -136,7 +136,7 @@ class BackgroundRunService implements BackgroundRun {
   }
 }
 
-/// Overridable in tests with a recording fake.
+/// Overridable in tests with a recording test double.
 final backgroundRunServiceProvider = Provider<BackgroundRun>(
   (ref) => BackgroundRunService(),
 );

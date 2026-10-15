@@ -9,9 +9,9 @@ import 'package:zagents/models/models.dart';
 import 'package:zagents/services/file_system_service.dart';
 import 'package:zagents/services/session_sandbox.dart';
 
-import '../../test/fakes/fakes.dart';
+import '../../test/support/test_doubles.dart';
 
-/// SessionSandbox fake that always hands out the static file service, so
+/// SessionSandbox test double that always hands out the static file service, so
 /// widget tests never touch real IO.
 class StaticSessionSandbox extends SessionSandbox {
   StaticSessionSandbox(this.fs)
@@ -27,7 +27,7 @@ class StaticSessionSandbox extends SessionSandbox {
 }
 
 /// In-memory FileSystemService for widget tests: the real service does
-/// real IO which never completes inside the fake-async test zone (its
+/// real IO which never completes inside the async test zone (its
 /// logic is fully covered by unit tests).
 class StaticFileSystemService extends FileSystemService {
   StaticFileSystemService()
@@ -115,7 +115,7 @@ void main() {
         overrides: <Override>[
           ...testOverrides(dir: tempDir),
           // FilesScreen now browses the ACTIVE SESSION's workspace via
-          // SessionSandbox — plug the static fake service in there.
+          // SessionSandbox — plug the static test double in there.
           sessionSandboxProvider.overrideWithValue(StaticSessionSandbox(fs)),
           activeSessionIdProvider.overrideWithValue('test-session'),
           chatListProvider.overrideWith(

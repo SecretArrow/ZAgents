@@ -9,18 +9,18 @@ import 'package:zagents/services/npm_service.dart';
 import 'package:zagents/services/tool_executor.dart';
 import 'package:zagents/services/web_fetcher.dart';
 
-import '../fakes/fakes.dart';
+import '../support/test_doubles.dart';
 
 void main() {
   late Directory tempDir;
-  late FakeBrowserAutomation fakeBrowser;
+  late ScriptedBrowserAutomation scriptedBrowser;
   late ToolExecutor executor;
 
   setUp(() async {
     tempDir = await Directory.systemTemp.createTemp('zagents_exec_test');
-    fakeBrowser = FakeBrowserAutomation(tempDir.path);
+    scriptedBrowser = ScriptedBrowserAutomation(tempDir.path);
     executor = ToolExecutor(
-      browser: fakeBrowser,
+      browser: scriptedBrowser,
       resolveBaseDir: (_) async => tempDir,
       isAutomationEnabled: () => true,
     );
@@ -37,7 +37,7 @@ void main() {
     );
     expect(result.ok, isTrue);
     expect(result.llmOutput, contains('Example Domain'));
-    expect(fakeBrowser.calls.first, 'navigate:https://example.com');
+    expect(scriptedBrowser.calls.first, 'navigate:https://example.com');
   });
 
   test('browser_screenshot saves PNG and returns path', () async {
@@ -76,7 +76,7 @@ void main() {
 
   test('browser tools blocked when automation disabled', () async {
     final ToolExecutor guarded = ToolExecutor(
-      browser: fakeBrowser,
+      browser: scriptedBrowser,
       resolveBaseDir: (_) async => tempDir,
       isAutomationEnabled: () => false,
     );
@@ -157,11 +157,11 @@ void main() {
   });
 
   test('node_run executes through the injected JS runtime', () async {
-    final FakeJsRuntime js = FakeJsRuntime(
+    final ScriptedJsRuntime js = ScriptedJsRuntime(
       const JsRunResult(output: 'hello from node', result: '"42"'),
     );
     final ToolExecutor nodeExecutor = ToolExecutor(
-      browser: fakeBrowser,
+      browser: scriptedBrowser,
       resolveBaseDir: (_) async => tempDir,
       isAutomationEnabled: () => true,
       js: js,
@@ -177,11 +177,11 @@ void main() {
   });
 
   test('node_run surfaces script errors without crashing', () async {
-    final FakeJsRuntime js = FakeJsRuntime(
+    final ScriptedJsRuntime js = ScriptedJsRuntime(
       const JsRunResult(output: 'starting…', error: 'boom'),
     );
     final ToolExecutor nodeExecutor = ToolExecutor(
-      browser: fakeBrowser,
+      browser: scriptedBrowser,
       resolveBaseDir: (_) async => tempDir,
       isAutomationEnabled: () => true,
       js: js,
@@ -221,7 +221,7 @@ void main() {
       ),
     );
     final ToolExecutor nodeExecutor = ToolExecutor(
-      browser: fakeBrowser,
+      browser: scriptedBrowser,
       resolveBaseDir: (_) async => tempDir,
       isAutomationEnabled: () => true,
       npm: npm,
@@ -233,7 +233,7 @@ void main() {
     );
     expect(fail.ok, isFalse);
 
-    // Create a fake installed package, then remove it via the tool.
+    // Create an installed package fixture, then remove it via the tool.
     final Directory pkg = Directory('${tempDir.path}/node_modules/left-pad');
     await pkg.create(recursive: true);
     await File('${pkg.path}/package.json')
@@ -290,7 +290,7 @@ void main() {
 
     test('todo_write is never gated by the automation switch', () async {
       final ToolExecutor gated = ToolExecutor(
-        browser: fakeBrowser,
+        browser: scriptedBrowser,
         resolveBaseDir: (_) async => tempDir,
         isAutomationEnabled: () => false,
       );
@@ -311,7 +311,7 @@ void main() {
 
     setUp(() {
       fsExecutor = ToolExecutor(
-        browser: fakeBrowser,
+        browser: scriptedBrowser,
         resolveBaseDir: (_) async => tempDir,
         isAutomationEnabled: () => true,
         fs: FileSystemService(resolveBaseDir: () async => tempDir),
@@ -468,7 +468,7 @@ void main() {
 
     test('write_file in one session is invisible to another session', () async {
       final ToolExecutor executor = ToolExecutor(
-        browser: fakeBrowser,
+        browser: scriptedBrowser,
         resolveBaseDir: (String? sid) async =>
             sid == null ? tempDir : roots[sid] ?? tempDir,
         isAutomationEnabled: () => true,
@@ -501,7 +501,7 @@ void main() {
 
     test('zip_file archives stay inside their own session workspace', () async {
       final ToolExecutor executor = ToolExecutor(
-        browser: fakeBrowser,
+        browser: scriptedBrowser,
         resolveBaseDir: (String? sid) async =>
             sid == null ? tempDir : roots[sid] ?? tempDir,
         isAutomationEnabled: () => true,
@@ -528,7 +528,7 @@ void main() {
 
     test('browser screenshots land in the session workspace', () async {
       final ToolExecutor executor = ToolExecutor(
-        browser: fakeBrowser,
+        browser: scriptedBrowser,
         resolveBaseDir: (String? sid) async =>
             sid == null ? tempDir : roots[sid] ?? tempDir,
         isAutomationEnabled: () => true,
@@ -552,7 +552,7 @@ void main() {
     test('node_run works inside the session but npm stays global', () async {
       final RecordingJsRuntime js = RecordingJsRuntime();
       final ToolExecutor executor = ToolExecutor(
-        browser: fakeBrowser,
+        browser: scriptedBrowser,
         resolveBaseDir: (String? sid) async =>
             sid == null ? tempDir : roots[sid] ?? tempDir,
         isAutomationEnabled: () => true,
@@ -574,7 +574,7 @@ void main() {
   group('web_fetch + git tools (v1.16.0)', () {
     test('web_fetch returns the fetcher output', () async {
       final ToolExecutor withFetcher = ToolExecutor(
-        browser: fakeBrowser,
+        browser: scriptedBrowser,
         resolveBaseDir: (_) async => tempDir,
         isAutomationEnabled: () => true,
         fetcher: WebFetcher(
@@ -608,18 +608,18 @@ void main() {
     test(
       'git_clone builds an isomorphic-git script inside the sandbox',
       () async {
-        final ScriptedJsRuntime js = ScriptedJsRuntime(
+        final RespondingJsRuntime js = RespondingJsRuntime(
           (String code) => const JsRunResult(
             output: 'Cloned 3 top-level entries',
             result: '"clone ok"',
           ),
         );
         final ToolExecutor gitExecutor = ToolExecutor(
-          browser: fakeBrowser,
+          browser: scriptedBrowser,
           resolveBaseDir: (_) async => tempDir,
           isAutomationEnabled: () => true,
           js: js,
-          npm: _FakeNpm(hasIsoGit: true),
+          npm: _ScriptedNpm(hasIsoGit: true),
         );
         final ToolResult result = await gitExecutor.execute(
           'git_clone',
@@ -642,12 +642,12 @@ void main() {
     );
 
     test('git tools auto-install isomorphic-git when missing', () async {
-      final _FakeNpm npm = _FakeNpm(hasIsoGit: false);
+      final _ScriptedNpm npm = _ScriptedNpm(hasIsoGit: false);
       final ToolExecutor gitExecutor = ToolExecutor(
-        browser: fakeBrowser,
+        browser: scriptedBrowser,
         resolveBaseDir: (_) async => tempDir,
         isAutomationEnabled: () => true,
-        js: ScriptedJsRuntime(
+        js: RespondingJsRuntime(
           (String code) => const JsRunResult(output: 'branch: main'),
         ),
         npm: npm,
@@ -666,11 +666,13 @@ void main() {
       'git tools fail with a clear error when npm cannot provide the package',
       () async {
         final ToolExecutor gitExecutor = ToolExecutor(
-          browser: fakeBrowser,
+          browser: scriptedBrowser,
           resolveBaseDir: (_) async => tempDir,
           isAutomationEnabled: () => true,
-          js: ScriptedJsRuntime((String code) => const JsRunResult(output: '')),
-          npm: _FakeNpm(hasIsoGit: false, installOk: false),
+          js: RespondingJsRuntime(
+            (String code) => const JsRunResult(output: ''),
+          ),
+          npm: _ScriptedNpm(hasIsoGit: false, installOk: false),
         );
         final ToolResult result = await gitExecutor.execute(
           'git_log',
@@ -684,11 +686,13 @@ void main() {
 
     test('git_commit requires message + author identity', () async {
       final ToolExecutor gitExecutor = ToolExecutor(
-        browser: fakeBrowser,
+        browser: scriptedBrowser,
         resolveBaseDir: (_) async => tempDir,
         isAutomationEnabled: () => true,
-        js: ScriptedJsRuntime((String code) => const JsRunResult(output: 'x')),
-        npm: _FakeNpm(hasIsoGit: true),
+        js: RespondingJsRuntime(
+          (String code) => const JsRunResult(output: 'x'),
+        ),
+        npm: _ScriptedNpm(hasIsoGit: true),
       );
       final ToolResult noAuthor = await gitExecutor.execute(
         'git_commit',
@@ -701,11 +705,13 @@ void main() {
 
     test('git_clone rejects destination traversal', () async {
       final ToolExecutor gitExecutor = ToolExecutor(
-        browser: fakeBrowser,
+        browser: scriptedBrowser,
         resolveBaseDir: (_) async => tempDir,
         isAutomationEnabled: () => true,
-        js: ScriptedJsRuntime((String code) => const JsRunResult(output: 'x')),
-        npm: _FakeNpm(hasIsoGit: true),
+        js: RespondingJsRuntime(
+          (String code) => const JsRunResult(output: 'x'),
+        ),
+        npm: _ScriptedNpm(hasIsoGit: true),
       );
       final ToolResult result = await gitExecutor.execute(
         'git_clone',
@@ -721,10 +727,10 @@ void main() {
   });
 }
 
-/// NpmService fake: reports whether isomorphic-git is already installed and
+/// NpmService test double: reports whether isomorphic-git is already installed and
 /// records installs instead of touching the registry.
-class _FakeNpm extends NpmService {
-  _FakeNpm({required this.hasIsoGit, this.installOk = true})
+class _ScriptedNpm extends NpmService {
+  _ScriptedNpm({required this.hasIsoGit, this.installOk = true})
     : super(resolveBaseDir: () async => Directory.systemTemp);
 
   final bool hasIsoGit;
@@ -737,7 +743,7 @@ class _FakeNpm extends NpmService {
           InstalledModule(
             name: 'isomorphic-git',
             version: '1.25.0',
-            path: '/fake/isomorphic-git',
+            path: '/stub/isomorphic-git',
           ),
         ]
       : const <InstalledModule>[];
@@ -752,10 +758,10 @@ class _FakeNpm extends NpmService {
   }
 }
 
-/// JsRuntime fake that records generated scripts (assertions run on the
+/// JsRuntime test double that records generated scripts (assertions run on the
 /// isomorphic-git calls) and returns canned results.
-class ScriptedJsRuntime implements JsRuntime {
-  ScriptedJsRuntime(this.respond);
+class RespondingJsRuntime implements JsRuntime {
+  RespondingJsRuntime(this.respond);
 
   final JsRunResult Function(String code) respond;
   final List<String> scripts = <String>[];
@@ -776,10 +782,14 @@ class ScriptedJsRuntime implements JsRuntime {
   }
 
   @override
+  Future<JsRunResult> runModule(ModuleInvocation invocation) async =>
+      respond(invocation.entrySource);
+
+  @override
   void dispose() {}
 }
 
-/// JsRuntime fake that records workingDir/moduleRoots for isolation tests.
+/// JsRuntime test double that records workingDir/moduleRoots for isolation tests.
 class RecordingJsRuntime implements JsRuntime {
   final List<String?> workingDirs = <String?>[];
   final List<List<String>> moduleRoots = <List<String>>[];
@@ -795,6 +805,10 @@ class RecordingJsRuntime implements JsRuntime {
     this.moduleRoots.add(moduleRoots);
     return const JsRunResult(output: 'ok', result: '"ok"');
   }
+
+  @override
+  Future<JsRunResult> runModule(ModuleInvocation invocation) async =>
+      const JsRunResult(output: 'ok', result: '"ok"');
 
   @override
   void dispose() {}

@@ -6,7 +6,7 @@ import 'package:zagents/services/js_runtime.dart';
 /// Inner runtime whose runs take a controllable amount of time and record
 /// their lifecycle, so tests can prove parallel calls execute one after
 /// another (never interleaved inside one hidden WebView).
-class _SlowFakeRuntime implements JsRuntime {
+class _SlowScriptedRuntime implements JsRuntime {
   final List<String> events = <String>[];
   final List<Completer<void>> gates = <Completer<void>>[];
 
@@ -39,13 +39,17 @@ class _SlowFakeRuntime implements JsRuntime {
   }
 
   @override
+  Future<JsRunResult> runModule(ModuleInvocation invocation) async =>
+      JsRunResult(output: invocation.entrySource);
+
+  @override
   void dispose() => events.add('dispose');
 }
 
 void main() {
   group('SerializedJsRuntime', () {
     test('runs submitted in parallel execute strictly one at a time', () async {
-      final inner = _SlowFakeRuntime();
+      final inner = _SlowScriptedRuntime();
       final runtime = SerializedJsRuntime(inner);
 
       // Two chat sessions fire node_run at the same moment.
@@ -73,7 +77,7 @@ void main() {
     });
 
     test('a failing run does not poison the queue', () async {
-      final inner = _SlowFakeRuntime();
+      final inner = _SlowScriptedRuntime();
       final runtime = SerializedJsRuntime(inner);
 
       final f1 = runtime.run('explode');
@@ -88,7 +92,7 @@ void main() {
     });
 
     test('results and errors from the inner runtime pass through', () async {
-      final inner = _SlowFakeRuntime();
+      final inner = _SlowScriptedRuntime();
       final runtime = SerializedJsRuntime(inner);
 
       final f1 = runtime.run('ok');
@@ -106,7 +110,7 @@ void main() {
     });
 
     test('dispose forwards to the inner runtime', () async {
-      final inner = _SlowFakeRuntime();
+      final inner = _SlowScriptedRuntime();
       final runtime = SerializedJsRuntime(inner);
       runtime.dispose();
       expect(inner.events, <String>['dispose']);

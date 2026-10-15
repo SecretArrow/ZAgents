@@ -20,6 +20,7 @@ class SessionSandbox {
   static const Set<String> _reservedNames = <String>{
     'chats', // ChatStore (per-session JSON transcripts)
     'node_modules', // NpmService (global package library)
+    'modules', // ModuleRegistry (global chat-module programs)
     'exports', // SessionExporter
     'sessions', // the isolated sandboxes themselves
     'shots', // WebViewAutomation screenshots
@@ -64,7 +65,7 @@ class SessionSandbox {
       marker.createSync(recursive: true);
       // Move every non-reserved root entry into [target]. All IO is
       // SYNCHRONOUS on purpose: rootFor() is resolved inside the agent
-      // tool path, which also runs under widget-test fake-async zones
+      // tool path, which also runs under widget-test async-test zones
       // where real async IO would never complete. Entries may vanish
       // concurrently — ignore failures and move on.
       for (final FileSystemEntity entity in docs.listSync(followLinks: false)) {

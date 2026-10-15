@@ -182,6 +182,24 @@ OpenAI-compatible: **OpenRouter, InferHub, Z.AI, OpenAI, DeepSeek, Groq, dan lai
   sebelumnya (termasuk rahasianya) tidak pernah bertahan lintas run
   maupun lintas chat, dan eksekusi paralel dari beberapa chat otomatis
   diserialisasi.
+- **Modul chat / plugin Node.js (v1.21.0)** — pasang modul langsung dari
+  file ZIP (layar *Modul* di Pengaturan) dan jalankan di dalam sesi chat:
+  pilih saat membuat chat baru (chip di layar kosong), lewat menu
+  interaktif **`/plugins`**, atau **`/plugins nama_modul`** di chat yang
+  sudah ada. Tiap modul punya entry point `main.js` + manifest
+  `module.json` (nama, versi, deskripsi, izin, host yang diizinkan,
+  timeout) dan berjalan di atas **SDK resmi `zagents`** (global atau
+  `require('zagents-sdk')`): `zagents.storage` (key/value per chat),
+  `zagents.fs` (file, terkurung di direktori state modul per chat),
+  `zagents.http` (jaringan dengan izin + allowlist host),
+  `zagents.chat.emit` (kirim output ke percakapan) dan `zagents.info`.
+  Dokumentasi SDK resmi tersedia in-app (EN/ID) di layar Modul.
+  **Isolasi private window per chat**: proses/konteks JS segar setiap
+  eksekusi, storage & state & konfigurasi terpisah per (chat, modul),
+  izin diminta saat aktivasi dan ditegakkan dua lapis (SDK + bridge
+  Dart), batas sumber daya (timeout, cap output & storage), dan
+  penghentian modul yang aman (nonaktif/Stop membatalkan eksekusi tanpa
+  kehilangan data yang sudah tersimpan).
 - **Pencarian + paging universal (v1.6.0)** — SEMUA list di aplikasi memakai
   widget `PagedList` yang sama: **5 item per halaman** (termasuk dropdown model),
   kolom pencarian, pager first/prev/next/last, dan empty state "No results".

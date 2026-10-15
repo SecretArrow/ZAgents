@@ -6,7 +6,7 @@ import 'package:zagents/di.dart';
 import 'package:zagents/models/user_agent.dart';
 import 'package:zagents/services/user_agent_manager.dart';
 
-import '../../test/fakes/fakes.dart';
+import '../../test/support/test_doubles.dart';
 
 void main() {
   late Directory tempDir;

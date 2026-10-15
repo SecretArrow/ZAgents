@@ -14,6 +14,7 @@ import '../theme.dart';
 import 'context_screen.dart';
 import 'files_screen.dart';
 import 'node_screen.dart';
+import 'modules_screen.dart';
 import 'providers_screen.dart';
 
 /// App configuration: appearance (theme), providers (full-screen manager),
@@ -671,6 +672,30 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 trailing: const Icon(Icons.chevron_right_rounded),
                 onTap: () => Navigator.of(context).push(
                   MaterialPageRoute<void>(builder: (_) => const NodeScreen()),
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+
+            // -- Modules (plugins) ------------------------------------------
+            _sectionTitle(strings.modulesTitle),
+            _card(
+              child: ListTile(
+                key: const Key('modules-manager-tile'),
+                contentPadding: EdgeInsets.zero,
+                leading: const Icon(Icons.extension_rounded),
+                title: Text(strings.modulesTitle),
+                subtitle: Text(
+                  strings.modulesEmptyHint,
+                  style: TextStyle(fontSize: 12, color: palette.muted),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                trailing: const Icon(Icons.chevron_right_rounded),
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => const ModulesScreen(),
+                  ),
                 ),
               ),
             ),

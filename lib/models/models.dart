@@ -141,6 +141,7 @@ class ChatMessage {
     this.attachments = const <ChatAttachment>[],
     this.model,
     this.usage,
+    this.moduleName,
   });
 
   final String id;
@@ -165,6 +166,10 @@ class ChatMessage {
   /// Token usage reported by the provider for this assistant turn.
   final TokenUsage? usage;
 
+  /// When set, this message carries the output of a chat module
+  /// (plugins) run — rendered with the module badge in the UI.
+  final String? moduleName;
+
   factory ChatMessage.user(
     String content, {
     List<ChatAttachment> attachments = const <ChatAttachment>[],
@@ -182,6 +187,7 @@ class ChatMessage {
     bool isStreaming = false,
     String? model,
     TokenUsage? usage,
+    String? moduleName,
   }) => ChatMessage(
     id: newId(),
     role: Role.assistant,
@@ -191,6 +197,7 @@ class ChatMessage {
     isStreaming: isStreaming,
     model: model,
     usage: usage,
+    moduleName: moduleName,
   );
 
   Map<String, dynamic> toJson() => <String, dynamic>{
@@ -204,6 +211,7 @@ class ChatMessage {
     'createdAt': createdAt.toIso8601String(),
     if (model != null) 'model': model,
     if (usage != null) 'usage': usage!.toJson(),
+    if (moduleName != null) 'moduleName': moduleName,
   };
 
   factory ChatMessage.fromJson(Map<String, dynamic> json) => ChatMessage(
@@ -225,6 +233,7 @@ class ChatMessage {
         .toList(),
     model: json['model'] as String?,
     usage: TokenUsage.fromJson(json['usage']),
+    moduleName: json['moduleName'] as String?,
   );
 }
 

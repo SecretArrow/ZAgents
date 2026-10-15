@@ -368,6 +368,33 @@ abstract class AppStrings {
   String get promptSaved;
   String get promptDeleted;
 
+  // -- Chat modules / plugins (v1.21.0) ---------------------------------
+  String get modulesTitle;
+  String get modulesInstall;
+  String get modulesEmpty;
+  String get modulesEmptyHint;
+  String get modulesManage;
+  String get moduleSdkDocs;
+  String get moduleStartNewChat;
+  String get moduleActivate;
+  String get moduleDeactivate;
+  String get moduleActiveBadge;
+  String moduleDeactivated(String name);
+  String get moduleTerminated;
+  String moduleRunFailed(String error);
+  String moduleNotFound(String name);
+  String get moduleSessionBusy;
+  String modulePermissionTitle(String name);
+  String get modulePermissionBody;
+  String get moduleAllow;
+  String moduleInstallSuccess(String name);
+  String moduleInstallFailed(String error);
+  String get moduleRemoveTitle;
+  String moduleRemoveBody(String name);
+  String get pluginMenuTitle;
+  String get pluginMenuEmpty;
+  String get startWithModule;
+
   // -- Controller messages (no BuildContext available) -----------------
   String get missingApiKey;
   String get modelNotSet;
@@ -983,7 +1010,7 @@ class AppStringsEn implements AppStrings {
   String get aboutSection => 'About';
   @override
   String get aboutBody =>
-      'ZAgents v1.20.0 — an Android clone of the chat.z.ai agent mode UI, '
+      'ZAgents v1.21.0 — an Android clone of the chat.z.ai agent mode UI, '
       'with custom OpenAI-compatible providers (OpenRouter, InferHub, '
       'Z.AI, OpenAI, DeepSeek, Groq, and more), per-provider API keys, '
       'light/dark themes, parallel multi-session chat with background '
@@ -1002,7 +1029,10 @@ class AppStringsEn implements AppStrings {
       'zip extraction including password-protected '
       'archives, a Context Manager, an in-app file manager, and an '
       'embedded Node.js-style runtime with npm package management. Your '
-      'keys stay on this device.';
+      'keys stay on this device, and chat modules (plugins) install from ZIP '
+      'files and run inside each chat\'s isolated sandbox with the '
+      'official zagents SDK (/plugins), a Modules screen and per-chat '
+      'storage, state, config and permission separation.';
 
   @override
   String createdBy(String name) => 'Created by $name';
@@ -1057,6 +1087,68 @@ class AppStringsEn implements AppStrings {
   String get promptSaved => 'Prompt saved.';
   @override
   String get promptDeleted => 'Prompt deleted.';
+
+  // -- Chat modules / plugins (v1.21.0) ---------------------------------
+  @override
+  String get modulesTitle => 'Modules';
+  @override
+  String get modulesInstall => 'Install module (ZIP)';
+  @override
+  String get modulesEmpty => 'No modules installed yet.';
+  @override
+  String get modulesEmptyHint =>
+      'Install a module ZIP to run native JavaScript capabilities inside '
+      'any chat — isolated per chat like a private window.';
+  @override
+  String get modulesManage => 'Manage modules';
+  @override
+  String get moduleSdkDocs => 'SDK documentation';
+  @override
+  String get moduleStartNewChat => 'Start in new chat';
+  @override
+  String get moduleActivate => 'Activate in this chat';
+  @override
+  String get moduleDeactivate => 'Deactivate';
+  @override
+  String get moduleActiveBadge => 'active';
+  @override
+  String moduleDeactivated(String name) =>
+      'Module \u201c$name\u201d deactivated — its execution was stopped safely and '
+      'its per-chat data stays inside this chat.';
+  @override
+  String get moduleTerminated => 'Module execution was terminated by the user.';
+  @override
+  String moduleRunFailed(String error) => 'Module run failed: $error';
+  @override
+  String moduleNotFound(String name) => 'Module not installed: $name';
+  @override
+  String get moduleSessionBusy =>
+      'Wait for the current task to finish before activating a module.';
+  @override
+  String modulePermissionTitle(String name) => 'Allow \u201c$name\u201d to:';
+  @override
+  String get modulePermissionBody =>
+      'These capabilities run isolated inside THIS chat only — nothing '
+      'leaks into other chats.';
+  @override
+  String get moduleAllow => 'Allow and run';
+  @override
+  String moduleInstallSuccess(String name) => '$name installed.';
+  @override
+  String moduleInstallFailed(String error) => 'Install failed: $error';
+  @override
+  String get moduleRemoveTitle => 'Remove module?';
+  @override
+  String moduleRemoveBody(String name) =>
+      '\u201c$name\u201d and its program files will be removed. Data already stored '
+      'inside individual chats stays in each chat sandbox.';
+  @override
+  String get pluginMenuTitle => 'Modules for this chat';
+  @override
+  String get pluginMenuEmpty =>
+      'No modules installed yet. Install one from the Modules screen.';
+  @override
+  String get startWithModule => 'Start with a module';
 
   // -- Controller messages ----------------------------------------------
   @override
@@ -1688,7 +1780,7 @@ class AppStringsId implements AppStrings {
   String get aboutSection => 'Tentang';
   @override
   String get aboutBody =>
-      'ZAgents v1.20.0 — klon UI agent mode chat.z.ai untuk Android, '
+      'ZAgents v1.21.0 — klon UI agent mode chat.z.ai untuk Android, '
       'dengan custom provider OpenAI-compatible (OpenRouter, InferHub, '
       'Z.AI, OpenAI, DeepSeek, Groq, dan lainnya), API key per-provider, '
       'tema terang/gelap, multi-sesi paralel dengan proses latar '
@@ -1707,8 +1799,11 @@ class AppStringsId implements AppStrings {
       'melintas antar chat, unggah file dengan ekstraksi zip '
       'termasuk arsip terproteksi kata sandi, Manajer Konteks, manajer '
       'file, serta runtime bergaya Node.js tersemat dengan manajemen '
-      'package npm. '
-      'Key Anda tetap di perangkat ini.';
+      'package npm. Key Anda tetap di perangkat ini, dan modul chat '
+      '(plugin) dipasang dari file ZIP lalu berjalan di dalam sandbox '
+      'terisolasi milik tiap chat dengan SDK resmi zagents (/plugins), '
+      'layar Modul, serta pemisahan storage, state, konfigurasi dan izin '
+      'per chat.';
 
   @override
   String createdBy(String name) => 'Dibuat oleh $name';
@@ -1763,6 +1858,70 @@ class AppStringsId implements AppStrings {
   String get promptSaved => 'Prompt tersimpan.';
   @override
   String get promptDeleted => 'Prompt terhapus.';
+
+  // -- Modul chat / plugin (v1.21.0) ------------------------------------
+  @override
+  String get modulesTitle => 'Modul';
+  @override
+  String get modulesInstall => 'Pasang modul (ZIP)';
+  @override
+  String get modulesEmpty => 'Belum ada modul terpasang.';
+  @override
+  String get modulesEmptyHint =>
+      'Pasang ZIP modul untuk menjalankan kemampuan JavaScript native di '
+      'dalam chat mana pun — terisolasi per chat seperti jendela privat.';
+  @override
+  String get modulesManage => 'Kelola modul';
+  @override
+  String get moduleSdkDocs => 'Dokumentasi SDK';
+  @override
+  String get moduleStartNewChat => 'Mulai di chat baru';
+  @override
+  String get moduleActivate => 'Aktifkan di chat ini';
+  @override
+  String get moduleDeactivate => 'Nonaktifkan';
+  @override
+  String get moduleActiveBadge => 'aktif';
+  @override
+  String moduleDeactivated(String name) =>
+      'Modul \u201c$name\u201d dinonaktifkan — eksekusinya dihentikan dengan aman dan '
+      'data per-chatnya tetap di dalam chat ini.';
+  @override
+  String get moduleTerminated => 'Eksekusi modul dihentikan oleh pengguna.';
+  @override
+  String moduleRunFailed(String error) => 'Modul gagal berjalan: $error';
+  @override
+  String moduleNotFound(String name) => 'Modul tidak terpasang: $name';
+  @override
+  String get moduleSessionBusy =>
+      'Tunggu tugas saat ini selesai sebelum mengaktifkan modul.';
+  @override
+  String modulePermissionTitle(String name) =>
+      'Izinkan \u201c$name\u201d untuk:';
+  @override
+  String get modulePermissionBody =>
+      'Kemampuan ini berjalan terisolasi di dalam chat INI saja — tidak ada '
+      'yang bocor ke chat lain.';
+  @override
+  String get moduleAllow => 'Izinkan dan jalankan';
+  @override
+  String moduleInstallSuccess(String name) => '$name terpasang.';
+  @override
+  String moduleInstallFailed(String error) => 'Gagal memasang: $error';
+  @override
+  String get moduleRemoveTitle => 'Hapus modul?';
+  @override
+  String moduleRemoveBody(String name) =>
+      '\u201c$name\u201d beserta file programnya akan dihapus. Data yang sudah '
+      'tersimpan di dalam chat masing-masing tetap berada di sandbox chat '
+      'tersebut.';
+  @override
+  String get pluginMenuTitle => 'Modul untuk chat ini';
+  @override
+  String get pluginMenuEmpty =>
+      'Belum ada modul terpasang. Pasang dari layar Modul.';
+  @override
+  String get startWithModule => 'Mulai dengan modul';
 
   // -- Controller messages ----------------------------------------------
   @override

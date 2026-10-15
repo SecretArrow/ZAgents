@@ -10,7 +10,7 @@ import 'package:zagents/main.dart';
 import 'package:zagents/models/models.dart';
 import 'package:zagents/ui/screens/prompt_library_screen.dart';
 
-import '../../test/fakes/fakes.dart';
+import '../../test/support/test_doubles.dart';
 
 /// Widget tests for the v1.15.0 Prompt Library: create/delete flows and
 /// the composer's insert sheet.

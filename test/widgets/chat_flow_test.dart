@@ -9,7 +9,7 @@ import 'package:zagents/di.dart';
 import 'package:zagents/models/models.dart';
 import 'package:zagents/services/llm_client.dart';
 
-import '../../test/fakes/fakes.dart';
+import '../../test/support/test_doubles.dart';
 
 /// Drawer assertions must be scoped: chat texts also render in the body
 /// behind the drawer (find.text matches those bubbles too).
@@ -40,7 +40,7 @@ void main() {
   testWidgets('send message -> streamed answer appears', (
     WidgetTester tester,
   ) async {
-    final FakeLlmClient llm = FakeLlmClient(<AssistantTurn>[
+    final ScriptedLlmClient llm = ScriptedLlmClient(<AssistantTurn>[
       AssistantTurn(content: 'Halo, ini jawaban agent.'),
     ]);
     await tester.pumpWidget(wrap(llm: llm));
@@ -68,7 +68,7 @@ void main() {
   testWidgets('agent tool call renders ToolCallCard and final answer', (
     WidgetTester tester,
   ) async {
-    final FakeLlmClient llm = FakeLlmClient(<AssistantTurn>[
+    final ScriptedLlmClient llm = ScriptedLlmClient(<AssistantTurn>[
       AssistantTurn(
         content: '',
         toolCalls: <ToolCallRequest>[
@@ -104,7 +104,7 @@ void main() {
   testWidgets('screenshot tool shows image in tool card', (
     WidgetTester tester,
   ) async {
-    final FakeLlmClient llm = FakeLlmClient(<AssistantTurn>[
+    final ScriptedLlmClient llm = ScriptedLlmClient(<AssistantTurn>[
       AssistantTurn(
         content: '',
         toolCalls: <ToolCallRequest>[
@@ -126,7 +126,7 @@ void main() {
     );
     await tester.tap(find.byKey(const Key('send-button')));
     // Bounded pumps instead of pumpAndSettle: Image.file codec decoding
-    // never completes inside the fake-async test zone and would block settle.
+    // never completes inside the async test zone and would block settle.
     for (var i = 0; i < 30; i++) {
       await tester.pump(const Duration(milliseconds: 100));
     }
@@ -136,7 +136,7 @@ void main() {
   });
 
   testWidgets('agent toggle switches settings', (WidgetTester tester) async {
-    final FakeLlmClient llm = FakeLlmClient(<AssistantTurn>[
+    final ScriptedLlmClient llm = ScriptedLlmClient(<AssistantTurn>[
       AssistantTurn(content: 'ok'),
     ]);
     await tester.pumpWidget(wrap(llm: llm));
@@ -157,7 +157,7 @@ void main() {
     WidgetTester tester,
   ) async {
     // Static history (the real chat store does disk IO that never
-    // completes inside the fake-async zone — the same reason
+    // completes inside the async test zone — the same reason
     // files_screen_test overrides this provider).
     await tester.pumpWidget(
       ProviderScope(
@@ -232,7 +232,7 @@ void main() {
       ProviderScope(
         overrides: <Override>[
           // Static history: the real chat store does disk IO that never
-          // completes inside the fake-async zone (drawer would spin
+          // completes inside the async test zone (drawer would spin
           // forever and pumpAndSettle would time out).
           ...testOverrides(
             dir: tempDir,
@@ -291,7 +291,7 @@ void main() {
       ProviderScope(
         overrides: <Override>[
           // Static history: the real chat store does disk IO that never
-          // completes inside the fake-async zone (drawer would spin
+          // completes inside the async test zone (drawer would spin
           // forever and pumpAndSettle would time out).
           ...testOverrides(
             dir: tempDir,

@@ -5,9 +5,9 @@ import 'package:zagents/di.dart';
 import 'package:zagents/models/models.dart';
 import 'package:zagents/services/app_lock_service.dart';
 
-/// Biometric fake: programmatically available / successful.
-class FakeBiometric implements BiometricAuth {
-  FakeBiometric({this.available = true, this.success = true});
+/// Biometric test double: programmatically available / successful.
+class ScriptedBiometric implements BiometricAuth {
+  ScriptedBiometric({this.available = true, this.success = true});
 
   final bool available;
   final bool success;
@@ -28,7 +28,7 @@ void main() {
   setUp(() async {
     SharedPreferences.setMockInitialValues(<String, Object>{});
     prefs = await SharedPreferences.getInstance();
-    lock = AppLockService(prefs: prefs, biometric: FakeBiometric());
+    lock = AppLockService(prefs: prefs, biometric: ScriptedBiometric());
   });
 
   group('AppLockService PIN (v1.18.0)', () {
@@ -60,7 +60,7 @@ void main() {
       final String hash1 = prefs.getString('zagents.lock.pin.hash')!;
       final AppLockService other = AppLockService(
         prefs: prefs,
-        biometric: FakeBiometric(),
+        biometric: ScriptedBiometric(),
       );
       // Overwriting with the same PIN re-salts: hash changes, verify works.
       await other.setPin('1111');
@@ -75,7 +75,7 @@ void main() {
       expect(await lock.biometricAvailable(), isTrue);
       final AppLockService noBio = AppLockService(
         prefs: prefs,
-        biometric: FakeBiometric(available: false),
+        biometric: ScriptedBiometric(available: false),
       );
       expect(await noBio.biometricAvailable(), isFalse);
     });
@@ -84,7 +84,7 @@ void main() {
       expect(await lock.authenticateBiometric('reason'), isTrue);
       final AppLockService failing = AppLockService(
         prefs: prefs,
-        biometric: FakeBiometric(success: false),
+        biometric: ScriptedBiometric(success: false),
       );
       expect(await failing.authenticateBiometric('reason'), isFalse);
     });

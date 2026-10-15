@@ -27,7 +27,8 @@ class JsRunResult {
 /// documents directory, and a global `fetch` proxied through Dart.
 ///
 /// The production implementation runs inside a hidden off-screen WebView —
-/// zero extra native footprint, guaranteed single-APK. Tests plug fakes in.
+/// zero extra native footprint, guaranteed single-APK. Tests provide
+/// scripted test doubles.
 abstract class JsRuntime {
   Future<JsRunResult> run(
     String code, {
@@ -36,7 +37,69 @@ abstract class JsRuntime {
     Duration timeout = const Duration(seconds: 20),
   });
 
+  /// Executes one chat-module entry point inside a fresh, permission-gated
+  /// context: the [ModuleInvocation.permissions] decide which `zagents` SDK
+  /// capabilities exist, [ModuleInvocation.bridge] carries the Dart-side
+  /// operations, and nothing survives the run.
+  Future<JsRunResult> runModule(ModuleInvocation invocation);
+
   void dispose();
+}
+
+/// One chat-module execution request handed to [JsRuntime.runModule].
+class ModuleInvocation {
+  ModuleInvocation({
+    required this.entrySource,
+    this.moduleRoots = const <String>[],
+    this.workingDir,
+    this.permissions = const <String>{},
+    this.info = const <String, dynamic>{},
+    this.allowedHosts,
+    required this.bridge,
+    this.sdkSource = '',
+    this.timeout = const Duration(seconds: 30),
+  });
+
+  /// Source of the module entry point (e.g. `main.js`).
+  final String entrySource;
+
+  /// Roots used to resolve `require()` specifiers: the module directory
+  /// first, then the shared npm library.
+  final List<String> moduleRoots;
+
+  /// Directory the `fs` bridge is sandboxed to (the module's per-chat
+  /// state directory).
+  final String? workingDir;
+
+  /// Granted capability names (`storage`, `network`, `files`, `chat`) —
+  /// the subset of the manifest permissions the user approved.
+  final Set<String> permissions;
+
+  /// Metadata exposed to the module as `zagents.info` (name, version,
+  /// sessionId, ...).
+  final Map<String, dynamic> info;
+
+  /// When non-empty, `zagents.http` may only reach these hosts.
+  final List<String>? allowedHosts;
+
+  /// Dart-side capability provider; every SDK call lands here and
+  /// re-checks permissions (defense in depth).
+  final ModuleBridge bridge;
+
+  /// Source of the official SDK shim — registered as the virtual module
+  /// `zagents-sdk` so `require('zagents-sdk')` works in addition to the
+  /// injected `zagents` global.
+  final String sdkSource;
+
+  final Duration timeout;
+}
+
+/// Dart-side capability provider for one module run. The JS SDK surfaces
+/// these operations as the `zagents` global (`storage`, `fs`, `http`,
+/// `chat`); the implementation enforces the granted permissions, per-chat
+/// storage scoping and host allowlists.
+abstract class ModuleBridge {
+  Future<Map<String, dynamic>?> handleOp(Map<String, dynamic> request);
 }
 
 /// Hidden-WebView implementation of [JsRuntime].
@@ -77,9 +140,17 @@ class WebViewJsRuntime implements JsRuntime {
   final List<String> _console = <String>[];
   List<String> _sandboxRoots = const <String>[];
 
+  /// While a MODULE run is in flight: the granted permission names, used
+  /// to gate the `fs` bridge on the Dart side too (defense in depth — the
+  /// JS SDK already hides unauthorized APIs). Null during plain node_run
+  /// executions, which keep their unrestricted (workspace-sandboxed) fs
+  /// semantics.
+  Set<String>? _modulePermissions;
+  ModuleBridge? _moduleBridge;
+
   static const String _handlerName = 'zagentsNode';
 
-  Future<void> _ensureRunning() async {
+  Future<void> _ensureRunning({String? bootstrap}) async {
     if (_webview != null) return;
     final Completer<void> ready = Completer<void>();
     final HeadlessInAppWebView wv = HeadlessInAppWebView(
@@ -107,7 +178,9 @@ class WebViewJsRuntime implements JsRuntime {
     _webview = wv;
     await wv.run();
     await ready.future.timeout(const Duration(seconds: 20));
-    await wv.webViewController!.evaluateJavascript(source: _bootstrap);
+    await wv.webViewController!.evaluateJavascript(
+      source: bootstrap ?? _bootstrap,
+    );
   }
 
   /// Single entry point for all frames coming from the JS side.
@@ -137,6 +210,19 @@ class WebViewJsRuntime implements JsRuntime {
           _done!.complete(jsonEncode(request));
         }
         return null;
+      case 'zapi':
+        final ModuleBridge? bridge = _moduleBridge;
+        if (bridge == null) {
+          return <String, dynamic>{
+            'ok': false,
+            'error': 'Module API is unavailable',
+          };
+        }
+        try {
+          return await bridge.handleOp(request);
+        } catch (e) {
+          return <String, dynamic>{'ok': false, 'error': '$e'};
+        }
       case 'fs':
         return _fsOp(request);
       case 'fetch':
@@ -176,6 +262,16 @@ class WebViewJsRuntime implements JsRuntime {
   Future<Map<String, dynamic>> _fsOp(Map<String, dynamic> request) async {
     final String action = request['action']?.toString() ?? '';
     try {
+      // Module runs need the explicit `files` permission for ANY fs access
+      // (the JS SDK hides zagents.fs without it; this is the Dart-side
+      // backstop).
+      final Set<String>? modulePerms = _modulePermissions;
+      if (modulePerms != null && !modulePerms.contains('files')) {
+        return <String, dynamic>{
+          'ok': false,
+          'error': 'Permission denied: files',
+        };
+      }
       final String rawPath = request['path']?.toString() ?? '';
       final String resolved = File(rawPath).absolute.path;
       if (!_isSandboxed(resolved)) {
@@ -246,10 +342,10 @@ class WebViewJsRuntime implements JsRuntime {
     }
   }
 
-  static const String _bootstrap =
+  /// Shared CommonJS core: message bridge, `fs` shim, module loader and
+  /// console capture — used by BOTH plain runs and module runs.
+  static String get _coreJs =>
       '''
-window.__zDone = false;
-(function(){
   function post(msg){ try { window.flutter_inappwebview.callHandler('$_handlerName', msg); } catch(e){} }
   function fmt(v){
     if (v === undefined) return 'undefined';
@@ -295,6 +391,20 @@ window.__zDone = false;
     warn: function(){ post({op:'log', text: 'WARN ' + Array.prototype.map.call(arguments, fmt).join(' ')}); },
     error: function(){ post({op:'log', text: 'ERROR ' + Array.prototype.map.call(arguments, fmt).join(' ')}); }
   };
+  window.__zRun = function(entryPath){
+    return (async function(){ return exec(entryPath); })().then(
+      function(v){ post({op:'done', ok:true, result: fmt(v)}); },
+      function(e){ post({op:'done', ok:false, error: (e && e.message) ? e.message : String(e)}); }
+    );
+  };
+''';
+
+  /// Plain-run bootstrap (node_run): adds the proxied global `fetch`.
+  static final String _bootstrap =
+      '''
+window.__zDone = false;
+(function(){
+  \$_core
   window.fetch = function(url, opts){
     opts = opts || {};
     return post2({op:'fetch', url: String(url), method: opts.method || 'GET', body: opts.body ? String(opts.body) : null}).then(function(data){
@@ -305,14 +415,79 @@ window.__zDone = false;
       };
     });
   };
-  window.__zRun = function(entryPath){
-    return (async function(){ return exec(entryPath); })().then(
-      function(v){ post({op:'done', ok:true, result: fmt(v)}); },
-      function(e){ post({op:'done', ok:false, error: (e && e.message) ? e.message : String(e)}); }
-    );
+})();
+'''
+          .replaceAll(r'$_core', _coreJs);
+
+  /// Module-run bootstrap: NO global fetch (network goes through the
+  /// permission-gated `zagents.http`) plus the official `zagents` SDK
+  /// object. Every SDK capability checks `window.__zPerms` on the JS side;
+  /// the Dart bridge re-checks on every call.
+  static final String _moduleBootstrap =
+      '''
+window.__zDone = false;
+(function(){
+  \$_core
+  function zHas(p){ return Object.prototype.hasOwnProperty.call(window.__zPermsMap, p); }
+  function zDeny(p){ throw new Error('Permission denied: ' + p); }
+  function zCall(op, payload){
+    var msg = { op:'zapi', zop: op };
+    for (var k in payload) { msg[k] = payload[k]; }
+    return window.flutter_inappwebview.callHandler('$_handlerName', msg).then(function(res){
+      if (res && res.ok === false) throw new Error(res.error || 'module API error');
+      return res ? res.data : null;
+    });
+  }
+  window.zagents = {
+    info: window.__zInfo,
+    log: function(){ window.console.log.apply(null, arguments); },
+    chat: {
+      emit: function(text){
+        if (!zHas('chat')) return zDeny('chat');
+        return zCall('chat.emit', { text: String(text) });
+      }
+    },
+    http: {
+      request: function(url, opts){
+        if (!zHas('network')) return zDeny('network');
+        opts = opts || {};
+        return zCall('http.request', {
+          url: String(url),
+          method: opts.method || 'GET',
+          body: (opts.body === undefined || opts.body === null) ? null : String(opts.body),
+          headers: opts.headers || {}
+        }).then(function(data){
+          var body = data ? data.body : null;
+          var status = data && data.status ? data.status : 200;
+          return {
+            ok: status >= 200 && status < 300,
+            status: status,
+            body: body,
+            text: function(){ return Promise.resolve(typeof body === 'string' ? body : JSON.stringify(body)); },
+            json: function(){ return Promise.resolve(typeof body === 'string' ? JSON.parse(body) : body); }
+          };
+        });
+      }
+    },
+    storage: {
+      get: function(k){ if (!zHas('storage')) return zDeny('storage'); return zCall('storage.get', { key: String(k) }); },
+      set: function(k, v){ if (!zHas('storage')) return zDeny('storage'); return zCall('storage.set', { key: String(k), value: (v === undefined) ? null : v }); },
+      keys: function(){ if (!zHas('storage')) return zDeny('storage'); return zCall('storage.keys', {}); },
+      remove: function(k){ if (!zHas('storage')) return zDeny('storage'); return zCall('storage.remove', { key: String(k) }); }
+    },
+    fs: {
+      readFile: function(p){ if (!zHas('files')) return zDeny('files'); return post2({op:'fs', action:'readFile', path:p}); },
+      writeFile: function(p, d){ if (!zHas('files')) return zDeny('files'); return post2({op:'fs', action:'writeFile', path:p, data:String(d)}); },
+      appendFile: function(p, d){ if (!zHas('files')) return zDeny('files'); return post2({op:'fs', action:'appendFile', path:p, data:String(d)}); },
+      readdir: function(p){ if (!zHas('files')) return zDeny('files'); return post2({op:'fs', action:'readdir', path:p}); },
+      mkdir: function(p){ if (!zHas('files')) return zDeny('files'); return post2({op:'fs', action:'mkdir', path:p}); },
+      unlink: function(p){ if (!zHas('files')) return zDeny('files'); return post2({op:'fs', action:'unlink', path:p}); },
+      stat: function(p){ if (!zHas('files')) return zDeny('files'); return post2({op:'fs', action:'stat', path:p}); }
+    }
   };
 })();
-''';
+'''
+          .replaceAll(r'$_core', _coreJs);
 
   /// Builds the module registry reachable from [code].
   Map<String, Map<String, dynamic>> _buildRegistry(
@@ -505,6 +680,82 @@ window.__zDone = false;
     );
   }
 
+  /// Module runs boot the same fresh-WebView pipeline as [run] but swap
+  /// in the module bootstrap (permission-gated `zagents` SDK, no global
+  /// fetch) and register the SDK shim as a require-able virtual module.
+  @override
+  Future<JsRunResult> runModule(ModuleInvocation invocation) async {
+    try {
+      await _recycle();
+      await _ensureRunning(bootstrap: _moduleBootstrap);
+    } catch (e) {
+      return JsRunResult(output: '', error: 'JS runtime failed to start: $e');
+    }
+    _console.clear();
+    _modulePermissions = invocation.permissions;
+    _moduleBridge = invocation.bridge;
+    _sandboxRoots = <String>[?invocation.workingDir, ...invocation.moduleRoots];
+    final Map<String, Map<String, dynamic>> registry = _buildRegistry(
+      invocation.entrySource,
+      invocation.moduleRoots,
+    );
+    // Register the official SDK shim so `require('zagents-sdk')` works
+    // next to the injected `zagents` global.
+    if (invocation.sdkSource.trim().isNotEmpty) {
+      registry['zagents-sdk.js'] = <String, dynamic>{
+        'src': invocation.sdkSource,
+        'deps': const <String, String>{},
+      };
+      final Map<String, dynamic> entry = registry['__user__.js']!;
+      (entry['deps'] as Map<String, dynamic>)['zagents-sdk'] = 'zagents-sdk.js';
+    }
+    _done = Completer<String>();
+
+    final String runner =
+        '''
+(function(){
+  window.__zRegistry = ${jsonEncode(registry)};
+  window.__zPermsMap = {};
+  ${jsonEncode(invocation.permissions.toList())}.forEach(function(p){ window.__zPermsMap[p] = true; });
+  window.__zInfo = ${jsonEncode(invocation.info)};
+  __zRun('__user__.js');
+})();
+''';
+
+    String? raw;
+    try {
+      _webview!.webViewController!.evaluateJavascript(source: runner);
+      raw = await _done!.future.timeout(invocation.timeout);
+    } on TimeoutException {
+      await _recycle();
+      return JsRunResult(
+        output: _console.join('\n'),
+        error: 'Module timed out after ${invocation.timeout.inSeconds}s.',
+      );
+    } catch (e) {
+      await _recycle();
+      return JsRunResult(output: _console.join('\n'), error: '$e');
+    } finally {
+      _modulePermissions = null;
+      _moduleBridge = null;
+    }
+
+    try {
+      final Object? payload = jsonDecode(raw);
+      if (payload is Map<String, dynamic>) {
+        return JsRunResult(
+          output: _console.join('\n'),
+          error: payload['ok'] == true ? null : payload['error']?.toString(),
+          result: payload['result']?.toString(),
+        );
+      }
+    } catch (_) {}
+    return JsRunResult(
+      output: _console.join('\n'),
+      error: 'JS runtime returned an unreadable result.',
+    );
+  }
+
   Future<void> _recycle() async {
     try {
       await _webview?.dispose();
@@ -552,27 +803,14 @@ class SerializedJsRuntime implements JsRuntime {
   }
 
   @override
-  void dispose() => _inner.dispose();
-}
-
-/// Records executions instead of running JS — for unit/widget tests.
-class FakeJsRuntime implements JsRuntime {
-  FakeJsRuntime([this.nextResult]);
-
-  JsRunResult? nextResult;
-  final List<String> runs = <String>[];
-
-  @override
-  Future<JsRunResult> run(
-    String code, {
-    List<String> moduleRoots = const <String>[],
-    String? workingDir,
-    Duration timeout = const Duration(seconds: 20),
-  }) async {
-    runs.add(code);
-    return nextResult ?? JsRunResult(output: 'ok', result: '"ok"');
+  Future<JsRunResult> runModule(ModuleInvocation invocation) {
+    final Future<JsRunResult> run = _tail.then(
+      (_) => _inner.runModule(invocation),
+    );
+    _tail = run.then<void>((_) {}, onError: (Object _) {});
+    return run;
   }
 
   @override
-  void dispose() {}
+  void dispose() => _inner.dispose();
 }

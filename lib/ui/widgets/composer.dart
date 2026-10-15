@@ -5,8 +5,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../di.dart';
+import '../../services/module_registry.dart';
 import '../../l10n/app_strings.dart';
 import '../../models/models.dart';
+import '../screens/modules_screen.dart';
 import '../screens/prompt_library_screen.dart';
 import '../theme.dart';
 
@@ -38,6 +40,20 @@ class _ComposerState extends ConsumerState<Composer> {
       pendingAttachmentsProvider,
     );
     if (text.isEmpty && attachments.isEmpty) return;
+    // Slash commands are consumed LOCALLY — they never reach the LLM.
+    if (text == '/plugins') {
+      _controller.clear();
+      FocusScope.of(context).unfocus();
+      _openModuleSheet();
+      return;
+    }
+    if (text.startsWith('/plugins ')) {
+      final String moduleName = text.substring('/plugins '.length).trim();
+      _controller.clear();
+      FocusScope.of(context).unfocus();
+      _activateNamedModule(moduleName);
+      return;
+    }
     _controller.clear();
     ref.read(pendingAttachmentsProvider.notifier).state =
         const <ChatAttachment>[];
@@ -45,6 +61,196 @@ class _ComposerState extends ConsumerState<Composer> {
     ref
         .read(chatControllerProvider.notifier)
         .send(text, attachments: attachments);
+  }
+
+  /// `/plugins name`: resolves the module, asks for permission consent
+  /// (when the manifest declares capabilities) and activates it for the
+  /// current chat. Unknown names surface a localized snackbar.
+  Future<void> _activateNamedModule(String name) async {
+    if (name.isEmpty) {
+      _openModuleSheet();
+      return;
+    }
+    final AppStrings strings = stringsOf(context);
+    final ChatModule? module = await ref.read(moduleRegistryProvider).get(name);
+    if (!mounted) return;
+    if (module == null) {
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(SnackBar(content: Text(strings.moduleNotFound(name))));
+      return;
+    }
+    if (!await ModulesScreen.confirmPermissions(context, ref, module)) {
+      return;
+    }
+    if (!mounted) return;
+    await ref.read(chatControllerProvider.notifier).activateModule(module.name);
+  }
+
+  /// Interactive module menu for `/plugins`: every installed module with
+  /// its active state; tapping activates (with consent) in the current
+  /// chat, and a footer shortcut opens the Modules manager.
+  Future<void> _openModuleSheet() async {
+    final AppStrings strings = stringsOf(context);
+    ref.invalidate(moduleListProvider);
+    await showModalBottomSheet<void>(
+      context: context,
+      builder: (BuildContext sheetContext) => Consumer(
+        builder: (BuildContext context, WidgetRef sheetRef, _) {
+          final AsyncValue<List<ChatModule>> modules = sheetRef.watch(
+            moduleListProvider,
+          );
+          final List<String> active = sheetRef.watch(
+            chatControllerProvider.select((s) => s.activeModules),
+          );
+          return SafeArea(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 14, 16, 6),
+                  child: Row(
+                    children: <Widget>[
+                      Expanded(
+                        child: Text(
+                          strings.pluginMenuTitle,
+                          style: const TextStyle(fontWeight: FontWeight.w700),
+                        ),
+                      ),
+                      TextButton.icon(
+                        key: const Key('plugin-sheet-manage'),
+                        onPressed: () {
+                          Navigator.of(sheetContext).pop();
+                          Navigator.of(this.context).push(
+                            MaterialPageRoute<void>(
+                              builder: (_) => const ModulesScreen(),
+                            ),
+                          );
+                        },
+                        icon: const Icon(Icons.extension_rounded, size: 16),
+                        label: Text(strings.modulesManage),
+                      ),
+                    ],
+                  ),
+                ),
+                modules.when(
+                  loading: () => const SizedBox(
+                    height: 120,
+                    child: Center(
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                  ),
+                  error: (Object e, StackTrace s) => SizedBox(
+                    height: 120,
+                    child: Center(
+                      child: Text(
+                        strings.operationFailed,
+                        style: TextStyle(color: context.zMuted),
+                      ),
+                    ),
+                  ),
+                  data: (List<ChatModule> items) => items.isEmpty
+                      ? Padding(
+                          padding: const EdgeInsets.fromLTRB(16, 4, 16, 20),
+                          child: Column(
+                            children: <Widget>[
+                              Text(
+                                strings.pluginMenuEmpty,
+                                style: TextStyle(color: context.zMuted),
+                              ),
+                              const SizedBox(height: 8),
+                              TextButton.icon(
+                                key: const Key('plugin-sheet-open-modules'),
+                                onPressed: () {
+                                  Navigator.of(sheetContext).pop();
+                                  Navigator.of(this.context).push(
+                                    MaterialPageRoute<void>(
+                                      builder: (_) => const ModulesScreen(),
+                                    ),
+                                  );
+                                },
+                                icon: const Icon(Icons.add_rounded, size: 16),
+                                label: Text(strings.modulesInstall),
+                              ),
+                            ],
+                          ),
+                        )
+                      : Flexible(
+                          child: ListView.builder(
+                            key: const Key('plugin-sheet-list'),
+                            shrinkWrap: true,
+                            itemCount: items.length,
+                            itemBuilder: (BuildContext context, int index) {
+                              final ChatModule module = items[index];
+                              final bool isActive = active.contains(
+                                module.name,
+                              );
+                              return ListTile(
+                                key: Key('plugin-sheet-item-${module.name}'),
+                                dense: true,
+                                leading: Icon(
+                                  isActive
+                                      ? Icons.check_circle_rounded
+                                      : Icons.extension_rounded,
+                                  size: 20,
+                                  color: isActive ? null : context.zMuted,
+                                ),
+                                title: Text(
+                                  module.manifest.title.isEmpty
+                                      ? module.name
+                                      : module.manifest.title,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                subtitle: module.manifest.description.isEmpty
+                                    ? null
+                                    : Text(
+                                        module.manifest.description,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                trailing: Text(
+                                  'v${module.manifest.version}',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: context.zMuted,
+                                  ),
+                                ),
+                                onTap: () async {
+                                  final NavigatorState sheetNav = Navigator.of(
+                                    sheetContext,
+                                  );
+                                  if (isActive) {
+                                    await sheetRef
+                                        .read(chatControllerProvider.notifier)
+                                        .deactivateModule(module.name);
+                                    sheetNav.pop();
+                                    return;
+                                  }
+                                  if (!await ModulesScreen.confirmPermissions(
+                                    this.context,
+                                    sheetRef,
+                                    module,
+                                  )) {
+                                    return;
+                                  }
+                                  await sheetRef
+                                      .read(chatControllerProvider.notifier)
+                                      .activateModule(module.name);
+                                  sheetNav.pop();
+                                },
+                              );
+                            },
+                          ),
+                        ),
+                ),
+                const SizedBox(height: 8),
+              ],
+            ),
+          );
+        },
+      ),
+    );
   }
 
   Future<void> _pickFile() async {

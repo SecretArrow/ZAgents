@@ -1,0 +1,482 @@
+import 'dart:io';
+
+import 'package:flutter_test/flutter_test.dart';
+import 'package:zagents/services/js_runtime.dart';
+import 'package:zagents/services/module_registry.dart';
+import 'package:zagents/services/module_runtime.dart';
+import 'package:zagents/services/session_sandbox.dart';
+
+import '../support/test_doubles.dart';
+
+void main() {
+  late Directory docs;
+  late SessionSandbox sandbox;
+  late ScriptedJsRuntime js;
+  late ModuleRuntime runtime;
+  int httpCalls = 0;
+
+  setUp(() async {
+    docs = await Directory.systemTemp.createTemp('module_runtime_test');
+    sandbox = SessionSandbox(resolveDocumentsDir: () async => docs);
+    js = ScriptedJsRuntime();
+    runtime = ModuleRuntime(
+      js: js,
+      resolveSandboxRoot: sandbox.rootFor,
+      // Stand-in for the registry lookup: modules created by the helper
+      // exist on disk under docs/modules/<name>.
+      resolveModulePath: (String name) async {
+        final String path =
+            '${docs.path}${Platform.pathSeparator}modules'
+            '${Platform.pathSeparator}$name';
+        return Directory(path).existsSync() ? path : null;
+      },
+      resolveSdkSource: () async => 'module.exports = zagents;',
+      resolveNpmModulesRoot: () async =>
+          '${docs.path}${Platform.pathSeparator}node_modules',
+      httpTransport: (String url, String method, String? body) async {
+        httpCalls++;
+        return <String, dynamic>{'status': 200, 'body': '{"ok":true}'};
+      },
+    );
+  });
+
+  tearDown(() async {
+    if (docs.existsSync()) await docs.delete(recursive: true);
+  });
+
+  ChatModule module({
+    String name = 'counter',
+    Set<ModulePermission> permissions = const <ModulePermission>{
+      ModulePermission.storage,
+    },
+    List<String>? allowedHosts,
+  }) {
+    final Directory dir = Directory(
+      '${docs.path}${Platform.pathSeparator}modules'
+      '${Platform.pathSeparator}$name',
+    )..createSync(recursive: true);
+    File('${dir.path}${Platform.pathSeparator}main.js')
+        .writeAsStringSync('// entry');
+    return ChatModule(
+      manifest: ModuleManifest(
+        name: name,
+        version: '1.0.0',
+        title: name,
+        description: 'test module',
+        entry: 'main.js',
+        permissions: permissions,
+        allowedHosts: allowedHosts,
+      ),
+      path: dir.path,
+      installedAt: DateTime.now(),
+    );
+  }
+
+  /// Runs the module and, WHILE its execution context is live, fires the
+  /// given bridge ops (exactly what the `zagents` SDK does from JS) and
+  /// returns their responses in order.
+  Future<List<Map<String, dynamic>?>> runAndCall(
+    String sessionId,
+    ChatModule mod,
+    Set<ModulePermission> granted, {
+    List<Map<String, dynamic>> ops = const <Map<String, dynamic>>[],
+    void Function(String text)? onChatEmit,
+  }) async {
+    final List<Map<String, dynamic>?> responses = <Map<String, dynamic>?>[];
+    js.onModuleInvocation = (ModuleInvocation invocation) async {
+      for (final Map<String, dynamic> op in ops) {
+        responses.add(await runtime.handleOp(op));
+      }
+    };
+    await runtime.run(
+      sessionId: sessionId,
+      module: mod,
+      granted: granted,
+      onChatEmit: onChatEmit,
+    );
+    js.onModuleInvocation = null;
+    return responses;
+  }
+
+  group('per-chat isolation (private window semantics)', () {
+    test('storage written in chat A is invisible to chat B', () async {
+      final ChatModule mod = module();
+      // Chat A stores a value while its run is live.
+      await runAndCall(
+        'chat-a',
+        mod,
+        mod.manifest.permissions,
+        ops: <Map<String, dynamic>>[
+          <String, dynamic>{
+            'zop': 'storage.set',
+            'key': 'token',
+            'value': 'secret-A',
+          },
+        ],
+      );
+      // Chat B runs the SAME module: fresh per-chat storage.
+      final List<Map<String, dynamic>?> responses = await runAndCall(
+        'chat-b',
+        mod,
+        mod.manifest.permissions,
+        ops: <Map<String, dynamic>>[
+          <String, dynamic>{'zop': 'storage.get', 'key': 'token'},
+        ],
+      );
+      expect(responses.single!['ok'], isTrue);
+      expect(responses.single!['data'], isNull);
+
+      // Chat A keeps its own value (per-chat persistence).
+      final List<Map<String, dynamic>?> restored = await runAndCall(
+        'chat-a',
+        mod,
+        mod.manifest.permissions,
+        ops: <Map<String, dynamic>>[
+          <String, dynamic>{'zop': 'storage.get', 'key': 'token'},
+        ],
+      );
+      expect(restored.single!['data'], 'secret-A');
+    });
+
+    test('two modules in the SAME chat never share storage', () async {
+      final ChatModule a = module(name: 'alpha');
+      final ChatModule b = module(name: 'beta');
+      await runAndCall(
+        'chat-1',
+        a,
+        a.manifest.permissions,
+        ops: <Map<String, dynamic>>[
+          <String, dynamic>{'zop': 'storage.set', 'key': 'k', 'value': 'A'},
+        ],
+      );
+      final List<Map<String, dynamic>?> responses = await runAndCall(
+        'chat-1',
+        b,
+        b.manifest.permissions,
+        ops: <Map<String, dynamic>>[
+          <String, dynamic>{'zop': 'storage.get', 'key': 'k'},
+        ],
+      );
+      expect(responses.single!['data'], isNull);
+    });
+
+    test('state directories live inside each chat sandbox', () async {
+      final ChatModule mod = module();
+      await runAndCall('s-1', mod, mod.manifest.permissions);
+      final Directory instance = await runtime.instanceDirFor('s-1', 'counter');
+      expect(
+        instance.path,
+        contains(
+          '${Platform.pathSeparator}sessions'
+          '${Platform.pathSeparator}s-1'
+          '${Platform.pathSeparator}modules',
+        ),
+      );
+      final Directory other = await runtime.instanceDirFor('s-2', 'counter');
+      expect(other.path != instance.path, isTrue);
+    });
+
+    test(
+      'every run gets a fresh isolated invocation (nothing shared)',
+      () async {
+        final ChatModule mod = module();
+        await runAndCall('s-1', mod, mod.manifest.permissions);
+        await runAndCall('s-1', mod, mod.manifest.permissions);
+        expect(js.moduleInvocations, hasLength(2));
+        final ModuleInvocation first = js.moduleInvocations[0];
+        final ModuleInvocation second = js.moduleInvocations[1];
+        expect(identical(first, second), isFalse);
+        expect(first.permissions, <String>{'storage'});
+        expect(first.permissions, second.permissions);
+      },
+    );
+  });
+
+  group('permission enforcement (Dart bridge, defense in depth)', () {
+    test('storage ops require the storage permission', () async {
+      final ChatModule mod = module(permissions: <ModulePermission>{});
+      final List<Map<String, dynamic>?> responses = await runAndCall(
+        's',
+        mod,
+        const <ModulePermission>{},
+        ops: <Map<String, dynamic>>[
+          <String, dynamic>{'zop': 'storage.get', 'key': 'k'},
+        ],
+      );
+      expect(responses.single!['ok'], isFalse);
+      expect(responses.single!['error'], 'Permission denied: storage');
+    });
+
+    test('http requires the network permission', () async {
+      final ChatModule mod = module(permissions: <ModulePermission>{});
+      final List<Map<String, dynamic>?> responses = await runAndCall(
+        's',
+        mod,
+        const <ModulePermission>{},
+        ops: <Map<String, dynamic>>[
+          <String, dynamic>{
+            'zop': 'http.request',
+            'url': 'https://example.com',
+          },
+        ],
+      );
+      expect(responses.single!['ok'], isFalse);
+      expect(responses.single!['error'], 'Permission denied: network');
+      expect(httpCalls, 0);
+    });
+
+    test(
+      'chat.emit requires the chat permission and reaches the sink',
+      () async {
+        final ChatModule mod = module(
+          permissions: <ModulePermission>{ModulePermission.chat},
+        );
+        final List<String> emitted = <String>[];
+        final List<Map<String, dynamic>?> responses = await runAndCall(
+          's',
+          mod,
+          mod.manifest.permissions,
+          ops: <Map<String, dynamic>>[
+            <String, dynamic>{'zop': 'chat.emit', 'text': 'progress…'},
+          ],
+          onChatEmit: emitted.add,
+        );
+        expect(responses.single!['ok'], isTrue);
+        expect(emitted, <String>['progress…']);
+      },
+    );
+
+    test('fs scope is confined to the module state dir', () async {
+      final ChatModule mod = module(
+        permissions: <ModulePermission>{
+          ModulePermission.storage,
+          ModulePermission.files,
+        },
+      );
+      await runAndCall('s', mod, mod.manifest.permissions);
+      final ModuleInvocation invocation = js.moduleInvocations.single;
+      expect(invocation.workingDir, isNotNull);
+      expect(
+        invocation.workingDir!.endsWith('${Platform.pathSeparator}state'),
+        isTrue,
+      );
+      expect(invocation.workingDir, contains('counter'));
+    });
+  });
+
+  group('network allowlist', () {
+    test('blocks hosts outside the manifest allowlist', () async {
+      final ChatModule mod = module(
+        permissions: <ModulePermission>{ModulePermission.network},
+        allowedHosts: <String>['api.example.com'],
+      );
+      final List<Map<String, dynamic>?> responses = await runAndCall(
+        's',
+        mod,
+        mod.manifest.permissions,
+        ops: <Map<String, dynamic>>[
+          <String, dynamic>{
+            'zop': 'http.request',
+            'url': 'https://evil.example.net/steal',
+          },
+          <String, dynamic>{
+            'zop': 'http.request',
+            'url': 'https://api.example.com/v1/data',
+          },
+        ],
+      );
+      expect(responses[0]!['ok'], isFalse);
+      expect(responses[0]!['error'], contains('not allowed'));
+      expect(responses[1]!['ok'], isTrue);
+      expect(httpCalls, 1);
+    });
+
+    test('wildcard subdomain patterns match dot boundaries', () async {
+      final ChatModule mod = module(
+        permissions: <ModulePermission>{ModulePermission.network},
+        allowedHosts: <String>['*.example.com'],
+      );
+      final List<Map<String, dynamic>?> responses = await runAndCall(
+        's',
+        mod,
+        mod.manifest.permissions,
+        ops: <Map<String, dynamic>>[
+          <String, dynamic>{
+            'zop': 'http.request',
+            'url': 'https://api.example.com/x',
+          },
+        ],
+      );
+      expect(responses.single!['ok'], isTrue);
+    });
+
+    test('without an allowlist every host is reachable', () async {
+      final ChatModule mod = module(
+        permissions: <ModulePermission>{ModulePermission.network},
+      );
+      final List<Map<String, dynamic>?> responses = await runAndCall(
+        's',
+        mod,
+        mod.manifest.permissions,
+        ops: <Map<String, dynamic>>[
+          <String, dynamic>{
+            'zop': 'http.request',
+            'url': 'https://anything.org/data',
+          },
+        ],
+      );
+      expect(responses.single!['ok'], isTrue);
+      expect(responses.single!['data']['status'], 200);
+    });
+  });
+
+  group('storage budgets', () {
+    test(
+      'oversized values are rejected without corrupting the store',
+      () async {
+        final ChatModule mod = module();
+        final String huge = 'x' * (ModuleRuntime.maxStorageValueBytes + 10);
+        final List<Map<String, dynamic>?> responses = await runAndCall(
+          's',
+          mod,
+          mod.manifest.permissions,
+          ops: <Map<String, dynamic>>[
+            <String, dynamic>{'zop': 'storage.set', 'key': 'good', 'value': 1},
+            <String, dynamic>{
+              'zop': 'storage.set',
+              'key': 'huge',
+              'value': huge,
+            },
+            <String, dynamic>{'zop': 'storage.keys'},
+          ],
+        );
+        expect(responses[0]!['ok'], isTrue);
+        expect(responses[1]!['ok'], isFalse);
+        expect(responses[2]!['data'], <String>['good']);
+      },
+    );
+
+    test('storage.remove and storage.keys behave', () async {
+      final ChatModule mod = module();
+      final List<Map<String, dynamic>?> responses = await runAndCall(
+        's',
+        mod,
+        mod.manifest.permissions,
+        ops: <Map<String, dynamic>>[
+          <String, dynamic>{'zop': 'storage.set', 'key': 'a', 'value': 1},
+          <String, dynamic>{'zop': 'storage.set', 'key': 'b', 'value': 2},
+          <String, dynamic>{'zop': 'storage.remove', 'key': 'a'},
+          <String, dynamic>{'zop': 'storage.keys'},
+        ],
+      );
+      expect((responses[3]!['data'] as List<dynamic>), <String>['b']);
+    });
+
+    test('empty keys are rejected', () async {
+      final ChatModule mod = module();
+      final List<Map<String, dynamic>?> responses = await runAndCall(
+        's',
+        mod,
+        mod.manifest.permissions,
+        ops: <Map<String, dynamic>>[
+          <String, dynamic>{'zop': 'storage.set', 'key': '', 'value': 1},
+        ],
+      );
+      expect(responses.single!['ok'], isFalse);
+    });
+  });
+
+  group('safe termination', () {
+    test('terminate mid-run discards output and flags the result', () async {
+      final ChatModule mod = module(
+        permissions: <ModulePermission>{
+          ModulePermission.storage,
+          ModulePermission.chat,
+        },
+      );
+      final List<String> emitted = <String>[];
+      ModuleRunResult? result;
+      js.onModuleInvocation = (ModuleInvocation invocation) async {
+        expect(runtime.terminate('s', 'counter'), isTrue);
+        // Late emission after cancellation is suppressed by the bridge.
+        await runtime.handleOp(<String, dynamic>{
+          'zop': 'chat.emit',
+          'text': 'late',
+        });
+      };
+      result = await runtime.run(
+        sessionId: 's',
+        module: mod,
+        granted: mod.manifest.permissions,
+        onChatEmit: emitted.add,
+      );
+      js.onModuleInvocation = null;
+      expect(result.terminated, isTrue);
+      expect(result.ok, isFalse);
+      expect(emitted, isEmpty);
+    });
+
+    test('terminateSession cancels only that chat running module', () async {
+      final ChatModule mod = module();
+      String? terminatedDuring;
+      js.onModuleInvocation = (ModuleInvocation invocation) async {
+        terminatedDuring = runtime.terminateSession('other');
+      };
+      await runtime.run(
+        sessionId: 'other',
+        module: mod,
+        granted: mod.manifest.permissions,
+      );
+      js.onModuleInvocation = null;
+      expect(terminatedDuring, 'counter');
+      // No live run afterwards.
+      expect(runtime.terminateSession('other'), isNull);
+    });
+  });
+
+  group('runtime wiring', () {
+    test('invocation carries SDK source, npm root and module dir', () async {
+      final ChatModule mod = module();
+      await runAndCall('s', mod, mod.manifest.permissions);
+      final ModuleInvocation invocation = js.moduleInvocations.single;
+      expect(invocation.sdkSource, 'module.exports = zagents;');
+      expect(
+        invocation.moduleRoots.first.endsWith(
+          '${Platform.pathSeparator}modules'
+          '${Platform.pathSeparator}counter',
+        ),
+        isTrue,
+      );
+      expect(
+        invocation.moduleRoots.last,
+        '${docs.path}${Platform.pathSeparator}node_modules',
+      );
+      expect(invocation.info['name'], 'counter');
+      expect(invocation.info['sessionId'], 's');
+      expect(invocation.info['version'], '1.0.0');
+      expect(invocation.bridge, same(runtime));
+    });
+
+    test('missing module install path fails gracefully', () async {
+      final ChatModule missing = ChatModule(
+        manifest: ModuleManifest(
+          name: 'ghost2',
+          version: '1.0.0',
+          title: 'ghost2',
+          description: '',
+          entry: 'main.js',
+        ),
+        path: '${docs.path}${Platform.pathSeparator}nowhere',
+        installedAt: DateTime.now(),
+      );
+      final ModuleRunResult result = await runtime.run(
+        sessionId: 's',
+        module: missing,
+        granted: const <ModulePermission>{},
+      );
+      expect(result.ok, isFalse);
+      expect(result.error, contains('not installed'));
+      expect(js.moduleInvocations, isEmpty);
+    });
+  });
+}

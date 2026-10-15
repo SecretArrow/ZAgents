@@ -11,15 +11,15 @@ import 'package:zagents/services/chat_store.dart';
 import 'package:zagents/ui/screens/search_screen.dart';
 import 'package:zagents/ui/theme.dart';
 
-import '../../test/fakes/fakes.dart';
+import '../../test/support/test_doubles.dart';
 
-/// In-memory ChatStore fake: searchAll returns canned hits, load() feeds
-/// openChat — no disk IO (which never completes in the fake-async zone).
-class FakeChatStore implements ChatStore {
+/// In-memory ChatStore test double: searchAll returns canned hits, load() feeds
+/// openChat — no disk IO (which never completes in the async test zone).
+class ScriptedChatStore implements ChatStore {
   final List<ChatSearchHit> hits;
   final Map<String, List<ChatMessage>> sessions;
 
-  FakeChatStore({
+  ScriptedChatStore({
     required this.hits,
     this.sessions = const <String, List<ChatMessage>>{},
   });
@@ -39,7 +39,14 @@ class FakeChatStore implements ChatStore {
     required String id,
     required String title,
     required List<ChatMessage> messages,
+    List<String> modules = const <String>[],
   }) async {}
+
+  @override
+  Future<List<String>> loadModules(String id) async => const <String>[];
+
+  @override
+  Future<void> saveModules(String id, List<String> modules) async {}
 
   @override
   Future<List<ChatMessage>?> load(String id) async => sessions[id];
@@ -110,7 +117,7 @@ void main() {
   testWidgets('typing a query renders ranked results after the debounce', (
     WidgetTester tester,
   ) async {
-    final FakeChatStore fake = FakeChatStore(
+    final ScriptedChatStore scripted = ScriptedChatStore(
       hits: <ChatSearchHit>[
         ChatSearchHit(
           sessionId: 's1',
@@ -131,7 +138,7 @@ void main() {
       wrap(
         const SizedBox.shrink(),
         dir: tempDir,
-        extra: <Override>[chatStoreProvider.overrideWithValue(fake)],
+        extra: <Override>[chatStoreProvider.overrideWithValue(scripted)],
       ),
     );
     await tester.pump();
@@ -149,7 +156,7 @@ void main() {
     );
 
     await tester.enterText(find.byKey(const Key('search-field')), 'kereta');
-    // 300 ms debounce timer, then the (fake, instant) search itself.
+    // 300 ms debounce timer, then the (scripted, instant) search itself.
     await tester.pump(const Duration(milliseconds: 300));
     await tester.pumpAndSettle(
       const Duration(milliseconds: 100),
@@ -180,7 +187,7 @@ void main() {
         dir: tempDir,
         extra: <Override>[
           chatStoreProvider.overrideWithValue(
-            FakeChatStore(hits: <ChatSearchHit>[]),
+            ScriptedChatStore(hits: <ChatSearchHit>[]),
           ),
         ],
       ),
@@ -206,7 +213,7 @@ void main() {
   testWidgets('tapping a hit opens the session and pops back', (
     WidgetTester tester,
   ) async {
-    final FakeChatStore fake = FakeChatStore(
+    final ScriptedChatStore scripted = ScriptedChatStore(
       hits: <ChatSearchHit>[
         ChatSearchHit(
           sessionId: 's2',
@@ -229,7 +236,7 @@ void main() {
             settings: AppSettings(apiKey: 'k', autoTitle: false),
             writeScreenshots: false,
           ),
-          chatStoreProvider.overrideWithValue(fake),
+          chatStoreProvider.overrideWithValue(scripted),
         ],
         child: Builder(
           builder: (BuildContext context) {

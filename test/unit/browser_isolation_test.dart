@@ -5,9 +5,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:zagents/services/browser_automation.dart';
 import 'package:zagents/services/browser_session_isolation.dart';
 
-/// Cookie jar fake recording every mutation so tests can assert exactly
+/// Cookie jar test double recording every mutation so tests can assert exactly
 /// when the shared jar is cleared and whose cookies are restored.
-class _FakeCookies implements CookieGateway {
+class _ScriptedCookies implements CookieGateway {
   final Map<String, Map<String, String>> jar = <String, Map<String, String>>{};
   int clearCalls = 0;
   final List<String> writes = <String>[];
@@ -30,11 +30,11 @@ class _FakeCookies implements CookieGateway {
   }
 }
 
-/// Inner automation fake: records calls, answers the snapshot JS with a
+/// Inner automation test double: records calls, answers the snapshot JS with a
 /// canned page description, and lets tests simulate "the site set a
 /// cookie" by writing to the gateway from within navigate.
-class _FakeInner implements BrowserAutomation {
-  _FakeInner();
+class _ScriptedInner implements BrowserAutomation {
+  _ScriptedInner();
 
   final List<String> calls = <String>[];
   String pageUrl = 'about:blank';
@@ -184,16 +184,16 @@ class _FakeInner implements BrowserAutomation {
 }
 
 IsolatedBrowserAutomation _build(
-  _FakeInner inner,
-  _FakeCookies cookies,
+  _ScriptedInner inner,
+  _ScriptedCookies cookies,
   BrowserStateStore store,
 ) => IsolatedBrowserAutomation(inner: inner, store: store, cookies: cookies);
 
 void main() {
   late Directory temp;
   late BrowserStateStore store;
-  late _FakeCookies cookies;
-  late _FakeInner inner;
+  late _ScriptedCookies cookies;
+  late _ScriptedInner inner;
   late IsolatedBrowserAutomation isolated;
 
   setUp(() async {
@@ -204,8 +204,8 @@ void main() {
         return Directory('${temp.path}${Platform.pathSeparator}$sessionId');
       },
     );
-    cookies = _FakeCookies();
-    inner = _FakeInner();
+    cookies = _ScriptedCookies();
+    inner = _ScriptedInner();
     isolated = _build(inner, cookies, store);
   });
 
@@ -421,7 +421,7 @@ void main() {
 
     test('same site, two accounts: logins stay bound to their own chat '
         '(user regression scenario)', () async {
-      // The fake models a real site: cookies live in the shared jar and
+      // The test double models a real site: cookies live in the shared jar and
       // document.cookie mirrors the jar; each session's page reports its
       // own storage snapshot until the next session actually navigates.
       inner.site = cookies;
@@ -496,7 +496,7 @@ void main() {
       'parallel operations from different sessions never interleave',
       () async {
         // Two operations racing: each must run as one atomic block and
-        // capture its own origin state (the fake's default href follows the
+        // capture its own origin state (the test double's default href follows the
         // last loaded page, so each session snapshots its own origin).
         final t1 = isolated.navigate('https://a.test/', sessionId: 'sA');
         final t2 = isolated.navigate('https://b.test/', sessionId: 'sB');

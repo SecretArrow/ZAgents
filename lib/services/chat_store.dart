@@ -45,6 +45,7 @@ class ChatStore {
     required String id,
     required String title,
     required List<ChatMessage> messages,
+    List<String> modules = const <String>[],
   }) async {
     final dir = await _chatsDir();
     final file = File('${dir.path}${Platform.pathSeparator}$id.json');
@@ -54,6 +55,7 @@ class ChatStore {
         'title': title,
         'updatedAt': DateTime.now().toIso8601String(),
         'messages': messages.map((m) => m.toJson()).toList(),
+        'modules': modules,
       }),
     );
   }
@@ -73,6 +75,43 @@ class ChatStore {
       ];
     } catch (_) {
       return null;
+    }
+  }
+
+  /// Loads the list of chat modules activated for [sessionId] (plugins
+  /// are a per-session private-window scope). Empty when unknown.
+  Future<List<String>> loadModules(String id) async {
+    final dir = await _chatsDir();
+    final file = File('${dir.path}${Platform.pathSeparator}$id.json');
+    if (!await file.exists()) return const <String>[];
+    try {
+      final data =
+          jsonDecode(await file.readAsString()) as Map<String, dynamic>;
+      final raw = data['modules'];
+      if (raw is! List) return const <String>[];
+      return <String>[
+        for (final Object? name in raw)
+          if (name != null && name.toString().trim().isNotEmpty)
+            name.toString().trim(),
+      ];
+    } catch (_) {
+      return const <String>[];
+    }
+  }
+
+  /// Persists the module list of [sessionId] without touching messages.
+  Future<void> saveModules(String id, List<String> modules) async {
+    final dir = await _chatsDir();
+    final file = File('${dir.path}${Platform.pathSeparator}$id.json');
+    if (!await file.exists()) return;
+    try {
+      final data = jsonDecode(await file.readAsString());
+      if (data is Map<String, dynamic>) {
+        data['modules'] = modules;
+        await file.writeAsString(jsonEncode(data));
+      }
+    } catch (_) {
+      // Corrupted file: module bookkeeping must never crash the caller.
     }
   }
 

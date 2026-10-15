@@ -8,7 +8,7 @@ import 'package:zagents/main.dart';
 import 'package:zagents/models/models.dart';
 import 'package:zagents/services/llm_client.dart';
 
-import '../../test/fakes/fakes.dart';
+import '../../test/support/test_doubles.dart';
 
 /// Widget tests for the v1.15.0 message actions: the edit button on user
 /// bubbles, the regenerate button under the LAST assistant bubble, and
@@ -36,7 +36,7 @@ void main() {
 
   Future<void> pumpSendAndSettle(
     WidgetTester tester,
-    FakeLlmClient llm,
+    ScriptedLlmClient llm,
     String message,
   ) async {
     await tester.enterText(find.byKey(const Key('composer-field')), message);
@@ -52,7 +52,7 @@ void main() {
   testWidgets('buttons appear after the run and disappear while running', (
     WidgetTester tester,
   ) async {
-    final FakeLlmClient llm = FakeLlmClient(<AssistantTurn>[
+    final ScriptedLlmClient llm = ScriptedLlmClient(<AssistantTurn>[
       AssistantTurn(content: 'first answer'),
     ]);
     await tester.pumpWidget(wrap(llm: llm));
@@ -82,7 +82,7 @@ void main() {
   testWidgets('edit dialog round trip truncates history and re-answers', (
     WidgetTester tester,
   ) async {
-    final FakeLlmClient llm = FakeLlmClient(<AssistantTurn>[
+    final ScriptedLlmClient llm = ScriptedLlmClient(<AssistantTurn>[
       AssistantTurn(content: 'first answer'),
       AssistantTurn(content: 'second answer'),
     ]);
@@ -130,7 +130,7 @@ void main() {
   testWidgets('regenerate button replays the last user message', (
     WidgetTester tester,
   ) async {
-    final FakeLlmClient llm = FakeLlmClient(<AssistantTurn>[
+    final ScriptedLlmClient llm = ScriptedLlmClient(<AssistantTurn>[
       AssistantTurn(content: 'first answer'),
       AssistantTurn(content: 'REGENERATED MARKER'),
     ]);
@@ -155,7 +155,7 @@ void main() {
   testWidgets('regenerate shows only under the LAST assistant message', (
     WidgetTester tester,
   ) async {
-    final FakeLlmClient llm = FakeLlmClient(<AssistantTurn>[
+    final ScriptedLlmClient llm = ScriptedLlmClient(<AssistantTurn>[
       AssistantTurn(content: 'answer one'),
       AssistantTurn(content: 'answer two'),
     ]);

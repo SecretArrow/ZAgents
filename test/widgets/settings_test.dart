@@ -11,7 +11,7 @@ import 'package:zagents/models/user_agent.dart';
 import 'package:zagents/ui/screens/providers_screen.dart';
 import 'package:zagents/ui/screens/settings_screen.dart';
 
-import '../../test/fakes/fakes.dart';
+import '../../test/support/test_doubles.dart';
 
 void main() {
   late Directory tempDir;

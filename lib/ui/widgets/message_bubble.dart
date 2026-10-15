@@ -153,6 +153,26 @@ class MessageBubble extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: <Widget>[
+                  if (message.moduleName != null)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 6),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: <Widget>[
+                          const Icon(Icons.extension_rounded, size: 14),
+                          const SizedBox(width: 4),
+                          Text(
+                            message.moduleName!,
+                            key: Key('module-badge-${message.moduleName}'),
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              color: Theme.of(context).colorScheme.primary,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                   for (final ToolCall call in message.toolCalls)
                     if (call.name == 'todo_write' &&
                         parseTodoList(call.arguments['todos']).isNotEmpty)

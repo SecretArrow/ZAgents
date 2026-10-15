@@ -11,6 +11,8 @@ import '../tools/tool_defs.dart';
 import 'background_service.dart';
 import 'image_downscale.dart';
 import 'llm_client.dart';
+import 'module_registry.dart';
+import 'module_runtime.dart';
 
 /// Wire-only user message appended when the model tries to finish while
 /// its todo plan still has incomplete items (run-until-done + plan-first).
@@ -47,6 +49,8 @@ class ChatState {
     this.isRunning = false,
     this.error,
     this.todos = const <TodoItem>[],
+    this.pendingModule,
+    this.activeModules = const <String>[],
   });
 
   final String? sessionId;
@@ -59,6 +63,14 @@ class ChatState {
   /// the show/hide plan panel next to the thinking indicator.
   final List<TodoItem> todos;
 
+  /// Module (plugins) selected on a FRESH DRAFT that activates with the
+  /// first message. Null when no module is staged.
+  final String? pendingModule;
+
+  /// Modules currently active for the displayed session (per-chat
+  /// private-window scope).
+  final List<String> activeModules;
+
   static const Object _unset = Object();
 
   ChatState copyWith({
@@ -68,6 +80,8 @@ class ChatState {
     bool? isRunning,
     Object? error = _unset,
     List<TodoItem>? todos,
+    Object? pendingModule = _unset,
+    List<String>? activeModules,
   }) => ChatState(
     sessionId: sessionId ?? this.sessionId,
     title: title ?? this.title,
@@ -75,6 +89,10 @@ class ChatState {
     isRunning: isRunning ?? this.isRunning,
     error: error == _unset ? this.error : error as String?,
     todos: todos ?? this.todos,
+    pendingModule: pendingModule == _unset
+        ? this.pendingModule
+        : pendingModule as String?,
+    activeModules: activeModules ?? this.activeModules,
   );
 }
 
@@ -115,6 +133,15 @@ class _SessionRun {
   /// [ChatState] on every sync so the UI can show live plan progress.
   List<TodoItem> latestTodos = const <TodoItem>[];
 
+  /// Chat modules (plugins) active for THIS session — a per-chat
+  /// private-window scope: activating a module in another chat never
+  /// affects this list, and each active module gets its own state
+  /// directory under this session's sandbox.
+  final List<String> activeModules = <String>[];
+
+  /// Module staged on the draft; activates with the first message.
+  String? pendingModule;
+
   /// Absolute path of the app documents directory, resolved once per run so
   /// binary attachment notes can advertise the documents-relative path the
   /// file tools expect (e.g. `uploads/1_project.zip`).
@@ -145,10 +172,18 @@ class ChatController extends Notifier<ChatState> {
     ref.read(runningSessionsProvider.notifier).state = runningIds;
   }
 
-  /// Stops the ACTIVE session's loop (other sessions keep running).
+  /// Stops the ACTIVE session's loop (other sessions keep running) and
+  /// safely terminates any chat-module execution belonging to it.
   void stop() {
     final String? id = _activeSessionId;
-    if (id != null) _runs[id]?.stopRequested = true;
+    if (id != null) {
+      _runs[id]?.stopRequested = true;
+      try {
+        ref.read(moduleRuntimeProvider).terminateSession(id);
+      } catch (_) {
+        // Runtime unavailable: the stop itself still proceeds.
+      }
+    }
   }
 
   Future<void> send(
@@ -172,6 +207,10 @@ class ChatController extends Notifier<ChatState> {
       state = state.copyWith(error: strings.modelNotSet);
       return;
     }
+
+    // Module staged on the draft (module chip on the empty state) —
+    // captured BEFORE the session-state reset below can drop it.
+    final String? stagedModule = state.pendingModule;
 
     // Continue the active session, or create a new one. An OPEN but not
     // currently-running session (opened from history, or one whose run has
@@ -210,7 +249,173 @@ class ChatController extends Notifier<ChatState> {
       state = state.copyWith(isRunning: true, error: null);
     }
 
+    // A module staged on the draft activates with the FIRST message of the
+    // session — inside _executeRun, right after the user message lands, so
+    // the transcript reads: user → module output → agent reply.
+    run.pendingModule ??= stagedModule;
+    state = state.copyWith(pendingModule: null);
+
     await _executeRun(run, settings, prompt: trimmed, attachments: attachments);
+  }
+
+  /// Clears the module staged on a fresh draft (chip unselected).
+  void stageNoModule() {
+    if (state.pendingModule == null) return;
+    state = state.copyWith(pendingModule: null);
+  }
+
+  /// Activates a chat module for the CURRENT context:
+  /// * fresh draft → the module is staged (pendingModule) and activates
+  ///   with the first message;
+  /// * open session → the module activates immediately: it joins the
+  ///   session's private-window scope and its entry point runs with the
+  ///   output posted as a module message.
+  ///
+  /// The UI shows the permission dialog BEFORE calling this; the granted
+  /// set is therefore the module's declared manifest permissions.
+  Future<void> activateModule(String name) async {
+    final String trimmed = name.trim();
+    if (trimmed.isEmpty) return;
+    final String? sessionId = _activeSessionId;
+    if (sessionId == null) {
+      // Draft: stage for the first message.
+      if (state.pendingModule == trimmed) return;
+      state = state.copyWith(pendingModule: trimmed);
+      return;
+    }
+    _SessionRun? run = _runs[sessionId];
+    if (run == null) {
+      run = await _materializeSession(sessionId);
+      if (run == null) return;
+      _runs[sessionId] = run;
+    }
+    if (run.isRunning || (_activeSessionId == sessionId && state.isRunning)) {
+      state = state.copyWith(
+        error: appStringsFor(ref.read(settingsProvider).languageCode)
+            .moduleSessionBusy,
+      );
+      return;
+    }
+    if (run.activeModules.contains(trimmed)) return;
+    await _activateModule(run, trimmed);
+  }
+
+  /// Deactivates a chat module for the ACTIVE session: removes it from the
+  /// per-chat scope, safely terminates a live execution and records the
+  /// change as a module message. Returns false when nothing was active.
+  Future<bool> deactivateModule(String name) async {
+    final String trimmed = name.trim();
+    final String? sessionId = _activeSessionId;
+    if (sessionId == null || trimmed.isEmpty) return false;
+    _SessionRun? run = _runs[sessionId];
+    if (run == null) {
+      run = await _materializeSession(sessionId);
+      if (run == null) return false;
+      _runs[sessionId] = run;
+    }
+    if (!run.activeModules.contains(trimmed)) return false;
+    run.activeModules.remove(trimmed);
+    // Safe termination: cancel any live execution; persisted per-chat
+    // state (storage.json, state/) is intentionally kept for the day the
+    // module is re-activated in this chat.
+    try {
+      ref.read(moduleRuntimeProvider).terminate(sessionId, trimmed);
+    } catch (_) {
+      // Runtime unavailable: the deactivation itself still proceeds.
+    }
+    final AppStrings strings = appStringsFor(
+      ref.read(settingsProvider).languageCode,
+    );
+    run.messages.add(
+      ChatMessage.assistant(
+        strings.moduleDeactivated(trimmed),
+        moduleName: trimmed,
+      ),
+    );
+    _sync(run);
+    if (_activeSessionId == sessionId) {
+      state = state.copyWith(activeModules: [...run.activeModules]);
+    }
+    await _persist(run);
+    return true;
+  }
+
+  /// Activates [name] on a materialized run: executes the entry point in
+  /// the session's isolated sandbox and posts the output as a module
+  /// message. Failures degrade into the message body — they never break
+  /// the chat.
+  Future<void> _activateModule(_SessionRun run, String name) async {
+    final AppStrings strings = appStringsFor(
+      ref.read(settingsProvider).languageCode,
+    );
+    final ChatModule? module = await ref.read(moduleRegistryProvider).get(name);
+    if (module == null) {
+      if (_activeSessionId == run.sessionId) {
+        state = state.copyWith(error: strings.moduleNotFound(name));
+      }
+      return;
+    }
+    run.activeModules.add(name);
+    run.pendingModule = null;
+    final ChatMessage moduleMessage = ChatMessage.assistant(
+      '',
+      moduleName: name,
+    );
+    run.messages.add(moduleMessage);
+    _sync(run);
+    if (_activeSessionId == run.sessionId) {
+      state = state.copyWith(activeModules: [...run.activeModules]);
+    }
+
+    final StringBuffer body = StringBuffer();
+    void refresh() {
+      final int index = run.messages.indexOf(moduleMessage);
+      if (index == -1) return;
+      run.messages[index] = ChatMessage.assistant(
+        body.toString(),
+        moduleName: name,
+      );
+      _sync(run);
+    }
+
+    try {
+      final ModuleRunResult result = await ref
+          .read(moduleRuntimeProvider)
+          .run(
+            sessionId: run.sessionId,
+            module: module,
+            granted: module.manifest.permissions,
+            onChatEmit: (String text) {
+              body.writeln(text);
+              refresh();
+            },
+          );
+      if (result.output.trim().isNotEmpty) {
+        if (body.isNotEmpty) body.writeln();
+        body.write(result.output);
+      }
+      if (!result.ok) {
+        if (body.isNotEmpty) {
+          body
+            ..writeln()
+            ..writeln();
+        }
+        body.write(
+          result.terminated
+              ? strings.moduleTerminated
+              : strings.moduleRunFailed(result.error ?? ''),
+        );
+      }
+    } catch (e) {
+      if (body.isNotEmpty) {
+        body
+          ..writeln()
+          ..writeln();
+      }
+      body.write(strings.moduleRunFailed('$e'));
+    }
+    refresh();
+    await _persist(run);
   }
 
   /// Rewrites a previously sent user message and REGENERATES everything
@@ -426,6 +631,14 @@ class ChatController extends Notifier<ChatState> {
       running: false,
     );
     try {
+      // Modules are a per-chat scope: restore THIS chat's active list.
+      run.activeModules.addAll(
+        await ref.read(chatStoreProvider).loadModules(sessionId),
+      );
+    } catch (_) {
+      // Module bookkeeping failure must never block a chat.
+    }
+    try {
       final List<ChatMessage>? history = await ref
           .read(chatStoreProvider)
           .load(sessionId);
@@ -564,8 +777,16 @@ class ChatController extends Notifier<ChatState> {
       _sync(run);
     }
 
+    // Staged module (new chat with a module) activates AFTER the user
+    // message so its entry output lands between the prompt and the reply.
+    final String? stagedModule = run.pendingModule;
+    if (stagedModule != null) {
+      run.pendingModule = null;
+      await _activateModule(run, stagedModule);
+    }
+
     final wire = <Map<String, dynamic>>[
-      _systemWire(settings),
+      _systemWire(settings, run),
       // Full replay: previous turns (assistant + tool results + user msgs,
       // attachments included) followed by the freshly added user message.
       ..._buildWire(run, run.messages),
@@ -755,13 +976,39 @@ class ChatController extends Notifier<ChatState> {
   }
 
   /// System message: agent prompt (agent mode) + plan-first addendum +
-  /// enabled Context Manager entries merged into ONE system message (some
-  /// providers reject several).
-  Map<String, dynamic> _systemWire(AppSettings settings) {
+  /// active-module context + enabled Context Manager entries merged into
+  /// ONE system message (some providers reject several).
+  Map<String, dynamic> _systemWire(AppSettings settings, _SessionRun run) {
     final StringBuffer content = StringBuffer();
     if (settings.agentMode) {
       content.write(agentSystemPrompt);
       if (settings.planFirst) content.write(planFirstSystemPrompt);
+    }
+    // Chat modules active in THIS session (per-chat scope): the model
+    // should treat their run output as conversation data.
+    if (run.activeModules.isNotEmpty) {
+      final ModuleRegistry registry = ref.read(moduleRegistryProvider);
+      for (final String name in run.activeModules) {
+        try {
+          final ChatModule? module = registry.getSync(name);
+          if (module == null) continue;
+          content
+            ..writeln()
+            ..writeln()
+            ..writeln(
+              '# Active module: ${module.name} v${module.manifest.version}',
+            )
+            ..write(
+              module.manifest.description.trim().isEmpty
+                  ? 'This module runs in THIS chat\'s isolated sandbox. '
+                        'Its entry point already executed; treat its module '
+                        'message output as data the user may ask about.'
+                  : module.manifest.description.trim(),
+            );
+        } catch (_) {
+          // Registry hiccup: skip the context block.
+        }
+      }
     }
     try {
       final List<ContextEntry> entries = ref
@@ -880,7 +1127,12 @@ class ChatController extends Notifier<ChatState> {
     try {
       await ref
           .read(chatStoreProvider)
-          .save(id: run.sessionId, title: run.title, messages: persisted);
+          .save(
+            id: run.sessionId,
+            title: run.title,
+            messages: persisted,
+            modules: run.activeModules,
+          );
       ref.invalidate(chatListProvider);
     } catch (_) {
       // Persistence is best-effort.
@@ -1024,6 +1276,7 @@ class ChatController extends Notifier<ChatState> {
         // A stopping run is still running until its loop actually exits —
         // showing send here would silently swallow the next message.
         isRunning: run.isRunning,
+        activeModules: [...run.activeModules],
       );
       return;
     }
@@ -1032,10 +1285,18 @@ class ChatController extends Notifier<ChatState> {
       // The user may have switched again while loading — only commit when
       // this session is still the active one.
       if (_activeSessionId != summary.id) return;
+      List<String> modules = const <String>[];
+      try {
+        modules = await ref.read(chatStoreProvider).loadModules(summary.id);
+      } catch (_) {
+        // Module bookkeeping failure must never block opening a chat.
+      }
+      if (_activeSessionId != summary.id) return;
       state = ChatState(
         sessionId: summary.id,
         title: summary.title,
         messages: messages ?? const <ChatMessage>[],
+        activeModules: modules,
       );
     } catch (_) {
       // A corrupted history entry must never crash the app: open an empty
@@ -1073,9 +1334,15 @@ class ChatController extends Notifier<ChatState> {
   }
 
   Future<void> deleteChat(String id) async {
-    // If this session is running, stop it and drop its results.
+    // If this session is running, stop it and drop its results; a live
+    // module execution for the session is terminated safely too.
     _runs[id]?.stopRequested = true;
     _runs[id]?.deleted = true;
+    try {
+      ref.read(moduleRuntimeProvider).terminateSession(id);
+    } catch (_) {
+      // Runtime unavailable: deletion proceeds regardless.
+    }
     try {
       await ref.read(chatStoreProvider).delete(id);
     } catch (_) {
