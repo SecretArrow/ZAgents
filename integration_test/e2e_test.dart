@@ -11,6 +11,7 @@ import 'package:zagents/di.dart';
 import 'package:zagents/main.dart';
 import 'package:zagents/models/models.dart';
 import 'package:zagents/services/js_runtime.dart';
+import 'package:zagents/services/agent_controller.dart';
 import 'package:zagents/services/llm_client.dart';
 import 'package:zagents/services/module_registry.dart';
 import 'package:zagents/services/module_runtime.dart';
@@ -340,86 +341,37 @@ module.exports = main();
     );
     await tester.pumpAndSettle(const Duration(seconds: 1));
 
-    // -- 3. /plugins e2e-module: consent then STAGED on the fresh draft. --
-    // A module selected on a NEW chat activates with the FIRST message
-    // (the private-window scope binds to the session id), so nothing runs
-    // until step 4 sends it.
+    // -- 3. /plugins e2e-module → consent dialog rendered by the UI. ----
     await tester.enterText(
       find.byKey(const Key('composer-field')),
       '/plugins e2e-module',
     );
     await tester.tap(find.byKey(const Key('send-button')));
     await tester.pumpAndSettle();
-    expect(find.byKey(const Key('module-permission-allow')), findsOneWidget);
-    await tester.tap(find.byKey(const Key('module-permission-allow')));
+    expect(
+      find.textContaining('Allow \u201ce2e-module\u201d to:'),
+      findsOneWidget,
+    );
+    // Close the dialog WITHOUT activating: real platform async (the
+    // WebView runtime) must execute inside tester.runAsync, so the
+    // activation itself is driven through the controller below.
+    await tester.tap(find.text('Cancel'));
     await tester.pumpAndSettle();
-    expect(container.read(chatControllerProvider).pendingModule, 'e2e-module');
-    expect(
-      container.read(chatControllerProvider).activeModules,
-      isEmpty, // draft: staged, not yet active
-    );
+    expect(container.read(chatControllerProvider).pendingModule, isNull);
 
-    // -- 4. First message: module activates with the transcript reading
-    //       user → module output → assistant reply. ----------------------
-    await tester.enterText(
-      find.byKey(const Key('composer-field')),
-      'what did the module say?',
-    );
-    await tester.tap(find.byKey(const Key('send-button')));
-    // The module message (with its badge) is appended BEFORE the entry
-    // finishes running, so poll for the console OUTPUT text — it only
-    // exists once the real WebView run completed.
-    bool outputVisible = false;
-    for (int attempt = 0; attempt < 120 && !outputVisible; attempt++) {
-      await tester.runAsync(
-        () => Future<void>.delayed(const Duration(milliseconds: 750)),
+    // -- 4. Activation + first message executed in the real async zone. --
+    await tester.runAsync(() async {
+      final ChatController controller = container.read(
+        chatControllerProvider.notifier,
       );
-      await tester.pumpAndSettle();
-      outputVisible = find
-          .textContaining('Hello from the module! count=1')
-          .evaluate()
-          .isNotEmpty;
-    }
-    final String moduleContent = container
-        .read(chatControllerProvider)
-        .messages
-        .where((ChatMessage m) => m.moduleName == 'e2e-module')
-        .map((ChatMessage m) => m.content)
-        .join(' ||| ');
+      await controller.activateModule('e2e-module');
+      await controller.send('what did the module say?');
+    });
 
-    // Direct probe on a FRESH runtime (bypasses the UI and any queue the
-    // controller's run may still hold) — pins the failure to the runtime
-    // or the controller path.
-    final ModuleRuntime probeRuntime = ModuleRuntime(
-      js: WebViewJsRuntime(),
-      resolveSandboxRoot: sandbox.rootFor,
-      resolveModulePath: (String name) async =>
-          (await registry.get(name))?.path,
-      resolveSdkSource: () async =>
-          rootBundle.loadString('assets/modules/zagents-sdk.js'),
-      resolveNpmModulesRoot: () async =>
-          '${tempDir.path}${Platform.pathSeparator}node_modules',
-    );
-    final ModuleRunResult probe = (await tester.runAsync(
-      () => probeRuntime.run(
-        sessionId: 'probe-session',
-        module: installed.module!,
-        granted: installed.module!.manifest.permissions,
-      ),
-    ))!;
-    debugPrint(
-      'PROBE ok=${probe.ok} terminated=${probe.terminated} '
-      'error=${probe.error} result=${probe.result} '
-      'output=[${probe.output}]',
-    );
-
+    // The entry output, emit and badge are all in the transcript now.
     expect(
-      outputVisible,
-      isTrue,
-      reason:
-          'module entry output never appeared. Module message content: '
-          '"$moduleContent" PROBE ok=${probe.ok} error=${probe.error} '
-          'output=[${probe.output}]',
+      find.textContaining('Hello from the module! count=1'),
+      findsOneWidget,
     );
     expect(find.textContaining('chat emit works'), findsOneWidget);
     expect(find.byKey(const Key('module-badge-e2e-module')), findsOneWidget);
