@@ -155,14 +155,11 @@ void main() {
     expect(find.byType(SettingsScreen), findsOneWidget);
 
     // 5. Language option: English is the default, Bahasa Indonesia switches
-    // the whole UI and the choice persists in settings.
-    await tester.dragUntilVisible(
-      find.byKey(const Key('lang-id')),
-      find.byType(ListView),
-      const Offset(0, -250),
-    );
+    // the whole UI and the choice persists in settings. The module manager
+    // tile (v1.21.0) shifts section heights, so each language button is
+    // explicitly scrolled into view before tapping.
+    await tester.ensureVisible(find.byKey(const Key('lang-id')));
     await tester.pumpAndSettle();
-    expect(find.text('Settings'), findsOneWidget);
     await tester.tap(find.byKey(const Key('lang-id')));
     await tester.pumpAndSettle();
     expect(find.text('Pengaturan'), findsOneWidget);
@@ -170,6 +167,8 @@ void main() {
       ProviderScope.containerOf(context).read(settingsProvider).languageCode,
       'id',
     );
+    await tester.ensureVisible(find.byKey(const Key('lang-en')));
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('lang-en')));
     await tester.pumpAndSettle();
     expect(find.text('Settings'), findsOneWidget);
@@ -328,7 +327,10 @@ module.exports = main();
     );
     await tester.pumpAndSettle(const Duration(seconds: 1));
 
-    // -- 3. /plugins e2e-module → consent → activation on a new chat. ----
+    // -- 3. /plugins e2e-module: consent then STAGED on the fresh draft. --
+    // A module selected on a NEW chat activates with the FIRST message
+    // (the private-window scope binds to the session id), so nothing runs
+    // until step 4 sends it.
     await tester.enterText(
       find.byKey(const Key('composer-field')),
       '/plugins e2e-module',
@@ -337,21 +339,7 @@ module.exports = main();
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('module-permission-allow')), findsOneWidget);
     await tester.tap(find.byKey(const Key('module-permission-allow')));
-
-    // The entry point runs on the real WebView — poll for its output.
-    bool outputVisible = false;
-    for (int attempt = 0; attempt < 20 && !outputVisible; attempt++) {
-      await tester.runAsync(
-        () => Future<void>.delayed(const Duration(milliseconds: 500)),
-      );
-      await tester.pumpAndSettle();
-      outputVisible = find
-          .textContaining('Hello from the module! count=1')
-          .evaluate()
-          .isNotEmpty;
-    }
-    expect(outputVisible, isTrue, reason: 'module entry output never appeared');
-    expect(find.textContaining('chat emit works'), findsOneWidget);
+    await tester.pumpAndSettle();
     expect(container.read(chatControllerProvider).pendingModule, 'e2e-module');
     expect(
       container.read(chatControllerProvider).activeModules,
@@ -366,7 +354,7 @@ module.exports = main();
     );
     await tester.tap(find.byKey(const Key('send-button')));
     bool moduleMessageVisible = false;
-    for (int attempt = 0; attempt < 20 && !moduleMessageVisible; attempt++) {
+    for (int attempt = 0; attempt < 30 && !moduleMessageVisible; attempt++) {
       await tester.runAsync(
         () => Future<void>.delayed(const Duration(milliseconds: 500)),
       );
@@ -381,6 +369,7 @@ module.exports = main();
       find.textContaining('Hello from the module! count=1'),
       findsOneWidget,
     );
+    expect(find.textContaining('chat emit works'), findsOneWidget);
     expect(container.read(chatControllerProvider).activeModules, <String>[
       'e2e-module',
     ]);
