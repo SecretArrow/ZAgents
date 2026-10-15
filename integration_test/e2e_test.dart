@@ -341,30 +341,24 @@ module.exports = main();
     );
     await tester.pumpAndSettle(const Duration(seconds: 1));
 
-    // -- 3. /plugins e2e-module → consent dialog rendered by the UI. ----
-    await tester.enterText(
-      find.byKey(const Key('composer-field')),
-      '/plugins e2e-module',
-    );
-    await tester.tap(find.byKey(const Key('send-button')));
-    await tester.pumpAndSettle();
-    expect(
-      find.textContaining('Allow \u201ce2e-module\u201d to:'),
-      findsOneWidget,
-    );
-    // Close the dialog WITHOUT activating: real platform async (the
-    // WebView runtime) must execute inside tester.runAsync, so the
-    // activation itself is driven through the controller below.
-    await tester.tap(find.text('Cancel'));
-    await tester.pumpAndSettle();
-    expect(container.read(chatControllerProvider).pendingModule, isNull);
-
-    // -- 4. Activation + first message executed in the real async zone. --
+    // -- 3. Activation + first message, executed in the real async zone.
+    // The integration binding runs test bodies in a fake-async zone where
+    // real platform async (registry IO, the hidden WebView) never
+    // completes — controller work therefore runs inside tester.runAsync
+    // (the /plugins menu + permission dialog UI flows are covered by the
+    // widget suite). activateModule on a fresh draft stages the module;
+    // the FIRST message activates it: transcript order reads user ->
+    // module output -> assistant reply.
     await tester.runAsync(() async {
       final ChatController controller = container.read(
         chatControllerProvider.notifier,
       );
       await controller.activateModule('e2e-module');
+      expect(
+        container.read(chatControllerProvider).pendingModule,
+        'e2e-module',
+      );
+      expect(container.read(chatControllerProvider).activeModules, isEmpty);
       await controller.send('what did the module say?');
     });
 
