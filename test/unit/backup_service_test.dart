@@ -200,7 +200,8 @@ void main() {
       expect(md, contains('Tolong riset X'));
       expect(md, contains('**glm-4.6**'));
       expect(md, contains('Berikut hasilnya.'));
-      expect(md, contains('12')); // usage hint not required but content ok
+      expect(md, contains('Exported from ZAgents'));
+      expect(md, contains('2 messages'));
     });
 
     test('unknown session id returns null', () async {
