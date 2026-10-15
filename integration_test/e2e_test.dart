@@ -363,9 +363,21 @@ module.exports = main();
     });
 
     // The entry output, emit and badge are all in the transcript now.
+    final String moduleContent = container
+        .read(chatControllerProvider)
+        .messages
+        .map(
+          (ChatMessage m) =>
+              '[${m.role.name}/${m.moduleName ?? '-'}] ${m.content}',
+        )
+        .join(' ||| ');
     expect(
       find.textContaining('Hello from the module! count=1'),
       findsOneWidget,
+      reason:
+          'module entry output never appeared. state.error='
+          '${container.read(chatControllerProvider).error} '
+          'transcript: $moduleContent',
     );
     expect(find.textContaining('chat emit works'), findsOneWidget);
     expect(find.byKey(const Key('module-badge-e2e-module')), findsOneWidget);
