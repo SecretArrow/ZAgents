@@ -13,10 +13,13 @@
  *    - HTTP goes through zagents.http (manual session cookie, allowedHosts)
  *    - EVERY text is composed by the chat's own agent via
  *      zagents.agent.compose — the old heuristic Composer is GONE. No
- *      templates, no pools, no canned fragments. The agent generates each
- *      sentence from the live context this module supplies; the host-side
- *      gate (one casual English sentence, no ! : ; — – ?, word cap, no
- *      repeats) regulates every output before it is sent.
+ *      templates, no pools, no canned fragments — including the app
+ *      ideas for build requests: the agent invents the whole concept
+ *      (name + what it does) from the live context this module supplies.
+ *      The host-side gate (one casual English sentence, no ! : ; — – ?,
+ *      word cap, no repeats) regulates every output before it is sent.
+ *    - even the go-ahead DM prompt is composed, when the site ships no
+ *      button label for the decision card
  *    - one text submission per activation at most — human pacing is kept
  *      across activations via the persisted lastTextAt anchor
  *    - setup/status/reset commands ride on the activation prompt
@@ -520,36 +523,52 @@ const Composer = {
     return { title, body };
   },
 
-  /* new app request for the community builder */
+  /* new app request for the community builder — the whole concept is
+     invented live by the agent, exactly like every other sentence:
+     the agent dreams up a fresh app name, describes what it does, then
+     wraps both in the request title. Nothing is pre-written here. */
   async buildAppIdea(usedTitles) {
-    const IDEAS = [
-      { name: 'Study Timer', long: 'pomodoro study timer with a big start button and a soft beep' },
-      { name: 'Flashcard Quiz', long: 'flashcard quiz where you flip question and answer pairs and keep score' },
-      { name: 'Class Poll', long: 'class poll with one question, four options and big live result bars' },
-      { name: 'Reading Log', long: 'reading log to track books, pages reached and minutes per week' },
-      { name: 'Habit Tracker', long: 'habit tracker with daily checkboxes, a streak number and a monthly grid' },
-      { name: 'Group Scheduler', long: 'weekly grid where everyone marks free times and shared slots light up' },
-      { name: 'Word of the Day', long: 'word of the day board with a short meaning and one example' },
-    ];
-    const used = new Set((usedTitles || []).map((t) => String(t).toLowerCase()));
-    const open = IDEAS.filter((i) => ![...used].some((u) => u.includes(i.name.toLowerCase())));
-    const idea = open.length ? pick(open) : pick(IDEAS);
-    const title = await this.compose({
-      task: 'build-request-title',
-      context: 'Community app ideas already requested: ' + (usedTitles || []).slice(0, 10).join(' | ')
-        + '\nChosen concept: ' + idea.name + ' — ' + idea.long,
-      instruction: 'Write the request title as: Create a new app called <name>. Max 8 words, no ending period.',
-      maxWords: 8,
-      avoid: usedTitles,
+    const stored = (usedTitles || []).map((t) => String(t));
+    // stored titles look like "Create a new app called X" — derive the
+    // bare names so the agent (and the avoid list) sees what was asked
+    const bareNames = stored
+      .map((t) => t.replace(/^create a new app( called)?:?\s*/i, '').replace(/^[:\s]+/, '').trim())
+      .filter(Boolean);
+    const seen = [...new Set([...stored, ...bareNames])];
+    const listed = seen.length ? seen.slice(0, 10).join(' | ') : '(none yet)';
+
+    // step 1 — the agent invents the app itself
+    const name = await this.compose({
+      task: 'build-request-concept',
+      context: 'This is an educational community where members request small apps to build. '
+        + 'App ideas already requested: ' + listed,
+      instruction: 'Invent ONE fresh simple app concept a student community would actually use. '
+        + 'Reply with the app name only — two to four plain words, no description, no ending period. '
+        + 'It must be genuinely different from every idea already listed.',
+      maxWords: 6,
+      avoid: seen,
     });
+
+    // step 2 — the agent describes what the invented app does
     const body = await this.compose({
       task: 'build-request-body',
-      context: 'Chosen concept: ' + idea.name + ' — ' + idea.long,
-      instruction: 'Write the request body as one simple sentence describing the app a builder would '
-        + 'implement. End with a single period.',
+      context: 'App name: ' + name
+        + '\nCommunity: an educational app community. Ideas already requested: ' + listed,
+      instruction: 'Write the request body as one simple sentence describing what this app does, '
+        + 'the way a member asking for it would put it. End with a single period.',
       maxWords: 24,
-      avoid: [...(usedTitles || []), title],
+      avoid: seen.concat(name),
       trailingPeriod: true,
+    });
+
+    // step 3 — the agent wraps both in the request title
+    const title = await this.compose({
+      task: 'build-request-title',
+      context: 'Community app ideas already requested: ' + listed
+        + '\nChosen concept: ' + name + ' — ' + body,
+      instruction: 'Write the request title as: Create a new app called <name>. Max 8 words, no ending period.',
+      maxWords: 8,
+      avoid: seen,
     });
     return { title, body };
   },
@@ -578,6 +597,21 @@ const Composer = {
       context: 'A community app request titled "' + t + '" has not moved for about two days.',
       instruction: 'Write one polite one-sentence check-in a member would send to the builder. No pressure.',
       maxWords: 14,
+      avoid: recent,
+    });
+  },
+
+  /* green-light for a decision card when the site ships no button
+     label — same rule as everywhere else: the agent says it, and if
+     the composer is down the card waits for the next activation */
+  async goAhead(title, recent) {
+    return this.compose({
+      task: 'go-ahead',
+      context: 'A community app request titled "' + (title || 'a new app')
+        + '" needs our green-light so the builder can start working on it.',
+      instruction: 'Write one short casual sentence giving the go-ahead, the way a member would '
+        + 'confirm the button. No pressure, no promises about timing.',
+      maxWords: 10,
       avoid: recent,
     });
   },
@@ -1113,8 +1147,19 @@ class Bot {
         let label = null;
         if (act && act.type === 'prompt') {
           const convId = await this.api.botConversationId();
-          label = await this.api.botPrompt(convId, act.label || 'Go ahead',
-            x.id, hb.threadRootId || x.id).catch(() => null);
+          // the site normally ships the button label to send; when it
+          // does not, the agent composes the go-ahead — never canned text
+          let content = act.label;
+          if (!content) {
+            try {
+              content = await Composer.goAhead(hb.requestTitle || hb.issueTitle || '', this.state.recentTexts);
+            } catch (e) { content = null; }
+          }
+          if (!content) {
+            log('BUILD: no button label and composer unavailable — the green-light waits for the next activation');
+            continue;
+          }
+          label = await this.api.botPrompt(convId, content, x.id, hb.threadRootId || x.id).catch(() => null);
         } else {
           label = await this.api.botAction((act && act.id) || hb.actionId, 'go_ahead').catch(() => null);
         }

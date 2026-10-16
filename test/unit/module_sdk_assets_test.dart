@@ -238,4 +238,77 @@ void main() {
       expect(readme, contains('Install module'));
     });
   });
+
+  group('samples/onhomeroom-daily — fully agent-composed (no templates)', () {
+    const String mainJsPath = 'samples/onhomeroom-daily/main.js';
+
+    test('no canned text pools or hand-written idea tables remain', () async {
+      final String source = await File(mainJsPath).readAsString();
+      // the removed idea table must stay gone — reintroducing a pool of
+      // pre-written concepts would break the "full agent" contract
+      expect(source, isNot(contains('const IDEAS')));
+      const List<String> cannedIdeas = <String>[
+        'Study Timer',
+        'Flashcard Quiz',
+        'Class Poll',
+        'Reading Log',
+        'Habit Tracker',
+        'Group Scheduler',
+        'Word of the Day',
+      ];
+      for (final String canned in cannedIdeas) {
+        expect(
+          source,
+          isNot(contains(canned)),
+          reason: 'canned idea leaked back into the sample: $canned',
+        );
+      }
+    });
+
+    test(
+      'every sentence flows through the single gated compose call',
+      () async {
+        final String source = await File(mainJsPath).readAsString();
+        // exactly ONE zagents.agent.compose call site: the Composer.compose
+        // helper that applies the host gate — every text path must ride it
+        expect(
+          RegExp(r'zagents\.agent\.compose\(').allMatches(source).length,
+          1,
+          reason: 'all composed text must pass through the one gated helper',
+        );
+        // the build-request concept is invented live by the agent
+        expect(source, contains("'build-request-concept'"));
+        expect(source, contains("'build-request-body'"));
+        expect(source, contains("'build-request-title'"));
+        // the go-ahead DM is composed when the site ships no button label
+        expect(source, contains("'go-ahead'"));
+        expect(source, isNot(contains("|| 'Go ahead'")));
+      },
+    );
+
+    test(
+      'main.js parses as JavaScript (node --check, skipped without node)',
+      () async {
+        bool nodeAvailable = false;
+        try {
+          final ProcessResult probe = await Process.run('node', const <String>[
+            '--version',
+          ]);
+          nodeAvailable = probe.exitCode == 0;
+        } catch (_) {
+          nodeAvailable = false;
+        }
+        if (!nodeAvailable) return; // environments without node rely on CI
+        final ProcessResult result = await Process.run('node', const <String>[
+          '--check',
+          mainJsPath,
+        ]);
+        expect(
+          result.exitCode,
+          0,
+          reason: 'node --check failed:\n${result.stderr}',
+        );
+      },
+    );
+  });
 }

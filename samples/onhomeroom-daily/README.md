@@ -6,7 +6,9 @@ A real-world module converted from the standalone **onhomeroom-bot** script
 activation — the challenge board first, then the routine tasks — and every
 sentence it publishes is **composed live by the chat's own agent** via
 `zagents.agent.compose`. The old hand-written fragment tables are gone:
-there are no templates, no message pools, no canned replies.
+there are no templates, no message pools, no canned replies — and no
+canned app-idea list either: when the board asks for a build request, the
+agent invents the whole app concept (name + what it does) on the spot.
 
 ## What it does per activation
 
@@ -60,10 +62,14 @@ session, counters and pipelines.
 
 ## Composer — agent-backed (the point of this sample)
 
-Where the original script picked from hand-written fragment arrays, this
-module asks the chat agent for every sentence:
+Where the original script picked from hand-written fragment arrays (and a
+hand-written app-idea table for build requests), this module asks the chat
+agent for every sentence — including the app concept itself:
 
 ```js
+// the agent invents the app, then describes it, then wraps the request
+const { title, body } = await Composer.buildAppIdea(usedTitles);
+
 const { text } = await zagents.agent.compose({
   task: 'chat-reply',
   context: recentChatLines.join('\n'),
@@ -78,7 +84,10 @@ The host regulates every output: exactly one casual English sentence, no
 list, with an automatic corrective retry plus a deterministic sanitize
 pass. Composer failures (missing API key, provider down) degrade
 gracefully — the affected action is skipped and logged, never replaced
-with canned text.
+with canned text. That includes the green-light DM: when the site ships
+no button label for a decision card, the agent composes the go-ahead
+sentence, and if composing fails the card simply waits for the next
+activation.
 
 ## Config knobs (stored in the chat's `config`)
 
