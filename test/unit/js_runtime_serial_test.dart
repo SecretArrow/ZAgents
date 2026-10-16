@@ -148,4 +148,83 @@ void main() {
       expect(zNormalizeJsSource(src), src);
     });
   });
+
+  group('zLooksLikeEsModuleSyntax — conservative line-start detection', () {
+    test('import declarations are flagged', () {
+      expect(zLooksLikeEsModuleSyntax("import fs from 'fs';\n"), isTrue);
+      expect(zLooksLikeEsModuleSyntax("import { x } from 'y';\n"), isTrue);
+      expect(zLooksLikeEsModuleSyntax("import * as z from 'z';\n"), isTrue);
+      expect(
+        zLooksLikeEsModuleSyntax('\n  import x from "y";\n'),
+        isTrue,
+      );
+    });
+
+    test('export declarations are flagged', () {
+      expect(zLooksLikeEsModuleSyntax('export default 1;\n'), isTrue);
+      expect(zLooksLikeEsModuleSyntax('export const a = 1;\n'), isTrue);
+      expect(zLooksLikeEsModuleSyntax('export function f() {}\n'), isTrue);
+      expect(zLooksLikeEsModuleSyntax('export { a, b };\n'), isTrue);
+      expect(zLooksLikeEsModuleSyntax('export * from "m";\n'), isTrue);
+    });
+
+    test('CommonJS modules are NEVER flagged (no false positives)', () {
+      expect(zLooksLikeEsModuleSyntax('const fs = require("fs");\n'), isFalse);
+      expect(
+        zLooksLikeEsModuleSyntax('module.exports = { run };\n'),
+        isFalse,
+      );
+      // "import"/"export" mid-line or in comments/strings do not match.
+      expect(
+        zLooksLikeEsModuleSyntax('// import x from "y";\nconst a = 1;\n'),
+        isFalse,
+      );
+      expect(
+        zLooksLikeEsModuleSyntax(
+          "const msg = 'please import the file';\n",
+        ),
+        isFalse,
+      );
+      expect(zLooksLikeEsModuleSyntax('exports.export = 1;\n'), isFalse);
+    });
+  });
+
+  group('zExplainJsError — parse failures become actionable', () {
+    test('non-parse errors pass through untouched', () {
+      expect(
+        zExplainJsError("Cannot find module 'x'", const <String>[]),
+        "Cannot find module 'x'",
+      );
+      expect(zExplainJsError(null, const <String>[]), isNull);
+    });
+
+    test('SyntaxError + ES syntax source → CommonJS rebuild hint', () {
+      const String raw = "SyntaxError: Unexpected identifier 'fs'";
+      final String? explained = zExplainJsError(
+        raw,
+        const <String>["import fs from 'fs';\nmodule.exports = fs;\n"],
+      );
+      expect(explained, contains('ES module syntax'));
+      expect(explained, contains('--format=cjs'));
+      expect(explained, contains(raw));
+    });
+
+    test('the raw "Invalid or unexpected token" form is matched too', () {
+      expect(
+        zExplainJsError(
+          'Invalid or unexpected token',
+          const <String>['export default 1;\n'],
+        ),
+        contains('ES module syntax'),
+      );
+    });
+
+    test('SyntaxError WITHOUT ES syntax passes through', () {
+      const String raw = 'SyntaxError: Unexpected token ';
+      expect(
+        zExplainJsError(raw, const <String>['const x = ;\n']),
+        raw,
+      );
+    });
+  });
 }

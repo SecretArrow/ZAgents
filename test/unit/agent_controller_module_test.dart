@@ -306,6 +306,41 @@ void main() {
       moduleMessage.content,
       contains(appStringsFor('en').moduleRunFailed('boom inside')),
     );
+    // Ordinary failures get NO setup guidance and NO form.
+    expect(state.setupRequest, isNull);
+  });
+
+  test('a STALE module zip failing with setup-required gets actionable '
+      'guidance — no dead end, no impossible form', () async {
+    final ProviderContainer c = await container();
+    // Zips installed before the setup-form feature carry NO setup block
+    // and keep failing after app updates (installed modules persist).
+    await installModule('legacy');
+    js.nextResult = const JsRunResult(
+      output: 'OnHomeroom Daily needs your account for THIS chat.',
+      error: 'setup required',
+    );
+
+    final ChatController controller = c.read(chatControllerProvider.notifier);
+    await controller.send('start');
+    await controller.activateModule('legacy');
+
+    final ChatState state = c.read(chatControllerProvider);
+    final ChatMessage moduleMessage = state.messages.last;
+    // Both the failure line and the legacy guidance (updated zip / setup
+    // command) land in the transcript.
+    expect(
+      moduleMessage.content,
+      contains(
+        appStringsFor('en').moduleRunFailed('setup required'),
+      ),
+    );
+    expect(
+      moduleMessage.content,
+      contains(appStringsFor('en').moduleSetupLegacyHint('legacy')),
+    );
+    // No form can be rendered for a manifest without setup fields.
+    expect(state.setupRequest, isNull);
   });
 
   group('per-chat setup gate (form before first run)', () {

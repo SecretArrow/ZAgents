@@ -892,4 +892,85 @@ void main() {
       expect(js.moduleInvocations.single.info['setup'], <String, dynamic>{});
     });
   });
+
+  group('moduleRunNeedsSetup — stale-zip failure interception', () {
+    ModuleRunResult result({String? error, String output = ''}) =>
+        ModuleRunResult(output: output, error: error);
+
+    test('the legacy error string from pre-form zips matches', () {
+      // Exactly what onhomeroom-daily ≤1.1.0 returns.
+      expect(
+        moduleRunNeedsSetup(
+          result(error: 'setup required', output: 'no account configured'),
+        ),
+        isTrue,
+      );
+      expect(moduleRunNeedsSetup(result(error: 'setup required')), isTrue);
+    });
+
+    test('self-emitted account/setup messages match via the output scan', () {
+      // The output pattern matters when the error itself does not name
+      // setup (e.g. the module logs the missing input, then aborts).
+      const String abort = 'cycle aborted';
+      expect(
+        moduleRunNeedsSetup(
+          result(
+            error: abort,
+            output: 'OnHomeroom Daily needs your account for THIS chat.',
+          ),
+        ),
+        isTrue,
+      );
+      expect(
+        moduleRunNeedsSetup(result(error: abort, output: 'account not configured')),
+        isTrue,
+      );
+      expect(
+        moduleRunNeedsSetup(
+          result(error: abort, output: 'storage: not set up yet'),
+        ),
+        isTrue,
+      );
+      // A clean run that merely prints such text is NOT a failure.
+      expect(
+        moduleRunNeedsSetup(
+          result(error: null, output: 'needs your account'),
+        ),
+        isFalse,
+      );
+    });
+
+    test('ordinary failures never match', () {
+      expect(
+        moduleRunNeedsSetup(result(error: 'TypeError: x is not a function')),
+        isFalse,
+      );
+      expect(
+        moduleRunNeedsSetup(
+          result(error: 'Host is not allowed by this module (allowedHosts)'),
+        ),
+        isFalse,
+      );
+      expect(
+        moduleRunNeedsSetup(
+          result(error: 'no account configured', output: ''),
+        ),
+        isTrue,
+      );
+    });
+
+    test('successful and terminated runs never match', () {
+      expect(moduleRunNeedsSetup(result(error: null, output: 'ok')), isFalse);
+      expect(
+        moduleRunNeedsSetup(
+          ModuleRunResult(
+            output: '',
+            error: 'Module terminated by user',
+            terminated: true,
+          ),
+        ),
+        isFalse,
+      );
+    });
+  });
 }

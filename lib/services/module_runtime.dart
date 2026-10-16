@@ -52,6 +52,28 @@ class ModuleRunResult {
   bool get ok => error == null && !terminated;
 }
 
+/// True when a finished module run self-reports that it is missing its
+/// per-chat setup input — e.g. "no account configured — setup required
+/// before any cycle" from a module zip installed BEFORE the host-side
+/// setup form existed (installed modules persist across app updates, so
+/// a stale zip keeps failing on every chat until the host reacts).
+///
+/// The controller uses this to surface the per-chat setup form when the
+/// (reinstalled) manifest now declares one, or to post actionable
+/// guidance (update the module zip / use the module's setup command)
+/// when it does not — never a dead-end "run failed" line alone.
+bool moduleRunNeedsSetup(ModuleRunResult result) {
+  if (result.ok || result.terminated) return false;
+  final RegExp pattern = RegExp(
+    r'no account configured|setup required|needs? your account|'
+    r'needs? setup|not set up yet|account is not configured|'
+    r'account not configured',
+    caseSensitive: false,
+  );
+  if (result.error != null && pattern.hasMatch(result.error!)) return true;
+  return pattern.hasMatch(result.output);
+}
+
 /// One in-flight module execution with its per-chat security context.
 class _RunContext {
   _RunContext({
@@ -198,7 +220,8 @@ class ModuleRuntime implements ModuleBridge {
     } catch (e) {
       return ModuleRunResult(
         output: '',
-        error: 'Cannot read module entry "${module.manifest.entry}": $e',
+        error: 'Cannot read module entry "${module.manifest.entry}": '
+            '${e is FormatException ? 'the file is not valid UTF-8 — save it as UTF-8 and reinstall the module' : e}',
       );
     }
     final Directory instance = await instanceDirFor(sessionId, module.name);

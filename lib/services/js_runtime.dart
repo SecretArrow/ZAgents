@@ -24,6 +24,42 @@ String zNormalizeJsSource(String source) {
   return src;
 }
 
+/// Conservative ES-module-syntax detector: matches `import`/`export`
+/// DECLARATIONS at line starts only (require statements, comments or
+/// strings mid-line never match), so a valid CommonJS module is never
+/// flagged on a false positive.
+final RegExp _zEsModuleSyntax = RegExp(
+  r"""^\s*(import\s+[\w*{'"]|export\s+(default\b|\{|\*|const\b|let\b|var\b|function\b|class\b|async\b))""",
+  multiLine: true,
+);
+
+bool zLooksLikeEsModuleSyntax(String source) =>
+    _zEsModuleSyntax.hasMatch(source);
+
+/// Rewrites a cryptic JS-engine parse failure into an actionable hint when
+/// one of the registered sources uses ES module syntax (the embedded
+/// runtime loads modules with the CommonJS wrapper — `new Function(...)`
+/// — where import/export is a SyntaxError). Any other error passes
+/// through untouched, and the original message always stays in brackets.
+String? zExplainJsError(String? raw, Iterable<String> sources) {
+  if (raw == null) return raw;
+  final bool parseFailure =
+      raw.contains('SyntaxError') ||
+      raw.contains('Invalid or unexpected token') ||
+      raw.contains('Unexpected token');
+  if (!parseFailure) return raw;
+  for (final String source in sources) {
+    if (zLooksLikeEsModuleSyntax(source)) {
+      return 'The module uses ES module syntax (import/export), which the '
+          'embedded runtime cannot parse — it loads CommonJS modules '
+          '(require() / module.exports). Rebuild the module as a CommonJS '
+          'bundle (e.g. "esbuild src/main.js --bundle --format=cjs") and '
+          'reinstall it. ($raw)';
+    }
+  }
+  return raw;
+}
+
 /// Result of one embedded-JS execution.
 class JsRunResult {
   const JsRunResult({required this.output, this.error, this.result});
@@ -737,7 +773,14 @@ window.__zDone = false;
       if (payload is Map<String, dynamic>) {
         return JsRunResult(
           output: _console.join('\n'),
-          error: payload['ok'] == true ? null : payload['error']?.toString(),
+          error: payload['ok'] == true
+              ? null
+              : zExplainJsError(
+                  payload['error']?.toString(),
+                  registry.values.map(
+                    (Map<String, dynamic> e) => e['src']?.toString() ?? '',
+                  ),
+                ),
           result: payload['result']?.toString(),
         );
       }
@@ -813,7 +856,14 @@ window.__zDone = false;
       if (payload is Map<String, dynamic>) {
         return JsRunResult(
           output: _console.join('\n'),
-          error: payload['ok'] == true ? null : payload['error']?.toString(),
+          error: payload['ok'] == true
+              ? null
+              : zExplainJsError(
+                  payload['error']?.toString(),
+                  registry.values.map(
+                    (Map<String, dynamic> e) => e['src']?.toString() ?? '',
+                  ),
+                ),
           result: payload['result']?.toString(),
         );
       }

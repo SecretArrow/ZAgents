@@ -399,6 +399,11 @@ abstract class AppStrings {
   // -- Module per-chat setup form (v1.24.0) ------------------------------
   String moduleSetupNeededTitle(String name);
   String get moduleSetupNeededBody;
+
+  /// Shown when a module run failed with a setup-required signal but the
+  /// installed manifest declares no setup form — i.e. a stale module zip
+  /// from before the form feature. Names both concrete solutions.
+  String moduleSetupLegacyHint(String name);
   String get moduleSetupBannerCta;
   String get moduleSetupSaveRun;
   String get moduleSetupPerChatHint;
@@ -1019,7 +1024,7 @@ class AppStringsEn implements AppStrings {
   String get aboutSection => 'About';
   @override
   String get aboutBody =>
-      'ZAgents v1.24.2 — an Android clone of the chat.z.ai agent mode UI, '
+      'ZAgents v1.25.0 — an Android clone of the chat.z.ai agent mode UI, '
       'with custom OpenAI-compatible providers (OpenRouter, InferHub, '
       'Z.AI, OpenAI, DeepSeek, Groq, and more), per-provider API keys, '
       'light/dark themes, parallel multi-session chat with background '
@@ -1176,6 +1181,15 @@ class AppStringsEn implements AppStrings {
   String get moduleSetupNeededBody =>
       'Fill in the required information in the form — once submitted, the '
       'module is allowed and runs automatically.';
+  @override
+  String moduleSetupLegacyHint(String name) =>
+      '\u201c$name\u201d was installed from an older ZIP that has no setup '
+      'form (installed modules keep their version across app updates). '
+      'Solutions: 1) install the latest \u201c$name\u201d module ZIP — its new '
+      'version ships a setup form the app shows before the first run; '
+      '2) or send the module\u2019s own setup command as the first message '
+      'of a new chat (for example \u201csetup your-email your-password\u201d), '
+      'then activate the module again.';
   @override
   String get moduleSetupBannerCta => 'Set up';
   @override
@@ -1816,7 +1830,7 @@ class AppStringsId implements AppStrings {
   String get aboutSection => 'Tentang';
   @override
   String get aboutBody =>
-      'ZAgents v1.24.2 — klon UI agent mode chat.z.ai untuk Android, '
+      'ZAgents v1.25.0 — klon UI agent mode chat.z.ai untuk Android, '
       'dengan custom provider OpenAI-compatible (OpenRouter, InferHub, '
       'Z.AI, OpenAI, DeepSeek, Groq, dan lainnya), API key per-provider, '
       'tema terang/gelap, multi-sesi paralel dengan proses latar '
@@ -1975,6 +1989,15 @@ class AppStringsId implements AppStrings {
   String get moduleSetupNeededBody =>
       'Isi informasi yang diminta pada formulir — setelah dikirim, modul '
       'diizinkan dan otomatis dijalankan.';
+  @override
+  String moduleSetupLegacyHint(String name) =>
+      '\u201c$name\u201d terpasang dari ZIP lama yang belum punya formulir '
+      'setup (modul terpasang mempertahankan versinya walau aplikasi '
+      'diperbarui). Solusinya: 1) instal ZIP modul \u201c$name\u201d terbaru — '
+      'versi barunya menyertakan formulir setup yang ditampilkan aplikasi '
+      'sebelum run pertama; 2) atau kirim perintah setup milik modulnya '
+      'sebagai pesan pertama di chat baru (misalnya \u201csetup email-kamu '
+      'password-kamu\u201d), lalu aktifkan kembali modulnya.';
   @override
   String get moduleSetupBannerCta => 'Isi data';
   @override

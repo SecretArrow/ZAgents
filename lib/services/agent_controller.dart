@@ -509,6 +509,14 @@ class ChatController extends Notifier<ChatState> {
               ? strings.moduleTerminated
               : strings.moduleRunFailed(result.error ?? ''),
         );
+        // Setup-required interception: a module that fails BECAUSE its
+        // per-chat input is missing must never dead-end. This covers the
+        // stale-zip case (installed module predates the setup form and
+        // keeps failing after app updates) and any path where the gate
+        // did not fire (values wiped, manifest changed after activation).
+        if (moduleRunNeedsSetup(result)) {
+          await _handleSetupRequiredFailure(run, name, body, strings);
+        }
       }
     } catch (e) {
       if (body.isNotEmpty) {
@@ -520,6 +528,62 @@ class ChatController extends Notifier<ChatState> {
     }
     refresh();
     await _persist(run);
+  }
+
+  /// Reacts to a module run that failed with a setup-required signal:
+  ///
+  /// * If the CURRENT manifest (fresh from the registry — the user may
+  ///   have reinstalled an updated zip since activation) declares a
+  ///   required setup form and this chat has not filled it, the form is
+  ///   surfaced right here (banner + sheet) and the localized "needs
+  ///   setup" text is appended to the module message.
+  /// * Otherwise the run failed with a STALE module zip (installed before
+  ///   the setup form existed — it survives app updates on device), so
+  ///   the localized legacy guidance names the two concrete solutions:
+  ///   install the updated module zip, or run the module's own setup
+  ///   command in a fresh chat.
+  Future<void> _handleSetupRequiredFailure(
+    _SessionRun run,
+    String name,
+    StringBuffer body,
+    AppStrings strings,
+  ) async {
+    final ChatModule? fresh = await ref.read(moduleRegistryProvider).get(name);
+    final ModuleSetup? liveSetup = fresh?.manifest.setup;
+    if (liveSetup != null && liveSetup.hasRequired) {
+      Map<String, dynamic> values = const <String, dynamic>{};
+      try {
+        values = await ref
+            .read(moduleRuntimeProvider)
+            .readStoredSetup(run.sessionId, fresh!.name);
+      } catch (_) {
+        // Unreadable storage simply counts as "not set up yet".
+      }
+      if (!liveSetup.satisfiedBy(values)) {
+        final ModuleSetupRequest request = ModuleSetupRequest(
+          moduleName: fresh!.name,
+          moduleTitle: fresh.manifest.title.isEmpty
+              ? fresh.name
+              : fresh.manifest.title,
+          setup: liveSetup,
+          values: values,
+        );
+        run.setupRequest = request;
+        body
+          ..writeln()
+          ..writeln()
+          ..write('${strings.moduleSetupNeededTitle(request.title)}\n')
+          ..write(strings.moduleSetupNeededBody);
+        if (_activeSessionId == run.sessionId) {
+          state = state.copyWith(setupRequest: request);
+        }
+        return;
+      }
+    }
+    body
+      ..writeln()
+      ..writeln()
+      ..write(strings.moduleSetupLegacyHint(name));
   }
 
   /// Submits the per-chat setup form for [moduleName]: validates the
