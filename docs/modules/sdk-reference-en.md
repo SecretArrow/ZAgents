@@ -1,4 +1,4 @@
-# ZAgents Module SDK (v1.24.0)
+# ZAgents Module SDK (v1.24.1)
 
 Official guide for building **chat modules**: JavaScript packages that run
 natively inside a ZAgents chat session, isolated per chat like a browser

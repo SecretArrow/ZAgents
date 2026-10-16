@@ -528,6 +528,10 @@ class ChatController extends Notifier<ChatState> {
   /// request and RE-RUNS the module for the active chat — "fill the form,
   /// then it runs". Returns false when the values are incomplete or no
   /// matching module is active in the current chat.
+  ///
+  /// Robust against the finished agent loop: [_executeRun] drops its run
+  /// object when the loop ends, so the pending request is re-derived from
+  /// the persisted per-chat module scope when needed.
   Future<bool> submitModuleSetup(
     String moduleName,
     Map<String, dynamic> values,
@@ -535,10 +539,24 @@ class ChatController extends Notifier<ChatState> {
     final String trimmed = moduleName.trim();
     final String? sessionId = _activeSessionId;
     if (trimmed.isEmpty || sessionId == null) return false;
-    final _SessionRun? run = _runs[sessionId];
-    if (run == null) return false;
-    final ModuleSetupRequest? pending = run.setupRequest;
-    if (pending == null || pending.moduleName != trimmed) return false;
+    _SessionRun? run = _runs[sessionId];
+    if (run == null) {
+      run = await _materializeSession(sessionId);
+      if (run == null) return false;
+      _runs[sessionId] = run;
+    }
+    ModuleSetupRequest? pending = run.setupRequest;
+    if (pending == null || pending.moduleName != trimmed) {
+      // The finished loop dropped the run object (or a different module
+      // is pending): re-derive the request from the persisted scope.
+      if (!run.activeModules.contains(trimmed)) return false;
+      pending = await _findSetupRequest(sessionId, <String>[trimmed]);
+      if (pending == null || pending.moduleName != trimmed) return false;
+      run.setupRequest = pending;
+      if (_activeSessionId == sessionId) {
+        state = state.copyWith(setupRequest: pending);
+      }
+    }
     if (!pending.setup.satisfiedBy(values)) return false;
     try {
       await ref

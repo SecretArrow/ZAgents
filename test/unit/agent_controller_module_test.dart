@@ -430,6 +430,40 @@ void main() {
       },
     );
 
+    test('submit works AFTER the agent loop dropped its run object '
+        '(staged path, e2e regression)', () async {
+      final ProviderContainer c = await container();
+      final ChatModule mod = await installSetupModule('lateflow');
+      js.nextResult = const JsRunResult(output: 'late cycle ran');
+
+      final ChatController controller = c.read(chatControllerProvider.notifier);
+      // Staged module + first message: gate blocks, loop finishes and
+      // _executeRun removes the run object from _runs.
+      await controller.activateModule('lateflow');
+      await controller.send('start the module');
+      expect(c.read(chatControllerProvider).setupRequest, isNotNull);
+
+      // Submitting now must still work: the run is re-materialized from
+      // the persisted module scope and the request re-derived.
+      expect(
+        await controller.submitModuleSetup('lateflow', <String, dynamic>{
+          'email': 'late@example.com',
+          'password': 'hunter2',
+        }),
+        isTrue,
+      );
+
+      final ChatState state = c.read(chatControllerProvider);
+      expect(state.setupRequest, isNull);
+      expect(js.moduleInvocations, hasLength(1));
+      final Map<String, dynamic> stored = await moduleRuntime.readStoredSetup(
+        state.sessionId!,
+        mod.name,
+      );
+      expect(stored['email'], 'late@example.com');
+      expect(state.messages.last.content, contains('late cycle ran'));
+    });
+
     test('satisfied setup (command-path mirror) runs immediately', () async {
       final ProviderContainer c = await container();
       await installSetupModule('cmdready');
