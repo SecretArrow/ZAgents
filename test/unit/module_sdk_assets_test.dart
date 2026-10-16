@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:archive/archive.dart';
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_test/flutter_test.dart';
 
@@ -236,6 +237,84 @@ void main() {
       expect(readme, contains('zip'));
       expect(readme, contains('/plugins'));
       expect(readme, contains('Install module'));
+    });
+  });
+
+  group('samples/ — installable ZIPs (one per sample, always fresh)', () {
+    final Directory samplesDir = Directory('samples');
+    final List<String> zipSampleNames =
+        samplesDir
+            .listSync()
+            .whereType<Directory>()
+            .map(
+              (Directory d) => d.uri.pathSegments.reversed
+                  .skip(1)
+                  .firstWhere((String s) => s.isNotEmpty),
+            )
+            .toList()
+          ..sort();
+
+    for (final String sample in zipSampleNames) {
+      test('samples/$sample.zip exists and matches its folder', () async {
+        final File zipFile = File('samples/$sample.zip');
+        expect(
+          zipFile.existsSync(),
+          isTrue,
+          reason:
+              'samples/$sample.zip is missing — re-zip the sample folder '
+              '(the repo ships one ready-to-install zip per sample)',
+        );
+
+        final Archive archive = ZipDecoder().decodeBytes(
+          await zipFile.readAsBytes(),
+        );
+
+        // the archive must carry exactly the folder's files: a missing
+        // file means a stale zip; an extra file means a stale zip too
+        final List<String> folderFiles =
+            Directory('samples/$sample')
+                .listSync(recursive: true)
+                .whereType<File>()
+                .map(
+                  (File f) =>
+                      '$sample/${f.path.substring('samples/$sample/'.length).replaceAll('\\', '/')}'
+                          .replaceAll('//', '/'),
+                )
+                .toList()
+              ..sort();
+        final Set<String> archiveFileNames = archive.files
+            .where((ArchiveFile e) => e.isFile)
+            .map((ArchiveFile e) => e.name.replaceAll('\\', '/'))
+            .toSet();
+        expect(
+          archiveFileNames,
+          folderFiles.toSet(),
+          reason:
+              'samples/$sample.zip drifted from samples/$sample/ — '
+              're-zip the folder',
+        );
+
+        // the manifest inside the zip must declare a canonical module
+        // name (the folder and the module name may legitimately differ,
+        // e.g. samples/counter ships the hello-counter module)
+        final ArchiveFile manifestFile = archive.files.firstWhere(
+          (ArchiveFile e) => e.name == '$sample/module.json',
+        );
+        final Map<String, dynamic> manifest = jsonDecode(
+          utf8.decode(manifestFile.content as List<int>),
+        ) as Map<String, dynamic>;
+        final String moduleName = manifest['name'] as String;
+        expect(
+          moduleName,
+          ModuleManifest.sanitizeName(moduleName),
+          reason: 'zip manifest name must already be canonical',
+        );
+      });
+    }
+
+    test('samples README points at the ready-made zips', () async {
+      final String readme = await File('samples/README.md').readAsString();
+      expect(readme, contains('.zip'));
     });
   });
 

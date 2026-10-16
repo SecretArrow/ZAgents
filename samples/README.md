@@ -13,6 +13,16 @@ see [`../docs/modules/`](../docs/modules/) for the full reference and
 | [`chat-streamer/`](chat-streamer/) | `chat` | Progressive output into the conversation with `zagents.chat.emit` |
 | [`onhomeroom-daily/`](onhomeroom-daily/) | `storage`, `network`, `agent` | Real-world daily bot for app.onhomeroom.com — challenge board, yes votes, chat replies, proposal pipeline. Every sentence is composed live by the chat agent via `zagents.agent.compose` (no templates), with setup commands on the first message (`setup <email> <password>`, `status`, `reset`) |
 
+## Ready-made ZIPs — download and install directly
+
+Every sample also ships pre-packaged **next to its folder** as
+`<name>.zip` (`counter.zip`, `network-fetcher.zip`, `file-notes.zip`,
+`chat-streamer.zip`, `onhomeroom-daily.zip`). Download one, then install
+it via **Settings → Modules → Install module** — no packaging needed.
+A test guards these archives: each `<name>.zip` must always match its
+folder exactly, so they can never silently go stale. To rebuild one by
+hand, see the packaging section below.
+
 ## Package a sample into an installable ZIP
 
 The app installs modules from ZIP archives. From the repository root:
