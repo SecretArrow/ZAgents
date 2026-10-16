@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:math';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -160,5 +161,44 @@ void main() {
         current = next;
       }
     });
+
+    test('out-of-range saved id: rotation never returns the resolved pick '
+        '(deterministic regression for the CI flake)', () async {
+      // Default settings carry uaAndroidId = 1, which belongs to the
+      // desktop pool. resolve(android) therefore falls back to
+      // pool.first (id 251) — and rotation must never hand that record
+      // back, no matter what the RNG picks. AlwaysZeroRandom forces the
+      // worst case (first candidate), which pre-fix WAS pool.first.
+      final ProviderContainer c = container();
+      final UserAgentManager manager = c.read(userAgentManagerProvider);
+      final UserAgentRecord current = manager.resolve(UaMode.android);
+      expect(
+        current.id,
+        251,
+        reason:
+            'android pool starts at id 251; '
+            'the default saved id (1) must be out of range for this test',
+      );
+
+      final UserAgentRecord next = await manager.rotateRandom(
+        UaMode.android,
+        rng: _AlwaysFirstRandom(),
+      );
+      expect(next.id, isNot(current.id));
+      expect(next.category, UserAgentCategory.android);
+      expect(c.read(settingsProvider).uaAndroidId, next.id);
+    });
   });
+}
+
+/// RNG stub that always picks index 0 — the worst possible candidate.
+class _AlwaysFirstRandom implements Random {
+  @override
+  bool nextBool() => true;
+
+  @override
+  int nextInt(int max) => 0;
+
+  @override
+  double nextDouble() => 0;
 }

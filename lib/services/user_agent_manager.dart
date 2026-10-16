@@ -76,21 +76,27 @@ class UserAgentManager {
   /// Picks a genuinely RANDOM record of [mode]'s category (never the
   /// currently active one) and persists it as the new sticky pick. Used by
   /// the "New chat" prompt when the user accepts a random identity change.
-  Future<UserAgentRecord> rotateRandom(UaMode mode) async {
-    final AppSettings settings = _ref.read(settingsProvider);
+  ///
+  /// The exclusion target is the RESOLVED current record — not the raw
+  /// persisted id. When the saved id is absent from the pool (fresh
+  /// install default, database shrank), [resolve] falls back to
+  /// `pool.first`; excluding only the raw id would let the random pick
+  /// land on `pool.first` — i.e. hand back the record the user already
+  /// has. [rng] is injectable for deterministic tests; production uses
+  /// `Random.secure()`.
+  Future<UserAgentRecord> rotateRandom(UaMode mode, {Random? rng}) async {
     final UserAgentCategory category = categoryFor(mode);
+    final UserAgentRecord current = resolve(mode);
     final List<UserAgentRecord> pool = userAgentsOf(category);
-    final int savedId = category == UserAgentCategory.desktop
-        ? settings.uaDesktopId
-        : settings.uaAndroidId;
     final List<UserAgentRecord> candidates = <UserAgentRecord>[
       for (final UserAgentRecord r in pool)
-        if (r.id != savedId) r,
+        if (r.id != current.id) r,
     ];
     // Degenerate pool (single record): keep the current one.
-    if (candidates.isEmpty) return resolve(mode);
+    if (candidates.isEmpty) return current;
     final UserAgentRecord next =
-        candidates[Random.secure().nextInt(candidates.length)];
+        candidates[(rng ?? Random.secure()).nextInt(candidates.length)];
+    final AppSettings settings = _ref.read(settingsProvider);
     final AppSettings updated = category == UserAgentCategory.desktop
         ? settings.copyWith(uaDesktopId: next.id)
         : settings.copyWith(uaAndroidId: next.id);
