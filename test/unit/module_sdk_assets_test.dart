@@ -30,9 +30,9 @@ void main() {
     test('package.json points at the real files', () async {
       // package.json is developer metadata, NOT an app asset — read it
       // from disk; only the shim and the docs ride inside the APK.
-      final Map<String, dynamic> json =
-          jsonDecode(await File('sdk/package.json').readAsString())
-              as Map<String, dynamic>;
+      final Map<String, dynamic> json = jsonDecode(
+        await File('sdk/package.json').readAsString(),
+      ) as Map<String, dynamic>;
       expect(json['name'], 'zagents-sdk');
       expect(json['main'], 'zagents-sdk.js');
       expect(json['types'], 'index.d.ts');
