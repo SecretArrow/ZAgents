@@ -416,4 +416,183 @@ module.exports = main();
       await tester.runAsync(() => tempDir.delete(recursive: true));
     } catch (_) {}
   });
+
+  testWidgets('e2e: module setup form gates the first run, then the '
+      'submitted values reach the real runtime as zagents.info.setup', (
+    WidgetTester tester,
+  ) async {
+    final Directory tempDir = (await tester.runAsync<Directory>(
+      () => Directory.systemTemp.createTemp('zagents_e2e_setup'),
+    ))!;
+
+    // -- 1. Module ZIP with a required per-chat setup field. --------------
+    const String manifestJson =
+        '{"name":"e2e-setup","version":"1.0.0","title":"E2E Setup",'
+        '"description":"Needs a token",'
+        '"permissions":["storage","chat"],"entry":"main.js",'
+        '"setup":{"title":"Access token",'
+        '"description":"Collected once per chat.",'
+        '"fields":[{"key":"token","label":"Token","type":"text",'
+        '"required":true}]}}';
+    const String entrySource = '''
+async function main() {
+  const setup = (zagents.info && zagents.info.setup) || {};
+  await zagents.chat.emit('setup token received: ' + (setup.token || '(none)'));
+  return { token: setup.token || null };
+}
+module.exports = main();
+''';
+    final File zipFile = File(
+      '${tempDir.path}${Platform.pathSeparator}e2e-setup.zip',
+    );
+    await tester.runAsync(() async {
+      final Archive archive = Archive()
+        ..addFile(
+          ArchiveFile(
+            'module.json',
+            utf8.encode(manifestJson).length,
+            utf8.encode(manifestJson),
+          ),
+        )
+        ..addFile(
+          ArchiveFile(
+            'main.js',
+            utf8.encode(entrySource).length,
+            utf8.encode(entrySource),
+          ),
+        );
+      zipFile.writeAsBytesSync(ZipEncoder().encode(archive));
+    });
+
+    // -- 2. App with the REAL registry + REAL WebView-backed runtime. ----
+    final ModuleRegistry registry = ModuleRegistry(
+      resolveBaseDir: () async => tempDir,
+    );
+    final ModuleInstallResult installed = (await tester.runAsync(
+      () => registry.installFromZip(zipFile.path),
+    ))!;
+    expect(installed.ok, isTrue, reason: installed.message);
+
+    final ScriptedLlmClient llm = ScriptedLlmClient(<AssistantTurn>[
+      AssistantTurn(content: 'Setup flow acknowledged.'),
+    ]);
+    final SessionSandbox sandbox = SessionSandbox(
+      resolveDocumentsDir: () async => tempDir,
+    );
+
+    final ProviderContainer container = ProviderContainer(
+      overrides: <Override>[
+        ...testOverrides(
+          llm: llm,
+          dir: tempDir,
+          settings: AppSettings(apiKey: 'e2e-key', autoTitle: false),
+          writeScreenshots: false,
+        ),
+        moduleRegistryProvider.overrideWithValue(registry),
+        moduleRuntimeProvider.overrideWith(
+          (Ref ref) => ModuleRuntime(
+            js: SerializedJsRuntime(WebViewJsRuntime()),
+            resolveSandboxRoot: sandbox.rootFor,
+            resolveModulePath: (String name) async =>
+                (await registry.get(name))?.path,
+            resolveSdkSource: () async =>
+                rootBundle.loadString('sdk/zagents-sdk.js'),
+            resolveNpmModulesRoot: () async =>
+                '${tempDir.path}${Platform.pathSeparator}node_modules',
+          ),
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: const ZAgentsApp(),
+      ),
+    );
+    await tester.pumpAndSettle(const Duration(seconds: 1));
+
+    String transcript() => container
+        .read(chatControllerProvider)
+        .messages
+        .map(
+          (ChatMessage m) =>
+              '[${m.role.name}/${m.moduleName ?? '-'}] ${m.content}',
+        )
+        .join(' ||| ');
+
+    // -- 3. First activation: the gate BLOCKS the run and surfaces the
+    // form request instead of a failed cycle.
+    await tester.runAsync(() async {
+      final ChatController controller = container.read(
+        chatControllerProvider.notifier,
+      );
+      await controller.activateModule('e2e-setup');
+      await controller.send('start the module');
+    });
+    expect(
+      transcript(),
+      isNot(contains('setup token received')),
+      reason: 'the module must not execute before the form is submitted',
+    );
+    expect(container.read(chatControllerProvider).setupRequest, isNotNull);
+
+    // -- 4. The home shell auto-opens the per-chat setup form.
+    await tester.pumpAndSettle(const Duration(seconds: 1));
+    expect(find.byKey(const Key('module-setup-sheet')), findsOneWidget);
+    // The title shows on the sheet AND in the needs-setup module message.
+    expect(find.text('Access token'), findsWidgets);
+    // Dismiss: the banner stays, submission happens through the
+    // controller (the sheet's own button flow is covered by the widget
+    // suite — inside the integration binding its await would starve).
+    await tester.tap(find.byKey(const Key('module-setup-cancel')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('module-setup-sheet')), findsNothing);
+    expect(find.byKey(const Key('module-setup-banner')), findsOneWidget);
+
+    // -- 5. Submit the form: values persist per chat and the module
+    // RE-RUNS immediately on the real WebView.
+    await tester.runAsync(() async {
+      final ChatController controller = container.read(
+        chatControllerProvider.notifier,
+      );
+      final bool submitted = await controller.submitModuleSetup(
+        'e2e-setup',
+        <String, dynamic>{'token': 'secret123'},
+      );
+      expect(submitted, isTrue, reason: 'form submission must succeed');
+    });
+
+    // -- 6. The module ran with the submitted values.
+    expect(
+      transcript(),
+      contains('setup token received: secret123'),
+      reason:
+          'module output missing after setup submission. state.error='
+          '${container.read(chatControllerProvider).error} '
+          'transcript: ${transcript()}',
+    );
+    expect(container.read(chatControllerProvider).setupRequest, isNull);
+
+    // -- 7. The values live in the per-chat instance storage.
+    final Directory instanceDir = (await tester.runAsync(
+      () => sandbox
+          .rootFor(container.read(chatControllerProvider).sessionId!)
+          .then(
+            (Directory root) => Directory(
+              '${root.path}${Platform.pathSeparator}modules'
+              '${Platform.pathSeparator}e2e-setup',
+            ),
+          ),
+    ))!;
+    final File storage = File(
+      '${instanceDir.path}${Platform.pathSeparator}storage.json',
+    );
+    expect(storage.existsSync(), isTrue);
+    expect(storage.readAsStringSync(), contains('"token":"secret123"'));
+
+    try {
+      await tester.runAsync(() => tempDir.delete(recursive: true));
+    } catch (_) {}
+  });
 }

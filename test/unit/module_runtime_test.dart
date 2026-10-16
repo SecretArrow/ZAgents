@@ -811,4 +811,85 @@ void main() {
       );
     });
   });
+
+  group('per-chat setup values (cooperative zagentsSetup key)', () {
+    test('writeStoredSetup then readStoredSetup round-trips', () async {
+      final ChatModule mod = module();
+      await runtime.writeStoredSetup('s1', mod.name, <String, dynamic>{
+        'email': 'me@example.com',
+        'password': 'hunter2',
+      });
+      final Map<String, dynamic> values = await runtime.readStoredSetup(
+        's1',
+        mod.name,
+      );
+      expect(values, <String, dynamic>{
+        'email': 'me@example.com',
+        'password': 'hunter2',
+      });
+      // A different chat sees nothing (per-chat isolation).
+      expect(await runtime.readStoredSetup('s2', mod.name), isEmpty);
+    });
+
+    test('module reads the values via storage and the info map', () async {
+      final ChatModule mod = module();
+      await runtime.writeStoredSetup('s1', mod.name, <String, dynamic>{
+        'token': 'abc',
+      });
+      final List<Map<String, dynamic>?> responses = await runAndCall(
+        's1',
+        mod,
+        mod.manifest.permissions,
+        ops: <Map<String, dynamic>>[
+          <String, dynamic>{'zop': 'storage.get', 'key': 'zagentsSetup'},
+        ],
+      );
+      expect(responses.single!['ok'], isTrue);
+      expect(responses.single!['data'], <String, dynamic>{'token': 'abc'});
+      expect(js.moduleInvocations.single.info['setup'], <String, dynamic>{
+        'token': 'abc',
+      });
+    });
+
+    test('module may mirror its own config into the cooperative key', () async {
+      final ChatModule mod = module();
+      await runAndCall(
+        's1',
+        mod,
+        mod.manifest.permissions,
+        ops: <Map<String, dynamic>>[
+          <String, dynamic>{
+            'zop': 'storage.set',
+            'key': 'zagentsSetup',
+            'value': <String, dynamic>{
+              'email': 'cmd@example.com',
+              'password': 'p',
+            },
+          },
+        ],
+      );
+      // The host gate reads the same key the module wrote.
+      final Map<String, dynamic> values = await runtime.readStoredSetup(
+        's1',
+        mod.name,
+      );
+      expect(values['email'], 'cmd@example.com');
+    });
+
+    test('unfilled setup reads back as an empty map', () async {
+      final ChatModule mod = module();
+      expect(await runtime.readStoredSetup('s1', mod.name), isEmpty);
+      // And the module-side view: storage.get returns null.
+      final List<Map<String, dynamic>?> responses = await runAndCall(
+        's1',
+        mod,
+        mod.manifest.permissions,
+        ops: <Map<String, dynamic>>[
+          <String, dynamic>{'zop': 'storage.get', 'key': 'zagentsSetup'},
+        ],
+      );
+      expect(responses.single!['data'], isNull);
+      expect(js.moduleInvocations.single.info['setup'], <String, dynamic>{});
+    });
+  });
 }

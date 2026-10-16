@@ -1,4 +1,4 @@
-# ZAgents Module SDK (v1.22.0)
+# ZAgents Module SDK (v1.24.0)
 
 Official guide for building **chat modules**: JavaScript packages that run
 natively inside a ZAgents chat session, isolated per chat like a browser
@@ -35,7 +35,17 @@ my-module.zip
   "entry": "main.js",
   "permissions": ["storage", "network", "files", "chat"],
   "allowedHosts": ["api.example.com"],
-  "timeoutSeconds": 30
+  "timeoutSeconds": 30,
+  "setup": {
+    "title": "My Module account",
+    "description": "Collected once per chat before the first run.",
+    "fields": [
+      { "key": "username", "label": "Username", "type": "text", "required": true },
+      { "key": "password", "label": "Password", "type": "password", "required": true },
+      { "key": "retries", "label": "Max retries", "type": "number" },
+      { "key": "verbose", "label": "Verbose logging", "type": "boolean" }
+    ]
+  }
 }
 ```
 
@@ -49,9 +59,33 @@ my-module.zip
 | `permissions` | — | `storage`, `network`, `files`, `chat`, `agent` — the user approves each activation. |
 | `allowedHosts` | — | Restrict `zagents.http` to these hosts (`*.example.com` allows subdomains). Omit for any host. |
 | `timeoutSeconds` | — | Execution budget per run (30 default, 120 max). |
+| `setup` | — | Per-chat setup form — see below. |
 
 Without `module.json`, a `package.json` (`name`, `version`, `main`) is
 honored; with neither, the ZIP file name becomes the module name.
+
+### Setup form — module.json `setup`
+
+Declare the user input your module needs and the app collects it with a
+**per-chat form BEFORE the module's first run in that chat** — no failed
+first cycle, no `setup <…>` parsing required:
+
+* `title`, `description` — form heading and helper line (optional).
+* `fields` — up to 12 entries. Each field: `key` (machine name,
+  `[a-z0-9_]`, max 40), `label`, `type` (`text`, `password`, `number`,
+  `boolean`), `required`, `placeholder`, `description`.
+* While any **required** field is unfilled for this chat, the host keeps
+  the module from executing and shows the form instead; submitting it
+  saves the values and runs the module automatically.
+* Values live in the (chat, module) storage under the cooperative key
+  `zagentsSetup` — written by the host on submit, and mirrored by the
+  module itself when it changes its configuration another way (e.g. a
+  text-command setup), so the gate always reflects reality. Other chats
+  ask again: setup is per chat by design.
+* Read the values in the module via `zagents.info.setup` (see below) or
+  `await zagents.storage.get('zagentsSetup')`.
+* A manifest without a `setup` block (or without required fields) never
+  triggers the form — behavior is unchanged for existing modules.
 
 ## 2. Installing and running
 
@@ -67,10 +101,14 @@ honored; with neither, the ZIP file name becomes the module name.
    **Shebang-friendly:** a leading `#!...` line (Node-style shebang) and a
    UTF-8 BOM are stripped automatically before the source runs, so scripts
    copied straight from a Node project work as-is.
+   **Setup-first:** when the manifest declares required setup fields, the
+   app shows the per-chat setup form instead of running the module; the
+   run happens right after the form is submitted (see above).
    **Setup tip:** when a module is selected on a NEW chat (staged), the
    first message you send is exposed to the module as `zagents.info.prompt`
-   — modules can implement commands like `setup <credentials>`, `status`
-   or `reset` on that message.
+   — modules can still implement commands like `setup <credentials>`,
+   `status` or `reset` on that message for re-configuring an already
+   set-up chat.
 
 ## 3. The `zagents` SDK
 
@@ -79,8 +117,9 @@ Available as a global — or `const zagents = require('zagents-sdk')`.
 ### `zagents.info`
 Metadata: `name`, `version`, `title`, `sessionId`, `entry` — plus `prompt`
 (the activating user message) when the run was triggered by a staged
-module's first message, and `userAgent` — the identity the user picked in
-Settings → User Agent.
+module's first message, `userAgent` — the identity the user picked in
+Settings → User Agent — and `setup`: the per-chat setup-form values
+submitted for this chat (empty object when not set up yet).
 
 **User-Agent policy:** modules always present the identity configured in
 Settings → User Agent. `zagents.http` sends it on every request, and a
@@ -206,7 +245,7 @@ The same example, ready to install, lives at [`samples/counter/`](../../samples/
 | [`samples/network-fetcher/`](../../samples/network-fetcher/) | `network` — `zagents.http` + `allowedHosts` |
 | [`samples/file-notes/`](../../samples/file-notes/) | `files` — sandboxed note taking under `state/` |
 | [`samples/chat-streamer/`](../../samples/chat-streamer/) | `chat` — progressive `chat.emit` output |
-| [`samples/onhomeroom-daily/`](../../samples/onhomeroom-daily/) | `agent` — real-world daily bot whose every sentence is composed by the chat agent |
+| [`samples/onhomeroom-daily/`](../../samples/onhomeroom-daily/) | `agent` — real-world daily bot whose every sentence is composed by the chat agent; per-chat setup form for its account |
 
 `module.json`
 

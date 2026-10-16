@@ -135,6 +135,13 @@ class ModuleRuntime implements ModuleBridge {
   /// Text composer for `zagents.agent.compose` (see [ModuleAgentCompose]).
   final ModuleAgentCompose? agentCompose;
 
+  /// Cooperative per-chat setup key inside the (chat, module) storage:
+  /// the host writes the submitted setup-form values here; modules may
+  /// mirror their own configured state into the same key (e.g. after a
+  /// text-command setup) so the host's setup gate reflects reality on
+  /// every path. Exposed to modules as `zagents.info.setup` at run start.
+  static const String setupStorageKey = 'zagentsSetup';
+
   /// Per-key JSON-size cap for `zagents.storage.set` (encoded).
   static const int maxStorageValueBytes = 64 * 1024;
 
@@ -200,6 +207,13 @@ class ModuleRuntime implements ModuleBridge {
     );
     if (!stateDir.existsSync()) stateDir.createSync(recursive: true);
     final String npmRoot = await resolveNpmModulesRoot();
+    // Setup-form values submitted for THIS chat (host-owned cooperative
+    // key) — exposed as `zagents.info.setup` so modules can consume the
+    // collected input without touching storage themselves.
+    final Map<String, dynamic> storedSetup = await readStoredSetup(
+      sessionId,
+      module.name,
+    );
 
     final _RunContext context = _RunContext(
       sessionId: sessionId,
@@ -225,6 +239,8 @@ class ModuleRuntime implements ModuleBridge {
             'title': module.manifest.title,
             'sessionId': sessionId,
             'entry': module.manifest.entry,
+            // Per-chat setup-form values (empty when not set up yet).
+            'setup': storedSetup,
             // Settings → User Agent integration: modules read the identity
             // they present (same string the transport sends via zagents.http).
             if (resolveUserAgent?.call() case final String ua
@@ -542,6 +558,41 @@ class ModuleRuntime implements ModuleBridge {
       }
     }
     return false;
+  }
+
+  // -- per-chat setup values (host-owned cooperative storage key) --------
+
+  /// Reads the setup-form values stored for (chat, module). Empty map when
+  /// the user has not submitted the form (and the module has not mirrored
+  /// its own configured state) yet.
+  Future<Map<String, dynamic>> readStoredSetup(
+    String sessionId,
+    String moduleName,
+  ) async {
+    final Map<String, dynamic> store = await _readStorage(
+      sessionId,
+      moduleName,
+    );
+    final Object? raw = store[setupStorageKey];
+    if (raw is Map<String, dynamic>) return raw;
+    if (raw is Map) return raw.cast<String, dynamic>();
+    return <String, dynamic>{};
+  }
+
+  /// Persists the setup-form values for (chat, module) under the
+  /// cooperative [setupStorageKey]. Called when the user submits the
+  /// setup form; modules can write the same key through `zagents.storage`.
+  Future<void> writeStoredSetup(
+    String sessionId,
+    String moduleName,
+    Map<String, dynamic> values,
+  ) async {
+    final Map<String, dynamic> store = await _readStorage(
+      sessionId,
+      moduleName,
+    );
+    store[setupStorageKey] = values;
+    await _writeStorage(sessionId, moduleName, store);
   }
 
   // -- storage io ---------------------------------------------------------

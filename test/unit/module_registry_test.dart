@@ -63,6 +63,171 @@ void main() {
     });
   });
 
+  group('ModuleSetup (per-chat setup form)', () {
+    test('parses fields defensively: types, keys, caps, dedupe', () {
+      final ModuleSetup? setup = ModuleSetup.fromJson(<String, dynamic>{
+        'title': 'Acct',
+        'description': 'creds',
+        'fields': <dynamic>[
+          <String, dynamic>{'key': 'Email', 'label': 'Email', 'required': true},
+          <String, dynamic>{'key': 'email', 'label': 'Duplicate dropped'},
+          <String, dynamic>{
+            'key': 'pass',
+            'type': 'password',
+            'required': true,
+            'placeholder': 'hunter2',
+          },
+          <String, dynamic>{'key': 'retries', 'type': 'number'},
+          <String, dynamic>{'key': 'verbose', 'type': 'boolean'},
+          <String, dynamic>{'key': 'weird type', 'type': 'nonsense'},
+          <String, dynamic>{'key': '', 'label': 'dropped (no key)'},
+          'not-a-map',
+        ],
+      });
+      expect(setup, isNotNull);
+      // email, pass, retries, verbose, weird_type — duplicate/empty/
+      // non-map entries dropped, keys sanitized, first duplicate wins.
+      expect(setup!.fields, hasLength(5));
+      expect(setup.fields.first.key, 'email');
+      expect(setup.fields.first.required, isTrue);
+      expect(setup.fields[1].type, ModuleSetupFieldType.password);
+      expect(setup.fields[2].type, ModuleSetupFieldType.number);
+      expect(setup.fields[3].type, ModuleSetupFieldType.boolean);
+      // Unknown type degrades to text; key whitespace collapsed.
+      expect(setup.fields.last.type, ModuleSetupFieldType.text);
+      expect(setup.fields.last.key, 'weird_type');
+      expect(setup.hasRequired, isTrue);
+    });
+
+    test('caps the field list at 12 and long text fields', () {
+      final List<Map<String, dynamic>> many = <Map<String, dynamic>>[
+        for (int i = 0; i < 20; i++)
+          <String, dynamic>{'key': 'f$i', 'label': 'F$i'},
+      ];
+      final ModuleSetup? setup = ModuleSetup.fromJson(<String, dynamic>{
+        'title': 'T' * 100,
+        'fields': many,
+      });
+      expect(setup, isNotNull);
+      expect(setup!.fields, hasLength(ModuleSetup.maxFields));
+      expect(setup.title.length, 80);
+    });
+
+    test('empty or unusable blocks parse to null', () {
+      expect(
+        ModuleSetup.fromJson(<String, dynamic>{'fields': <dynamic>[]}),
+        isNull,
+      );
+      expect(
+        ModuleSetup.fromJson(<String, dynamic>{
+          'fields': <dynamic>['x'],
+        }),
+        isNull,
+      );
+      expect(ModuleSetup.fromJson(<String, dynamic>{}), isNull);
+    });
+
+    test('satisfiedBy gates on required fields only', () {
+      final ModuleSetup setup = ModuleSetup.fromJson(<String, dynamic>{
+        'fields': <dynamic>[
+          <String, dynamic>{'key': 'user', 'required': true},
+          <String, dynamic>{'key': 'note'},
+          <String, dynamic>{
+            'key': 'retries',
+            'type': 'number',
+            'required': true,
+          },
+          <String, dynamic>{'key': 'verbose', 'type': 'boolean'},
+        ],
+      })!;
+      expect(setup.satisfiedBy(null), isFalse);
+      expect(setup.satisfiedBy(<String, dynamic>{}), isFalse);
+      expect(
+        setup.satisfiedBy(<String, dynamic>{'user': 'a'}),
+        isFalse,
+      ); // required number missing
+      expect(
+        setup.satisfiedBy(<String, dynamic>{'user': '  ', 'retries': 3}),
+        isFalse,
+      ); // blank text
+      expect(
+        setup.satisfiedBy(<String, dynamic>{'user': 'a', 'retries': 'x'}),
+        isFalse,
+      ); // wrong type
+      expect(
+        setup.satisfiedBy(<String, dynamic>{
+          'user': 'a',
+          'retries': 3,
+          'verbose': false,
+        }),
+        isTrue,
+      ); // boolean false counts as filled
+      expect(
+        setup.satisfiedBy(<String, dynamic>{'user': 'a', 'retries': 2.5}),
+        isTrue,
+      );
+    });
+
+    test('no required fields means never blocked', () {
+      final ModuleSetup setup = ModuleSetup.fromJson(<String, dynamic>{
+        'fields': <dynamic>[
+          <String, dynamic>{'key': 'note'},
+        ],
+      })!;
+      expect(setup.hasRequired, isFalse);
+      expect(setup.satisfiedBy(null), isTrue);
+    });
+
+    test('manifest round-trips the setup block through toJson', () {
+      final ModuleManifest manifest = ModuleManifest.fromJson(<String, dynamic>{
+        'name': 'demo',
+        'setup': <String, dynamic>{
+          'title': 'Acct',
+          'fields': <dynamic>[
+            <String, dynamic>{'key': 'email', 'required': true},
+            <String, dynamic>{
+              'key': 'pass',
+              'type': 'password',
+              'required': true,
+            },
+          ],
+        },
+      });
+      expect(manifest.setup, isNotNull);
+      expect(manifest.setup!.fields, hasLength(2));
+      final ModuleManifest restored = ModuleManifest.fromJson(
+        manifest.toJson(),
+      );
+      expect(restored.setup, isNotNull);
+      expect(restored.setup!.title, 'Acct');
+      expect(restored.setup!.fields.map((f) => f.key), <String>[
+        'email',
+        'pass',
+      ]);
+      expect(restored.setup!.fields.every((f) => f.required), isTrue);
+    });
+
+    test('ChatModule persistence keeps the setup block', () async {
+      final File zip = File('${tempDir.path}${Platform.pathSeparator}setup.zip')
+        ..writeAsBytesSync(
+          textZip(<String, String>{
+            'module.json':
+                '{"name":"setupmod","setup":{"title":"Acct","fields":['
+                '{"key":"email","type":"text","required":true},'
+                '{"key":"pass","type":"password","required":true}]}}',
+            'main.js': 'module.exports = 1;',
+          }),
+        );
+      final ModuleInstallResult result = await registry.installFromZip(
+        zip.path,
+      );
+      expect(result.ok, isTrue, reason: result.message);
+      final List<ChatModule> installed = await registry.listInstalled();
+      expect(installed.single.manifest.setup, isNotNull);
+      expect(installed.single.manifest.setup!.fields, hasLength(2));
+    });
+  });
+
   group('installFromZip', () {
     test('installs a flat module with module.json', () async {
       final File zip = File('${tempDir.path}${Platform.pathSeparator}demo.zip')

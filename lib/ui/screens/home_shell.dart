@@ -4,13 +4,15 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../di.dart';
 import '../../l10n/app_strings.dart';
 import '../../models/models.dart';
-import '../../services/agent_controller.dart' show ChatState;
+import '../../services/agent_controller.dart'
+    show ChatState, ModuleSetupRequest;
 import '../theme.dart';
 import '../widgets/agent_toggle.dart';
 import '../widgets/chat_body.dart';
 import '../widgets/chat_drawer.dart';
 import '../widgets/composer.dart';
 import '../widgets/model_picker.dart';
+import '../widgets/module_setup_sheet.dart';
 import 'settings_screen.dart';
 
 /// Main screen: app bar (brand, model chip, agent toggle, language menu),
@@ -23,6 +25,11 @@ class HomeShell extends ConsumerStatefulWidget {
 }
 
 class _HomeShellState extends ConsumerState<HomeShell> {
+  /// The setup request whose sheet was already auto-opened — a request
+  /// stays pending (banner) until submitted, so the sheet must pop up
+  /// exactly ONCE per request, not on every rebuild after a dismissal.
+  ModuleSetupRequest? _autoOpenedSetup;
+
   @override
   void initState() {
     super.initState();
@@ -34,6 +41,17 @@ class _HomeShellState extends ConsumerState<HomeShell> {
         ref.read(chatControllerProvider.notifier).restoreLastChat();
       }
     });
+  }
+
+  Future<void> _openSetupSheet(ModuleSetupRequest request) async {
+    _autoOpenedSetup = request;
+    final Map<String, dynamic>? values = await showModuleSetupSheet(
+      context,
+      request,
+    );
+    // Dismissal keeps the banner; submission re-runs the module inside
+    // submitModuleSetup — nothing left to do here.
+    if (values == null) _autoOpenedSetup = null;
   }
 
   @override
@@ -54,6 +72,13 @@ class _HomeShellState extends ConsumerState<HomeShell> {
         ScaffoldMessenger.of(context)
           ..hideCurrentSnackBar()
           ..showSnackBar(SnackBar(content: Text(error)));
+      }
+      // A module waiting for its per-chat setup form: open the sheet once
+      // per request object (the gate fires mid-run, so the identity guard
+      // alone decides); afterwards the persistent banner drives re-entry.
+      final ModuleSetupRequest? setup = next.setupRequest;
+      if (setup != null && !identical(setup, _autoOpenedSetup)) {
+        _openSetupSheet(setup);
       }
     });
 
@@ -94,11 +119,59 @@ class _HomeShellState extends ConsumerState<HomeShell> {
           const SizedBox(width: 4),
         ],
       ),
-      body: const SafeArea(
+      body: SafeArea(
         child: Column(
           children: <Widget>[
-            Expanded(child: ChatBody()),
-            Composer(),
+            const Expanded(child: ChatBody()),
+            const _ModuleSetupBanner(),
+            const Composer(),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Persistent banner for a module waiting on its per-chat setup form.
+/// Tapping "Set up" opens the form again; submitting hides the banner and
+/// re-runs the module (controller handles both).
+class _ModuleSetupBanner extends ConsumerWidget {
+  const _ModuleSetupBanner();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final ModuleSetupRequest? request = ref.watch(
+      chatControllerProvider.select((ChatState s) => s.setupRequest),
+    );
+    if (request == null) return const SizedBox.shrink();
+    final AppStrings strings = stringsOf(context);
+    return Material(
+      key: const Key('module-setup-banner'),
+      color: context.zSurfaceAlt,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+        child: Row(
+          children: <Widget>[
+            const Icon(Icons.extension_rounded, size: 18),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                strings.moduleSetupNeededTitle(request.title),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontSize: 13),
+              ),
+            ),
+            const SizedBox(width: 8),
+            FilledButton.tonal(
+              key: const Key('module-setup-banner-button'),
+              onPressed: () {
+                final _HomeShellState? host = context
+                    .findAncestorStateOfType<_HomeShellState>();
+                host?._openSetupSheet(request);
+              },
+              child: Text(strings.moduleSetupBannerCta),
+            ),
           ],
         ),
       ),

@@ -396,6 +396,14 @@ abstract class AppStrings {
   String get pluginMenuEmpty;
   String get startWithModule;
 
+  // -- Module per-chat setup form (v1.24.0) ------------------------------
+  String moduleSetupNeededTitle(String name);
+  String get moduleSetupNeededBody;
+  String get moduleSetupBannerCta;
+  String get moduleSetupSaveRun;
+  String get moduleSetupPerChatHint;
+  String get moduleSetupRequiredTag;
+
   // -- Controller messages (no BuildContext available) -----------------
   String get missingApiKey;
   String get modelNotSet;
@@ -1011,7 +1019,7 @@ class AppStringsEn implements AppStrings {
   String get aboutSection => 'About';
   @override
   String get aboutBody =>
-      'ZAgents v1.23.0 — an Android clone of the chat.z.ai agent mode UI, '
+      'ZAgents v1.24.0 — an Android clone of the chat.z.ai agent mode UI, '
       'with custom OpenAI-compatible providers (OpenRouter, InferHub, '
       'Z.AI, OpenAI, DeepSeek, Groq, and more), per-provider API keys, '
       'light/dark themes, parallel multi-session chat with background '
@@ -1159,6 +1167,24 @@ class AppStringsEn implements AppStrings {
       'No modules installed yet. Install one from the Modules screen.';
   @override
   String get startWithModule => 'Start with a module';
+
+  // -- Module per-chat setup form (v1.24.0) ------------------------------
+  @override
+  String moduleSetupNeededTitle(String name) =>
+      '$name needs setup before it can run in this chat.';
+  @override
+  String get moduleSetupNeededBody =>
+      'Fill in the required information in the form — once submitted, the '
+      'module is allowed and runs automatically.';
+  @override
+  String get moduleSetupBannerCta => 'Set up';
+  @override
+  String get moduleSetupSaveRun => 'Save and run';
+  @override
+  String get moduleSetupPerChatHint =>
+      'Stored for THIS chat only — other chats ask again.';
+  @override
+  String get moduleSetupRequiredTag => 'required';
 
   // -- Controller messages ----------------------------------------------
   @override
@@ -1790,7 +1816,7 @@ class AppStringsId implements AppStrings {
   String get aboutSection => 'Tentang';
   @override
   String get aboutBody =>
-      'ZAgents v1.23.0 — klon UI agent mode chat.z.ai untuk Android, '
+      'ZAgents v1.24.0 — klon UI agent mode chat.z.ai untuk Android, '
       'dengan custom provider OpenAI-compatible (OpenRouter, InferHub, '
       'Z.AI, OpenAI, DeepSeek, Groq, dan lainnya), API key per-provider, '
       'tema terang/gelap, multi-sesi paralel dengan proses latar '
@@ -1940,6 +1966,24 @@ class AppStringsId implements AppStrings {
       'Belum ada modul terpasang. Pasang dari layar Modul.';
   @override
   String get startWithModule => 'Mulai dengan modul';
+
+  // -- Module per-chat setup form (v1.24.0) ------------------------------
+  @override
+  String moduleSetupNeededTitle(String name) =>
+      '$name butuh setup sebelum bisa berjalan di chat ini.';
+  @override
+  String get moduleSetupNeededBody =>
+      'Isi informasi yang diminta pada formulir — setelah dikirim, modul '
+      'diizinkan dan otomatis dijalankan.';
+  @override
+  String get moduleSetupBannerCta => 'Isi data';
+  @override
+  String get moduleSetupSaveRun => 'Simpan dan jalankan';
+  @override
+  String get moduleSetupPerChatHint =>
+      'Disimpan hanya untuk chat INI — chat lain akan bertanya lagi.';
+  @override
+  String get moduleSetupRequiredTag => 'wajib';
 
   // -- Controller messages ----------------------------------------------
   @override

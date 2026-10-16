@@ -11,7 +11,7 @@ see [`../docs/modules/`](../docs/modules/) for the full reference and
 | [`network-fetcher/`](network-fetcher/) | `network`, `chat` | `zagents.http.request` through the app transport, restricted by a manifest `allowedHosts` allowlist (`api.github.com` only) |
 | [`file-notes/`](file-notes/) | `files` | Sandboxed filesystem under the per-chat `state/` directory: mkdir / appendFile / readFile / readdir / stat |
 | [`chat-streamer/`](chat-streamer/) | `chat` | Progressive output into the conversation with `zagents.chat.emit` |
-| [`onhomeroom-daily/`](onhomeroom-daily/) | `storage`, `network`, `agent` | Real-world daily bot for app.onhomeroom.com — challenge board, yes votes, chat replies, proposal pipeline. Every sentence is composed live by the chat agent via `zagents.agent.compose` (no templates), with setup commands on the first message (`setup <email> <password>`, `status`, `reset`) |
+| [`onhomeroom-daily/`](onhomeroom-daily/) | `storage`, `network`, `agent` | Real-world daily bot for app.onhomeroom.com — challenge board, yes votes, chat replies, proposal pipeline. Every sentence is composed live by the chat agent via `zagents.agent.compose` (no templates). The app collects the account with a per-chat setup form before the first run (`zagents.info.setup`); text commands (`setup <email> <password>`, `status`, `reset`) still re-configure an already set-up chat |
 
 ## Ready-made ZIPs — download and install directly
 
@@ -47,7 +47,10 @@ On Windows: right-click the sample folder → *Send to → Compressed
    - type **`/plugins hello-counter`** (module `name` from the manifest),
    - or tap the module chip on the new-chat screen.
 3. Approve the requested permissions in the activation dialog.
-4. The module runs once: console output and the return value are posted
+4. Modules that declare a `setup` block (onhomeroom-daily) show a
+   per-chat setup form first — fill it once and the module runs right
+   after; other chats ask again by design.
+5. The module runs once: console output and the return value are posted
    into the conversation with a module badge; the agent can read and
    discuss them.
 
@@ -63,7 +66,7 @@ On Windows: right-click the sample folder → *Send to → Compressed
   `state/notes/session.txt`; the file lives per chat and per module.
 * `chat-streamer` — three step messages appear progressively while the
   module runs.
-* `onhomeroom-daily` — after `setup <email> <password>`, one cycle per
-  activation: challenge board lines, yes votes, at most one composed text
-  per run, a run summary line. Run it in two chats with two different
-  accounts and the sessions never mix.
+* `onhomeroom-daily` — after the per-chat setup form (email + password),
+  one cycle per activation: challenge board lines, yes votes, at most one
+  composed text per run, a run summary line. Run it in two chats with two
+  different accounts and the sessions never mix.

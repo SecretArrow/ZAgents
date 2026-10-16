@@ -51,6 +51,7 @@ void main() {
     List<ModulePermission> permissions = const <ModulePermission>[
       ModulePermission.storage,
     ],
+    Map<String, dynamic>? setup,
   }) async {
     final String manifest = jsonEncode(<String, dynamic>{
       'name': name,
@@ -58,6 +59,7 @@ void main() {
       'description': description,
       'entry': 'main.js',
       'permissions': permissions.map((p) => p.name).toList(),
+      'setup': ?setup,
     });
     final List<int> entry = utf8.encode('// $name entry');
     final Archive archive = Archive()
@@ -304,5 +306,212 @@ void main() {
       moduleMessage.content,
       contains(appStringsFor('en').moduleRunFailed('boom inside')),
     );
+  });
+
+  group('per-chat setup gate (form before first run)', () {
+    Future<ChatModule> installSetupModule(String name) => installModule(
+      name,
+      description: 'Needs an account',
+      setup: <String, dynamic>{
+        'title': 'Acct',
+        'fields': <dynamic>[
+          <String, dynamic>{'key': 'email', 'type': 'text', 'required': true},
+          <String, dynamic>{
+            'key': 'password',
+            'type': 'password',
+            'required': true,
+          },
+        ],
+      },
+    );
+
+    test(
+      'unsatisfied setup: module does NOT run, form request surfaces',
+      () async {
+        final ProviderContainer c = await container();
+        await installSetupModule('gated');
+        js.nextResult = const JsRunResult(output: 'SHOULD NOT RUN');
+
+        final ChatController controller = c.read(
+          chatControllerProvider.notifier,
+        );
+        await controller.send('start');
+        await controller.activateModule('gated');
+
+        final ChatState state = c.read(chatControllerProvider);
+        // No JS execution ever happened.
+        expect(js.moduleInvocations, isEmpty);
+        // The module is active but blocked behind its form.
+        expect(state.activeModules, <String>['gated']);
+        expect(state.setupRequest, isNotNull);
+        expect(state.setupRequest!.moduleName, 'gated');
+        expect(state.setupRequest!.setup.fields, hasLength(2));
+        // Localized needs-setup message posted into the transcript.
+        final ChatMessage moduleMessage = state.messages.last;
+        expect(moduleMessage.moduleName, 'gated');
+        expect(
+          moduleMessage.content,
+          contains(appStringsFor('en').moduleSetupNeededTitle('Acct')),
+        );
+      },
+    );
+
+    test(
+      'staged module on a fresh chat hits the gate on the first message',
+      () async {
+        final ProviderContainer c = await container();
+        await installSetupModule('staged-gate');
+        js.nextResult = const JsRunResult(output: 'nope');
+
+        final ChatController controller = c.read(
+          chatControllerProvider.notifier,
+        );
+        await controller.activateModule('staged-gate');
+        await controller.send('hello there');
+
+        final ChatState state = c.read(chatControllerProvider);
+        expect(js.moduleInvocations, isEmpty);
+        expect(state.setupRequest, isNotNull);
+        // The user message still got its agent reply.
+        expect(state.messages.first.role, Role.user);
+        expect(state.messages.last.role, Role.assistant);
+      },
+    );
+
+    test(
+      'submitModuleSetup persists the values and RE-RUNS the module',
+      () async {
+        final ProviderContainer c = await container();
+        final ChatModule mod = await installSetupModule('formflow');
+        js.nextResult = const JsRunResult(output: 'cycle ran');
+
+        final ChatController controller = c.read(
+          chatControllerProvider.notifier,
+        );
+        await controller.send('start');
+        await controller.activateModule('formflow');
+        expect(c.read(chatControllerProvider).setupRequest, isNotNull);
+
+        // Incomplete values are rejected.
+        expect(
+          await controller.submitModuleSetup('formflow', <String, dynamic>{
+            'email': 'me@example.com',
+          }),
+          isFalse,
+        );
+        expect(js.moduleInvocations, isEmpty);
+
+        expect(
+          await controller.submitModuleSetup('formflow', <String, dynamic>{
+            'email': 'me@example.com',
+            'password': 'hunter2',
+          }),
+          isTrue,
+        );
+
+        final ChatState state = c.read(chatControllerProvider);
+        expect(state.setupRequest, isNull);
+        // The module ran exactly once — after the form was submitted.
+        expect(js.moduleInvocations, hasLength(1));
+        // The submitted values reached the per-chat instance storage.
+        final Map<String, dynamic> stored = await moduleRuntime.readStoredSetup(
+          state.sessionId!,
+          mod.name,
+        );
+        expect(stored, <String, dynamic>{
+          'email': 'me@example.com',
+          'password': 'hunter2',
+        });
+        // The re-run posted the module output.
+        expect(
+          state.messages.where((ChatMessage m) => m.moduleName == 'formflow'),
+          isNotEmpty,
+        );
+      },
+    );
+
+    test('satisfied setup (command-path mirror) runs immediately', () async {
+      final ProviderContainer c = await container();
+      await installSetupModule('cmdready');
+      js.nextResult = const JsRunResult(output: 'ready cycle');
+
+      final ChatController controller = c.read(chatControllerProvider.notifier);
+      await controller.send('start');
+      final String sessionId = c.read(chatControllerProvider).sessionId!;
+      // The module mirrored its configured state into the cooperative key
+      // (what the onhomeroom text-command path does).
+      await moduleRuntime.writeStoredSetup(
+        sessionId,
+        'cmdready',
+        <String, dynamic>{'email': 'cmd@example.com', 'password': 'p'},
+      );
+      await controller.activateModule('cmdready');
+
+      final ChatState state = c.read(chatControllerProvider);
+      expect(js.moduleInvocations, hasLength(1));
+      expect(state.setupRequest, isNull);
+      expect(state.messages.last.content, contains('ready cycle'));
+    });
+
+    test('reopening the chat resurfaces the form request for an '
+        'unconfigured module', () async {
+      final ProviderContainer c = await container();
+      await installSetupModule('reopen');
+
+      final ChatController controller = c.read(chatControllerProvider.notifier);
+      await controller.send('start');
+      await controller.activateModule('reopen');
+      expect(c.read(chatControllerProvider).setupRequest, isNotNull);
+
+      // Leave to a draft and reopen the same chat from history.
+      final String sessionId = c.read(chatControllerProvider).sessionId!;
+      await controller.newChat();
+      await controller.openChat(
+        ChatSummary(id: sessionId, title: 't', updatedAt: DateTime.now()),
+      );
+      expect(c.read(chatControllerProvider).setupRequest, isNotNull);
+      expect(c.read(chatControllerProvider).setupRequest!.moduleName, 'reopen');
+    });
+
+    test('deactivating the gated module clears its form request', () async {
+      final ProviderContainer c = await container();
+      await installSetupModule('gatedbye');
+
+      final ChatController controller = c.read(chatControllerProvider.notifier);
+      await controller.send('start');
+      await controller.activateModule('gatedbye');
+      expect(c.read(chatControllerProvider).setupRequest, isNotNull);
+      await controller.deactivateModule('gatedbye');
+      expect(c.read(chatControllerProvider).setupRequest, isNull);
+      expect(c.read(chatControllerProvider).activeModules, isEmpty);
+    });
+
+    test('system prompt notes the per-chat setup fields', () async {
+      final ProviderContainer c = await container();
+      await installSetupModule('noted');
+      js.nextResult = const JsRunResult(output: 'ran');
+
+      final ChatController controller = c.read(chatControllerProvider.notifier);
+      await controller.send('start');
+      final String sessionId = c.read(chatControllerProvider).sessionId!;
+      await moduleRuntime.writeStoredSetup(
+        sessionId,
+        'noted',
+        <String, dynamic>{'email': 'a@b.c', 'password': 'p'},
+      );
+      await controller.activateModule('noted');
+
+      final ScriptedLlmClient llm =
+          c.read(llmClientProvider) as ScriptedLlmClient;
+      llm.turns.clear();
+      llm.turns.add(AssistantTurn(content: 'ok'));
+      await controller.send('again');
+      final List<Map<String, dynamic>> wire = llm.calls.last;
+      final String system = (wire.first['content'] as String?) ?? '';
+      expect(system, contains('# Active module: noted v1.0.0'));
+      expect(system, contains('Setup (per chat, collected by the app'));
+      // Labels fall back to the field keys when the manifest omits them.
+      expect(system, contains('email, password'));
+    });
   });
 }

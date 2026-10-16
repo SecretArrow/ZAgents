@@ -51,6 +51,7 @@ class ChatState {
     this.todos = const <TodoItem>[],
     this.pendingModule,
     this.activeModules = const <String>[],
+    this.setupRequest,
   });
 
   final String? sessionId;
@@ -71,6 +72,11 @@ class ChatState {
   /// private-window scope).
   final List<String> activeModules;
 
+  /// Module waiting for its per-chat setup form in THIS session — the UI
+  /// shows a banner + form; submitting re-runs the module automatically.
+  /// Null when no active module is missing required setup input.
+  final ModuleSetupRequest? setupRequest;
+
   static const Object _unset = Object();
 
   ChatState copyWith({
@@ -82,6 +88,7 @@ class ChatState {
     List<TodoItem>? todos,
     Object? pendingModule = _unset,
     List<String>? activeModules,
+    Object? setupRequest = _unset,
   }) => ChatState(
     sessionId: sessionId ?? this.sessionId,
     title: title ?? this.title,
@@ -93,7 +100,34 @@ class ChatState {
         ? this.pendingModule
         : pendingModule as String?,
     activeModules: activeModules ?? this.activeModules,
+    setupRequest: setupRequest == _unset
+        ? this.setupRequest
+        : setupRequest as ModuleSetupRequest?,
   );
+}
+
+/// A module activation that is waiting for the user to fill its per-chat
+/// setup form. Rendered as a banner + bottom-sheet form; the submitted
+/// values persist into the (chat, module) storage and the module re-runs
+/// automatically.
+class ModuleSetupRequest {
+  const ModuleSetupRequest({
+    required this.moduleName,
+    required this.moduleTitle,
+    required this.setup,
+    this.values = const <String, dynamic>{},
+  });
+
+  final String moduleName;
+  final String moduleTitle;
+  final ModuleSetup setup;
+
+  /// Previously submitted values (when editing an existing setup).
+  final Map<String, dynamic> values;
+
+  /// Display heading: manifest setup title or "<title> setup".
+  String get title =>
+      setup.title.isNotEmpty ? setup.title : '$moduleTitle setup';
 }
 
 /// Internal state of one running (or recently run) session. Sessions run
@@ -141,6 +175,10 @@ class _SessionRun {
 
   /// Module staged on the draft; activates with the first message.
   String? pendingModule;
+
+  /// Module activation currently blocked behind its per-chat setup form
+  /// (null when nothing waits). Mirrored into the UI state on every sync.
+  ModuleSetupRequest? setupRequest;
 
   /// Absolute path of the app documents directory, resolved once per run so
   /// binary attachment notes can advertise the documents-relative path the
@@ -323,6 +361,8 @@ class ChatController extends Notifier<ChatState> {
     } catch (_) {
       // Runtime unavailable: the deactivation itself still proceeds.
     }
+    // A pending setup request for this module dies with the activation.
+    if (run.setupRequest?.moduleName == trimmed) run.setupRequest = null;
     final AppStrings strings = appStringsFor(
       ref.read(settingsProvider).languageCode,
     );
@@ -346,6 +386,12 @@ class ChatController extends Notifier<ChatState> {
   /// the chat. [activationPrompt] is the user message that triggered this
   /// activation (staged-module path); the module reads it as
   /// `zagents.info.prompt` so setup commands work on the first message.
+  ///
+  /// When the manifest declares a per-chat setup form with required
+  /// fields and THIS chat has not filled them yet, the module does NOT
+  /// run: a localized "needs setup" message is posted, the form request
+  /// is surfaced on the state, and [submitModuleSetup] re-runs the module
+  /// once the user submits the form.
   Future<void> _activateModule(
     _SessionRun run,
     String name, {
@@ -361,8 +407,51 @@ class ChatController extends Notifier<ChatState> {
       }
       return;
     }
-    run.activeModules.add(name);
+    if (!run.activeModules.contains(name)) run.activeModules.add(name);
     run.pendingModule = null;
+
+    // Per-chat setup gate: required form fields must be satisfied before
+    // the module's code runs — the user fills the form INSTEAD of seeing
+    // a failed first cycle.
+    final ModuleSetup? setup = module.manifest.setup;
+    if (setup != null && setup.hasRequired) {
+      Map<String, dynamic> values = const <String, dynamic>{};
+      try {
+        values = await ref
+            .read(moduleRuntimeProvider)
+            .readStoredSetup(run.sessionId, module.name);
+      } catch (_) {
+        // Unreadable storage simply counts as "not set up yet".
+      }
+      if (!setup.satisfiedBy(values)) {
+        final ModuleSetupRequest request = ModuleSetupRequest(
+          moduleName: module.name,
+          moduleTitle: module.manifest.title.isEmpty
+              ? module.name
+              : module.manifest.title,
+          setup: setup,
+          values: values,
+        );
+        run.setupRequest = request;
+        final ChatMessage moduleMessage = ChatMessage.assistant(
+          '${strings.moduleSetupNeededTitle(request.title)}\n'
+          '${strings.moduleSetupNeededBody}',
+          moduleName: name,
+        );
+        run.messages.add(moduleMessage);
+        _sync(run);
+        if (_activeSessionId == run.sessionId) {
+          state = state.copyWith(
+            activeModules: [...run.activeModules],
+            setupRequest: request,
+          );
+        }
+        await _persist(run);
+        return;
+      }
+    }
+    run.setupRequest = null;
+
     final ChatMessage moduleMessage = ChatMessage.assistant(
       '',
       moduleName: name,
@@ -370,7 +459,10 @@ class ChatController extends Notifier<ChatState> {
     run.messages.add(moduleMessage);
     _sync(run);
     if (_activeSessionId == run.sessionId) {
-      state = state.copyWith(activeModules: [...run.activeModules]);
+      state = state.copyWith(
+        activeModules: [...run.activeModules],
+        setupRequest: null,
+      );
     }
 
     final StringBuffer body = StringBuffer();
@@ -428,6 +520,76 @@ class ChatController extends Notifier<ChatState> {
     }
     refresh();
     await _persist(run);
+  }
+
+  /// Submits the per-chat setup form for [moduleName]: validates the
+  /// required fields, persists the values into the (chat, module)
+  /// storage under the cooperative `zagentsSetup` key, clears the pending
+  /// request and RE-RUNS the module for the active chat — "fill the form,
+  /// then it runs". Returns false when the values are incomplete or no
+  /// matching module is active in the current chat.
+  Future<bool> submitModuleSetup(
+    String moduleName,
+    Map<String, dynamic> values,
+  ) async {
+    final String trimmed = moduleName.trim();
+    final String? sessionId = _activeSessionId;
+    if (trimmed.isEmpty || sessionId == null) return false;
+    final _SessionRun? run = _runs[sessionId];
+    if (run == null) return false;
+    final ModuleSetupRequest? pending = run.setupRequest;
+    if (pending == null || pending.moduleName != trimmed) return false;
+    if (!pending.setup.satisfiedBy(values)) return false;
+    try {
+      await ref
+          .read(moduleRuntimeProvider)
+          .writeStoredSetup(sessionId, trimmed, values);
+    } catch (_) {
+      // Persistence failure: keep the request open so the user can retry.
+      return false;
+    }
+    run.setupRequest = null;
+    if (_activeSessionId == sessionId) {
+      state = state.copyWith(setupRequest: null);
+    }
+    await _persist(run);
+    // Re-run the gated activation — the gate now passes and the module
+    // executes with the freshly submitted values.
+    await _activateModule(run, trimmed);
+    return true;
+  }
+
+  /// Finds the first active module whose required per-chat setup is not
+  /// satisfied yet (null when every active module is ready to run).
+  Future<ModuleSetupRequest?> _findSetupRequest(
+    String sessionId,
+    List<String> moduleNames,
+  ) async {
+    for (final String name in moduleNames) {
+      final ChatModule? module = await ref
+          .read(moduleRegistryProvider)
+          .get(name);
+      final ModuleSetup? setup = module?.manifest.setup;
+      if (module == null || setup == null || !setup.hasRequired) continue;
+      Map<String, dynamic> values = const <String, dynamic>{};
+      try {
+        values = await ref
+            .read(moduleRuntimeProvider)
+            .readStoredSetup(sessionId, module.name);
+      } catch (_) {
+        // Unreadable storage simply counts as "not set up yet".
+      }
+      if (setup.satisfiedBy(values)) continue;
+      return ModuleSetupRequest(
+        moduleName: module.name,
+        moduleTitle: module.manifest.title.isEmpty
+            ? module.name
+            : module.manifest.title,
+        setup: setup,
+        values: values,
+      );
+    }
+    return null;
   }
 
   /// Rewrites a previously sent user message and REGENERATES everything
@@ -1019,6 +1181,18 @@ class ChatController extends Notifier<ChatState> {
                         'message output as data the user may ask about.'
                   : module.manifest.description.trim(),
             );
+          if (module.manifest.setup != null) {
+            final List<String> labels = <String>[
+              for (final ModuleSetupField f in module.manifest.setup!.fields)
+                f.label,
+            ];
+            content
+              ..writeln()
+              ..write(
+                'Setup (per chat, collected by the app\'s form): '
+                '${labels.join(', ')}.',
+              );
+          }
         } catch (_) {
           // Registry hiccup: skip the context block.
         }
@@ -1131,6 +1305,7 @@ class ChatController extends Notifier<ChatState> {
       title: run.title,
       sessionId: run.sessionId,
       todos: run.latestTodos,
+      setupRequest: run.setupRequest,
     );
   }
 
@@ -1291,6 +1466,7 @@ class ChatController extends Notifier<ChatState> {
         // showing send here would silently swallow the next message.
         isRunning: run.isRunning,
         activeModules: [...run.activeModules],
+        setupRequest: run.setupRequest,
       );
       return;
     }
@@ -1306,11 +1482,19 @@ class ChatController extends Notifier<ChatState> {
         // Module bookkeeping failure must never block opening a chat.
       }
       if (_activeSessionId != summary.id) return;
+      // A module left unconfigured in this chat resurfaces its per-chat
+      // setup form right on reopen — before any failed re-run can happen.
+      final ModuleSetupRequest? setupRequest = await _findSetupRequest(
+        summary.id,
+        modules,
+      );
+      if (_activeSessionId != summary.id) return;
       state = ChatState(
         sessionId: summary.id,
         title: summary.title,
         messages: messages ?? const <ChatMessage>[],
         activeModules: modules,
+        setupRequest: setupRequest,
       );
     } catch (_) {
       // A corrupted history entry must never crash the app: open an empty

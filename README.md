@@ -196,13 +196,20 @@ OpenAI-compatible: **OpenRouter, InferHub, Z.AI, OpenAI, DeepSeek, Groq, dan lai
   Setelan → User Agent pengguna — `zagents.info.userAgent` terbaca dan
   tidak bisa digantikan modul),
   `zagents.chat.emit` (kirim output ke percakapan), `zagents.info` (termasuk
-  `prompt` — pesan aktivasi pertama, untuk perintah setup modul) dan
+  `prompt` — pesan aktivasi pertama, untuk konfigurasi ulang modul, dan
+  `setup` — nilai formulir setup per chat) dan
   **`zagents.agent.compose` (v1.22.0, izin `agent`)** — modul meminta
   **agen chat sendiri** menyusun SATU kalimat sesuai kebutuhan dari konteks
   live yang modul suplai; tanpa template/kumpulan pesan siap pakai, semua
   keluaran lolos gerbang host (satu kalimat santai berbahasa Inggris,
   tanpa karakter `! : ; — – ?`, batas kata, anti-ulang, retry perbaikan +
-  sanitize deterministik). Dokumentasi SDK resmi tersedia in-app (EN/ID)
+  sanitize deterministik). **Formulir setup per chat (v1.24.0)**: modul
+  yang mendeklarasikan blok `setup` di manifestnya otomatis memunculkan
+  formulir di chat — input wajib dikumpulkan aplikasi SEBELUM run pertama
+  (banner + bottom sheet, tombol "Simpan dan jalankan"); setelah dikirim,
+  nilai tersimpan per chat (kunci kooperatif `zagentsSetup`), modul
+  langsung dijalankan, dan chat lain bertanya lagi sesuai desain isolasi.
+  Dokumentasi SDK resmi tersedia in-app (EN/ID)
   di layar Modul, dan lengkap di repo: **`sdk/`** (SDK + definisi
   TypeScript), **`samples/`** (5 modul contoh siap pasang, termasuk
   **onhomeroom-daily** — bot harian app.onhomeroom.com yang setiap

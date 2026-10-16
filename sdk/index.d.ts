@@ -35,9 +35,17 @@ export interface ZAgentsInfo {
   /**
    * The user message that activated this run — present only on the
    * staged-module path (module picked on a fresh draft, first message
-   * sent). Use it for setup commands (`setup ...`, `status`, `reset`).
+   * sent). Use it for re-configuration commands (`setup ...`, `status`,
+   * `reset`) on an already set-up chat.
    */
   prompt?: string;
+  /**
+   * Per-chat setup-form values the app collected before this run
+   * (module.json `setup` block) — empty object when not set up yet.
+   * The same values live under the cooperative storage key
+   * `zagentsSetup`; other chats ask again by design.
+   */
+  setup?: Record<string, unknown>;
 }
 
 /** HTTP response returned by zagents.http.request. */

@@ -22,7 +22,12 @@
  *    - one text submission per activation at most — human pacing is kept
  *      across activations via the persisted lastTextAt anchor
  *    - setup/status/reset commands ride on the activation prompt
- *      (zagents.info.prompt) when the module is staged on a new chat
+ *      (zagents.info.prompt) when the module is staged on a new chat;
+ *      the PRIMARY setup path is the app's per-chat setup form — the
+ *      host collects config.account (email + password) BEFORE this
+ *      module's first run and hands the values over as
+ *      zagents.info.setup (also stored under the cooperative storage
+ *      key 'zagentsSetup')
  *
  *  Zero npm dependencies. Requires the ZAgents module runtime.
  * ==========================================================================*/
@@ -143,6 +148,48 @@ async function loadJson(key, fallback) {
 async function saveJson(key, value) {
   try { await zagents.storage.set(key, value); }
   catch (e) { log('storage write failed for', key, '-', e.message); }
+}
+
+/* ------------------------------------------------------- host setup form */
+/* The app collects the per-chat setup form (module.json "setup") BEFORE
+   this module's first run and exposes the submitted values as
+   zagents.info.setup (mirrored under the cooperative storage key
+   'zagentsSetup'). We merge them into config.account so the credentials
+   typed into the form are the ones this chat uses; after every successful
+   account check we mirror config.account BACK into the same key so the
+   host's gate always reflects reality (text-command setups included).     */
+function accountReady(cfg) {
+  return !!(cfg && cfg.account && cfg.account.email && cfg.account.password);
+}
+
+function sameAccount(a, b) {
+  return !!a && !!b && a.email === b.email && a.password === b.password;
+}
+
+function readHostSetup() {
+  try {
+    const viaInfo = zagents.info && zagents.info.setup;
+    if (viaInfo && typeof viaInfo === 'object') return viaInfo;
+  } catch (e) { /* older host without info.setup */ }
+  return null;
+}
+
+async function readStoredSetup() {
+  try {
+    const v = await zagents.storage.get('zagentsSetup');
+    if (v && typeof v === 'object') return v;
+  } catch (e) { /* cooperative key unreadable — treat as absent */ }
+  return null;
+}
+
+async function mirrorSetup(config) {
+  if (!accountReady(config)) return;
+  const stored = await readStoredSetup();
+  if (stored && sameAccount(stored, config.account)) return;
+  await saveJson('zagentsSetup', {
+    email: config.account.email,
+    password: config.account.password,
+  });
 }
 
 /* ------------------------------------------------------------------- API */
@@ -1374,7 +1421,14 @@ class Bot {
    fresh chat) carries simple commands:
      setup <email> <password>   store credentials in THIS chat's storage
      status                     print the saved state summary
-     reset                      wipe the runtime state (config kept)      */
+     reset                      wipe the runtime state (config kept)
+
+   The setup FORM (host UI) is the primary path: the app gates this
+   module's first run behind its per-chat setup form and passes the
+   submitted values in as zagents.info.setup. The text command stays
+   useful for RE-configuring an already set-up chat — it mirrors the new
+   credentials into the same cooperative storage key ('zagentsSetup') so
+   the host's setup gate stays in step.                                     */
 function parseCommand(prompt) {
   const raw = String(prompt || '').trim();
   if (!raw) return { kind: null };
@@ -1414,11 +1468,24 @@ async function main() {
   const state = deepFill(await loadJson('data', DEFAULT_DATA), DEFAULT_DATA);
   if (!state.meta.createdAt) state.meta.createdAt = nowIso();
 
+  // Setup-form values (app-collected): make them THIS chat's credentials.
+  const hostSetup = readHostSetup() || (await readStoredSetup());
+  if (hostSetup
+    && typeof hostSetup.email === 'string' && hostSetup.email
+    && typeof hostSetup.password === 'string' && hostSetup.password
+    && !sameAccount(hostSetup, config.account)) {
+    config.account.email = hostSetup.email;
+    config.account.password = hostSetup.password;
+    await saveJson('config', config);
+    await log('setup-form credentials applied to this chat');
+  }
+
   const cmd = parseCommand(zagents.info && zagents.info.prompt);
   if (cmd.kind === 'setup') {
     config.account.email = cmd.email;
     config.account.password = cmd.password;
     await saveJson('config', config);
+    await mirrorSetup(config);
     await emit('credentials saved for this chat — starting the first cycle');
   } else if (cmd.kind === 'reset') {
     await saveJson('data', JSON.parse(JSON.stringify(DEFAULT_DATA)));
@@ -1429,14 +1496,15 @@ async function main() {
     return { ok: true, command: 'status' };
   }
 
-  if (!config.account.email || !config.account.password) {
+  if (!accountReady(config)) {
     await emit('OnHomeroom Daily needs your account for THIS chat.');
-    await emit('Set it up by sending: setup your-email your-password');
-    await emit('(module selected on a new chat + that message as the first message — '
-      + 'or re-activate the module right after sending it)');
+    await emit('The app shows a setup form for it — submit the form and the '
+      + 'cycle starts automatically. (On an already set-up chat the text '
+      + 'command still works: setup your-email your-password)');
     await log('no account configured — setup required before any cycle');
     return { ok: false, error: 'setup required' };
   }
+  await mirrorSetup(config);
 
   // One activation = one cycle with a hard internal deadline (keeps a
   // margin under the manifest timeout so state always gets saved).

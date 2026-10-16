@@ -23,6 +23,175 @@ ModulePermission? modulePermissionFromName(String? name) {
   return null;
 }
 
+/// Input type of one module setup form field.
+enum ModuleSetupFieldType { text, password, number, boolean }
+
+ModuleSetupFieldType? _setupFieldTypeFromName(String? name) {
+  for (final ModuleSetupFieldType t in ModuleSetupFieldType.values) {
+    if (t.name == name) return t;
+  }
+  return null;
+}
+
+/// One field of the module's per-chat setup form.
+class ModuleSetupField {
+  const ModuleSetupField({
+    required this.key,
+    required this.label,
+    this.type = ModuleSetupFieldType.text,
+    this.required = false,
+    this.placeholder,
+    this.description,
+  });
+
+  /// Machine key inside the setup values map (`[a-z0-9_]`, max 40 chars).
+  /// Rendered on the form as `module-setup-field-` + the key.
+  final String key;
+
+  /// Human label shown on the form (max 80 chars).
+  final String label;
+  final ModuleSetupFieldType type;
+  final bool required;
+
+  /// Hint text inside the input (max 120 chars).
+  final String? placeholder;
+
+  /// One-line explanation under the label (max 200 chars).
+  final String? description;
+
+  /// Defensive parse: unknown types degrade to [ModuleSetupFieldType.text],
+  /// keys are sanitized, anything unusable yields null.
+  static ModuleSetupField? fromJson(Map<String, dynamic> json) {
+    final String rawKey = json['key']?.toString() ?? '';
+    final String key = _sanitizeSetupKey(rawKey);
+    if (key.isEmpty) return null;
+    return ModuleSetupField(
+      key: key,
+      label: _cap(json['label']?.toString() ?? '', 80).isEmpty
+          ? key
+          : _cap(json['label']?.toString() ?? '', 80),
+      type:
+          _setupFieldTypeFromName(json['type']?.toString()) ??
+          ModuleSetupFieldType.text,
+      required: json['required'] == true,
+      placeholder: _cap(json['placeholder']?.toString() ?? '', 120),
+      description: _cap(json['description']?.toString() ?? '', 200),
+    );
+  }
+
+  Map<String, dynamic> toJson() => <String, dynamic>{
+    'key': key,
+    'label': label,
+    'type': type.name,
+    'required': required,
+    if (placeholder != null && placeholder!.isNotEmpty)
+      'placeholder': placeholder,
+    if (description != null && description!.isNotEmpty)
+      'description': description,
+  };
+
+  static String _cap(String raw, int max) {
+    final String s = raw.trim();
+    return s.length > max ? s.substring(0, max) : s;
+  }
+
+  /// Lowercase `[a-z0-9_]`, everything else collapsed into `_`.
+  static String _sanitizeSetupKey(String raw) {
+    final String key = raw.trim().toLowerCase().replaceAll(
+      RegExp(r'[^a-z0-9_]+'),
+      '_',
+    );
+    if (key.length > 40) return key.substring(0, 40);
+    return key;
+  }
+}
+
+/// The module's declared per-chat setup form (`setup` block of
+/// module.json). Values live in the (chat, module) storage under the
+/// cooperative key `zagentsSetup` — the host writes them when the user
+/// submits the form, modules may mirror their own configured state into
+/// the same key (e.g. after a text-command setup) so the gate reflects
+/// reality on every path.
+class ModuleSetup {
+  const ModuleSetup({
+    this.title = '',
+    this.description,
+    this.fields = const <ModuleSetupField>[],
+  });
+
+  /// Form heading; empty falls back to "`<module title>` setup".
+  final String title;
+  final String? description;
+  final List<ModuleSetupField> fields;
+
+  /// True when at least one required field exists — only then does the
+  /// host gate the module run behind the form.
+  bool get hasRequired => fields.any((ModuleSetupField f) => f.required);
+
+  /// True when [values] satisfies every REQUIRED field (optional fields
+  /// never block). text/password: non-empty after trim; number: a finite
+  /// num; boolean: present (false counts as filled).
+  bool satisfiedBy(Map<String, dynamic>? values) {
+    if (!hasRequired) return true;
+    if (values == null) return false;
+    for (final ModuleSetupField field in fields) {
+      if (!field.required) continue;
+      final Object? v = values[field.key];
+      switch (field.type) {
+        case ModuleSetupFieldType.text:
+        case ModuleSetupFieldType.password:
+          if (v is! String || v.trim().isEmpty) return false;
+        case ModuleSetupFieldType.number:
+          if (v is! num || v.isNaN) return false;
+        case ModuleSetupFieldType.boolean:
+          if (v is! bool) return false;
+      }
+    }
+    return true;
+  }
+
+  /// Defensive parse: caps at 12 fields, drops unusable entries, dedupes
+  /// keys (first wins). A block without usable fields parses to null.
+  static ModuleSetup? fromJson(Map<String, dynamic> json) {
+    final List<ModuleSetupField> fields = <ModuleSetupField>[];
+    final Set<String> seen = <String>{};
+    for (final Object? item
+        in json['fields'] as List<dynamic>? ?? const <dynamic>[]) {
+      if (fields.length >= maxFields) break;
+      if (item is! Map) continue;
+      final ModuleSetupField? field = ModuleSetupField.fromJson(
+        item.cast<String, dynamic>(),
+      );
+      if (field == null || !seen.add(field.key)) continue;
+      fields.add(field);
+    }
+    if (fields.isEmpty) return null;
+    final String title = (json['title']?.toString() ?? '').trim();
+    final String description = (json['description']?.toString() ?? '').trim();
+    return ModuleSetup(
+      title: title.length > 80 ? title.substring(0, 80) : title,
+      description: description.isEmpty
+          ? null
+          : (description.length > 240
+                ? description.substring(0, 240)
+                : description),
+      fields: fields,
+    );
+  }
+
+  Map<String, dynamic> toJson() => <String, dynamic>{
+    if (title.isNotEmpty) 'title': title,
+    if (description != null && description!.isNotEmpty)
+      'description': description,
+    'fields': <Map<String, dynamic>>[
+      for (final ModuleSetupField f in fields) f.toJson(),
+    ],
+  };
+
+  /// Form size cap — a manifest cannot balloon the setup sheet.
+  static const int maxFields = 12;
+}
+
 /// Declared + parsed manifest of an installed chat module.
 class ModuleManifest {
   const ModuleManifest({
@@ -34,6 +203,7 @@ class ModuleManifest {
     this.permissions = const <ModulePermission>{},
     this.allowedHosts,
     this.timeoutSeconds = defaultTimeoutSeconds,
+    this.setup,
   });
 
   /// Default execution budget for one module run (seconds). A manifest may
@@ -57,6 +227,12 @@ class ModuleManifest {
   final List<String>? allowedHosts;
   final int timeoutSeconds;
 
+  /// Optional per-chat setup form (module.json `setup` block). When
+  /// declared with at least one field, the host collects the values with
+  /// a form BEFORE the module's first run in a chat — required fields
+  /// gate the execution ("needs setup" instead of a failed cycle).
+  final ModuleSetup? setup;
+
   Duration get timeout =>
       Duration(seconds: timeoutSeconds.clamp(1, maxTimeoutSeconds));
 
@@ -69,6 +245,7 @@ class ModuleManifest {
     'permissions': permissions.map((p) => p.name).toList(),
     if (allowedHosts != null) 'allowedHosts': allowedHosts,
     'timeoutSeconds': timeoutSeconds,
+    if (setup != null) 'setup': setup!.toJson(),
   };
 
   /// Defensive parse: bad types fall back to safe defaults, unknown
@@ -90,6 +267,9 @@ class ModuleManifest {
     timeoutSeconds: json['timeoutSeconds'] is int
         ? json['timeoutSeconds'] as int
         : defaultTimeoutSeconds,
+    setup: json['setup'] is Map
+        ? ModuleSetup.fromJson((json['setup'] as Map).cast<String, dynamic>())
+        : null,
   );
 
   /// Lowercase, keep `[a-z0-9._-]`, collapse the rest into `-`, trim

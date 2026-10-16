@@ -1,4 +1,4 @@
-# ZAgents Module SDK (v1.22.0)
+# ZAgents Module SDK (v1.24.0)
 
 Panduan resmi untuk membuat **modul chat**: paket JavaScript yang berjalan
 secara native di dalam sesi chat ZAgents, terisolasi per chat seperti
@@ -35,7 +35,17 @@ modul-saya.zip
   "entry": "main.js",
   "permissions": ["storage", "network", "files", "chat"],
   "allowedHosts": ["api.contoh.com"],
-  "timeoutSeconds": 30
+  "timeoutSeconds": 30,
+  "setup": {
+    "title": "Akun Modul Saya",
+    "description": "Diminta sekali per chat sebelum run pertama.",
+    "fields": [
+      { "key": "username", "label": "Username", "type": "text", "required": true },
+      { "key": "password", "label": "Password", "type": "password", "required": true },
+      { "key": "retries", "label": "Maks percobaan", "type": "number" },
+      { "key": "verbose", "label": "Log detail", "type": "boolean" }
+    ]
+  }
 }
 ```
 
@@ -49,9 +59,33 @@ modul-saya.zip
 | `permissions` | — | `storage`, `network`, `files`, `chat`, `agent` — pengguna menyetujui setiap aktivasi. |
 | `allowedHosts` | — | Membatasi `zagents.http` ke host tersebut (`*.contoh.com` mengizinkan subdomain). Kosongkan untuk semua host. |
 | `timeoutSeconds` | — | Anggaran eksekusi per run (30 bawaan, maks 120). |
+| `setup` | — | Formulir setup per chat — lihat di bawah. |
 
 Tanpa `module.json`, `package.json` (`name`, `version`, `main`) tetap
 dihormati; tanpa keduanya, nama file ZIP menjadi nama modul.
+
+### Formulir setup — `setup` di module.json
+
+Deklarasikan input yang dibutuhkan modul Anda dan aplikasi mengumpulkannya
+dengan **formulir per chat SEBELUM run pertama modul di chat itu** — tanpa
+siklus pertama yang gagal, tanpa parsing `setup <…>` sendiri:
+
+* `title`, `description` — judul formulir dan baris bantuan (opsional).
+* `fields` — maksimal 12 entri. Tiap field: `key` (nama mesin,
+  `[a-z0-9_]`, maks 40), `label`, `type` (`text`, `password`, `number`,
+  `boolean`), `required`, `placeholder`, `description`.
+* Selama ada field **wajib** yang belum terisi untuk chat ini, host menahan
+  eksekusi modul dan menampilkan formulirnya; setelah dikirim, nilai
+  disimpan dan modul otomatis dijalankan.
+* Nilai tersimpan di storage (chat, modul) di bawah kunci kooperatif
+  `zagentsSetup` — ditulis host saat formulir dikirim, dan di-mirror oleh
+  modul sendiri ketika konfigurasinya berubah lewat jalur lain (mis.
+  setup perintah teks), supaya gate selalu mencerminkan kenyataan. Chat
+  lain akan bertanya lagi: setup memang per chat.
+* Baca nilainya di modul lewat `zagents.info.setup` (lihat di bawah) atau
+  `await zagents.storage.get('zagentsSetup')`.
+* Manifest tanpa blok `setup` (atau tanpa field wajib) tidak pernah
+  memunculkan formulir — perilaku modul lama tidak berubah.
 
 ## 2. Memasang dan menjalankan
 
@@ -67,10 +101,14 @@ dihormati; tanpa keduanya, nama file ZIP menjadi nama modul.
    **Ramah-shebang:** baris `#!...` di paling atas (gaya Node) dan BOM
    UTF-8 dihapus otomatis sebelum source dijalankan, jadi skrip yang
    disalin langsung dari proyek Node tetap jalan apa adanya.
+   **Setup dulu:** saat manifest mendeklarasikan field setup wajib,
+   aplikasi menampilkan formulir setup per chat alih-alih menjalankan
+   modul; run terjadi tepat setelah formulir dikirim (lihat di atas).
    **Tips setup:** saat modul dipilih di chat BARU (staged), pesan pertama
    yang Anda kirim diekspos ke modul sebagai `zagents.info.prompt` —
-   modul bisa menyediakan perintah seperti `setup <kredensial>`, `status`
-   atau `reset` pada pesan itu.
+   modul tetap bisa menyediakan perintah seperti `setup <kredensial>`,
+   `status` atau `reset` pada pesan itu untuk konfigurasi ulang chat yang
+   sudah terisi.
 
 ## 3. SDK `zagents`
 
@@ -79,8 +117,9 @@ Tersedia sebagai global — atau `const zagents = require('zagents-sdk')`.
 ### `zagents.info`
 Metadata: `name`, `version`, `title`, `sessionId`, `entry` — ditambah
 `prompt` (pesan pengguna yang mengaktivasi) saat run dipicu pesan pertama
-modul yang di-stage di draft baru, dan `userAgent` — identitas yang
-dipilih pengguna di Setelan → User Agent.
+modul yang di-stage di draft baru, `userAgent` — identitas yang dipilih
+pengguna di Setelan → User Agent — dan `setup`: nilai formulir setup per
+chat yang sudah dikirim untuk chat ini (objek kosong bila belum setup).
 
 **Kebijakan User-Agent:** modul selalu memakai identitas yang dikonfigurasi
 di Setelan → User Agent. `zagents.http` mengirimkannya di setiap request,
@@ -204,7 +243,7 @@ Contoh yang sama, siap dipasang, ada di [`samples/counter/`](../../samples/count
 | [`samples/network-fetcher/`](../../samples/network-fetcher/) | `network` — `zagents.http` + `allowedHosts` |
 | [`samples/file-notes/`](../../samples/file-notes/) | `files` — catatan tersandbox di `state/` |
 | [`samples/chat-streamer/`](../../samples/chat-streamer/) | `chat` — output bertahap `chat.emit` |
-| [`samples/onhomeroom-daily/`](../../samples/onhomeroom-daily/) | `agent` — bot harian dunia nyata yang setiap kalimatnya disusun agen chat |
+| [`samples/onhomeroom-daily/`](../../samples/onhomeroom-daily/) | `agent` — bot harian dunia nyata yang setiap kalimatnya disusun agen chat; formulir setup per chat untuk akunnya |
 
 `module.json`
 
