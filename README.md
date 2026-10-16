@@ -182,7 +182,7 @@ OpenAI-compatible: **OpenRouter, InferHub, Z.AI, OpenAI, DeepSeek, Groq, dan lai
   sebelumnya (termasuk rahasianya) tidak pernah bertahan lintas run
   maupun lintas chat, dan eksekusi paralel dari beberapa chat otomatis
   diserialisasi.
-- **Modul chat / plugin Node.js (v1.21.0)** — pasang modul langsung dari
+- **Modul chat / plugin Node.js (v1.21.1)** — pasang modul langsung dari
   file ZIP (layar *Modul* di Pengaturan) dan jalankan di dalam sesi chat:
   pilih saat membuat chat baru (chip di layar kosong), lewat menu
   interaktif **`/plugins`**, atau **`/plugins nama_modul`** di chat yang
@@ -193,7 +193,9 @@ OpenAI-compatible: **OpenRouter, InferHub, Z.AI, OpenAI, DeepSeek, Groq, dan lai
   `zagents.fs` (file, terkurung di direktori state modul per chat),
   `zagents.http` (jaringan dengan izin + allowlist host),
   `zagents.chat.emit` (kirim output ke percakapan) dan `zagents.info`.
-  Dokumentasi SDK resmi tersedia in-app (EN/ID) di layar Modul.
+  Dokumentasi SDK resmi tersedia in-app (EN/ID) di layar Modul, dan
+  lengkap di repo: **`sdk/`** (SDK + definisi TypeScript), **`samples/`**
+  (4 modul contoh siap pasang), **`docs/modules/`** (referensi resmi EN+ID).
   **Isolasi private window per chat**: proses/konteks JS segar setiap
   eksekusi, storage & state & konfigurasi terpisah per (chat, modul),
   izin diminta saat aktivasi dan ditegakkan dua lapis (SDK + bridge
@@ -296,6 +298,52 @@ lib/
 Alur agent: **prompt → chat/completions (stream) → tool_calls → eksekusi →
 `role:"tool"` → … → jawaban final**, dengan batas langkah (`maxSteps`) dan
 tombol **stop**.
+
+## 🧩 Mengembangkan modul (plugin) — SDK resmi
+
+Sistem modul Node.js lengkap ada di repo, siap dipakai developer:
+
+```
+sdk/                    # SDK resmi "zagents" untuk modul chat
+├── zagents-sdk.js      #   shim require('zagents-sdk') (juga di-bundle in-app)
+├── index.d.ts          #   definisi TypeScript — autocomplete penuh di editor
+├── package.json        #   metadata npm
+└── README.md           #   quick start developer
+samples/                # 4 modul contoh siap ZIP + install:
+├── counter/            #   izin storage — penghitung per chat
+├── network-fetcher/    #   izin network — zagents.http + allowedHosts
+├── file-notes/         #   izin files — filesystem tersandbox di state/
+├── chat-streamer/      #   izin chat — output bertahap chat.emit
+└── README.md           #   cara paket ZIP + install + expected output
+docs/modules/
+├── sdk-reference-en.md # referensi resmi EN (manifest, API, isolasi)
+├── sdk-reference-id.md # referensi resmi ID
+└── README.md           # indeks + checklist manifest
+```
+
+Contoh cepat (`samples/counter/main.js`):
+
+```js
+async function main() {
+  const previous = (await zagents.storage.get('count')) || 0;
+  await zagents.storage.set('count', previous + 1);
+  zagents.log('Activations in THIS chat:', previous + 1);
+  return { activationsInThisChat: previous + 1 };
+}
+module.exports = main();
+```
+
+Paket & pasang:
+
+```bash
+cd samples/counter && zip -r ../../hello-counter.zip .
+# aplikasi → Settings → Modules → Install module → pilih ZIP
+# di chat: ketik /plugins (menu interaktif) atau /plugins hello-counter
+```
+
+Test penjaga (`test/unit/module_sdk_assets_test.dart`) memvalidasi
+kelengkapan ketiga folder tersebut — sdk, samples, docs tidak bisa
+hilang atau rusak tanpa membuat test gagal.
 
 ## 🚀 CI/CD (GitHub Actions)
 

@@ -1,8 +1,16 @@
-# ZAgents Module SDK (v1.21.0)
+# ZAgents Module SDK (v1.21.1)
 
 Panduan resmi untuk membuat **modul chat**: paket JavaScript yang berjalan
 secara native di dalam sesi chat ZAgents, terisolasi per chat seperti
 jendela privat browser.
+
+Lokasi berkas di repositori ini:
+
+| Path | Isi |
+|---|---|
+| `sdk/` | SDK resmi — shim `zagents-sdk.js`, definisi TypeScript `index.d.ts`, `package.json` |
+| `samples/` | Contoh modul siap pasang (counter, network-fetcher, file-notes, chat-streamer) |
+| `docs/modules/` | Referensi ini (Inggris + Bahasa Indonesia) — juga dikirim in-app |
 
 ## 1. Struktur paket
 
@@ -85,6 +93,7 @@ Akses file terbatas pada direktori `state/` modul untuk chat ini.
 ```js
 await zagents.fs.writeFile('catatan.txt', 'halo');
 const teks = await zagents.fs.readFile('catatan.txt');
+await zagents.fs.appendFile('catatan.txt', '\nlagi');
 const daftar = await zagents.fs.readdir('.');
 await zagents.fs.mkdir('sub');
 await zagents.fs.unlink('catatan.txt');
@@ -128,6 +137,16 @@ await zagents.chat.emit('Langkah 1 selesai…');
   run yang berjalan dengan aman: pengiriman berhenti, state tersimpan.
 
 ## 5. Contoh minimal
+
+Contoh yang sama, siap dipasang, ada di [`samples/counter/`](../../samples/counter/)
+— bersama tiga contoh lengkap lainnya yang mencakup semua izin:
+
+| Contoh | Mendemonstrasikan |
+|---|---|
+| [`samples/counter/`](../../samples/counter/) | `storage` — penghitung aktivasi per chat |
+| [`samples/network-fetcher/`](../../samples/network-fetcher/) | `network` — `zagents.http` + `allowedHosts` |
+| [`samples/file-notes/`](../../samples/file-notes/) | `files` — catatan tersandbox di `state/` |
+| [`samples/chat-streamer/`](../../samples/chat-streamer/) | `chat` — output bertahap `chat.emit` |
 
 `module.json`
 

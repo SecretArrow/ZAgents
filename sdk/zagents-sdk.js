@@ -10,8 +10,9 @@
  * (module.json) declares what it needs, the user approves at activation,
  * and unauthorized calls throw `Permission denied`.
  *
- * See MODULE_SDK documentation in the Modules screen for the full
- * reference. Each chat session is a private window: storage, state,
+ * Full reference: docs/modules/sdk-reference-{en,id}.md (also shipped
+ * in-app under Settings → Modules → SDK docs) — runnable examples in
+ * samples/. Each chat session is a private window: storage, state,
  * config and processes never mix between chats.
  */
 if (typeof zagents === 'undefined') {

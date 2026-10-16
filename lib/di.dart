@@ -119,10 +119,10 @@ final moduleRegistryProvider = Provider<ModuleRegistry>(
   (ref) => ModuleRegistry(resolveBaseDir: ref.watch(documentsDirProvider)),
 );
 
-/// Official SDK shim source (`require('zagents-sdk')`) shipped as an app
-/// asset. Overridden in tests.
+/// Official SDK shim source (`require('zagents-sdk')`), shipped from the
+/// canonical `sdk/` directory of the repository. Overridden in tests.
 final moduleSdkSourceProvider = FutureProvider<String>(
-  (ref) => rootBundle.loadString('assets/modules/zagents-sdk.js'),
+  (ref) => rootBundle.loadString('sdk/zagents-sdk.js'),
 );
 
 /// Per-chat module sandbox runtime: every (chat, module) pair gets its

@@ -1,8 +1,16 @@
-# ZAgents Module SDK (v1.21.0)
+# ZAgents Module SDK (v1.21.1)
 
 Official guide for building **chat modules**: JavaScript packages that run
 natively inside a ZAgents chat session, isolated per chat like a browser
 private window.
+
+Where things live in this repository:
+
+| Path | Contents |
+|---|---|
+| `sdk/` | Official SDK — `zagents-sdk.js` shim, `index.d.ts` TypeScript definitions, `package.json` |
+| `samples/` | Complete, installable example modules (counter, network fetcher, file notes, chat streamer) |
+| `docs/modules/` | This reference (English + Bahasa Indonesia) — also shipped in-app |
 
 ## 1. Package layout
 
@@ -85,6 +93,7 @@ File access confined to the module's per-chat `state/` directory.
 ```js
 await zagents.fs.writeFile('note.txt', 'hello');
 const text = await zagents.fs.readFile('note.txt');
+await zagents.fs.appendFile('note.txt', '\nmore');
 const files = await zagents.fs.readdir('.');
 await zagents.fs.mkdir('sub');
 await zagents.fs.unlink('note.txt');
@@ -128,6 +137,16 @@ await zagents.chat.emit('Step 1 done…');
   live run safely: delivery stops, persisted state is kept.
 
 ## 5. Minimal example
+
+The same example, ready to install, lives at [`samples/counter/`](../../samples/counter/)
+— together with three more complete samples covering every permission:
+
+| Sample | Demonstrates |
+|---|---|
+| [`samples/counter/`](../../samples/counter/) | `storage` — per-chat activation counter |
+| [`samples/network-fetcher/`](../../samples/network-fetcher/) | `network` — `zagents.http` + `allowedHosts` |
+| [`samples/file-notes/`](../../samples/file-notes/) | `files` — sandboxed note taking under `state/` |
+| [`samples/chat-streamer/`](../../samples/chat-streamer/) | `chat` — progressive `chat.emit` output |
 
 `module.json`
 

@@ -324,7 +324,7 @@ module.exports = main();
             resolveModulePath: (String name) async =>
                 (await registry.get(name))?.path,
             resolveSdkSource: () async =>
-                rootBundle.loadString('assets/modules/zagents-sdk.js'),
+                rootBundle.loadString('sdk/zagents-sdk.js'),
             resolveNpmModulesRoot: () async =>
                 '${tempDir.path}${Platform.pathSeparator}node_modules',
           ),

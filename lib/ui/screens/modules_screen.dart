@@ -350,20 +350,26 @@ class _EmptyModules extends ConsumerWidget {
   }
 }
 
-/// In-app viewer for the official Module SDK documentation (ships as an
-/// app asset, English and Bahasa Indonesia).
+/// In-app viewer for the official Module SDK documentation (canonical
+/// sources live in `docs/modules/` of the repository; shipped as app
+/// assets, English and Bahasa Indonesia).
 class SdkDocsScreen extends ConsumerWidget {
   const SdkDocsScreen({super.key});
 
+  /// Canonical documentation sources in the repository (declared as app
+  /// assets in pubspec.yaml) — also asserted by module_sdk_assets_test.
+  static const String docAssetEn = 'docs/modules/sdk-reference-en.md';
+  static const String docAssetId = 'docs/modules/sdk-reference-id.md';
+
   Future<String> _loadDoc(String languageCode) async {
     final String asset = languageCode.trim().toLowerCase().startsWith('id')
-        ? 'assets/modules/MODULE_SDK_id.md'
-        : 'assets/modules/MODULE_SDK_en.md';
+        ? docAssetId
+        : docAssetEn;
     try {
       return await rootBundle.loadString(asset);
     } catch (_) {
       // Asset missing in a stripped build: fall back to the other locale.
-      return rootBundle.loadString('assets/modules/MODULE_SDK_en.md');
+      return rootBundle.loadString(docAssetEn);
     }
   }
 

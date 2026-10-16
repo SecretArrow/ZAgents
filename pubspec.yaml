@@ -1,7 +1,7 @@
 name: zagents
 description: "ZAgents - AI agent chat Android (gaya Z.AI agent mode) dengan custom provider (OpenRouter, InferHub, Z.AI, OpenAI, dll), katalog model live + pencarian/filter/paging, dan otomasi browser."
 publish_to: 'none'
-version: 1.21.0+25
+version: 1.21.1+26
 
 environment:
   sdk: ^3.13.5
@@ -39,9 +39,9 @@ flutter:
   uses-material-design: true
 
   assets:
-    - assets/modules/zagents-sdk.js
-    - assets/modules/MODULE_SDK_en.md
-    - assets/modules/MODULE_SDK_id.md
+    - sdk/zagents-sdk.js
+    - docs/modules/sdk-reference-en.md
+    - docs/modules/sdk-reference-id.md
 
 flutter_launcher_icons:
   android: true
