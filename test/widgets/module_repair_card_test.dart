@@ -94,4 +94,46 @@ void main() {
     await tester.pump();
     expect(find.byKey(const Key('module-repair-card')), findsNothing);
   });
+
+  testWidgets('a NEW plugin (/make_plugins build) shows the builder wording', (
+    WidgetTester tester,
+  ) async {
+    final ProviderContainer c = await container();
+    c.read(chatControllerProvider.notifier);
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: c,
+        child: _app(const Scaffold(body: ModuleRepairCard())),
+      ),
+    );
+    c
+        .read(chatControllerProvider.notifier)
+        .debugStageRepairForTest(
+          const ModuleInstallRequest(
+            zipPath: '/tmp/built.zip',
+            moduleName: 'quoter',
+            version: '1.0.0',
+            title: 'Quoter',
+            permissions: <String>['storage', 'network'],
+            isNew: true,
+          ),
+        );
+    await tester.pump();
+
+    final AppStrings strings = appStringsFor('en');
+    expect(
+      find.text(strings.moduleBuildCardTitle('quoter', '1.0.0')),
+      findsOneWidget,
+    );
+    expect(
+      find.text(strings.moduleBuildCardBody('storage, network')),
+      findsOneWidget,
+    );
+    // The repair wording is NOT shown for a fresh build.
+    expect(
+      find.text(strings.moduleRepairCardTitle('quoter', '1.0.0')),
+      findsNothing,
+    );
+    expect(find.byKey(const Key('module-repair-install')), findsOneWidget);
+  });
 }

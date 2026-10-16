@@ -391,6 +391,9 @@ void main() {
         'through the full pipeline', () async {
       final ProviderContainer c = await repairContainer();
       final ChatController controller = c.read(chatControllerProvider.notifier);
+      // A repair REPLACES an installed module — install the old copy
+      // first so staging sees an existing module (isNew = false).
+      await installModule('fixme', version: '1.0.0');
 
       await controller.send('start');
       final File zip = await writeRepairZip(c);
@@ -402,13 +405,21 @@ void main() {
       expect(state.pendingModuleInstall!.version, '1.0.1');
       expect(state.pendingModuleInstall!.permissions, <String>['storage']);
       expect(state.pendingModuleInstall!.zipPath, zip.path);
-      // Staging alone does NOT install.
-      expect(await c.read(moduleRegistryProvider).get('fixme'), isNull);
+      expect(state.pendingModuleInstall!.isNew, isFalse);
+      // Staging alone does NOT replace the installed copy: the old
+      // version stays active until the user taps Install.
+      expect(
+        (await c.read(moduleRegistryProvider).get('fixme'))!.manifest.version,
+        '1.0.0',
+      );
 
       // User taps Install: full installFromZip pipeline runs.
       final bool ok = await controller.installStagedModule();
       expect(ok, isTrue);
-      expect((await c.read(moduleRegistryProvider).get('fixme')), isNotNull);
+      expect(
+        (await c.read(moduleRegistryProvider).get('fixme'))!.manifest.version,
+        '1.0.1',
+      );
       final ChatState after = c.read(chatControllerProvider);
       expect(after.pendingModuleInstall, isNull);
       expect(
@@ -469,6 +480,146 @@ void main() {
           .where((m) => m.toolCalls.isNotEmpty)
           .last;
       expect(toolMessage.toolCalls.single.status, ToolStatus.error);
+    });
+  });
+
+  group('/make_plugins (build a new plugin in chat)', () {
+    /// Scripts: turn 1 establishes the session, turn 2 stages a freshly
+    /// built plugin zip via module_stage_repair, turn 3 is the answer.
+    Future<ProviderContainer> buildContainer(String zipPath) => container(
+      turns: <AssistantTurn>[
+        AssistantTurn(content: 'ok'),
+        AssistantTurn(
+          content: '',
+          toolCalls: <ToolCallRequest>[
+            ToolCallRequest(
+              id: 't-build',
+              name: 'module_stage_repair',
+              argumentsJson: jsonEncode(<String, dynamic>{'path': zipPath}),
+            ),
+          ],
+        ),
+        AssistantTurn(content: 'Built it — tap Install on the card.'),
+      ],
+    );
+
+    /// Writes a valid fresh-module zip the way the builder flow would
+    /// (plugins/<name>/<name>.zip inside the session sandbox).
+    Future<File> writeBuildZip(ProviderContainer c, String name) async {
+      final String sessionId = c.read(chatControllerProvider).sessionId!;
+      final Directory sandbox = Directory(
+        '${tempDir.path}${Platform.pathSeparator}sessions'
+        '${Platform.pathSeparator}$sessionId',
+      )..createSync(recursive: true);
+      final String manifest = jsonEncode(<String, dynamic>{
+        'name': name,
+        'version': '2.0.0',
+        'title': 'Quoter',
+        'permissions': <String>['storage', 'network'],
+      });
+      final List<int> manifestBytes = utf8.encode(manifest);
+      final List<int> entryBytes = utf8.encode('module.exports = "built";');
+      final Archive archive = Archive()
+        ..addFile(
+          ArchiveFile('module.json', manifestBytes.length, manifestBytes),
+        )
+        ..addFile(ArchiveFile('main.js', entryBytes.length, entryBytes));
+      final Directory folder = Directory(
+        '${sandbox.path}${Platform.pathSeparator}plugins'
+        '${Platform.pathSeparator}$name',
+      )..createSync(recursive: true);
+      return File('${folder.path}${Platform.pathSeparator}$name.zip')
+        ..writeAsBytesSync(ZipEncoder().encode(archive));
+    }
+
+    test(
+      'the command expands into the builder brief on the WIRE only',
+      () async {
+        final ProviderContainer c = await container(
+          turns: <AssistantTurn>[AssistantTurn(content: 'Will do!')],
+        );
+        final ChatController controller = c.read(
+          chatControllerProvider.notifier,
+        );
+
+        await controller.send('/make_plugins a daily quote plugin');
+
+        final ChatState state = c.read(chatControllerProvider);
+        // Transcript keeps the raw command verbatim.
+        expect(
+          state.messages.firstWhere((m) => m.role == Role.user).content,
+          '/make_plugins a daily quote plugin',
+        );
+        // The wire carried the builder specification instead.
+        final ScriptedLlmClient llm =
+            c.read(llmClientProvider) as ScriptedLlmClient;
+        final Map<String, dynamic> wireUser = llm.calls.first.last;
+        final String content = wireUser['content'].toString();
+        expect(content, contains('# Task: build a NEW ZAgents chat module'));
+        expect(content, contains('a daily quote plugin'));
+        // The raw command line itself never travels on the wire (the
+        // brief legitimately mentions the /make_plugins command name).
+        expect(content.contains('/make_plugins a daily quote plugin'), isFalse);
+        expect(content.startsWith('/make_plugins'), isFalse);
+      },
+    );
+
+    test('the brief is reproduced identically when history replays', () async {
+      final ProviderContainer c = await container(
+        turns: <AssistantTurn>[
+          AssistantTurn(content: 'first'),
+          AssistantTurn(content: 'second'),
+        ],
+      );
+      final ChatController controller = c.read(chatControllerProvider.notifier);
+      await controller.send('/make_plugins counter');
+      await controller.send('go on');
+
+      final ScriptedLlmClient llm =
+          c.read(llmClientProvider) as ScriptedLlmClient;
+      expect(llm.calls, hasLength(2));
+      final String first = (llm.calls[0].last)['content'].toString();
+      final String replayed = (llm.calls[1].firstWhere(
+        (m) => m['role'] == 'user',
+      ))['content'].toString();
+      expect(first, replayed);
+      expect(replayed, contains('# Task: build a NEW ZAgents chat module'));
+    });
+
+    test('a freshly built plugin stages with isNew and installs with '
+        'builder wording', () async {
+      const String name = 'quoter';
+      final ProviderContainer c = await buildContainer(
+        'plugins/$name/$name.zip',
+      );
+      final ChatController controller = c.read(chatControllerProvider.notifier);
+
+      await controller.send('start');
+      final File zip = await writeBuildZip(c, name);
+      await controller.send('/make_plugins a daily quoter');
+
+      final ChatState state = c.read(chatControllerProvider);
+      expect(state.pendingModuleInstall, isNotNull);
+      expect(state.pendingModuleInstall!.moduleName, name);
+      expect(state.pendingModuleInstall!.version, '2.0.0');
+      expect(state.pendingModuleInstall!.permissions, <String>[
+        'storage',
+        'network',
+      ]);
+      expect(state.pendingModuleInstall!.isNew, isTrue);
+      expect(state.pendingModuleInstall!.zipPath, zip.path);
+      // Staging alone does NOT install.
+      expect(await c.read(moduleRegistryProvider).get(name), isNull);
+
+      // User taps Install: full installFromZip pipeline runs.
+      expect(await controller.installStagedModule(), isTrue);
+      expect((await c.read(moduleRegistryProvider).get(name)), isNotNull);
+      final ChatState after = c.read(chatControllerProvider);
+      expect(after.pendingModuleInstall, isNull);
+      expect(
+        after.messages.last.content,
+        contains(appStringsFor('en').moduleBuildInstalled(name)),
+      );
     });
   });
 

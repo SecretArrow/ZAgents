@@ -263,6 +263,45 @@ void main() {
       expect(installed.single.manifest.description, 'Demo module');
     });
 
+    test(
+      'getSync reflects installs and removals immediately (no reload)',
+      () async {
+        // Regression guard (v1.27.0): _saveRegistry must refresh the
+        // synchronous view — the module-builder isNew check and the chat
+        // system prompt read getSync() without awaiting a disk reload.
+        expect(registry.getSync('demo'), isNull);
+        final File zip =
+            File('${tempDir.path}${Platform.pathSeparator}demo.zip')
+              ..writeAsBytesSync(
+                textZip(<String, String>{
+                  'module.json':
+                      '{"name":"demo","version":"1.0.0","entry":"main.js"}',
+                  'main.js': 'module.exports = 1;',
+                }),
+              );
+        expect((await registry.installFromZip(zip.path)).ok, isTrue);
+        expect(registry.getSync('demo'), isNotNull);
+        expect(registry.getSync('demo')!.manifest.version, '1.0.0');
+
+        // Re-install replaces the sync view too.
+        final File zip2 =
+            File('${tempDir.path}${Platform.pathSeparator}demo2.zip')
+              ..writeAsBytesSync(
+                textZip(<String, String>{
+                  'module.json':
+                      '{"name":"demo","version":"2.0.0","entry":"main.js"}',
+                  'main.js': 'module.exports = 2;',
+                }),
+              );
+        expect((await registry.installFromZip(zip2.path)).ok, isTrue);
+        expect(registry.getSync('demo')!.manifest.version, '2.0.0');
+
+        // Removal clears it.
+        expect(await registry.remove('demo'), isTrue);
+        expect(registry.getSync('demo'), isNull);
+      },
+    );
+
     test('unwraps a single top-level directory (GitHub ZIP layout)', () async {
       final File zip =
           File('${tempDir.path}${Platform.pathSeparator}wrapped.zip')

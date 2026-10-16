@@ -14,6 +14,7 @@ import '../tools/tool_defs.dart';
 import 'background_service.dart';
 import 'image_downscale.dart';
 import 'llm_client.dart';
+import 'make_plugins.dart';
 import 'module_registry.dart';
 import 'module_runtime.dart';
 
@@ -153,6 +154,7 @@ class ModuleInstallRequest {
     required this.version,
     required this.title,
     this.permissions = const <String>[],
+    this.isNew = false,
   });
 
   /// Absolute path of the validated zip inside the session sandbox.
@@ -161,6 +163,11 @@ class ModuleInstallRequest {
   final String version;
   final String title;
   final List<String> permissions;
+
+  /// True when the staged module is a NEW plugin built in this chat
+  /// (no module with that name was installed when it was staged) — the
+  /// card then shows the builder wording instead of the repair one.
+  final bool isNew;
 }
 
 /// Internal state of one running (or recently run) session. Sessions run
@@ -729,12 +736,15 @@ class ChatController extends Notifier<ChatState> {
     ref.invalidate(moduleListProvider);
     final String? sessionId = _activeSessionId;
     final _SessionRun? run = sessionId == null ? null : _runs[sessionId];
+    final String installedText = result.ok
+        ? (pending.isNew
+              ? strings.moduleBuildInstalled(pending.moduleName)
+              : strings.moduleRepairInstalled(pending.moduleName))
+        : strings.moduleRepairInstallFailed(result.message);
     if (run != null) {
       run.messages.add(
         ChatMessage.assistant(
-          result.ok
-              ? strings.moduleRepairInstalled(pending.moduleName)
-              : strings.moduleRepairInstallFailed(result.message),
+          installedText,
           moduleName: result.ok ? pending.moduleName : null,
         ),
       );
@@ -745,9 +755,7 @@ class ChatController extends Notifier<ChatState> {
         messages: [
           ...state.messages,
           ChatMessage.assistant(
-            result.ok
-                ? strings.moduleRepairInstalled(pending.moduleName)
-                : strings.moduleRepairInstallFailed(result.message),
+            installedText,
             moduleName: result.ok ? pending.moduleName : null,
           ),
         ],
@@ -1063,12 +1071,15 @@ class ChatController extends Notifier<ChatState> {
   }
 
   /// Composes the effective user text: prompt + text-attachment blocks.
+  /// A `/make_plugins` command is expanded into the builder specification
+  /// for the WIRE only — the transcript keeps the raw command. The
+  /// expansion is deterministic, so history replay reproduces it exactly.
   String _composeUserText(
     String prompt,
     List<ChatAttachment> attachments,
     _SessionRun run,
   ) {
-    final StringBuffer buffer = StringBuffer(prompt);
+    final StringBuffer buffer = StringBuffer(expandMakePluginsPrompt(prompt));
     for (final ChatAttachment att in attachments) {
       switch (att.kind) {
         case AttachmentKind.text:
@@ -1294,14 +1305,25 @@ class ChatController extends Notifier<ChatState> {
           if (call.name == 'todo_write') {
             run.latestTodos = parseTodoList(call.arguments['todos']);
           }
-          // Module doctor: a validated repair zip becomes a pending
-          // install card. The tool only validated; the USER decides.
+          // Module doctor / builder: a validated module zip becomes a
+          // pending install card. The tool only validated; the USER
+          // decides. isNew distinguishes a freshly built plugin (no
+          // module with that name installed) from a repair.
           if (call.name == 'module_stage_repair' &&
               result.ok &&
               result.data != null) {
+            final String stagedName = result.data!['name']?.toString() ?? '';
+            bool isNew = false;
+            try {
+              final ModuleRegistry registry = ref.read(moduleRegistryProvider);
+              await registry.ensureCacheLoaded();
+              isNew = registry.getSync(stagedName) == null;
+            } catch (_) {
+              // Registry hiccup: keep the (repair) default wording.
+            }
             run.pendingInstall = ModuleInstallRequest(
               zipPath: result.data!['zipPath']?.toString() ?? '',
-              moduleName: result.data!['name']?.toString() ?? '',
+              moduleName: stagedName,
               version: result.data!['version']?.toString() ?? '',
               title:
                   result.data!['title']?.toString() ??
@@ -1312,6 +1334,7 @@ class ChatController extends Notifier<ChatState> {
                         const <dynamic>[])
                     .map((Object? p) => p.toString()),
               ],
+              isNew: isNew,
             );
             if (_activeSessionId == run.sessionId) {
               state = state.copyWith(pendingModuleInstall: run.pendingInstall);

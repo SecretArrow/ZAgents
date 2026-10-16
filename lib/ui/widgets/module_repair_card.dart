@@ -7,8 +7,9 @@ import '../../services/agent_controller.dart'
     show ChatState, ModuleInstallRequest;
 import '../theme.dart';
 
-/// Confirmation card for a module repair the AGENT staged via
-/// `module_stage_repair`. The trust boundary of the module doctor:
+/// Confirmation card for a module zip the AGENT staged via
+/// `module_stage_repair` — a repaired installed module OR a newly built
+/// plugin (/make_plugins). The trust boundary of the module doctor:
 /// the agent prepares and validates, the USER decides — nothing is
 /// installed until "Install" is tapped here.
 class ModuleRepairCard extends ConsumerWidget {
@@ -36,10 +37,15 @@ class ModuleRepairCard extends ConsumerWidget {
                 const SizedBox(width: 10),
                 Expanded(
                   child: Text(
-                    strings.moduleRepairCardTitle(
-                      request.moduleName,
-                      request.version,
-                    ),
+                    request.isNew
+                        ? strings.moduleBuildCardTitle(
+                            request.moduleName,
+                            request.version,
+                          )
+                        : strings.moduleRepairCardTitle(
+                            request.moduleName,
+                            request.version,
+                          ),
                     style: const TextStyle(
                       fontSize: 15,
                       fontWeight: FontWeight.w700,
@@ -50,11 +56,17 @@ class ModuleRepairCard extends ConsumerWidget {
             ),
             const SizedBox(height: 6),
             Text(
-              strings.moduleRepairCardBody(
-                request.permissions.isEmpty
-                    ? '(none)'
-                    : request.permissions.join(', '),
-              ),
+              request.isNew
+                  ? strings.moduleBuildCardBody(
+                      request.permissions.isEmpty
+                          ? '(none)'
+                          : request.permissions.join(', '),
+                    )
+                  : strings.moduleRepairCardBody(
+                      request.permissions.isEmpty
+                          ? '(none)'
+                          : request.permissions.join(', '),
+                    ),
               style: TextStyle(fontSize: 12.5, color: context.zMuted),
             ),
             const SizedBox(height: 10),

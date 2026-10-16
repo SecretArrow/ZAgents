@@ -157,8 +157,8 @@ void main() {
     expect(id.randomUaAccept, 'Ya, acak');
     expect(id.randomUaDecline, 'Pertahankan');
     expect(id.createdBy('Maragung'), 'Dibuat oleh Maragung');
-    expect(en.aboutBody, contains('v1.26.0'));
-    expect(id.aboutBody, contains('v1.26.0'));
+    expect(en.aboutBody, contains('v1.27.0'));
+    expect(id.aboutBody, contains('v1.27.0'));
   });
 
   test('module doctor strings are localized in both bundles', () {
@@ -178,5 +178,21 @@ void main() {
     expect(id.moduleRepairInstalled('m'), contains('m'));
     expect(id.moduleRepairInstallFailed('x'), contains('x'));
     expect(id.moduleExportTooltip, 'Ekspor ZIP');
+  });
+
+  test('module builder strings are localized in both bundles', () {
+    final AppStrings en = appStringsFor('en');
+    final AppStrings id = appStringsFor('id');
+    expect(en.moduleBuildCardTitle('p', '1'), contains('New plugin ready'));
+    expect(en.moduleBuildCardTitle('p', '1'), contains('p'));
+    expect(en.moduleBuildCardBody('storage'), contains('storage'));
+    expect(en.moduleBuildCardBody('storage'), contains('/plugins'));
+    expect(en.moduleBuildInstalled('p'), contains('p'));
+    expect(en.moduleBuildInstalled('p'), contains('/plugins'));
+    expect(id.moduleBuildCardTitle('p', '1'), contains('Plugin baru siap'));
+    expect(id.moduleBuildCardBody('storage'), contains('izin'));
+    expect(id.moduleBuildCardBody('storage'), contains('/plugins'));
+    expect(id.moduleBuildInstalled('p'), contains('p'));
+    expect(id.moduleBuildInstalled('p'), contains('/plugins'));
   });
 }

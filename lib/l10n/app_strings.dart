@@ -418,6 +418,11 @@ abstract class AppStrings {
   String moduleRepairInstallFailed(String error);
   String get moduleExportTooltip;
 
+  // -- Module builder (/make_plugins, v1.27.0) ----------------------------
+  String moduleBuildCardTitle(String name, String version);
+  String moduleBuildCardBody(String permissions);
+  String moduleBuildInstalled(String name);
+
   // -- Controller messages (no BuildContext available) -----------------
   String get missingApiKey;
   String get modelNotSet;
@@ -1033,7 +1038,7 @@ class AppStringsEn implements AppStrings {
   String get aboutSection => 'About';
   @override
   String get aboutBody =>
-      'ZAgents v1.26.0 — an Android clone of the chat.z.ai agent mode UI, '
+      'ZAgents v1.27.0 — an Android clone of the chat.z.ai agent mode UI, '
       'with custom OpenAI-compatible providers (OpenRouter, InferHub, '
       'Z.AI, OpenAI, DeepSeek, Groq, and more), per-provider API keys, '
       'light/dark themes, parallel multi-session chat with background '
@@ -1233,7 +1238,20 @@ class AppStringsEn implements AppStrings {
   @override
   String get moduleExportTooltip => 'Export ZIP';
 
-  // -- Controller messages ----------------------------------------------
+  // -- Module builder (/make_plugins) -------------------------------------
+  @override
+  String moduleBuildCardTitle(String name, String version) =>
+      'New plugin ready: $name v$version';
+  @override
+  String moduleBuildCardBody(String permissions) =>
+      'The agent built this plugin in this chat and it passed validation. '
+      'Review the permissions before installing: $permissions. After '
+      'installing, start it with /plugins (menu) or /plugins <name>.';
+  @override
+  String moduleBuildInstalled(String name) =>
+      'Plugin “$name” installed. Start it with /plugins (menu) or '
+      '/plugins <name> — this chat or any new chat; every chat gets its '
+      'own isolated storage and setup form.';
   @override
   String get missingApiKey =>
       'API key is not set. Open Settings to configure your provider.';
@@ -1863,7 +1881,7 @@ class AppStringsId implements AppStrings {
   String get aboutSection => 'Tentang';
   @override
   String get aboutBody =>
-      'ZAgents v1.26.0 — klon UI agent mode chat.z.ai untuk Android, '
+      'ZAgents v1.27.0 — klon UI agent mode chat.z.ai untuk Android, '
       'dengan custom provider OpenAI-compatible (OpenRouter, InferHub, '
       'Z.AI, OpenAI, DeepSeek, Groq, dan lainnya), API key per-provider, '
       'tema terang/gelap, multi-sesi paralel dengan proses latar '
@@ -2064,6 +2082,21 @@ class AppStringsId implements AppStrings {
       'Modul hasil perbaikan gagal terpasang: $error';
   @override
   String get moduleExportTooltip => 'Ekspor ZIP';
+
+  // -- Module builder (/make_plugins) -------------------------------------
+  @override
+  String moduleBuildCardTitle(String name, String version) =>
+      'Plugin baru siap: $name v$version';
+  @override
+  String moduleBuildCardBody(String permissions) =>
+      'Agent membuat plugin ini di chat dan lolos validasi. Periksa '
+      'izinnya sebelum menginstall: $permissions. Setelah terpasang, '
+      'jalankan dengan /plugins (menu) atau /plugins <nama>.';
+  @override
+  String moduleBuildInstalled(String name) =>
+      'Plugin “$name” terpasang. Jalankan dengan /plugins (menu) atau '
+      '/plugins <nama> — di chat ini atau chat baru; tiap chat punya '
+      'storage terisolasi dan formulir setup sendiri.';
 
   // -- Controller messages ----------------------------------------------
   @override

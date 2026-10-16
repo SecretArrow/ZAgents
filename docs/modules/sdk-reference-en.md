@@ -95,6 +95,18 @@ first cycle, no `setup <…>` parsing required:
    * Type **`/plugins my-module`**, or
    * Select it as a chip on the new-chat screen, or
    * Modules screen → module → *Start in new chat*.
+
+### Building a module FROM chat — `/make_plugins`
+
+Since v1.27.0 the chat agent can build a module for you inside a running
+chat: type **`/make_plugins <description>`** (aliases `/make_plugin`,
+`/make_module`). The agent writes the module folder, self-checks it,
+packs the zip and calls `module_stage_repair`; you confirm the install
+on the card. Reference session data (uploads, workspace files, earlier
+messages) in your description and it gets copied INTO the module —
+modules cannot read the chat workspace at runtime, so the zip is always
+self-contained.
+
 3. The entry point executes once per activation. Console output and the
    return value are posted into the conversation as a module message; the
    agent can read and discuss it.

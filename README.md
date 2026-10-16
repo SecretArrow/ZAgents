@@ -214,7 +214,14 @@ OpenAI-compatible: **OpenRouter, InferHub, Z.AI, OpenAI, DeepSeek, Groq, dan lai
   ke ZIP (`module_export` atau tombol Ekspor ZIP di layar Modul), dan
   menyiapkan perbaikan (`module_stage_repair`) yang SELALU butuh
   konfirmasimu di kartu "Install/Buang" sebelum dipasang — agent tidak
-  pernah bisa memasang modul diam-diam. Intersepsi gagal-setup (v1.25.0):
+  pernah bisa memasang modul diam-diam. **Module builder (v1.27.0)**:
+  ketik **`/make_plugins <deskripsi>`** di chat yang sedang berjalan
+  (alias `/make_plugin`, `/make_module`) untuk meminta agent MEMBUAT
+  plugin baru dari dalam chat — dengan atau tanpa data sesi (file
+  unggahan/konteks chat ikut disalin ke dalam modul bila kamu menyebutnya,
+  jadi zip-nya self-contained); agent menyusun `module.json` + entry
+  CommonJS, mengemas zip, memvalidasi, lalu memunculkan kartu Install
+  yang tetap butuh konfirmasimu. Intersepsi gagal-setup (v1.25.0):
   modul yang error "setup required" memunculkan formulirnya otomatis
   atau panduan solusi (zip lama / perintah setup).
   Dokumentasi SDK resmi tersedia in-app (EN/ID)
@@ -369,6 +376,11 @@ cd samples/counter && zip -r ../../hello-counter.zip .
 # aplikasi → Settings → Modules → Install module → pilih ZIP
 # di chat: ketik /plugins (menu interaktif) atau /plugins hello-counter
 ```
+
+Atau lebih cepat: **buatan agent langsung dari chat** — ketik
+`/make_plugins counter plugin dengan tombol reset` di chat mana pun; agent
+menyusun modulnya, memvalidasi, dan menampilkan kartu Install untuk kamu
+konfirmasi (bisa memakai data sesi bila kamu menyebutnya).
 
 Test penjaga (`test/unit/module_sdk_assets_test.dart`) memvalidasi
 kelengkapan ketiga folder tersebut — sdk, samples, docs tidak bisa

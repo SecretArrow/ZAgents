@@ -95,6 +95,17 @@ siklus pertama yang gagal, tanpa parsing `setup <…>` sendiri:
    * Ketik **`/plugins modul-saya`**, atau
    * Pilih chip modul di layar chat baru, atau
    * Layar Modules → modul → *Mulai di chat baru*.
+### Membuat modul DARI chat — `/make_plugins`
+
+Sejak v1.27.0 agen chat bisa MEMBUATKAN modul untukmu dari dalam chat
+yang sedang berjalan: ketik **`/make_plugins <deskripsi>`** (alias
+`/make_plugin`, `/make_module`). Agen menulis folder modul, melakukan
+self-check, mengemas zip lalu memanggil `module_stage_repair`; kamu
+yang memutuskan instalasinya lewat kartu konfirmasi. Sebut data sesi
+(unggahan, file workspace, pesan sebelumnya) di deskripsimu dan data
+itu DISALIN KE DALAM modul — modul tidak bisa membaca workspace chat
+saat runtime, jadi zip-nya selalu self-contained.
+
 3. Entry point dieksekusi sekali per aktivasi. Output console dan nilai
    kembaliannya dikirim ke percakapan sebagai pesan modul; agen dapat
    membaca dan membahasnya.

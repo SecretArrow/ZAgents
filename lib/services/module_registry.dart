@@ -980,5 +980,9 @@ class ModuleRegistry {
           e.key: e.value.toJson(),
       }),
     );
+    // Keep the synchronous view fresh: getSync() must reflect an install/
+    // remove immediately (the module-builder isNew check and the system
+    // prompt context both read it), not only after the next disk reload.
+    _syncCache = registry;
   }
 }
