@@ -331,9 +331,7 @@ void main() {
     // command) land in the transcript.
     expect(
       moduleMessage.content,
-      contains(
-        appStringsFor('en').moduleRunFailed('setup required'),
-      ),
+      contains(appStringsFor('en').moduleRunFailed('setup required')),
     );
     expect(
       moduleMessage.content,

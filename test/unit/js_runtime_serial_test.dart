@@ -154,10 +154,7 @@ void main() {
       expect(zLooksLikeEsModuleSyntax("import fs from 'fs';\n"), isTrue);
       expect(zLooksLikeEsModuleSyntax("import { x } from 'y';\n"), isTrue);
       expect(zLooksLikeEsModuleSyntax("import * as z from 'z';\n"), isTrue);
-      expect(
-        zLooksLikeEsModuleSyntax('\n  import x from "y";\n'),
-        isTrue,
-      );
+      expect(zLooksLikeEsModuleSyntax('\n  import x from "y";\n'), isTrue);
     });
 
     test('export declarations are flagged', () {
@@ -170,19 +167,14 @@ void main() {
 
     test('CommonJS modules are NEVER flagged (no false positives)', () {
       expect(zLooksLikeEsModuleSyntax('const fs = require("fs");\n'), isFalse);
-      expect(
-        zLooksLikeEsModuleSyntax('module.exports = { run };\n'),
-        isFalse,
-      );
+      expect(zLooksLikeEsModuleSyntax('module.exports = { run };\n'), isFalse);
       // "import"/"export" mid-line or in comments/strings do not match.
       expect(
         zLooksLikeEsModuleSyntax('// import x from "y";\nconst a = 1;\n'),
         isFalse,
       );
       expect(
-        zLooksLikeEsModuleSyntax(
-          "const msg = 'please import the file';\n",
-        ),
+        zLooksLikeEsModuleSyntax("const msg = 'please import the file';\n"),
         isFalse,
       );
       expect(zLooksLikeEsModuleSyntax('exports.export = 1;\n'), isFalse);
@@ -200,10 +192,9 @@ void main() {
 
     test('SyntaxError + ES syntax source → CommonJS rebuild hint', () {
       const String raw = "SyntaxError: Unexpected identifier 'fs'";
-      final String? explained = zExplainJsError(
-        raw,
-        const <String>["import fs from 'fs';\nmodule.exports = fs;\n"],
-      );
+      final String? explained = zExplainJsError(raw, const <String>[
+        "import fs from 'fs';\nmodule.exports = fs;\n",
+      ]);
       expect(explained, contains('ES module syntax'));
       expect(explained, contains('--format=cjs'));
       expect(explained, contains(raw));
@@ -211,20 +202,16 @@ void main() {
 
     test('the raw "Invalid or unexpected token" form is matched too', () {
       expect(
-        zExplainJsError(
-          'Invalid or unexpected token',
-          const <String>['export default 1;\n'],
-        ),
+        zExplainJsError('Invalid or unexpected token', const <String>[
+          'export default 1;\n',
+        ]),
         contains('ES module syntax'),
       );
     });
 
     test('SyntaxError WITHOUT ES syntax passes through', () {
       const String raw = 'SyntaxError: Unexpected token ';
-      expect(
-        zExplainJsError(raw, const <String>['const x = ;\n']),
-        raw,
-      );
+      expect(zExplainJsError(raw, const <String>['const x = ;\n']), raw);
     });
   });
 }

@@ -220,7 +220,8 @@ class ModuleRuntime implements ModuleBridge {
     } catch (e) {
       return ModuleRunResult(
         output: '',
-        error: 'Cannot read module entry "${module.manifest.entry}": '
+        error:
+            'Cannot read module entry "${module.manifest.entry}": '
             '${e is FormatException ? 'the file is not valid UTF-8 — save it as UTF-8 and reinstall the module' : e}',
       );
     }

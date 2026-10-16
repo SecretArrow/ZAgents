@@ -922,7 +922,9 @@ void main() {
         isTrue,
       );
       expect(
-        moduleRunNeedsSetup(result(error: abort, output: 'account not configured')),
+        moduleRunNeedsSetup(
+          result(error: abort, output: 'account not configured'),
+        ),
         isTrue,
       );
       expect(
@@ -933,9 +935,7 @@ void main() {
       );
       // A clean run that merely prints such text is NOT a failure.
       expect(
-        moduleRunNeedsSetup(
-          result(error: null, output: 'needs your account'),
-        ),
+        moduleRunNeedsSetup(result(error: null, output: 'needs your account')),
         isFalse,
       );
     });
@@ -952,9 +952,7 @@ void main() {
         isFalse,
       );
       expect(
-        moduleRunNeedsSetup(
-          result(error: 'no account configured', output: ''),
-        ),
+        moduleRunNeedsSetup(result(error: 'no account configured', output: '')),
         isTrue,
       );
     });
