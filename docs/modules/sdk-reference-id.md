@@ -1,4 +1,4 @@
-# ZAgents Module SDK (v1.21.1)
+# ZAgents Module SDK (v1.22.0)
 
 Panduan resmi untuk membuat **modul chat**: paket JavaScript yang berjalan
 secara native di dalam sesi chat ZAgents, terisolasi per chat seperti
@@ -9,7 +9,7 @@ Lokasi berkas di repositori ini:
 | Path | Isi |
 |---|---|
 | `sdk/` | SDK resmi — shim `zagents-sdk.js`, definisi TypeScript `index.d.ts`, `package.json` |
-| `samples/` | Contoh modul siap pasang (counter, network-fetcher, file-notes, chat-streamer) |
+| `samples/` | Contoh modul siap pasang (counter, network-fetcher, file-notes, chat-streamer, onhomeroom-daily) |
 | `docs/modules/` | Referensi ini (Inggris + Bahasa Indonesia) — juga dikirim in-app |
 
 ## 1. Struktur paket
@@ -46,7 +46,7 @@ modul-saya.zip
 | `title` | — | Nama tampilan (bawaan: `name`). |
 | `description` | — | Ditampilkan ke pengguna dan disuntikkan ke konteks chat. |
 | `entry` | — | Entry point, bawaan `main.js`. |
-| `permissions` | — | `storage`, `network`, `files`, `chat` — pengguna menyetujui setiap aktivasi. |
+| `permissions` | — | `storage`, `network`, `files`, `chat`, `agent` — pengguna menyetujui setiap aktivasi. |
 | `allowedHosts` | — | Membatasi `zagents.http` ke host tersebut (`*.contoh.com` mengizinkan subdomain). Kosongkan untuk semua host. |
 | `timeoutSeconds` | — | Anggaran eksekusi per run (30 bawaan, maks 120). |
 
@@ -64,13 +64,19 @@ dihormati; tanpa keduanya, nama file ZIP menjadi nama modul.
 3. Entry point dieksekusi sekali per aktivasi. Output console dan nilai
    kembaliannya dikirim ke percakapan sebagai pesan modul; agen dapat
    membaca dan membahasnya.
+   **Tips setup:** saat modul dipilih di chat BARU (staged), pesan pertama
+   yang Anda kirim diekspos ke modul sebagai `zagents.info.prompt` —
+   modul bisa menyediakan perintah seperti `setup <kredensial>`, `status`
+   atau `reset` pada pesan itu.
 
 ## 3. SDK `zagents`
 
 Tersedia sebagai global — atau `const zagents = require('zagents-sdk')`.
 
 ### `zagents.info`
-Metadata: `name`, `version`, `title`, `sessionId`, `entry`.
+Metadata: `name`, `version`, `title`, `sessionId`, `entry` — ditambah
+`prompt` (pesan pengguna yang mengaktivasi) saat run dipicu pesan pertama
+modul yang di-stage di draft baru.
 
 ### `zagents.log(...)` — selalu tersedia
 Output console, ditangkap ke dalam pesan modul.
@@ -103,17 +109,53 @@ const info = await zagents.fs.stat('sub'); // { isDirectory, size, modified }
 Path di luar direktori state akan ditolak.
 
 ### `zagents.http` — izin `network`
-HTTP melalui aplikasi (status + body), opsional dibatasi host.
+HTTP melalui aplikasi (status + body + header respons), opsional dibatasi
+host oleh `allowedHosts` di manifest.
 
 ```js
 const res = await zagents.http.request('https://api.contoh.com/data', {
   method: 'POST',
   body: JSON.stringify({ q: 'hai' }),
+  headers: { 'Content-Type': 'application/json' },
 });
 if (res.ok) {
   const data = await res.json();
+  const cookie = res.headers['set-cookie']; // header respons (huruf kecil)
 }
 ```
+
+Opsi: `method`, `body`, `headers` (field hop-by-hop seperti `Host` dan
+`Connection` dibuang), `timeoutMs` (batas seluruh request, maks 60000)
+dan `headOnly: true` — kembali begitu status line + header tiba, tanpa
+membaca body (memulai stream SSE tanpa menunggu stream itu selesai).
+
+### `zagents.agent` — izin `agent`
+Minta AGEN CHAT SENDIRI (provider/model yang dipakai chat ini) menyusun
+SATU kalimat santai berbahasa Inggris dari konteks live yang modul
+suplai. Tidak ada template: setiap kalimat digenerate saat dibutuhkan,
+dan host menegakkan kontrak composer sebelum modul melihat teksnya:
+
+* tepat satu kalimat, santai, terdengar seperti manusia, bahasa Inggris;
+* tidak pernah memuat `!` `:` `;` `—` `–` `?` dan tanpa emoji;
+* paling banyak `maxWords` kata (bawaan 24, rentang 1–40);
+* tidak pernah mengulang teks yang diberikan lewat `avoid`;
+* satu percobaan perbaikan otomatis, lalu satu pass sanitize
+  deterministik — output yang masih melanggar melempar error sehingga
+  modul bisa melewati aksi teks itu dengan anggun.
+
+```js
+const { text } = await zagents.agent.compose({
+  task: 'chat-reply',
+  context: barisChatTerakhir.join('\n'),
+  instruction: 'reaksi atas pesan terakhir',
+  maxWords: 16,
+  avoid: teksTerakhirTerkirim,
+});
+```
+
+Kegagalan (API key kosong, provider down, pelanggaran berulang) melempar
+error — bungkus dengan try/catch dan lewati aksi teks tersebut bila
+komposisi tidak memungkinkan.
 
 ### `zagents.chat` — izin `chat`
 Kirim output bertahap ke percakapan selama modul berjalan:
@@ -132,6 +174,9 @@ await zagents.chat.emit('Langkah 1 selesai…');
 * **Izin** — dideklarasikan di manifest, disetujui pengguna saat
   aktivasi, ditegakkan dua lapis (SDK + bridge Dart).
 * **Jaringan** — butuh `network`; `allowedHosts` mempersempit lagi.
+* **Agen** — butuh `agent`; generasi lewat LLM chat sendiri plus gerbang
+  composer di sisi host, sehingga output modul selalu di dalam kontrak
+  yang diatur.
 * **Sumber daya** — timeout, batas output, batas storage.
 * **Penghentian** — menonaktifkan modul atau menghentikan chat membatalkan
   run yang berjalan dengan aman: pengiriman berhenti, state tersimpan.
@@ -139,7 +184,7 @@ await zagents.chat.emit('Langkah 1 selesai…');
 ## 5. Contoh minimal
 
 Contoh yang sama, siap dipasang, ada di [`samples/counter/`](../../samples/counter/)
-— bersama tiga contoh lengkap lainnya yang mencakup semua izin:
+— bersama contoh lengkap lainnya yang mencakup semua izin:
 
 | Contoh | Mendemonstrasikan |
 |---|---|
@@ -147,6 +192,7 @@ Contoh yang sama, siap dipasang, ada di [`samples/counter/`](../../samples/count
 | [`samples/network-fetcher/`](../../samples/network-fetcher/) | `network` — `zagents.http` + `allowedHosts` |
 | [`samples/file-notes/`](../../samples/file-notes/) | `files` — catatan tersandbox di `state/` |
 | [`samples/chat-streamer/`](../../samples/chat-streamer/) | `chat` — output bertahap `chat.emit` |
+| [`samples/onhomeroom-daily/`](../../samples/onhomeroom-daily/) | `agent` — bot harian dunia nyata yang setiap kalimatnya disusun agen chat |
 
 `module.json`
 

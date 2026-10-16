@@ -9,7 +9,10 @@ import 'package:archive/archive.dart';
 /// * `network` — outbound HTTP (`zagents.http`)
 /// * `files`   — file access sandboxed to the module's per-chat state dir
 /// * `chat`    — post text into the conversation (`zagents.chat.emit`)
-enum ModulePermission { storage, network, files, chat }
+/// * `agent`   — ask the chat's own agent (LLM) to compose text
+///   (`zagents.agent.compose`) — every sentence is generated live from the
+///   context the module provides and passes the host-side composer gate
+enum ModulePermission { storage, network, files, chat, agent }
 
 /// Parses a manifest permission name; unknown names are dropped so a
 /// typo in a third-party manifest can never widen the sandbox.

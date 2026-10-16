@@ -49,12 +49,13 @@ approved by the user at activation, enforced twice — SDK + Dart bridge):
 
 | API | Permission | Purpose |
 |---|---|---|
-| `zagents.info` | — | `{ name, version, title, sessionId, entry }` |
+| `zagents.info` | — | `{ name, version, title, sessionId, entry, prompt? }` |
 | `zagents.log(...)` | — | Console output, captured into the module message |
 | `zagents.storage.{get,set,keys,remove}` | `storage` | Per-chat key/value store (64 KB/value, 1 MB/chat+module) |
 | `zagents.fs.{readFile,writeFile,appendFile,readdir,mkdir,unlink,stat}` | `files` | Sandbox filesystem, confined to the per-chat `state/` dir |
-| `zagents.http.request(url, opts)` | `network` | HTTP via the app transport; optionally restricted by `allowedHosts` |
+| `zagents.http.request(url, opts)` | `network` | HTTP via the app transport (custom headers, `timeoutMs`, `headOnly` for SSE); optionally restricted by `allowedHosts` |
 | `zagents.chat.emit(text)` | `chat` | Post progressive output into the conversation |
+| `zagents.agent.compose(opts)` | `agent` | Ask the chat's own agent to compose ONE sentence from the live context you supply — generated on demand and gate-checked (no templates) |
 
 ## Editor setup (optional)
 

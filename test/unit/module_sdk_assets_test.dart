@@ -61,14 +61,15 @@ void main() {
           'http',
           'storage',
           'fs',
+          'agent',
         ]) {
           expect(dts, contains(member), reason: 'missing SDK member: $member');
         }
         for (final String method in <String>[
           'emit',
           'request',
-          'get',
           'set',
+          'get',
           'keys',
           'remove',
           'readFile',
@@ -78,6 +79,7 @@ void main() {
           'mkdir',
           'unlink',
           'stat',
+          'compose',
         ]) {
           expect(
             dts,
@@ -110,11 +112,14 @@ void main() {
           'zagents.fs',
           'zagents.http',
           'zagents.chat',
+          'zagents.agent',
+          'agent.compose',
           'allowedHosts',
           'module.json',
           'appendFile',
           'samples/',
           'sdk/',
+          'onhomeroom-daily',
         ]) {
           expect(
             doc,
@@ -146,7 +151,7 @@ void main() {
             .toList()
           ..sort();
 
-    test('all four permission-covering samples are present', () {
+    test('all five permission-covering samples are present', () {
       expect(
         sampleNames,
         containsAll(<String>[
@@ -154,6 +159,7 @@ void main() {
           'network-fetcher',
           'file-notes',
           'chat-streamer',
+          'onhomeroom-daily',
         ]),
       );
     });

@@ -9,6 +9,7 @@
  * Every capability below maps to a manifest permission (`module.json`):
  *   storage → zagents.storage      network → zagents.http
  *   files   → zagents.fs           chat    → zagents.chat
+ *   agent   → zagents.agent
  * Calling an API whose permission was not granted throws
  * `Permission denied: <permission>` at runtime.
  */
@@ -25,6 +26,12 @@ export interface ZAgentsInfo {
   sessionId: string;
   /** Entry point that is executing (e.g. `main.js`). */
   entry: string;
+  /**
+   * The user message that activated this run — present only on the
+   * staged-module path (module picked on a fresh draft, first message
+   * sent). Use it for setup commands (`setup ...`, `status`, `reset`).
+   */
+  prompt?: string;
 }
 
 /** HTTP response returned by zagents.http.request. */
@@ -35,6 +42,8 @@ export interface ZAgentsHttpResponse {
   status: number;
   /** Raw response body (string or parsed JSON when the bridge decoded it). */
   body: unknown;
+  /** Lowercased response headers (repeated values joined with ", "). */
+  headers: Record<string, string>;
   /** Body as text. */
   text(): Promise<string>;
   /** Body parsed as JSON (throws when the body is not valid JSON). */
@@ -46,8 +55,12 @@ export interface ZAgentsHttpRequestOptions {
   method?: 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH' | string;
   /** Request body (stringified by the bridge). */
   body?: string | null;
-  /** Extra request headers (advisory; the app transport may add its own). */
+  /** Extra request headers (hop-by-hop fields are dropped by the bridge). */
   headers?: Record<string, string>;
+  /** Whole-request cap in milliseconds (max 60000). */
+  timeoutMs?: number;
+  /** Return as soon as headers arrive — for SSE kick-off calls. */
+  headOnly?: boolean;
 }
 
 /** Per-chat key/value store — never shared between chats. */
@@ -77,6 +90,22 @@ export interface ZAgentsFs {
   }>;
 }
 
+/** Options for zagents.agent.compose. */
+export interface ZAgentsAgentComposeOptions {
+  /** Short label of what is being composed (e.g. `chat-reply`). */
+  task?: string;
+  /** The LIVE context the sentence must fit into. Required. */
+  context: string;
+  /** Optional extra instruction from the module. */
+  instruction?: string;
+  /** Maximum words (default 24, clamped 1-40). */
+  maxWords?: number;
+  /** Recent texts the sentence must not repeat (max 20). */
+  avoid?: string[];
+  /** Allow one trailing period (proposal bodies). Default false. */
+  trailingPeriod?: boolean;
+}
+
 /** The SDK object injected as a global and exported by `zagents-sdk`. */
 export interface ZAgentsSdk {
   /** Instance metadata. */
@@ -98,6 +127,17 @@ export interface ZAgentsSdk {
   storage: ZAgentsStorage;
   /** Per-chat sandboxed file access. Permission: `files`. */
   fs: ZAgentsFs;
+  /**
+   * Ask the chat's own agent to compose ONE sentence from live context.
+   * The host enforces the composer rules (casual English, no forbidden
+   * characters, word cap, no repeats) before returning.
+   * Permission: `agent`.
+   */
+  agent: {
+    compose(
+      options: ZAgentsAgentComposeOptions,
+    ): Promise<{ text: string }>;
+  };
 }
 
 /** Injected by the ZAgents runtime into every module execution. */

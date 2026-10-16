@@ -191,11 +191,20 @@ OpenAI-compatible: **OpenRouter, InferHub, Z.AI, OpenAI, DeepSeek, Groq, dan lai
   timeout) dan berjalan di atas **SDK resmi `zagents`** (global atau
   `require('zagents-sdk')`): `zagents.storage` (key/value per chat),
   `zagents.fs` (file, terkurung di direktori state modul per chat),
-  `zagents.http` (jaringan dengan izin + allowlist host),
-  `zagents.chat.emit` (kirim output ke percakapan) dan `zagents.info`.
-  Dokumentasi SDK resmi tersedia in-app (EN/ID) di layar Modul, dan
-  lengkap di repo: **`sdk/`** (SDK + definisi TypeScript), **`samples/`**
-  (4 modul contoh siap pasang), **`docs/modules/`** (referensi resmi EN+ID).
+  `zagents.http` (jaringan dengan izin + allowlist host, header khusus,
+  `timeoutMs`, `headOnly` untuk SSE),
+  `zagents.chat.emit` (kirim output ke percakapan), `zagents.info` (termasuk
+  `prompt` — pesan aktivasi pertama, untuk perintah setup modul) dan
+  **`zagents.agent.compose` (v1.22.0, izin `agent`)** — modul meminta
+  **agen chat sendiri** menyusun SATU kalimat sesuai kebutuhan dari konteks
+  live yang modul suplai; tanpa template/kumpulan pesan siap pakai, semua
+  keluaran lolos gerbang host (satu kalimat santai berbahasa Inggris,
+  tanpa karakter `! : ; — – ?`, batas kata, anti-ulang, retry perbaikan +
+  sanitize deterministik). Dokumentasi SDK resmi tersedia in-app (EN/ID)
+  di layar Modul, dan lengkap di repo: **`sdk/`** (SDK + definisi
+  TypeScript), **`samples/`** (5 modul contoh siap pasang, termasuk
+  **onhomeroom-daily** — bot harian app.onhomeroom.com yang setiap
+  kalimatnya disusun agen chat), **`docs/modules/`** (referensi resmi EN+ID).
   **Isolasi private window per chat**: proses/konteks JS segar setiap
   eksekusi, storage & state & konfigurasi terpisah per (chat, modul),
   izin diminta saat aktivasi dan ditegakkan dua lapis (SDK + bridge

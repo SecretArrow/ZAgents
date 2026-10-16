@@ -343,8 +343,14 @@ class ChatController extends Notifier<ChatState> {
   /// Activates [name] on a materialized run: executes the entry point in
   /// the session's isolated sandbox and posts the output as a module
   /// message. Failures degrade into the message body — they never break
-  /// the chat.
-  Future<void> _activateModule(_SessionRun run, String name) async {
+  /// the chat. [activationPrompt] is the user message that triggered this
+  /// activation (staged-module path); the module reads it as
+  /// `zagents.info.prompt` so setup commands work on the first message.
+  Future<void> _activateModule(
+    _SessionRun run,
+    String name, {
+    String? activationPrompt,
+  }) async {
     final AppStrings strings = appStringsFor(
       ref.read(settingsProvider).languageCode,
     );
@@ -385,6 +391,7 @@ class ChatController extends Notifier<ChatState> {
             sessionId: run.sessionId,
             module: module,
             granted: module.manifest.permissions,
+            activationPrompt: activationPrompt,
             onChatEmit: (String text) {
               // Schedule the UI update OUTSIDE the platform-message turn:
               // updating Riverpod state synchronously inside the handler
@@ -784,10 +791,12 @@ class ChatController extends Notifier<ChatState> {
 
     // Staged module (new chat with a module) activates AFTER the user
     // message so its entry output lands between the prompt and the reply.
+    // The prompt itself is forwarded so the module can implement setup
+    // commands on the first message (e.g. credentials, options).
     final String? stagedModule = run.pendingModule;
     if (stagedModule != null) {
       run.pendingModule = null;
-      await _activateModule(run, stagedModule);
+      await _activateModule(run, stagedModule, activationPrompt: prompt);
     }
 
     final wire = <Map<String, dynamic>>[

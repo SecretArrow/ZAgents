@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:zagents/services/agent_composer.dart';
 import 'package:zagents/services/js_runtime.dart';
 import 'package:zagents/services/module_registry.dart';
 import 'package:zagents/services/module_runtime.dart';
@@ -14,11 +15,24 @@ void main() {
   late ScriptedJsRuntime js;
   late ModuleRuntime runtime;
   int httpCalls = 0;
+  String? lastHttpUrl;
+  Map<String, String>? lastHttpHeaders;
+  int? lastHttpTimeoutMs;
+  bool? lastHttpHeadOnly;
+  final List<AgentComposeRequest> composeCalls = <AgentComposeRequest>[];
+  String? scriptedCompose;
 
   setUp(() async {
     docs = await Directory.systemTemp.createTemp('module_runtime_test');
     sandbox = SessionSandbox(resolveDocumentsDir: () async => docs);
     js = ScriptedJsRuntime();
+    httpCalls = 0;
+    lastHttpUrl = null;
+    lastHttpHeaders = null;
+    lastHttpTimeoutMs = null;
+    lastHttpHeadOnly = null;
+    composeCalls.clear();
+    scriptedCompose = null;
     runtime = ModuleRuntime(
       js: js,
       resolveSandboxRoot: sandbox.rootFor,
@@ -33,9 +47,41 @@ void main() {
       resolveSdkSource: () async => 'module.exports = zagents;',
       resolveNpmModulesRoot: () async =>
           '${docs.path}${Platform.pathSeparator}node_modules',
-      httpTransport: (String url, String method, String? body) async {
-        httpCalls++;
-        return <String, dynamic>{'status': 200, 'body': '{"ok":true}'};
+      httpTransport:
+          (
+            String url,
+            String method,
+            String? body,
+            Map<String, String> headers, {
+            int? timeoutMs,
+            bool headOnly = false,
+          }) async {
+            httpCalls++;
+            lastHttpUrl = url;
+            lastHttpHeaders = headers;
+            lastHttpTimeoutMs = timeoutMs;
+            lastHttpHeadOnly = headOnly;
+            if (headOnly) {
+              return <String, dynamic>{
+                'status': 200,
+                'body': '',
+                'headers': <String, String>{
+                  'content-type': 'text/event-stream',
+                },
+              };
+            }
+            return <String, dynamic>{
+              'status': 200,
+              'body': '{"ok":true}',
+              'headers': <String, String>{
+                'content-type': 'application/json',
+                'set-cookie': 'session=abc123; Path=/; HttpOnly',
+              },
+            };
+          },
+      agentCompose: (AgentComposeRequest request) async {
+        composeCalls.add(request);
+        return scriptedCompose ?? 'a casual reply sentence';
       },
     );
   });
@@ -477,6 +523,209 @@ void main() {
       expect(result.ok, isFalse);
       expect(result.error, contains('not installed'));
       expect(js.moduleInvocations, isEmpty);
+    });
+
+    test('activation prompt rides into zagents.info', () async {
+      final ChatModule mod = module();
+      await runtime.run(
+        sessionId: 's',
+        module: mod,
+        granted: mod.manifest.permissions,
+        activationPrompt: 'setup me@example.com hunter2',
+      );
+      expect(
+        js.moduleInvocations.single.info['prompt'],
+        'setup me@example.com hunter2',
+      );
+      // The immediate-activation path (no prompt) must not carry a key.
+      await runtime.run(
+        sessionId: 's',
+        module: mod,
+        granted: mod.manifest.permissions,
+      );
+      expect(js.moduleInvocations.last.info.containsKey('prompt'), isFalse);
+    });
+  });
+
+  group('http.request headers / timeout / head-only (v1.22.0)', () {
+    test(
+      'module headers reach the transport, response headers come back',
+      () async {
+        final ChatModule mod = module(
+          name: 'netmod',
+          permissions: const <ModulePermission>{ModulePermission.network},
+        );
+        final List<Map<String, dynamic>?> responses = await runAndCall(
+          's',
+          mod,
+          mod.manifest.permissions,
+          ops: <Map<String, dynamic>>[
+            <String, dynamic>{
+              'zop': 'http.request',
+              'url': 'https://app.example.com/api',
+              'method': 'POST',
+              'body': '{"a":1}',
+              'headers': <String, dynamic>{
+                'Content-Type': 'application/json',
+                'Cookie': 'session=abc123',
+                'Host': 'evil.example.com',
+                'Connection': 'close',
+              },
+            },
+          ],
+        );
+        expect(responses.single!['ok'], isTrue);
+        final Map<String, dynamic> data =
+            responses.single!['data'] as Map<String, dynamic>;
+        expect(lastHttpUrl, 'https://app.example.com/api');
+        expect(lastHttpHeaders!['content-type'], 'application/json');
+        expect(lastHttpHeaders!['cookie'], 'session=abc123');
+        // Hop-by-hop headers never reach the transport.
+        expect(lastHttpHeaders!.containsKey('host'), isFalse);
+        expect(lastHttpHeaders!.containsKey('connection'), isFalse);
+        // Response headers are exposed to the module (lowercased).
+        final Map<String, dynamic> headers =
+            data['headers'] as Map<String, dynamic>;
+        expect(headers['content-type'], 'application/json');
+        expect(headers['set-cookie'], contains('session=abc123'));
+      },
+    );
+
+    test('timeout and head-only flags pass through', () async {
+      final ChatModule mod = module(
+        name: 'netmod',
+        permissions: const <ModulePermission>{ModulePermission.network},
+      );
+      await runAndCall(
+        's',
+        mod,
+        mod.manifest.permissions,
+        ops: <Map<String, dynamic>>[
+          <String, dynamic>{
+            'zop': 'http.request',
+            'url': 'https://app.example.com/sse',
+            'method': 'POST',
+            'timeoutMs': 15000,
+            'headOnly': true,
+          },
+        ],
+      );
+      expect(lastHttpTimeoutMs, 15000);
+      expect(lastHttpHeadOnly, isTrue);
+      // An over-cap timeout is clamped to 60s.
+      await runAndCall(
+        's',
+        mod,
+        mod.manifest.permissions,
+        ops: <Map<String, dynamic>>[
+          <String, dynamic>{
+            'zop': 'http.request',
+            'url': 'https://app.example.com/sse',
+            'timeoutMs': 999999,
+            'headOnly': true,
+          },
+        ],
+      );
+      expect(lastHttpTimeoutMs, 60000);
+    });
+  });
+
+  group('agent.compose — module asks the chat agent (v1.22.0)', () {
+    ChatModule mod({
+      Set<ModulePermission> permissions = const <ModulePermission>{
+        ModulePermission.agent,
+      },
+    }) {
+      return module(name: 'composer', permissions: permissions);
+    }
+
+    test('without the agent permission the bridge denies the op', () async {
+      final ChatModule m = mod(
+        permissions: const <ModulePermission>{ModulePermission.storage},
+      );
+      final List<Map<String, dynamic>?> responses = await runAndCall(
+        's',
+        m,
+        m.manifest.permissions,
+        ops: <Map<String, dynamic>>[
+          <String, dynamic>{
+            'zop': 'agent.compose',
+            'task': 'chat-reply',
+            'context': 'someone said hi',
+          },
+        ],
+      );
+      expect(responses.single!['ok'], isFalse);
+      expect(responses.single!['error'], contains('Permission denied: agent'));
+      expect(composeCalls, isEmpty);
+    });
+
+    test('granted permission composes through the injected callback', () async {
+      scriptedCompose = 'no idea yet but curious too';
+      final ChatModule m = mod();
+      final List<Map<String, dynamic>?> responses = await runAndCall(
+        's',
+        m,
+        m.manifest.permissions,
+        ops: <Map<String, dynamic>>[
+          <String, dynamic>{
+            'zop': 'agent.compose',
+            'task': 'chat-reply',
+            'context': 'the leaderboard reset today, anyone noticed',
+            'instruction': 'mention the leaderboard',
+            'maxWords': 12,
+            'avoid': <String>['used earlier'],
+          },
+        ],
+      );
+      expect(responses.single!['ok'], isTrue);
+      expect(responses.single!['data']['text'], 'no idea yet but curious too');
+      final AgentComposeRequest request = composeCalls.single;
+      expect(request.task, 'chat-reply');
+      expect(request.context, contains('leaderboard'));
+      expect(request.instruction, contains('leaderboard'));
+      expect(request.maxWords, 12);
+      expect(request.avoid, <String>['used earlier']);
+    });
+
+    test('empty context is rejected before any callback fires', () async {
+      final ChatModule m = mod();
+      final List<Map<String, dynamic>?> responses = await runAndCall(
+        's',
+        m,
+        m.manifest.permissions,
+        ops: <Map<String, dynamic>>[
+          <String, dynamic>{'zop': 'agent.compose', 'context': '   '},
+        ],
+      );
+      expect(responses.single!['ok'], isFalse);
+      expect(responses.single!['error'], contains('non-empty context'));
+      expect(composeCalls, isEmpty);
+    });
+
+    test('composer failures degrade into a clean bridge error', () async {
+      scriptedCompose = null;
+      runtime = ModuleRuntime(
+        js: js,
+        resolveSandboxRoot: sandbox.rootFor,
+        resolveModulePath: runtime.resolveModulePath,
+        resolveSdkSource: runtime.resolveSdkSource,
+        resolveNpmModulesRoot: runtime.resolveNpmModulesRoot,
+        agentCompose: (AgentComposeRequest request) async {
+          throw const AgentComposeException('No API key configured');
+        },
+      );
+      final ChatModule m = mod();
+      final List<Map<String, dynamic>?> responses = await runAndCall(
+        's',
+        m,
+        m.manifest.permissions,
+        ops: <Map<String, dynamic>>[
+          <String, dynamic>{'zop': 'agent.compose', 'context': 'hello there'},
+        ],
+      );
+      expect(responses.single!['ok'], isFalse);
+      expect(responses.single!['error'], contains('No API key'));
     });
   });
 }

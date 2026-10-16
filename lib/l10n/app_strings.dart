@@ -1010,7 +1010,7 @@ class AppStringsEn implements AppStrings {
   String get aboutSection => 'About';
   @override
   String get aboutBody =>
-      'ZAgents v1.21.2 — an Android clone of the chat.z.ai agent mode UI, '
+      'ZAgents v1.22.0 — an Android clone of the chat.z.ai agent mode UI, '
       'with custom OpenAI-compatible providers (OpenRouter, InferHub, '
       'Z.AI, OpenAI, DeepSeek, Groq, and more), per-provider API keys, '
       'light/dark themes, parallel multi-session chat with background '
@@ -1032,7 +1032,11 @@ class AppStringsEn implements AppStrings {
       'keys stay on this device, and chat modules (plugins) install from ZIP '
       'files and run inside each chat\'s isolated sandbox with the '
       'official zagents SDK (/plugins), a Modules screen and per-chat '
-      'storage, state, config and permission separation.';
+      'storage, state, config and permission separation. Modules can ask '
+      'this chat\'s own agent to compose every sentence on demand '
+      '(zagents.agent.compose, gated and rate-shaped), send custom HTTP '
+      'headers, and receive your first activation message for setup '
+      'commands.';
 
   @override
   String createdBy(String name) => 'Created by $name';
@@ -1780,7 +1784,7 @@ class AppStringsId implements AppStrings {
   String get aboutSection => 'Tentang';
   @override
   String get aboutBody =>
-      'ZAgents v1.21.2 — klon UI agent mode chat.z.ai untuk Android, '
+      'ZAgents v1.22.0 — klon UI agent mode chat.z.ai untuk Android, '
       'dengan custom provider OpenAI-compatible (OpenRouter, InferHub, '
       'Z.AI, OpenAI, DeepSeek, Groq, dan lainnya), API key per-provider, '
       'tema terang/gelap, multi-sesi paralel dengan proses latar '
@@ -1803,7 +1807,10 @@ class AppStringsId implements AppStrings {
       '(plugin) dipasang dari file ZIP lalu berjalan di dalam sandbox '
       'terisolasi milik tiap chat dengan SDK resmi zagents (/plugins), '
       'layar Modul, serta pemisahan storage, state, konfigurasi dan izin '
-      'per chat.';
+      'per chat. Modul dapat meminta agen chat ini menyusun setiap '
+      'kalimat sesuai kebutuhan (zagents.agent.compose, dengan gerbang '
+      'aturan), mengirim header HTTP khusus, dan menerima pesan aktivasi '
+      'pertama Anda untuk perintah setup.';
 
   @override
   String createdBy(String name) => 'Dibuat oleh $name';

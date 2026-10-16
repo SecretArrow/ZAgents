@@ -134,6 +134,41 @@ void main() {
     expect(File(mod.entryPath).existsSync(), isTrue);
   });
 
+  test(
+    'staged module receives the first message as zagents.info.prompt',
+    () async {
+      final ProviderContainer c = await container();
+      await installModule('setupme');
+      js.nextResult = const JsRunResult(output: 'ready', result: '"done"');
+
+      final ChatController controller = c.read(chatControllerProvider.notifier);
+      await controller.activateModule('setupme');
+      await controller.send('setup me@example.com hunter2');
+
+      expect(js.moduleInvocations, hasLength(1));
+      expect(
+        js.moduleInvocations.single.info['prompt'],
+        'setup me@example.com hunter2',
+      );
+    },
+  );
+
+  test(
+    'immediate activation on an open session carries no prompt key',
+    () async {
+      final ProviderContainer c = await container();
+      await installModule('instant');
+      js.nextResult = const JsRunResult(output: 'ok');
+
+      final ChatController controller = c.read(chatControllerProvider.notifier);
+      await controller.send('hi there');
+      await controller.activateModule('instant');
+
+      expect(js.moduleInvocations, hasLength(1));
+      expect(js.moduleInvocations.single.info.containsKey('prompt'), isFalse);
+    },
+  );
+
   test('activating on an OPEN session runs the entry immediately and '
       'persists the module list', () async {
     final ProviderContainer c = await container();

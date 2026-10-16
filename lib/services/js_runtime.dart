@@ -475,7 +475,9 @@ window.__zDone = false;
           url: String(url),
           method: opts.method || 'GET',
           body: (opts.body === undefined || opts.body === null) ? null : String(opts.body),
-          headers: opts.headers || {}
+          headers: opts.headers || {},
+          timeoutMs: typeof opts.timeoutMs === 'number' ? opts.timeoutMs : null,
+          headOnly: opts.headOnly === true
         }).then(function(data){
           var body = data ? data.body : null;
           var status = data && data.status ? data.status : 200;
@@ -483,9 +485,26 @@ window.__zDone = false;
             ok: status >= 200 && status < 300,
             status: status,
             body: body,
+            headers: (data && data.headers) || {},
             text: function(){ return Promise.resolve(typeof body === 'string' ? body : JSON.stringify(body)); },
             json: function(){ return Promise.resolve(typeof body === 'string' ? JSON.parse(body) : body); }
           };
+        });
+      }
+    },
+    agent: {
+      compose: function(opts){
+        if (!zHas('agent')) return zDeny('agent');
+        opts = opts || {};
+        return zCall('agent.compose', {
+          task: (opts.task === undefined || opts.task === null) ? '' : String(opts.task),
+          context: (opts.context === undefined || opts.context === null) ? '' : String(opts.context),
+          instruction: (opts.instruction === undefined || opts.instruction === null) ? '' : String(opts.instruction),
+          maxWords: typeof opts.maxWords === 'number' ? opts.maxWords : null,
+          avoid: Array.isArray(opts.avoid) ? opts.avoid.map(String) : [],
+          trailingPeriod: opts.trailingPeriod === true
+        }).then(function(data){
+          return { text: (data && data.text) ? data.text : '' };
         });
       }
     },

@@ -2,8 +2,30 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'agent_composer.dart';
 import 'js_runtime.dart';
 import 'module_registry.dart';
+
+/// Outbound transport for `zagents.http` — permission + host allowlist are
+/// already enforced by [ModuleRuntime] before this call. [headers] carries
+/// the module's extra request headers (hop-by-hop fields filtered out);
+/// [timeoutMs] caps the whole request (null = no extra cap); [headOnly]
+/// skips the body read (SSE kick-off: return as soon as headers arrive).
+/// The result maps carry `status`, `body` and lowercase `headers`.
+typedef ModuleHttpTransport = Future<Map<String, dynamic>?> Function(
+  String url,
+  String method,
+  String? body,
+  Map<String, String> headers, {
+  int? timeoutMs,
+  bool headOnly,
+});
+
+/// Agent-backed text composer for `zagents.agent.compose`. Implementations
+/// run the request through the chat's own LLM plus the composer gate.
+typedef ModuleAgentCompose = Future<String> Function(
+  AgentComposeRequest request,
+);
 
 /// Outcome of one chat-module execution.
 class ModuleRunResult {
@@ -64,6 +86,9 @@ class _RunContext {
 ///   the Dart bridge re-checks every call (defense in depth).
 /// * **Network** — requires the `network` permission; a manifest
 ///   `allowedHosts` list further restricts destinations.
+/// * **Agent** — requires the `agent` permission; text generation goes
+///   through the chat's own agent and the host-side composer gate, so a
+///   module can never stuff raw arbitrary model output into a platform.
 /// * **Resources** — per-run timeout, console-output cap, storage caps,
 ///   file-scope confinement.
 /// * **Safe termination** — [terminate] cancels an in-flight run: output
@@ -76,6 +101,7 @@ class ModuleRuntime implements ModuleBridge {
     required this.resolveSdkSource,
     required this.resolveNpmModulesRoot,
     this.httpTransport,
+    this.agentCompose,
   });
 
   final JsRuntime js;
@@ -93,13 +119,11 @@ class ModuleRuntime implements ModuleBridge {
   /// module's own directory.
   final Future<String> Function() resolveNpmModulesRoot;
 
-  /// Outbound HTTP for `zagents.http` (url, method, body → status/body).
-  final Future<Map<String, dynamic>?> Function(
-    String url,
-    String method,
-    String? body,
-  )?
-  httpTransport;
+  /// Outbound HTTP for `zagents.http` (see [ModuleHttpTransport]).
+  final ModuleHttpTransport? httpTransport;
+
+  /// Text composer for `zagents.agent.compose` (see [ModuleAgentCompose]).
+  final ModuleAgentCompose? agentCompose;
 
   /// Per-key JSON-size cap for `zagents.storage.set` (encoded).
   static const int maxStorageValueBytes = 64 * 1024;
@@ -132,11 +156,15 @@ class ModuleRuntime implements ModuleBridge {
   /// Executes the module entry point for [sessionId]. [granted] is the
   /// user-approved subset of the manifest permissions. [onChatEmit]
   /// receives every `zagents.chat.emit(text)` call while the run is live.
+  /// [activationPrompt] is the user message that triggered the activation
+  /// (staged-module path); modules read it as `zagents.info.prompt` to
+  /// implement setup commands — null on every other path.
   Future<ModuleRunResult> run({
     required String sessionId,
     required ChatModule module,
     required Set<ModulePermission> granted,
     void Function(String text)? onChatEmit,
+    String? activationPrompt,
   }) async {
     // Resolve FIRST so an uninstalled/removed module degrades into a
     // clean error instead of a raw file-not-found exception.
@@ -187,6 +215,8 @@ class ModuleRuntime implements ModuleBridge {
             'title': module.manifest.title,
             'sessionId': sessionId,
             'entry': module.manifest.entry,
+            if (activationPrompt != null && activationPrompt.isNotEmpty)
+              'prompt': activationPrompt,
           },
           allowedHosts: module.manifest.allowedHosts,
           bridge: this,
@@ -296,18 +326,88 @@ class ModuleRuntime implements ModuleBridge {
             'error': 'Network transport is unavailable',
           };
         }
+        final Map<String, String> moduleHeaders = _sanitizeHeaders(
+          request['headers'],
+        );
+        final Object? rawTimeout = request['timeoutMs'];
+        final int? timeoutMs = rawTimeout is int && rawTimeout > 0
+            ? (rawTimeout > 60000 ? 60000 : rawTimeout)
+            : null;
         final Map<String, dynamic>? response = await transport(
           url,
           request['method']?.toString() ?? 'GET',
           request['body']?.toString(),
+          moduleHeaders,
+          timeoutMs: timeoutMs,
+          headOnly: request['headOnly'] == true,
         );
         return <String, dynamic>{
           'ok': true,
           'data': <String, dynamic>{
             'status': (response?['status'] as int?) ?? 200,
             'body': response?['body']?.toString() ?? '',
+            'headers':
+                (response?['headers'] as Map?)?.cast<String, dynamic>() ??
+                const <String, dynamic>{},
           },
         };
+      case 'agent.compose':
+        if (!context.permissions.contains('agent')) return _denied('agent');
+        if (context.cancelled) {
+          return const <String, dynamic>{
+            'ok': true,
+            'data': <String, dynamic>{'text': ''},
+          };
+        }
+        final compose = agentCompose;
+        if (compose == null) {
+          return const <String, dynamic>{
+            'ok': false,
+            'error': 'Agent composer is unavailable',
+          };
+        }
+        final Object? rawContext = request['context'];
+        final String contextText = rawContext?.toString() ?? '';
+        if (contextText.trim().isEmpty) {
+          return const <String, dynamic>{
+            'ok': false,
+            'error': 'agent.compose requires a non-empty context',
+          };
+        }
+        final Object? rawAvoid = request['avoid'];
+        final List<String> avoid = <String>[
+          if (rawAvoid is List)
+            for (final Object? item in rawAvoid)
+              if (item != null && item.toString().trim().isNotEmpty)
+                item.toString(),
+        ].take(20).toList();
+        final Object? rawMaxWords = request['maxWords'];
+        final int maxWords = rawMaxWords is int && rawMaxWords > 0
+            ? rawMaxWords
+            : AgentComposeRequest.defaultMaxWords;
+        try {
+          final String text = await compose(
+            AgentComposeRequest(
+              task: request['task']?.toString() ?? '',
+              context: contextText,
+              instruction: request['instruction']?.toString() ?? '',
+              maxWords: maxWords,
+              avoid: avoid,
+              trailingPeriod: request['trailingPeriod'] == true,
+            ),
+          );
+          return <String, dynamic>{
+            'ok': true,
+            'data': <String, dynamic>{'text': text},
+          };
+        } on AgentComposeException catch (e) {
+          return <String, dynamic>{'ok': false, 'error': e.message};
+        } catch (e) {
+          return <String, dynamic>{
+            'ok': false,
+            'error': 'Agent compose failed: $e',
+          };
+        }
       case 'storage.get':
         if (!context.permissions.contains('storage')) return _denied('storage');
         final Map<String, dynamic> store = await _readStorage(
@@ -376,6 +476,35 @@ class ModuleRuntime implements ModuleBridge {
     'ok': false,
     'error': 'Permission denied: $permission',
   };
+
+  /// Hop-by-hop / transport-owned headers a module may not set; everything
+  /// else passes through so real API integrations can send Cookie,
+  /// Authorization or Content-Type.
+  static const Set<String> _blockedRequestHeaders = <String>{
+    'host',
+    'content-length',
+    'connection',
+    'accept-encoding',
+    'transfer-encoding',
+    'upgrade',
+    'keep-alive',
+  };
+
+  /// Normalizes the JS header object into a plain string map. Caps the
+  /// count and size so a hostile manifest cannot balloon one request.
+  Map<String, String> _sanitizeHeaders(Object? raw) {
+    final Map<String, String> out = <String, String>{};
+    if (raw is! Map) return out;
+    for (final MapEntry<dynamic, dynamic> entry in raw.entries) {
+      final String name = entry.key?.toString().trim().toLowerCase() ?? '';
+      if (name.isEmpty || _blockedRequestHeaders.contains(name)) continue;
+      final String value = entry.value?.toString() ?? '';
+      if (value.length > 8 * 1024) continue;
+      out[name] = value;
+      if (out.length >= 24) break;
+    }
+    return out;
+  }
 
   bool _isHostAllowed(_RunContext context, String url) {
     final List<String>? allowlist = context.allowedHosts;

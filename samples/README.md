@@ -11,6 +11,7 @@ see [`../docs/modules/`](../docs/modules/) for the full reference and
 | [`network-fetcher/`](network-fetcher/) | `network`, `chat` | `zagents.http.request` through the app transport, restricted by a manifest `allowedHosts` allowlist (`api.github.com` only) |
 | [`file-notes/`](file-notes/) | `files` | Sandboxed filesystem under the per-chat `state/` directory: mkdir / appendFile / readFile / readdir / stat |
 | [`chat-streamer/`](chat-streamer/) | `chat` | Progressive output into the conversation with `zagents.chat.emit` |
+| [`onhomeroom-daily/`](onhomeroom-daily/) | `storage`, `network`, `agent` | Real-world daily bot for app.onhomeroom.com — challenge board, yes votes, chat replies, proposal pipeline. Every sentence is composed live by the chat agent via `zagents.agent.compose` (no templates), with setup commands on the first message (`setup <email> <password>`, `status`, `reset`) |
 
 ## Package a sample into an installable ZIP
 
@@ -52,3 +53,7 @@ On Windows: right-click the sample folder → *Send to → Compressed
   `state/notes/session.txt`; the file lives per chat and per module.
 * `chat-streamer` — three step messages appear progressively while the
   module runs.
+* `onhomeroom-daily` — after `setup <email> <password>`, one cycle per
+  activation: challenge board lines, yes votes, at most one composed text
+  per run, a run summary line. Run it in two chats with two different
+  accounts and the sessions never mix.

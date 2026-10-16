@@ -1,0 +1,10 @@
+{
+  "name": "onhomeroom-daily",
+  "version": "1.0.0",
+  "title": "OnHomeroom Daily",
+  "description": "Works app.onhomeroom.com one paced cycle per activation: challenge board, yes votes, one chat reply, app try-ins and the proposal pipeline. Every sentence is composed live by the chat agent (no templates). Setup on the first message: setup <email> <password>",
+  "entry": "main.js",
+  "permissions": ["storage", "network", "agent"],
+  "allowedHosts": ["*.onhomeroom.com"],
+  "timeoutSeconds": 120
+}

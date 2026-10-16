@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/services.dart' show rootBundle;
@@ -8,6 +9,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
 
 import 'models/models.dart';
+import 'services/agent_composer.dart';
 import 'services/agent_controller.dart';
 import 'services/app_lock_service.dart';
 import 'services/backup_service.dart';
@@ -128,6 +130,13 @@ final moduleSdkSourceProvider = FutureProvider<String>(
 /// Per-chat module sandbox runtime: every (chat, module) pair gets its
 /// own state directory, storage file, permission set and fresh JS
 /// context — the private-window guarantee extended to plugins.
+///
+/// `agentCompose` implements `zagents.agent.compose`: the module asks the
+/// CHAT'S OWN agent (provider/baseUrl/apiKey/model from Settings) to
+/// compose one sentence from the live context it supplies; the request
+/// runs through [AgentComposer]'s regulated gate (one casual English
+/// sentence, no forbidden characters, word cap, no repeats) before the
+/// module ever sees the text.
 final moduleRuntimeProvider = Provider<ModuleRuntime>(
   (ref) => ModuleRuntime(
     js: ref.watch(jsRuntimeProvider),
@@ -141,34 +150,82 @@ final moduleRuntimeProvider = Provider<ModuleRuntime>(
             .trim(),
     resolveNpmModulesRoot: () async =>
         ref.read(moduleRegistryProvider).npmModulesRoot(),
-    httpTransport: (String url, String method, String? body) async {
-      // Outbound transport for `zagents.http` (permission + host
-      // allowlist already enforced by ModuleRuntime before this call).
-      final http.Client client = http.Client();
-      try {
-        final Uri uri = Uri.parse(url);
-        final Map<String, String> headers = <String, String>{
-          'User-Agent': ref
-              .read(userAgentManagerProvider)
-              .resolve(ref.read(settingsProvider).uaMode)
-              .ua,
-        };
-        final String verb = method.toUpperCase();
-        final http.Response response = switch (verb) {
-          'POST' => await client.post(uri, headers: headers, body: body ?? ''),
-          'PUT' => await client.put(uri, headers: headers, body: body ?? ''),
-          'DELETE' => await client.delete(uri, headers: headers),
-          _ => await client.get(uri, headers: headers),
-        };
-        return <String, dynamic>{
-          'status': response.statusCode,
-          'body': response.body,
-        };
-      } catch (_) {
-        return const <String, dynamic>{'status': 0, 'body': ''};
-      } finally {
-        client.close();
+    httpTransport:
+        (
+          String url,
+          String method,
+          String? body,
+          Map<String, String> moduleHeaders, {
+          int? timeoutMs,
+          bool headOnly = false,
+        }) async {
+          // Outbound transport for `zagents.http` (permission + host
+          // allowlist already enforced by ModuleRuntime before this call).
+          final http.Client client = http.Client();
+          try {
+            final Uri uri = Uri.parse(url);
+            final Map<String, String> headers = <String, String>{
+              'User-Agent': ref
+                  .read(userAgentManagerProvider)
+                  .resolve(ref.read(settingsProvider).uaMode)
+                  .ua,
+              ...moduleHeaders,
+            };
+            final http.Request request = http.Request(method.toUpperCase(), uri)
+              ..headers.addAll(headers)
+              ..followRedirects = true;
+            if (body != null) request.body = body;
+            Future<http.StreamedResponse> send() => client.send(request);
+            final http.StreamedResponse streamed = timeoutMs != null
+                ? await send().timeout(Duration(milliseconds: timeoutMs))
+                : await send();
+            // headOnly: the caller only needs the status line + headers (SSE
+            // kick-off) — cancel the body stream so a long-lived server push
+            // cannot stall the module run.
+            final String responseBody = headOnly
+                ? ''
+                : await streamed.stream.bytesToString();
+            final Map<String, String> responseHeaders = <String, String>{
+              for (final MapEntry<String, String> h in streamed.headers.entries)
+                h.key.toLowerCase(): h.value,
+            };
+            return <String, dynamic>{
+              'status': streamed.statusCode,
+              'body': responseBody,
+              'headers': responseHeaders,
+            };
+          } on TimeoutException {
+            return const <String, dynamic>{
+              'status': 0,
+              'body': '',
+              'headers': <String, String>{},
+            };
+          } catch (_) {
+            return const <String, dynamic>{
+              'status': 0,
+              'body': '',
+              'headers': <String, String>{},
+            };
+          } finally {
+            client.close();
+          }
+        },
+    agentCompose: (AgentComposeRequest request) async {
+      final AppSettings settings = ref.read(settingsProvider);
+      if (settings.apiKey.trim().isEmpty) {
+        throw const AgentComposeException('No API key configured in Settings');
       }
+      if (settings.model.trim().isEmpty) {
+        throw const AgentComposeException('No model configured in Settings');
+      }
+      return AgentComposer(llm: ref.read(llmClientProvider)).compose(
+        request: request,
+        config: LlmConfig(
+          baseUrl: settings.baseUrl,
+          apiKey: settings.apiKey,
+          model: settings.model,
+        ),
+      );
     },
   ),
 );
