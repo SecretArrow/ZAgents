@@ -5,6 +5,7 @@ import '../models/models.dart';
 import 'browser_automation.dart';
 import 'file_system_service.dart';
 import 'js_runtime.dart';
+import 'module_registry.dart';
 import 'npm_service.dart';
 import 'web_fetcher.dart';
 
@@ -15,6 +16,7 @@ class ToolResult {
     required this.llmOutput,
     this.screenshotPath,
     this.displayText,
+    this.data,
   });
 
   final bool ok;
@@ -27,6 +29,10 @@ class ToolResult {
 
   /// Optional short label for the UI.
   final String? displayText;
+
+  /// Optional structured payload for the controller (e.g. the staged
+  /// module repair metadata behind `module_stage_repair`).
+  final Map<String, dynamic>? data;
 }
 
 /// Executes agent tools: embedded browser automation, page JS, file IO
@@ -42,6 +48,7 @@ class ToolExecutor {
     this.fs,
     this.fsFor,
     this.fetcher,
+    this.modules,
   });
 
   final BrowserAutomation browser;
@@ -68,6 +75,12 @@ class ToolExecutor {
   /// Server-side URL fetcher behind the `web_fetch` tool. Nullable for
   /// legacy tests; the tool degrades gracefully when absent.
   final WebFetcher? fetcher;
+
+  /// Installed chat-module registry behind the module doctor tools
+  /// (`module_list` / `module_read` / `module_export` /
+  /// `module_stage_repair`). Nullable for legacy tests; the tools
+  /// degrade gracefully when absent.
+  final ModuleRegistry? modules;
 
   static const Set<String> _browserTools = <String>{
     'browser_navigate',
@@ -128,6 +141,14 @@ class ToolExecutor {
           return await _gitPush(args, sessionId);
         case 'git_log':
           return await _gitLog(args, sessionId);
+        case 'module_list':
+          return await _moduleList();
+        case 'module_read':
+          return await _moduleRead(args);
+        case 'module_export':
+          return await _moduleExport(args, sessionId);
+        case 'module_stage_repair':
+          return await _moduleStageRepair(args, sessionId);
         default:
           return ToolResult(ok: false, llmOutput: 'Unknown tool: $name');
       }
@@ -930,4 +951,172 @@ return commits.length + ' commit(s)';
           'limit': (args['limit'] as int?) ?? 10,
         },
       );
+
+  // -- Module doctor (v1.26.0): read-only inspection + export + a
+  // user-confirmed repair install path. The agent can NEVER install or
+  // overwrite a module silently: `module_stage_repair` only validates a
+  // zip and surfaces a confirmation card the user must tap. -------------
+
+  Future<ToolResult> _moduleList() async {
+    final ModuleRegistry? registry = modules;
+    if (registry == null) {
+      return const ToolResult(
+        ok: false,
+        llmOutput: 'Module management is not available in this build.',
+      );
+    }
+    await registry.ensureCacheLoaded();
+    final List<ChatModule> installed = await registry.listInstalled();
+    if (installed.isEmpty) {
+      return const ToolResult(ok: true, llmOutput: 'No modules installed.');
+    }
+    final StringBuffer out = StringBuffer();
+    for (final ChatModule module in installed) {
+      final ModuleManifest m = module.manifest;
+      out.writeln(
+        '${m.name} v${m.version} — ${m.title.isEmpty ? m.name : m.title} — '
+        'permissions: ${m.permissions.isEmpty ? '(none)' : m.permissions.map((p) => p.name).join(',')} '
+        '— setup form: ${m.setup != null && m.setup!.hasRequired ? 'yes' : 'no'} '
+        '— entry: ${m.entry}',
+      );
+    }
+    return ToolResult(ok: true, llmOutput: out.toString().trim());
+  }
+
+  Future<ToolResult> _moduleRead(Map<String, dynamic> args) async {
+    final ModuleRegistry? registry = modules;
+    if (registry == null) {
+      return const ToolResult(
+        ok: false,
+        llmOutput: 'Module management is not available in this build.',
+      );
+    }
+    final String name = args['name']?.toString() ?? '';
+    if (name.trim().isEmpty) {
+      return const ToolResult(
+        ok: false,
+        llmOutput: 'Missing module name. Call module_list first.',
+      );
+    }
+    final String rel = args['path']?.toString() ?? '';
+    final ModuleFileRead read = await registry.readModuleFile(name, rel);
+    if (!read.ok) {
+      return ToolResult(ok: false, llmOutput: read.message);
+    }
+    if (read.content != null) {
+      return ToolResult(
+        ok: true,
+        llmOutput: read.content!,
+        displayText: rel.isEmpty ? 'module listing' : rel,
+      );
+    }
+    return ToolResult(
+      ok: true,
+      llmOutput: 'Module files:\n${read.listing.join('\n')}',
+      displayText: 'module listing',
+    );
+  }
+
+  Future<ToolResult> _moduleExport(
+    Map<String, dynamic> args,
+    String? sessionId,
+  ) async {
+    final ModuleRegistry? registry = modules;
+    if (registry == null) {
+      return const ToolResult(
+        ok: false,
+        llmOutput: 'Module management is not available in this build.',
+      );
+    }
+    final String name = args['name']?.toString() ?? '';
+    if (name.trim().isEmpty) {
+      return const ToolResult(
+        ok: false,
+        llmOutput: 'Missing module name. Call module_list first.',
+      );
+    }
+    // The zip lands inside THIS chat's sandbox (exports/), so the user
+    // finds it in the File Manager / can share it — never outside.
+    final Directory base = await resolveBaseDir(sessionId);
+    final ChatModule? module = await registry.get(name);
+    if (module == null) {
+      return ToolResult(ok: false, llmOutput: 'Module not installed: $name');
+    }
+    final String fileName = '${module.name}-v${module.manifest.version}.zip';
+    final String target =
+        '${base.path}${Platform.pathSeparator}exports'
+        '${Platform.pathSeparator}$fileName';
+    final ModuleExportResult result = await registry.exportToZip(name, target);
+    return ToolResult(
+      ok: result.ok,
+      llmOutput: result.ok
+          ? '${result.message}. Archive: exports/$fileName — the user can '
+                'share or reinstall it from the File Manager.'
+          : result.message,
+      displayText: result.ok ? 'exported $fileName' : 'export failed',
+    );
+  }
+
+  Future<ToolResult> _moduleStageRepair(
+    Map<String, dynamic> args,
+    String? sessionId,
+  ) async {
+    final ModuleRegistry? registry = modules;
+    if (registry == null) {
+      return const ToolResult(
+        ok: false,
+        llmOutput: 'Module management is not available in this build.',
+      );
+    }
+    final String path = args['path']?.toString() ?? '';
+    if (path.trim().isEmpty) {
+      return const ToolResult(
+        ok: false,
+        llmOutput:
+            'Missing zip path. Build the repaired module folder in this '
+            'workspace (module.json + entry at the folder root), zip it '
+            'with zip_file, then pass that zip path here.',
+      );
+    }
+    final Directory base = await resolveBaseDir(sessionId);
+    final String? resolved = _resolveFile(base, path)?.path;
+    if (resolved == null) {
+      return const ToolResult(
+        ok: false,
+        llmOutput:
+            'Invalid path: the zip must live inside THIS chat workspace '
+            '(no traversal).',
+      );
+    }
+    if (!File(resolved).existsSync()) {
+      return ToolResult(ok: false, llmOutput: 'ZIP not found: $path');
+    }
+    final ModuleInstallResult validation = await registry.validateZip(resolved);
+    if (!validation.ok || validation.module == null) {
+      return ToolResult(
+        ok: false,
+        llmOutput:
+            'The zip is not a valid module — fix it and retry: '
+            '${validation.message}',
+      );
+    }
+    final ModuleManifest m = validation.module!.manifest;
+    return ToolResult(
+      ok: true,
+      llmOutput:
+          'Valid module zip: ${m.name} v${m.version} '
+          '(permissions: ${m.permissions.isEmpty ? '(none)' : m.permissions.map((p) => p.name).join(',')}). '
+          'A confirmation card is shown to the user — the module is NOT '
+          'installed until the user taps Install. Tell the user what you '
+          'fixed and why they should (or should not) install it.',
+      displayText: 'repair ready: ${m.name} v${m.version}',
+      data: <String, dynamic>{
+        'zipPath': resolved,
+        'name': m.name,
+        'version': m.version,
+        'title': m.title.isEmpty ? m.name : m.title,
+        'permissions': m.permissions.map((p) => p.name).toList(),
+      },
+    );
+  }
 }

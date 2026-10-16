@@ -1,4 +1,7 @@
 import 'dart:async';
+
+import 'package:meta/meta.dart';
+
 import 'dart:convert';
 import 'dart:io';
 
@@ -52,6 +55,7 @@ class ChatState {
     this.pendingModule,
     this.activeModules = const <String>[],
     this.setupRequest,
+    this.pendingModuleInstall,
   });
 
   final String? sessionId;
@@ -77,6 +81,10 @@ class ChatState {
   /// Null when no active module is missing required setup input.
   final ModuleSetupRequest? setupRequest;
 
+  /// Repaired module zip staged by the agent (`module_stage_repair`) and
+  /// awaiting the user's Install/Discard decision on the card.
+  final ModuleInstallRequest? pendingModuleInstall;
+
   static const Object _unset = Object();
 
   ChatState copyWith({
@@ -89,6 +97,7 @@ class ChatState {
     Object? pendingModule = _unset,
     List<String>? activeModules,
     Object? setupRequest = _unset,
+    Object? pendingModuleInstall = _unset,
   }) => ChatState(
     sessionId: sessionId ?? this.sessionId,
     title: title ?? this.title,
@@ -103,6 +112,9 @@ class ChatState {
     setupRequest: setupRequest == _unset
         ? this.setupRequest
         : setupRequest as ModuleSetupRequest?,
+    pendingModuleInstall: pendingModuleInstall == _unset
+        ? this.pendingModuleInstall
+        : pendingModuleInstall as ModuleInstallRequest?,
   );
 }
 
@@ -128,6 +140,27 @@ class ModuleSetupRequest {
   /// Display heading: manifest setup title or "<title> setup".
   String get title =>
       setup.title.isNotEmpty ? setup.title : '$moduleTitle setup';
+}
+
+/// A repaired module zip the AGENT staged via `module_stage_repair` and
+/// the user has not confirmed yet. Rendered as a confirmation card;
+/// nothing is installed until the user taps Install (the trust boundary
+/// of the module doctor: the agent can prepare, the user decides).
+class ModuleInstallRequest {
+  const ModuleInstallRequest({
+    required this.zipPath,
+    required this.moduleName,
+    required this.version,
+    required this.title,
+    this.permissions = const <String>[],
+  });
+
+  /// Absolute path of the validated zip inside the session sandbox.
+  final String zipPath;
+  final String moduleName;
+  final String version;
+  final String title;
+  final List<String> permissions;
 }
 
 /// Internal state of one running (or recently run) session. Sessions run
@@ -179,6 +212,10 @@ class _SessionRun {
   /// Module activation currently blocked behind its per-chat setup form
   /// (null when nothing waits). Mirrored into the UI state on every sync.
   ModuleSetupRequest? setupRequest;
+
+  /// Repaired module zip staged by the agent and awaiting the user's
+  /// decision (in-memory per run, like [pendingModule]).
+  ModuleInstallRequest? pendingInstall;
 
   /// Absolute path of the app documents directory, resolved once per run so
   /// binary attachment notes can advertise the documents-relative path the
@@ -672,6 +709,76 @@ class ChatController extends Notifier<ChatState> {
       );
     }
     return null;
+  }
+
+  /// Installs the staged repaired module (user tapped Install on the
+  /// confirmation card). The zip goes through the FULL [installFromZip]
+  /// pipeline again (zip-slip, size caps, atomic replace) — staging only
+  /// ever validated it. Posts a module message with the outcome, clears
+  /// the card and refreshes the module lists. Returns true on success.
+  Future<bool> installStagedModule() async {
+    final ModuleInstallRequest? pending = _pendingInstallForActiveSession();
+    if (pending == null) return false;
+    final AppStrings strings = appStringsFor(
+      ref.read(settingsProvider).languageCode,
+    );
+    _clearPendingInstall();
+    final ModuleInstallResult result = await ref
+        .read(moduleRegistryProvider)
+        .installFromZip(pending.zipPath);
+    ref.invalidate(moduleListProvider);
+    final String? sessionId = _activeSessionId;
+    final _SessionRun? run = sessionId == null ? null : _runs[sessionId];
+    if (run != null) {
+      run.messages.add(
+        ChatMessage.assistant(
+          result.ok
+              ? strings.moduleRepairInstalled(pending.moduleName)
+              : strings.moduleRepairInstallFailed(result.message),
+          moduleName: result.ok ? pending.moduleName : null,
+        ),
+      );
+      _sync(run);
+      await _persist(run);
+    } else if (_activeSessionId != null) {
+      state = state.copyWith(
+        messages: [
+          ...state.messages,
+          ChatMessage.assistant(
+            result.ok
+                ? strings.moduleRepairInstalled(pending.moduleName)
+                : strings.moduleRepairInstallFailed(result.message),
+            moduleName: result.ok ? pending.moduleName : null,
+          ),
+        ],
+      );
+    }
+    return result.ok;
+  }
+
+  /// Discards the staged repair card (user tapped Discard). The zip file
+  /// stays in the chat workspace — the agent may iterate on it.
+  void discardStagedModule() {
+    _clearPendingInstall();
+  }
+
+  /// Test hook: stages a repair card without running the agent loop.
+  @visibleForTesting
+  void debugStageRepairForTest(ModuleInstallRequest request) {
+    state = state.copyWith(pendingModuleInstall: request);
+  }
+
+  ModuleInstallRequest? _pendingInstallForActiveSession() {
+    final String? sessionId = _activeSessionId;
+    if (sessionId == null) return state.pendingModuleInstall;
+    return _runs[sessionId]?.pendingInstall ?? state.pendingModuleInstall;
+  }
+
+  void _clearPendingInstall() {
+    final String? sessionId = _activeSessionId;
+    final _SessionRun? run = sessionId == null ? null : _runs[sessionId];
+    if (run != null) run.pendingInstall = null;
+    state = state.copyWith(pendingModuleInstall: null);
   }
 
   /// Rewrites a previously sent user message and REGENERATES everything
@@ -1186,6 +1293,29 @@ class ChatController extends Notifier<ChatState> {
           call.screenshotPath = result.screenshotPath;
           if (call.name == 'todo_write') {
             run.latestTodos = parseTodoList(call.arguments['todos']);
+          }
+          // Module doctor: a validated repair zip becomes a pending
+          // install card. The tool only validated; the USER decides.
+          if (call.name == 'module_stage_repair' &&
+              result.ok &&
+              result.data != null) {
+            run.pendingInstall = ModuleInstallRequest(
+              zipPath: result.data!['zipPath']?.toString() ?? '',
+              moduleName: result.data!['name']?.toString() ?? '',
+              version: result.data!['version']?.toString() ?? '',
+              title:
+                  result.data!['title']?.toString() ??
+                  result.data!['name']?.toString() ??
+                  '',
+              permissions: <String>[
+                ...((result.data!['permissions'] as List<dynamic>?) ??
+                        const <dynamic>[])
+                    .map((Object? p) => p.toString()),
+              ],
+            );
+            if (_activeSessionId == run.sessionId) {
+              state = state.copyWith(pendingModuleInstall: run.pendingInstall);
+            }
           }
           _sync(run);
 

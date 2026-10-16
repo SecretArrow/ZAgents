@@ -341,6 +341,43 @@ class ModuleInstallResult {
   final ChatModule? module;
 }
 
+/// Outcome of [ModuleRegistry.exportToZip].
+class ModuleExportResult {
+  const ModuleExportResult({
+    required this.ok,
+    required this.message,
+    this.zipPath,
+    this.fileCount = 0,
+  });
+
+  final bool ok;
+  final String message;
+  final String? zipPath;
+  final int fileCount;
+}
+
+/// Outcome of the read-only module file access behind the module doctor
+/// tools (`module_read`). A directory query returns [listing].
+class ModuleFileRead {
+  const ModuleFileRead({
+    required this.ok,
+    required this.message,
+    this.content,
+    this.listing = const <String>[],
+  });
+
+  final bool ok;
+
+  /// Human-readable error when [ok] is false.
+  final String message;
+
+  /// File content (size-capped) when a file was read.
+  final String? content;
+
+  /// `path (size)` lines when the request was a directory listing.
+  final List<String> listing;
+}
+
 /// Installs, lists and removes chat modules ("plugins").
 ///
 /// A module is a ZIP archive containing at least one JavaScript entry
@@ -458,89 +495,21 @@ class ModuleRegistry {
     } catch (e) {
       return ModuleInstallResult(ok: false, message: 'Cannot read ZIP: $e');
     }
-    if (bytes.length > maxZipBytes) {
-      return const ModuleInstallResult(
-        ok: false,
-        message: 'ZIP is too large (limit 48 MB)',
-      );
-    }
-    final Archive archive;
-    try {
-      archive = ZipDecoder().decodeBytes(bytes);
-    } catch (e) {
-      return ModuleInstallResult(ok: false, message: 'Not a valid ZIP: $e');
-    }
-    if (archive.isEmpty) {
-      return const ModuleInstallResult(ok: false, message: 'ZIP is empty');
-    }
-
-    // Unwrap the common "single top-level directory" layout.
-    final String prefix = _commonRootPrefix(archive);
-    final Map<String, ArchiveFile> files = <String, ArchiveFile>{};
-    int totalBytes = 0;
-    for (final ArchiveFile entry in archive) {
-      if (entry.isFile) {
-        final String rel = entry.name
-            .replaceAll('\\', '/')
-            .substring(prefix.length);
-        if (rel.isEmpty) continue;
-        files[rel] = entry;
-        totalBytes += entry.size;
-        if (files.length > maxFileCount) {
-          return ModuleInstallResult(
-            ok: false,
-            message: 'Module has too many files (limit $maxFileCount)',
-          );
-        }
-        if (entry.size > maxFileBytes) {
-          return const ModuleInstallResult(
-            ok: false,
-            message: 'Module file exceeds 8 MB (limit per file)',
-          );
-        }
-        if (totalBytes > maxTotalBytes) {
-          return const ModuleInstallResult(
-            ok: false,
-            message: 'Module unpacked size exceeds 32 MB (limit)',
-          );
-        }
-      }
-    }
-    if (files.isEmpty) {
-      return const ModuleInstallResult(
-        ok: false,
-        message: 'ZIP contains no files',
-      );
-    }
-
-    // Manifest: module.json > package.json > synthesized from ZIP name.
-    final Map<String, dynamic>? manifestJson =
-        _readJsonFile(files, 'module.json') ??
-        _readJsonFile(files, 'package.json');
     final String zipStem = zipPath
         .split(Platform.pathSeparator)
         .last
         .replaceAll(RegExp(r'\.zip$', caseSensitive: false), '');
-    final ModuleManifest manifest = ModuleManifest.fromJson(<String, dynamic>{
-      ...?manifestJson,
-      'name': (manifestJson?['name'] as String?)?.isNotEmpty == true
-          ? manifestJson!['name']
-          : zipStem,
-      'entry':
-          (manifestJson?['entry'] ?? manifestJson?['main'])?.toString() ??
-          'main.js',
-    });
-    if (manifest.name.isEmpty) {
-      return const ModuleInstallResult(
-        ok: false,
-        message: 'Module name is missing (add module.json)',
-      );
-    }
-    if (!files.containsKey(manifest.entry)) {
-      return ModuleInstallResult(
-        ok: false,
-        message: 'Entry point "${manifest.entry}" not found in the ZIP',
-      );
+    final (
+      ModuleInstallResult? error,
+      Map<String, ArchiveFile>? files,
+      ModuleManifest? manifest,
+    ) = _intakeZip(
+      bytes,
+      zipStem,
+    );
+    if (error != null || files == null || manifest == null) {
+      return error ??
+          const ModuleInstallResult(ok: false, message: 'Invalid module ZIP');
     }
 
     // zip-slip check BEFORE any byte touches the disk.
@@ -597,6 +566,330 @@ class ModuleRegistry {
       } catch (_) {}
       return ModuleInstallResult(ok: false, message: 'Install failed: $e');
     }
+  }
+
+  /// Validates a module ZIP WITHOUT installing it — the dry-run behind
+  /// the agent's `module_stage_repair` tool. Runs the exact same intake
+  /// (size caps, unwrap, manifest parse, entry check, zip-slip) as
+  /// [installFromZip], so a zip that validates here installs there.
+  Future<ModuleInstallResult> validateZip(String zipPath) async {
+    final File zip = File(zipPath);
+    if (!zip.existsSync()) {
+      return const ModuleInstallResult(
+        ok: false,
+        message: 'ZIP file not found',
+      );
+    }
+    final List<int> bytes;
+    try {
+      bytes = await zip.readAsBytes();
+    } catch (e) {
+      return ModuleInstallResult(ok: false, message: 'Cannot read ZIP: $e');
+    }
+    final String zipStem = zipPath
+        .split(Platform.pathSeparator)
+        .last
+        .replaceAll(RegExp(r'\.zip$', caseSensitive: false), '');
+    final (
+      ModuleInstallResult? error,
+      Map<String, ArchiveFile>? files,
+      ModuleManifest? manifest,
+    ) = _intakeZip(
+      bytes,
+      zipStem,
+    );
+    if (error != null || files == null || manifest == null) {
+      return error ??
+          const ModuleInstallResult(ok: false, message: 'Invalid module ZIP');
+    }
+    for (final String rel in files.keys) {
+      if (!_isSafeRelativePath(rel)) {
+        return ModuleInstallResult(
+          ok: false,
+          message: 'Unsafe ZIP entry rejected: $rel',
+        );
+      }
+    }
+    return ModuleInstallResult(
+      ok: true,
+      message:
+          'Valid module ZIP: ${manifest.name} v${manifest.version} '
+          '(${files.length} files, entry ${manifest.entry})',
+      module: ChatModule(
+        manifest: manifest,
+        path: '',
+        installedAt: DateTime.now(),
+      ),
+    );
+  }
+
+  /// Shared ZIP intake for install/validate: compressed-size cap,
+  /// decode, top-level-directory unwrap, file-count/size caps and
+  /// manifest resolution (module.json > package.json > zip stem).
+  /// Returns `(error, null, null)` on any rejection.
+  (ModuleInstallResult?, Map<String, ArchiveFile>?, ModuleManifest?) _intakeZip(
+    List<int> bytes,
+    String zipStem,
+  ) {
+    if (bytes.length > maxZipBytes) {
+      return (
+        const ModuleInstallResult(
+          ok: false,
+          message: 'ZIP is too large (limit 48 MB)',
+        ),
+        null,
+        null,
+      );
+    }
+    final Archive archive;
+    try {
+      archive = ZipDecoder().decodeBytes(bytes);
+    } catch (e) {
+      return (
+        ModuleInstallResult(ok: false, message: 'Not a valid ZIP: $e'),
+        null,
+        null,
+      );
+    }
+    if (archive.isEmpty) {
+      return (
+        const ModuleInstallResult(ok: false, message: 'ZIP is empty'),
+        null,
+        null,
+      );
+    }
+
+    // Unwrap the common "single top-level directory" layout.
+    final String prefix = _commonRootPrefix(archive);
+    final Map<String, ArchiveFile> files = <String, ArchiveFile>{};
+    int totalBytes = 0;
+    for (final ArchiveFile entry in archive) {
+      if (entry.isFile) {
+        final String rel = entry.name
+            .replaceAll('\\', '/')
+            .substring(prefix.length);
+        if (rel.isEmpty) continue;
+        files[rel] = entry;
+        totalBytes += entry.size;
+        if (files.length > maxFileCount) {
+          return (
+            ModuleInstallResult(
+              ok: false,
+              message: 'Module has too many files (limit $maxFileCount)',
+            ),
+            null,
+            null,
+          );
+        }
+        if (entry.size > maxFileBytes) {
+          return (
+            const ModuleInstallResult(
+              ok: false,
+              message: 'Module file exceeds 8 MB (limit per file)',
+            ),
+            null,
+            null,
+          );
+        }
+        if (totalBytes > maxTotalBytes) {
+          return (
+            const ModuleInstallResult(
+              ok: false,
+              message: 'Module unpacked size exceeds 32 MB (limit)',
+            ),
+            null,
+            null,
+          );
+        }
+      }
+    }
+    if (files.isEmpty) {
+      return (
+        const ModuleInstallResult(ok: false, message: 'ZIP contains no files'),
+        null,
+        null,
+      );
+    }
+
+    // Manifest: module.json > package.json > synthesized from ZIP name.
+    final Map<String, dynamic>? manifestJson =
+        _readJsonFile(files, 'module.json') ??
+        _readJsonFile(files, 'package.json');
+    final ModuleManifest manifest = ModuleManifest.fromJson(<String, dynamic>{
+      ...?manifestJson,
+      'name': (manifestJson?['name'] as String?)?.isNotEmpty == true
+          ? manifestJson!['name']
+          : zipStem,
+      'entry':
+          (manifestJson?['entry'] ?? manifestJson?['main'])?.toString() ??
+          'main.js',
+    });
+    if (manifest.name.isEmpty) {
+      return (
+        const ModuleInstallResult(
+          ok: false,
+          message: 'Module name is missing (add module.json)',
+        ),
+        null,
+        null,
+      );
+    }
+    if (!files.containsKey(manifest.entry)) {
+      return (
+        ModuleInstallResult(
+          ok: false,
+          message: 'Entry point "${manifest.entry}" not found in the ZIP',
+        ),
+        null,
+        null,
+      );
+    }
+    return (null, files, manifest);
+  }
+
+  /// Exports an installed module directory into a ZIP archive at
+  /// [targetPath] (absolute). The module root becomes the zip root —
+  /// the exact layout [installFromZip] consumes, so an export can be
+  /// re-installed (or edited and re-installed) directly. Used by the
+  /// Modules screen (share sheet) and the agent's `module_export` tool.
+  Future<ModuleExportResult> exportToZip(String name, String targetPath) async {
+    final ChatModule? module = await get(name);
+    if (module == null) {
+      return ModuleExportResult(
+        ok: false,
+        message: 'Module not installed: $name',
+      );
+    }
+    final Directory dir = Directory(module.path);
+    if (!dir.existsSync()) {
+      return const ModuleExportResult(
+        ok: false,
+        message: 'Module directory is missing',
+      );
+    }
+    try {
+      final Archive archive = Archive();
+      int count = 0;
+      await for (final FileSystemEntity entity in dir.list(
+        recursive: true,
+        followLinks: false,
+      )) {
+        if (entity is! File) continue;
+        final String rel = entity.path
+            .substring(dir.path.length)
+            .replaceAll(Platform.pathSeparator, '/')
+            .replaceFirst(RegExp(r'^/'), '');
+        if (rel.isEmpty || rel.startsWith('.')) continue;
+        final List<int> bytes = await entity.readAsBytes();
+        archive.addFile(ArchiveFile(rel, bytes.length, bytes));
+        count++;
+      }
+      if (count == 0) {
+        return const ModuleExportResult(
+          ok: false,
+          message: 'Module directory is empty',
+        );
+      }
+      final File target = File(targetPath);
+      await target.parent.create(recursive: true);
+      await target.writeAsBytes(ZipEncoder().encode(archive));
+      return ModuleExportResult(
+        ok: true,
+        message:
+            'Exported ${module.name} v${module.manifest.version} '
+            '($count files)',
+        zipPath: target.path,
+        fileCount: count,
+      );
+    } catch (e) {
+      return ModuleExportResult(ok: false, message: 'Export failed: $e');
+    }
+  }
+
+  /// Read-only file access into an INSTALLED module's directory — the
+  /// module doctor tools (`module_read`). An empty [relPath], `.` or a
+  /// trailing `/` yields a recursive file listing instead of content.
+  /// Traversal outside the module directory is rejected; content is
+  /// capped at [maxReadChars] characters.
+  static const int maxReadChars = 20000;
+
+  Future<ModuleFileRead> readModuleFile(String name, String relPath) async {
+    final ChatModule? module = await get(name);
+    if (module == null) {
+      return ModuleFileRead(ok: false, message: 'Module not installed: $name');
+    }
+    final Directory dir = Directory(module.path);
+    if (!dir.existsSync()) {
+      return const ModuleFileRead(
+        ok: false,
+        message: 'Module directory is missing',
+      );
+    }
+    final String raw = relPath.trim().replaceAll('\\', '/');
+    if (raw.isEmpty || raw == '.' || raw.endsWith('/')) {
+      return _listModuleFiles(dir, raw);
+    }
+    if (!_isSafeRelativePath(raw)) {
+      return const ModuleFileRead(
+        ok: false,
+        message: 'Invalid path (traversal is not allowed)',
+      );
+    }
+    final File file = File(
+      '${dir.path}${Platform.pathSeparator}'
+      '${raw.replaceAll('/', Platform.pathSeparator)}',
+    );
+    if (!file.existsSync()) {
+      return ModuleFileRead(ok: false, message: 'File not found: $raw');
+    }
+    try {
+      String content = await file.readAsString();
+      if (content.length > maxReadChars) {
+        content =
+            '${content.substring(0, maxReadChars)}\n... [truncated at '
+            '$maxReadChars characters]';
+      }
+      return ModuleFileRead(ok: true, message: raw, content: content);
+    } catch (e) {
+      return ModuleFileRead(
+        ok: false,
+        message: 'File could not be read as text: $e',
+      );
+    }
+  }
+
+  Future<ModuleFileRead> _listModuleFiles(
+    Directory dir,
+    String relPrefix,
+  ) async {
+    final List<String> lines = <String>[];
+    try {
+      await for (final FileSystemEntity entity in dir.list(
+        recursive: true,
+        followLinks: false,
+      )) {
+        if (lines.length >= maxFileCount) break;
+        final String rel = entity.path
+            .substring(dir.path.length)
+            .replaceAll(Platform.pathSeparator, '/')
+            .replaceFirst(RegExp(r'^/'), '');
+        if (rel.startsWith('.')) continue;
+        if (entity is File) {
+          final int size = entity.lengthSync();
+          lines.add('$rel ($size bytes)');
+        } else if (entity is Directory) {
+          lines.add('$rel/');
+        }
+      }
+    } catch (e) {
+      return ModuleFileRead(ok: false, message: 'Listing failed: $e');
+    }
+    lines.sort();
+    return ModuleFileRead(
+      ok: true,
+      message: relPrefix.isEmpty ? '.' : relPrefix,
+      listing: lines,
+    );
   }
 
   /// Resolves the shared npm library root used alongside the module dir

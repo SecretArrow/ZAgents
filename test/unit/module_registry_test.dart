@@ -449,4 +449,175 @@ void main() {
       },
     );
   });
+
+  group('validateZip (dry-run intake, no install)', () {
+    test('a valid module zip validates and reports its manifest', () async {
+      final File zip = File('${tempDir.path}${Platform.pathSeparator}good.zip')
+        ..writeAsBytesSync(
+          textZip(<String, String>{
+            'module.json': '{"name":"doctor","version":"2.0.0"}',
+            'main.js': 'module.exports = 1;',
+          }),
+        );
+      final ModuleInstallResult result = await registry.validateZip(zip.path);
+      expect(result.ok, isTrue, reason: result.message);
+      expect(result.message, contains('doctor v2.0.0'));
+      expect(result.module!.manifest.name, 'doctor');
+      // NOTHING was installed.
+      expect(await registry.get('doctor'), isNull);
+    });
+
+    test('a zip with a missing entry fails validation', () async {
+      final File zip = File('${tempDir.path}${Platform.pathSeparator}bad.zip')
+        ..writeAsBytesSync(
+          textZip(<String, String>{'module.json': '{"name":"noentry"}'}),
+        );
+      final ModuleInstallResult result = await registry.validateZip(zip.path);
+      expect(result.ok, isFalse);
+      expect(result.message, contains('Entry point'));
+    });
+
+    test('a missing file / non-zip fails validation', () async {
+      expect(
+        (await registry.validateZip(
+          '${tempDir.path}${Platform.pathSeparator}ghost.zip',
+        )).ok,
+        isFalse,
+      );
+      final File zip = File('${tempDir.path}${Platform.pathSeparator}junk.zip')
+        ..writeAsBytesSync(<int>[1, 2, 3, 4]);
+      expect((await registry.validateZip(zip.path)).ok, isFalse);
+    });
+  });
+
+  group('exportToZip (module doctor export)', () {
+    test('exports an installed module into a re-installable zip', () async {
+      final File zip = File('${tempDir.path}${Platform.pathSeparator}orig.zip')
+        ..writeAsBytesSync(
+          textZip(<String, String>{
+            'module.json': '{"name":"exportme","version":"1.5.0"}',
+            'main.js': 'module.exports = "hi";',
+            'lib/util.js': 'exports.id = 7;',
+          }),
+        );
+      await registry.installFromZip(zip.path);
+
+      final String target =
+          '${tempDir.path}${Platform.pathSeparator}out'
+          '${Platform.pathSeparator}exportme.zip';
+      final ModuleExportResult result = await registry.exportToZip(
+        'exportme',
+        target,
+      );
+      expect(result.ok, isTrue, reason: result.message);
+      expect(result.fileCount, 3);
+      expect(File(target).existsSync(), isTrue);
+
+      // Roundtrip: the export installs again with the same manifest.
+      final ModuleInstallResult reinstall = await registry.installFromZip(
+        target,
+      );
+      expect(reinstall.ok, isTrue, reason: reinstall.message);
+      final ChatModule? module = await registry.get('exportme');
+      expect(module, isNotNull);
+      expect(module!.manifest.version, '1.5.0');
+      expect(
+        File(
+          '${module.path}${Platform.pathSeparator}lib${Platform.pathSeparator}util.js',
+        ).existsSync(),
+        isTrue,
+      );
+    });
+
+    test('unknown or missing modules fail cleanly', () async {
+      expect(
+        (await registry.exportToZip(
+          'ghost',
+          '${tempDir.path}${Platform.pathSeparator}x.zip',
+        )).ok,
+        isFalse,
+      );
+    });
+  });
+
+  group('readModuleFile (read-only doctor access)', () {
+    Future<void> installFixture() async {
+      final File zip =
+          File('${tempDir.path}${Platform.pathSeparator}readme.zip')
+            ..writeAsBytesSync(
+              textZip(<String, String>{
+                'module.json': '{"name":"reader","version":"1.0.0"}',
+                'main.js': 'module.exports = { run() {} };',
+                'lib/helper.js': 'exports.f = () => 1;',
+              }),
+            );
+      await registry.installFromZip(zip.path);
+    }
+
+    test('reads a file from the module directory', () async {
+      await installFixture();
+      final ModuleFileRead read = await registry.readModuleFile(
+        'reader',
+        'lib/helper.js',
+      );
+      expect(read.ok, isTrue);
+      expect(read.content, contains('exports.f'));
+    });
+
+    test('an empty path lists the module files instead', () async {
+      await installFixture();
+      final ModuleFileRead listing = await registry.readModuleFile(
+        'reader',
+        '',
+      );
+      expect(listing.ok, isTrue);
+      // 3 files + the lib/ directory line.
+      expect(listing.listing, hasLength(4));
+      expect(
+        listing.listing.any((String l) => l.startsWith('main.js')),
+        isTrue,
+      );
+      expect(
+        listing.listing.any((String l) => l.startsWith('lib/helper.js')),
+        isTrue,
+      );
+    });
+
+    test('traversal outside the module directory is rejected', () async {
+      await installFixture();
+      expect(
+        (await registry.readModuleFile('reader', '../registry.json')).ok,
+        isFalse,
+      );
+      expect(
+        (await registry.readModuleFile(
+          'reader',
+          '..${Platform.pathSeparator}x',
+        )).ok,
+        isFalse,
+      );
+      expect(
+        (await registry.readModuleFile('reader', '/etc/passwd')).ok,
+        isFalse,
+      );
+    });
+
+    test('oversized content is truncated, not failed', () async {
+      final File zip = File('${tempDir.path}${Platform.pathSeparator}big.zip')
+        ..writeAsBytesSync(
+          textZip(<String, String>{
+            'module.json': '{"name":"bigmod","version":"1.0.0"}',
+            'main.js': '// ${'x' * 30000}',
+          }),
+        );
+      await registry.installFromZip(zip.path);
+      final ModuleFileRead read = await registry.readModuleFile(
+        'bigmod',
+        'main.js',
+      );
+      expect(read.ok, isTrue);
+      expect(read.content!.length, lessThan(21000));
+      expect(read.content, contains('[truncated'));
+    });
+  });
 }

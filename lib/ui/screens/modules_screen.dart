@@ -1,8 +1,11 @@
+import 'dart:io';
+
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:share_plus/share_plus.dart';
 
 import '../../di.dart';
 import '../../services/module_registry.dart';
@@ -152,6 +155,38 @@ class _ModulesScreenState extends ConsumerState<ModulesScreen> {
     if (navigator.canPop()) navigator.pop();
   }
 
+  /// Exports the module as an installable ZIP (module root = zip root)
+  /// into `<docs>/modules-export/` and opens the share sheet so the user
+  /// can save or send it. The archive re-installs via the normal path.
+  Future<void> _export(ChatModule module) async {
+    final AppStrings strings = stringsOf(context);
+    try {
+      final Directory base = await ref.read(documentsDirProvider)();
+      final String target =
+          '${base.path}${Platform.pathSeparator}modules-export'
+          '${Platform.pathSeparator}'
+          '${module.name}-v${module.manifest.version}.zip';
+      final ModuleExportResult result = await ref
+          .read(moduleRegistryProvider)
+          .exportToZip(module.name, target);
+      if (!result.ok || result.zipPath == null) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context)
+          ..hideCurrentSnackBar()
+          ..showSnackBar(SnackBar(content: Text(strings.operationFailed)));
+        return;
+      }
+      await SharePlus.instance.share(
+        ShareParams(files: <XFile>[XFile(result.zipPath!)]),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(SnackBar(content: Text(strings.operationFailed)));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final AppStrings strings = stringsOf(context);
@@ -298,6 +333,15 @@ class _ModulesScreenState extends ConsumerState<ModulesScreen> {
                                 label: Text(strings.moduleStartNewChat),
                               ),
                               const Spacer(),
+                              IconButton(
+                                key: Key('module-export-${module.name}'),
+                                tooltip: strings.moduleExportTooltip,
+                                icon: Icon(
+                                  Icons.ios_share_rounded,
+                                  color: context.zMuted,
+                                ),
+                                onPressed: () => _export(module),
+                              ),
                               IconButton(
                                 key: Key('module-remove-${module.name}'),
                                 tooltip: strings.delete,

@@ -4,12 +4,24 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:zagents/services/file_system_service.dart';
+import 'package:archive/archive.dart';
 import 'package:zagents/services/js_runtime.dart';
+import 'package:zagents/services/module_registry.dart';
 import 'package:zagents/services/npm_service.dart';
 import 'package:zagents/services/tool_executor.dart';
 import 'package:zagents/services/web_fetcher.dart';
 
 import '../support/test_doubles.dart';
+
+/// Builds a module zip file on disk.
+File writeModuleZip(String path, Map<String, String> files) {
+  final Archive archive = Archive();
+  files.forEach((String name, String content) {
+    final List<int> bytes = content.codeUnits;
+    archive.addFile(ArchiveFile(name, bytes.length, bytes));
+  });
+  return File(path)..writeAsBytesSync(ZipEncoder().encode(archive));
+}
 
 void main() {
   late Directory tempDir;
@@ -723,6 +735,164 @@ void main() {
       );
       expect(result.ok, isFalse);
       expect(result.llmOutput, contains('Invalid destination'));
+    });
+  });
+  group('module doctor tools', () {
+    late ModuleRegistry registry;
+    late ToolExecutor doctor;
+
+    setUp(() async {
+      registry = ModuleRegistry(resolveBaseDir: () async => tempDir);
+      doctor = ToolExecutor(
+        browser: scriptedBrowser,
+        resolveBaseDir: (_) async => tempDir,
+        isAutomationEnabled: () => true,
+        modules: registry,
+      );
+    });
+
+    test('module_list reports installed modules', () async {
+      writeModuleZip('${tempDir.path}/list.zip', <String, String>{
+        'module.json':
+            '{"name":"listing","version":"3.1.0","title":"Listing",'
+            '"permissions":["storage","agent"]}',
+        'main.js': '//',
+      });
+      await registry.installFromZip('${tempDir.path}/list.zip');
+
+      final ToolResult result = await doctor.execute('module_list', {});
+      expect(result.ok, isTrue);
+      expect(result.llmOutput, contains('listing v3.1.0'));
+      expect(result.llmOutput, contains('permissions: storage,agent'));
+      expect(result.llmOutput, contains('setup form: no'));
+    });
+
+    test('module_list degrades gracefully without a registry', () async {
+      final ToolResult result = await executor.execute('module_list', {});
+      expect(result.ok, isFalse);
+    });
+
+    test('module_read reads a file and lists with an empty path', () async {
+      writeModuleZip('${tempDir.path}/read.zip', <String, String>{
+        'module.json': '{"name":"inspect","version":"1.0.0"}',
+        'main.js': 'module.exports = 42;',
+        'lib/x.js': 'exports.n = 1;',
+      });
+      await registry.installFromZip('${tempDir.path}/read.zip');
+
+      final ToolResult content = await doctor.execute(
+        'module_read',
+        <String, dynamic>{'name': 'inspect', 'path': 'main.js'},
+      );
+      expect(content.ok, isTrue);
+      expect(content.llmOutput, contains('module.exports = 42;'));
+
+      final ToolResult listing = await doctor.execute(
+        'module_read',
+        <String, dynamic>{'name': 'inspect', 'path': ''},
+      );
+      expect(listing.ok, isTrue);
+      expect(listing.llmOutput, contains('lib/x.js'));
+    });
+
+    test('module_read rejects traversal and unknown modules', () async {
+      writeModuleZip('${tempDir.path}/trav.zip', <String, String>{
+        'module.json': '{"name":"trav","version":"1.0.0"}',
+        'main.js': '//',
+      });
+      await registry.installFromZip('${tempDir.path}/trav.zip');
+
+      expect(
+        (await doctor.execute('module_read', <String, dynamic>{
+          'name': 'trav',
+          'path': '../registry.json',
+        })).ok,
+        isFalse,
+      );
+      expect(
+        (await doctor.execute('module_read', <String, dynamic>{
+          'name': 'ghost',
+          'path': 'main.js',
+        })).ok,
+        isFalse,
+      );
+      expect(
+        (await doctor.execute('module_read', <String, dynamic>{})).ok,
+        isFalse,
+      );
+    });
+
+    test('module_export writes an installable zip into the sandbox', () async {
+      writeModuleZip('${tempDir.path}/exp.zip', <String, String>{
+        'module.json': '{"name":"expmod","version":"9.9.9"}',
+        'main.js': '// export target',
+      });
+      await registry.installFromZip('${tempDir.path}/exp.zip');
+
+      final ToolResult result = await doctor.execute(
+        'module_export',
+        <String, dynamic>{'name': 'expmod'},
+      );
+      expect(result.ok, isTrue);
+      expect(result.llmOutput, contains('exports/expmod-v9.9.9.zip'));
+      expect(
+        File('${tempDir.path}/exports/expmod-v9.9.9.zip').existsSync(),
+        isTrue,
+      );
+
+      // The export round-trips through installFromZip.
+      final ModuleInstallResult reinstall = await registry.installFromZip(
+        '${tempDir.path}/exports/expmod-v9.9.9.zip',
+      );
+      expect(reinstall.ok, isTrue, reason: reinstall.message);
+    });
+
+    test(
+      'module_stage_repair validates and carries staging metadata',
+      () async {
+        writeModuleZip('${tempDir.path}/repaired.zip', <String, String>{
+          'module.json':
+              '{"name":"fixme","version":"1.0.1","permissions":["storage"]}',
+          'main.js': 'module.exports = "fixed";',
+        });
+
+        final ToolResult result = await doctor.execute(
+          'module_stage_repair',
+          <String, dynamic>{'path': 'repaired.zip'},
+        );
+        expect(result.ok, isTrue, reason: result.llmOutput);
+        expect(result.data, isNotNull);
+        expect(result.data!['name'], 'fixme');
+        expect(result.data!['version'], '1.0.1');
+        expect(result.data!['permissions'], <String>['storage']);
+        expect(File(result.data!['zipPath'] as String).existsSync(), isTrue);
+        // Staging does NOT install.
+        expect(await registry.get('fixme'), isNull);
+      },
+    );
+
+    test('module_stage_repair rejects invalid zips and traversal', () async {
+      // Not a module: missing entry.
+      writeModuleZip('${tempDir.path}/notamodule.zip', <String, String>{
+        'module.json': '{"name":"nope"}',
+      });
+      final ToolResult invalid = await doctor.execute(
+        'module_stage_repair',
+        <String, dynamic>{'path': 'notamodule.zip'},
+      );
+      expect(invalid.ok, isFalse);
+      expect(invalid.llmOutput, contains('not a valid module'));
+
+      // Traversal out of the workspace.
+      expect(
+        (await doctor.execute('module_stage_repair', <String, dynamic>{
+          'path': '../../etc/passwd',
+        })).ok,
+        isFalse,
+      );
+
+      // Missing path argument.
+      expect((await doctor.execute('module_stage_repair', {})).ok, isFalse);
     });
   });
 }

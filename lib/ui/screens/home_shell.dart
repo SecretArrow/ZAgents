@@ -12,6 +12,7 @@ import '../widgets/chat_body.dart';
 import '../widgets/chat_drawer.dart';
 import '../widgets/composer.dart';
 import '../widgets/model_picker.dart';
+import '../widgets/module_repair_card.dart';
 import '../widgets/module_setup_sheet.dart';
 import 'settings_screen.dart';
 
@@ -123,6 +124,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
         child: Column(
           children: <Widget>[
             const Expanded(child: ChatBody()),
+            const ModuleRepairCard(),
             const _ModuleSetupBanner(),
             const Composer(),
           ],

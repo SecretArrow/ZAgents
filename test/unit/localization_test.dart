@@ -157,7 +157,26 @@ void main() {
     expect(id.randomUaAccept, 'Ya, acak');
     expect(id.randomUaDecline, 'Pertahankan');
     expect(id.createdBy('Maragung'), 'Dibuat oleh Maragung');
-    expect(en.aboutBody, contains('v1.25.0'));
-    expect(id.aboutBody, contains('v1.25.0'));
+    expect(en.aboutBody, contains('v1.26.0'));
+    expect(id.aboutBody, contains('v1.26.0'));
+  });
+
+  test('module doctor strings are localized in both bundles', () {
+    final AppStrings en = appStringsFor('en');
+    final AppStrings id = appStringsFor('id');
+    expect(en.moduleRepairCardTitle('m', '1'), contains('Module repair'));
+    expect(en.moduleRepairCardBody('storage'), contains('storage'));
+    expect(en.moduleRepairInstall, 'Install');
+    expect(en.moduleRepairDiscard, 'Discard');
+    expect(en.moduleRepairInstalled('m'), contains('m'));
+    expect(en.moduleRepairInstallFailed('x'), contains('x'));
+    expect(en.moduleExportTooltip, 'Export ZIP');
+    expect(id.moduleRepairCardTitle('m', '1'), contains('Perbaikan modul'));
+    expect(id.moduleRepairCardBody('storage'), contains('izin'));
+    expect(id.moduleRepairInstall, 'Install');
+    expect(id.moduleRepairDiscard, 'Buang');
+    expect(id.moduleRepairInstalled('m'), contains('m'));
+    expect(id.moduleRepairInstallFailed('x'), contains('x'));
+    expect(id.moduleExportTooltip, 'Ekspor ZIP');
   });
 }

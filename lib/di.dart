@@ -297,6 +297,10 @@ final toolExecutorProvider = Provider<ToolExecutor>((ref) {
     js: ref.watch(jsRuntimeProvider),
     npm: ref.watch(npmServiceProvider),
     fsFor: sandbox.fsFor,
+    // Module doctor tools (module_list/read/export/stage_repair): the
+    // registry is the ONLY doorway to installed modules, and the repair
+    // tool merely stages a user-confirmed install card.
+    modules: ref.watch(moduleRegistryProvider),
     // Server-side fetcher behind the `web_fetch` tool; it carries the same
     // User-Agent identity the embedded browser uses.
     fetcher: WebFetcher(

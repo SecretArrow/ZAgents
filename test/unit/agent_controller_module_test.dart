@@ -341,6 +341,137 @@ void main() {
     expect(state.setupRequest, isNull);
   });
 
+  group('module doctor (agent repair staging)', () {
+    // A ScriptedLlmClient consumes turns in order across sends: send #1
+    // consumes the plain turn (establishes the session), send #2 runs
+    // the module_stage_repair tool call + the final answer.
+    Future<ProviderContainer> repairContainer() => container(
+      turns: <AssistantTurn>[
+        AssistantTurn(content: 'ok'),
+        AssistantTurn(
+          content: '',
+          toolCalls: <ToolCallRequest>[
+            ToolCallRequest(
+              id: 't-repair',
+              name: 'module_stage_repair',
+              argumentsJson: jsonEncode(<String, dynamic>{
+                'path': 'repaired.zip',
+              }),
+            ),
+          ],
+        ),
+        AssistantTurn(content: 'Repair staged for your confirmation.'),
+      ],
+    );
+
+    Future<File> writeRepairZip(ProviderContainer c) async {
+      final String sessionId = c.read(chatControllerProvider).sessionId!;
+      final Directory sandbox = Directory(
+        '${tempDir.path}${Platform.pathSeparator}sessions'
+        '${Platform.pathSeparator}$sessionId',
+      )..createSync(recursive: true);
+      final String manifest = jsonEncode(<String, dynamic>{
+        'name': 'fixme',
+        'version': '1.0.1',
+        'title': 'Fixme',
+        'permissions': <String>['storage'],
+      });
+      final List<int> manifestBytes = utf8.encode(manifest);
+      final List<int> entryBytes = utf8.encode('module.exports = "fixed";');
+      final Archive archive = Archive()
+        ..addFile(
+          ArchiveFile('module.json', manifestBytes.length, manifestBytes),
+        )
+        ..addFile(ArchiveFile('main.js', entryBytes.length, entryBytes));
+      return File('${sandbox.path}${Platform.pathSeparator}repaired.zip')
+        ..writeAsBytesSync(ZipEncoder().encode(archive));
+    }
+
+    test('a staged repair surfaces the confirmation card, install goes '
+        'through the full pipeline', () async {
+      final ProviderContainer c = await repairContainer();
+      final ChatController controller = c.read(chatControllerProvider.notifier);
+
+      await controller.send('start');
+      final File zip = await writeRepairZip(c);
+      await controller.send('perbaiki modulnya');
+
+      final ChatState state = c.read(chatControllerProvider);
+      expect(state.pendingModuleInstall, isNotNull);
+      expect(state.pendingModuleInstall!.moduleName, 'fixme');
+      expect(state.pendingModuleInstall!.version, '1.0.1');
+      expect(state.pendingModuleInstall!.permissions, <String>['storage']);
+      expect(state.pendingModuleInstall!.zipPath, zip.path);
+      // Staging alone does NOT install.
+      expect(await c.read(moduleRegistryProvider).get('fixme'), isNull);
+
+      // User taps Install: full installFromZip pipeline runs.
+      final bool ok = await controller.installStagedModule();
+      expect(ok, isTrue);
+      expect((await c.read(moduleRegistryProvider).get('fixme')), isNotNull);
+      final ChatState after = c.read(chatControllerProvider);
+      expect(after.pendingModuleInstall, isNull);
+      expect(
+        after.messages.last.content,
+        contains(appStringsFor('en').moduleRepairInstalled('fixme')),
+      );
+    });
+
+    test('discard clears the card without installing', () async {
+      final ProviderContainer c = await repairContainer();
+      final ChatController controller = c.read(chatControllerProvider.notifier);
+
+      await controller.send('start');
+      await writeRepairZip(c);
+      await controller.send('perbaiki modulnya');
+      expect(c.read(chatControllerProvider).pendingModuleInstall, isNotNull);
+
+      controller.discardStagedModule();
+      expect(c.read(chatControllerProvider).pendingModuleInstall, isNull);
+      expect(await c.read(moduleRegistryProvider).get('fixme'), isNull);
+    });
+
+    test('an invalid repair zip never stages a card', () async {
+      final ProviderContainer c = await container(
+        turns: <AssistantTurn>[
+          AssistantTurn(content: 'ok'),
+          AssistantTurn(
+            content: '',
+            toolCalls: <ToolCallRequest>[
+              ToolCallRequest(
+                id: 't-bad',
+                name: 'module_stage_repair',
+                argumentsJson: jsonEncode(<String, dynamic>{
+                  'path': 'broken.zip',
+                }),
+              ),
+            ],
+          ),
+          AssistantTurn(content: 'Sorry, the zip was invalid.'),
+        ],
+      );
+      final ChatController controller = c.read(chatControllerProvider.notifier);
+
+      await controller.send('start');
+      final String sessionId = c.read(chatControllerProvider).sessionId!;
+      final Directory sandbox = Directory(
+        '${tempDir.path}${Platform.pathSeparator}sessions'
+        '${Platform.pathSeparator}$sessionId',
+      )..createSync(recursive: true);
+      File('${sandbox.path}${Platform.pathSeparator}broken.zip')
+          .writeAsBytesSync(<int>[1, 2, 3]);
+
+      await controller.send('perbaiki');
+
+      expect(c.read(chatControllerProvider).pendingModuleInstall, isNull);
+      final ChatState state = c.read(chatControllerProvider);
+      final ChatMessage toolMessage = state.messages
+          .where((m) => m.toolCalls.isNotEmpty)
+          .last;
+      expect(toolMessage.toolCalls.single.status, ToolStatus.error);
+    });
+  });
+
   group('per-chat setup gate (form before first run)', () {
     Future<ChatModule> installSetupModule(String name) => installModule(
       name,

@@ -409,6 +409,15 @@ abstract class AppStrings {
   String get moduleSetupPerChatHint;
   String get moduleSetupRequiredTag;
 
+  // -- Module doctor (v1.26.0) --------------------------------------------
+  String moduleRepairCardTitle(String name, String version);
+  String moduleRepairCardBody(String permissions);
+  String get moduleRepairInstall;
+  String get moduleRepairDiscard;
+  String moduleRepairInstalled(String name);
+  String moduleRepairInstallFailed(String error);
+  String get moduleExportTooltip;
+
   // -- Controller messages (no BuildContext available) -----------------
   String get missingApiKey;
   String get modelNotSet;
@@ -1024,7 +1033,7 @@ class AppStringsEn implements AppStrings {
   String get aboutSection => 'About';
   @override
   String get aboutBody =>
-      'ZAgents v1.25.0 — an Android clone of the chat.z.ai agent mode UI, '
+      'ZAgents v1.26.0 — an Android clone of the chat.z.ai agent mode UI, '
       'with custom OpenAI-compatible providers (OpenRouter, InferHub, '
       'Z.AI, OpenAI, DeepSeek, Groq, and more), per-provider API keys, '
       'light/dark themes, parallel multi-session chat with background '
@@ -1199,6 +1208,30 @@ class AppStringsEn implements AppStrings {
       'Stored for THIS chat only — other chats ask again.';
   @override
   String get moduleSetupRequiredTag => 'required';
+
+  // -- Module doctor (v1.26.0) --------------------------------------------
+  @override
+  String moduleRepairCardTitle(String name, String version) =>
+      'Module repair ready: $name v$version';
+  @override
+  String moduleRepairCardBody(String permissions) =>
+      'The agent prepared a repaired module and it passed validation. '
+      'Installing replaces the installed copy — its per-chat data in THIS '
+      'chat is kept. Review the permissions before installing: '
+      '$permissions';
+  @override
+  String get moduleRepairInstall => 'Install';
+  @override
+  String get moduleRepairDiscard => 'Discard';
+  @override
+  String moduleRepairInstalled(String name) =>
+      'Module “$name” installed from the agent’s repair. If it needs '
+      'setup in this chat, the form appears before the next run.';
+  @override
+  String moduleRepairInstallFailed(String error) =>
+      'The repaired module could not be installed: $error';
+  @override
+  String get moduleExportTooltip => 'Export ZIP';
 
   // -- Controller messages ----------------------------------------------
   @override
@@ -1830,7 +1863,7 @@ class AppStringsId implements AppStrings {
   String get aboutSection => 'Tentang';
   @override
   String get aboutBody =>
-      'ZAgents v1.25.0 — klon UI agent mode chat.z.ai untuk Android, '
+      'ZAgents v1.26.0 — klon UI agent mode chat.z.ai untuk Android, '
       'dengan custom provider OpenAI-compatible (OpenRouter, InferHub, '
       'Z.AI, OpenAI, DeepSeek, Groq, dan lainnya), API key per-provider, '
       'tema terang/gelap, multi-sesi paralel dengan proses latar '
@@ -2007,6 +2040,30 @@ class AppStringsId implements AppStrings {
       'Disimpan hanya untuk chat INI — chat lain akan bertanya lagi.';
   @override
   String get moduleSetupRequiredTag => 'wajib';
+
+  // -- Module doctor (v1.26.0) --------------------------------------------
+  @override
+  String moduleRepairCardTitle(String name, String version) =>
+      'Perbaikan modul siap: $name v$version';
+  @override
+  String moduleRepairCardBody(String permissions) =>
+      'Agent menyiapkan modul hasil perbaikan dan lolos validasi. '
+      'Menginstall akan menggantikan salinan terpasang — data per-chat di '
+      'chat INI tetap disimpan. Periksa izinnya sebelum menginstall: '
+      '$permissions';
+  @override
+  String get moduleRepairInstall => 'Install';
+  @override
+  String get moduleRepairDiscard => 'Buang';
+  @override
+  String moduleRepairInstalled(String name) =>
+      'Modul “$name” terpasang dari hasil perbaikan agent. Bila butuh '
+      'setup di chat ini, formulirnya muncul sebelum run berikutnya.';
+  @override
+  String moduleRepairInstallFailed(String error) =>
+      'Modul hasil perbaikan gagal terpasang: $error';
+  @override
+  String get moduleExportTooltip => 'Ekspor ZIP';
 
   // -- Controller messages ----------------------------------------------
   @override

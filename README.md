@@ -209,6 +209,14 @@ OpenAI-compatible: **OpenRouter, InferHub, Z.AI, OpenAI, DeepSeek, Groq, dan lai
   (banner + bottom sheet, tombol "Simpan dan jalankan"); setelah dikirim,
   nilai tersimpan per chat (kunci kooperatif `zagentsSetup`), modul
   langsung dijalankan, dan chat lain bertanya lagi sesuai desain isolasi.
+  **Module doctor (v1.26.0)**: chat agent bisa mendiagnosis modul
+  (`module_list`, `module_read` — baca-saja), mengekspor modul terpasang
+  ke ZIP (`module_export` atau tombol Ekspor ZIP di layar Modul), dan
+  menyiapkan perbaikan (`module_stage_repair`) yang SELALU butuh
+  konfirmasimu di kartu "Install/Buang" sebelum dipasang — agent tidak
+  pernah bisa memasang modul diam-diam. Intersepsi gagal-setup (v1.25.0):
+  modul yang error "setup required" memunculkan formulirnya otomatis
+  atau panduan solusi (zip lama / perintah setup).
   Dokumentasi SDK resmi tersedia in-app (EN/ID)
   di layar Modul, dan lengkap di repo: **`sdk/`** (SDK + definisi
   TypeScript), **`samples/`** (5 modul contoh siap pasang, termasuk
