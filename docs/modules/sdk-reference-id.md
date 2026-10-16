@@ -64,6 +64,9 @@ dihormati; tanpa keduanya, nama file ZIP menjadi nama modul.
 3. Entry point dieksekusi sekali per aktivasi. Output console dan nilai
    kembaliannya dikirim ke percakapan sebagai pesan modul; agen dapat
    membaca dan membahasnya.
+   **Ramah-shebang:** baris `#!...` di paling atas (gaya Node) dan BOM
+   UTF-8 dihapus otomatis sebelum source dijalankan, jadi skrip yang
+   disalin langsung dari proyek Node tetap jalan apa adanya.
    **Tips setup:** saat modul dipilih di chat BARU (staged), pesan pertama
    yang Anda kirim diekspos ke modul sebagai `zagents.info.prompt` —
    modul bisa menyediakan perintah seperti `setup <kredensial>`, `status`

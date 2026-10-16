@@ -116,4 +116,36 @@ void main() {
       expect(inner.events, <String>['dispose']);
     });
   });
+
+  group('zNormalizeJsSource — BOM + shebang before new Function', () {
+    test('plain source passes through untouched', () {
+      const String src = 'const x = 1;\nmodule.exports = x;\n';
+      expect(zNormalizeJsSource(src), src);
+    });
+
+    test('leading shebang line is stripped (Node loader parity)', () {
+      const String src = '#!/usr/bin/env node\nconst x = 1;\n';
+      expect(zNormalizeJsSource(src), 'const x = 1;\n');
+    });
+
+    test('shebang with CRLF endings is stripped', () {
+      const String src = '#!/usr/bin/env node\r\nconst x = 1;\n';
+      expect(zNormalizeJsSource(src), 'const x = 1;\n');
+    });
+
+    test('shebang-only source collapses to empty', () {
+      expect(zNormalizeJsSource('#!/usr/bin/env node'), '');
+    });
+
+    test('UTF-8 BOM is stripped before the shebang check', () {
+      const String src = '\uFEFF#!/usr/bin/env node\nconst x = 1;\n';
+      expect(zNormalizeJsSource(src), 'const x = 1;\n');
+      expect(zNormalizeJsSource('\uFEFFconst x = 1;\n'), 'const x = 1;\n');
+    });
+
+    test('a hash mid-file is NOT touched (only byte 0 counts)', () {
+      const String src = 'const color = 1;\n// #not-a-shebang\n';
+      expect(zNormalizeJsSource(src), src);
+    });
+  });
 }

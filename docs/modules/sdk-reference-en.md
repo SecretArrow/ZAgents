@@ -64,6 +64,9 @@ honored; with neither, the ZIP file name becomes the module name.
 3. The entry point executes once per activation. Console output and the
    return value are posted into the conversation as a module message; the
    agent can read and discuss it.
+   **Shebang-friendly:** a leading `#!...` line (Node-style shebang) and a
+   UTF-8 BOM are stripped automatically before the source runs, so scripts
+   copied straight from a Node project work as-is.
    **Setup tip:** when a module is selected on a NEW chat (staged), the
    first message you send is exposed to the module as `zagents.info.prompt`
    — modules can implement commands like `setup <credentials>`, `status`

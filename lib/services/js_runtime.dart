@@ -5,6 +5,25 @@ import 'dart:io';
 
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 
+/// Normalizes a JavaScript source before it enters the CommonJS registry:
+/// a UTF-8 BOM and a leading shebang line (`#!...`) are stripped.
+///
+/// Node strips both in its module loader, so scripts copied straight from
+/// Node keep working. The embedded runtime evaluates sources through
+/// `new Function(...)`, where the body is parsed with the function-body
+/// grammar — a `#!` first line there is an "Invalid or unexpected token",
+/// not a comment. Stripping happens only at byte 0, exactly like the spec
+/// allows for Script/Module parse goals.
+String zNormalizeJsSource(String source) {
+  String src = source;
+  if (src.startsWith('\uFEFF')) src = src.substring(1);
+  if (src.startsWith('#!')) {
+    final int nl = src.indexOf('\n');
+    src = nl < 0 ? '' : src.substring(nl + 1);
+  }
+  return src;
+}
+
 /// Result of one embedded-JS execution.
 class JsRunResult {
   const JsRunResult({required this.output, this.error, this.result});
@@ -536,12 +555,16 @@ window.__zDone = false;
     final Map<String, Map<String, dynamic>> registry =
         <String, Map<String, dynamic>>{};
     final String userEntry = '__user__.js';
+    final String normalized = zNormalizeJsSource(code);
     final Map<String, String> userDeps = <String, String>{};
-    for (final String spec in _extractRequires(code)) {
+    for (final String spec in _extractRequires(normalized)) {
       final String? resolved = _resolveSpec(spec, moduleRoots);
       if (resolved != null) userDeps[spec] = resolved;
     }
-    registry[userEntry] = <String, dynamic>{'src': code, 'deps': userDeps};
+    registry[userEntry] = <String, dynamic>{
+      'src': normalized,
+      'deps': userDeps,
+    };
 
     final Queue<String> pending = Queue<String>.of(userDeps.values);
     final Set<String> seen = <String>{...userDeps.values};
@@ -549,7 +572,7 @@ window.__zDone = false;
       final String path = pending.removeFirst();
       String source;
       try {
-        source = File(path).readAsStringSync();
+        source = zNormalizeJsSource(File(path).readAsStringSync());
       } catch (_) {
         continue;
       }
@@ -742,7 +765,7 @@ window.__zDone = false;
     // next to the injected `zagents` global.
     if (invocation.sdkSource.trim().isNotEmpty) {
       registry['zagents-sdk.js'] = <String, dynamic>{
-        'src': invocation.sdkSource,
+        'src': zNormalizeJsSource(invocation.sdkSource),
         'deps': const <String, String>{},
       };
       final Map<String, dynamic> entry = registry['__user__.js']!;

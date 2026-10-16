@@ -259,7 +259,14 @@ void main() {
         '{"name":"e2e-module","version":"1.0.0","title":"E2E Module",'
         '"description":"Counts activations per chat",'
         '"permissions":["storage","chat"],"entry":"main.js"}';
-    const String entrySource = '''
+    // The entry source starts with a Node-style shebang ON PURPOSE: the
+    // embedded runtime evaluates sources through `new Function`, where a
+    // leading `#!` line would be "Invalid or unexpected token" unless the
+    // registry strips it first (Node's loader does the same). Guards the
+    // shebang regression end-to-end on a real WebView.
+    const String entrySource =
+        '#!/usr/bin/env node\n'
+        '''
 async function main() {
   const previous = (await zagents.storage.get('count')) || 0;
   await zagents.storage.set('count', previous + 1);
