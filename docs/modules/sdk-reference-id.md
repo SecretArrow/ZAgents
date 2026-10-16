@@ -1,4 +1,4 @@
-# ZAgents Module SDK (v1.24.1)
+# ZAgents Module SDK (v1.24.2)
 
 Panduan resmi untuk membuat **modul chat**: paket JavaScript yang berjalan
 secara native di dalam sesi chat ZAgents, terisolasi per chat seperti

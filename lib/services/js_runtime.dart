@@ -476,7 +476,13 @@ window.__zDone = false;
     );
   };
   window.zagents = {
-    info: window.__zInfo,
+    // LIVE reference: the runner injects window.__zInfo AFTER this
+    // bootstrap evaluated (the module bootstrap runs once per WebView,
+    // the per-run info arrives with the runner script). A plain
+    // `info: window.__zInfo` would copy `undefined` forever — a getter
+    // resolves at access time, so zagents.info always reflects the
+    // CURRENT run (name, sessionId, prompt, userAgent, setup values).
+    get info() { return window.__zInfo; },
     log: function(){
       return zCall('log', { text: Array.prototype.map.call(arguments, fmt).join(' ') });
     },
