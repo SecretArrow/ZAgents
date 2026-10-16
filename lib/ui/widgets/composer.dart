@@ -89,7 +89,8 @@ class _ComposerState extends ConsumerState<Composer> {
 
   /// Interactive module menu for `/plugins`: every installed module with
   /// its active state; tapping activates (with consent) in the current
-  /// chat, and a footer shortcut opens the Modules manager.
+  /// chat, the trailing trash button removes (uninstalls) the module
+  /// after confirmation, and a footer shortcut opens the Modules manager.
   Future<void> _openModuleSheet() async {
     final AppStrings strings = stringsOf(context);
     ref.invalidate(moduleListProvider);
@@ -209,12 +210,31 @@ class _ComposerState extends ConsumerState<Composer> {
                                         maxLines: 1,
                                         overflow: TextOverflow.ellipsis,
                                       ),
-                                trailing: Text(
-                                  'v${module.manifest.version}',
-                                  style: TextStyle(
-                                    fontSize: 11,
-                                    color: context.zMuted,
-                                  ),
+                                trailing: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: <Widget>[
+                                    Text(
+                                      'v${module.manifest.version}',
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        color: context.zMuted,
+                                      ),
+                                    ),
+                                    IconButton(
+                                      key: Key(
+                                        'plugin-sheet-remove-${module.name}',
+                                      ),
+                                      tooltip: strings.delete,
+                                      visualDensity: VisualDensity.compact,
+                                      icon: Icon(
+                                        Icons.delete_outline_rounded,
+                                        size: 18,
+                                        color: context.zMuted,
+                                      ),
+                                      onPressed: () =>
+                                          _removeModule(sheetRef, module),
+                                    ),
+                                  ],
                                 ),
                                 onTap: () async {
                                   final NavigatorState sheetNav = Navigator.of(
@@ -251,6 +271,51 @@ class _ComposerState extends ConsumerState<Composer> {
         },
       ),
     );
+  }
+
+  /// Uninstalls a module straight from the `/plugins` sheet: confirm →
+  /// deactivate in the current chat (when active) → delete from the
+  /// registry → refresh the list. The sheet stays open so the user can
+  /// continue managing modules.
+  Future<void> _removeModule(WidgetRef sheetRef, ChatModule module) async {
+    final AppStrings strings = stringsOf(context);
+    final bool? confirmed = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext dialogContext) => AlertDialog(
+        title: Text(strings.moduleRemoveTitle),
+        content: Text(strings.moduleRemoveBody(module.name)),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: Text(strings.cancel),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: Text(strings.delete),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    final bool removed = await sheetRef
+        .read(moduleRegistryProvider)
+        .remove(module.name);
+    if (!removed) return;
+    if (sheetRef
+        .read(chatControllerProvider)
+        .activeModules
+        .contains(module.name)) {
+      await sheetRef
+          .read(chatControllerProvider.notifier)
+          .deactivateModule(module.name);
+    }
+    sheetRef.invalidate(moduleListProvider);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(content: Text(strings.moduleRemoved(module.name))),
+      );
   }
 
   Future<void> _pickFile() async {

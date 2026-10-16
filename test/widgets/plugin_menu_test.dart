@@ -190,6 +190,54 @@ void main() {
     );
   });
 
+  testWidgets('the /plugins sheet uninstalls a module after confirmation', (
+    WidgetTester tester,
+  ) async {
+    registry.seed(_module('weather'));
+    registry.seed(_module('clock'));
+    await tester.pumpWidget(host());
+    await tester.pumpAndSettle();
+
+    await tester.enterText(find.byKey(const Key('composer-field')), '/plugins');
+    await tester.tap(find.byKey(const Key('send-button')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('plugin-sheet-item-weather')), findsOneWidget);
+
+    // Trash button on the weather tile opens the confirmation dialog.
+    await tester.tap(find.byKey(const Key('plugin-sheet-remove-weather')));
+    await tester.pumpAndSettle();
+    expect(find.text('Remove module?'), findsOneWidget);
+
+    // Confirm → the registry removes it, the list refreshes, snackbar.
+    await tester.tap(find.widgetWithText(FilledButton, 'Delete'));
+    await tester.pumpAndSettle();
+    expect(registry.removed, <String>['weather']);
+    expect(find.text('Module removed: weather'), findsOneWidget);
+    expect(find.byKey(const Key('plugin-sheet-item-weather')), findsNothing);
+    // The untouched module stays listed.
+    expect(find.byKey(const Key('plugin-sheet-item-clock')), findsOneWidget);
+  });
+
+  testWidgets('cancelling the uninstall dialog keeps the module installed', (
+    WidgetTester tester,
+  ) async {
+    registry.seed(_module('weather'));
+    await tester.pumpWidget(host());
+    await tester.pumpAndSettle();
+
+    await tester.enterText(find.byKey(const Key('composer-field')), '/plugins');
+    await tester.tap(find.byKey(const Key('send-button')));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('plugin-sheet-remove-weather')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(TextButton, 'Cancel'));
+    await tester.pumpAndSettle();
+
+    expect(registry.removed, isEmpty);
+    expect(find.byKey(const Key('plugin-sheet-item-weather')), findsOneWidget);
+  });
+
   testWidgets('module messages render with a module badge', (
     WidgetTester tester,
   ) async {

@@ -150,6 +150,13 @@ final moduleRuntimeProvider = Provider<ModuleRuntime>(
             .trim(),
     resolveNpmModulesRoot: () async =>
         ref.read(moduleRegistryProvider).npmModulesRoot(),
+    // Modules present the SAME identity the user picked in Settings →
+    // User Agent — exposed read-only as zagents.info.userAgent and sent
+    // (un-overridable) on every zagents.http request.
+    resolveUserAgent: () {
+      final AppSettings settings = ref.read(settingsProvider);
+      return ref.read(userAgentManagerProvider).resolve(settings.uaMode).ua;
+    },
     httpTransport:
         (
           String url,

@@ -27,6 +27,12 @@ export interface ZAgentsInfo {
   /** Entry point that is executing (e.g. `main.js`). */
   entry: string;
   /**
+   * The User-Agent identity this module presents — always the one the
+   * user picked in Settings → User Agent. The same string is sent on
+   * every `zagents.http` request and cannot be overridden by headers.
+   */
+  userAgent?: string;
+  /**
    * The user message that activated this run — present only on the
    * staged-module path (module picked on a fresh draft, first message
    * sent). Use it for setup commands (`setup ...`, `status`, `reset`).
@@ -55,7 +61,9 @@ export interface ZAgentsHttpRequestOptions {
   method?: 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH' | string;
   /** Request body (stringified by the bridge). */
   body?: string | null;
-  /** Extra request headers (hop-by-hop fields are dropped by the bridge). */
+  /** Extra request headers (hop-by-hop fields AND `User-Agent` are dropped
+   *  by the bridge — the identity always comes from Settings → User Agent,
+   *  readable via `zagents.info.userAgent`). */
   headers?: Record<string, string>;
   /** Whole-request cap in milliseconds (max 60000). */
   timeoutMs?: number;

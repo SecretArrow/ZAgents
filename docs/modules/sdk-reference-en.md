@@ -76,7 +76,14 @@ Available as a global — or `const zagents = require('zagents-sdk')`.
 ### `zagents.info`
 Metadata: `name`, `version`, `title`, `sessionId`, `entry` — plus `prompt`
 (the activating user message) when the run was triggered by a staged
-module's first message.
+module's first message, and `userAgent` — the identity the user picked in
+Settings → User Agent.
+
+**User-Agent policy:** modules always present the identity configured in
+Settings → User Agent. `zagents.http` sends it on every request, and a
+module-supplied `User-Agent` header is dropped by the bridge — the
+setting wins, always. Read the active identity via
+`zagents.info.userAgent` (for display or debugging only).
 
 ### `zagents.log(...)` — always available
 Console output, captured into the module message.
@@ -125,7 +132,9 @@ if (res.ok) {
 ```
 
 Options: `method`, `body`, `headers` (hop-by-hop fields like `Host` and
-`Connection` are dropped), `timeoutMs` (whole-request cap, max 60000) and
+`Connection` are dropped; `User-Agent` is dropped too — requests always
+carry the Settings → User Agent identity, see `zagents.info.userAgent`),
+`timeoutMs` (whole-request cap, max 60000) and
 `headOnly: true` — return as soon as the status line + headers arrive,
 without reading the body (kick off an SSE stream without waiting for it
 to end).

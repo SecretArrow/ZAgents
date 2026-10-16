@@ -728,4 +728,87 @@ void main() {
       expect(responses.single!['error'], contains('No API key'));
     });
   });
+
+  group('User-Agent integration — Settings → User Agent (v1.23.0)', () {
+    test(
+      'a module-supplied user-agent header is dropped by the bridge',
+      () async {
+        final ChatModule mod = module(
+          name: 'netmod',
+          permissions: const <ModulePermission>{ModulePermission.network},
+        );
+        // Mixed-case spelling: header dropped, legitimate headers pass.
+        await runAndCall(
+          's',
+          mod,
+          mod.manifest.permissions,
+          ops: <Map<String, dynamic>>[
+            <String, dynamic>{
+              'zop': 'http.request',
+              'url': 'https://app.example.com/api',
+              'headers': <String, dynamic>{
+                'User-Agent': 'module-forged-identity/9.9',
+                'Accept': 'application/json',
+              },
+            },
+          ],
+        );
+        expect(lastHttpHeaders!.containsKey('user-agent'), isFalse);
+        expect(lastHttpHeaders!['accept'], 'application/json');
+        // Lowercase spelling must be blocked just the same.
+        await runAndCall(
+          's',
+          mod,
+          mod.manifest.permissions,
+          ops: <Map<String, dynamic>>[
+            <String, dynamic>{
+              'zop': 'http.request',
+              'url': 'https://app.example.com/api2',
+              'headers': <String, dynamic>{
+                'user-agent': 'another-forged-identity',
+              },
+            },
+          ],
+        );
+        // The identity header NEVER reaches the transport — the host adds
+        // the Settings-picked UA itself (see di.dart wiring).
+        expect(lastHttpHeaders!.containsKey('user-agent'), isFalse);
+      },
+    );
+
+    test(
+      'zagents.info.userAgent carries the resolved settings identity',
+      () async {
+        runtime = ModuleRuntime(
+          js: js,
+          resolveSandboxRoot: sandbox.rootFor,
+          resolveModulePath: runtime.resolveModulePath,
+          resolveSdkSource: runtime.resolveSdkSource,
+          resolveNpmModulesRoot: runtime.resolveNpmModulesRoot,
+          httpTransport: runtime.httpTransport,
+          agentCompose: runtime.agentCompose,
+          resolveUserAgent: () => 'Mozilla/5.0 (Settings pick) Chrome/141',
+        );
+        final ChatModule mod = module();
+        await runtime.run(
+          sessionId: 's',
+          module: mod,
+          granted: mod.manifest.permissions,
+        );
+        expect(
+          js.moduleInvocations.single.info['userAgent'],
+          'Mozilla/5.0 (Settings pick) Chrome/141',
+        );
+      },
+    );
+
+    test('without a resolver the info map carries no userAgent key', () async {
+      final ChatModule mod = module();
+      await runAndCall('s', mod, mod.manifest.permissions);
+      expect(
+        js.moduleInvocations.single.info.containsKey('userAgent'),
+        isFalse,
+      );
+    });
+  });
 }

@@ -27,6 +27,10 @@ typedef ModuleAgentCompose = Future<String> Function(
   AgentComposeRequest request,
 );
 
+/// Resolves the User-Agent identity modules must use — always the one the
+/// user picked in Settings → User Agent (resolved at run start).
+typedef ModuleUserAgentResolver = String? Function();
+
 /// Outcome of one chat-module execution.
 class ModuleRunResult {
   const ModuleRunResult({
@@ -102,6 +106,7 @@ class ModuleRuntime implements ModuleBridge {
     required this.resolveNpmModulesRoot,
     this.httpTransport,
     this.agentCompose,
+    this.resolveUserAgent,
   });
 
   final JsRuntime js;
@@ -121,6 +126,11 @@ class ModuleRuntime implements ModuleBridge {
 
   /// Outbound HTTP for `zagents.http` (see [ModuleHttpTransport]).
   final ModuleHttpTransport? httpTransport;
+
+  /// Resolves the User-Agent exposed to modules as `zagents.info.userAgent`
+  /// — the identity the user picked in Settings → User Agent. Modules can
+  /// read it, but they can never override it (see [_blockedRequestHeaders]).
+  final ModuleUserAgentResolver? resolveUserAgent;
 
   /// Text composer for `zagents.agent.compose` (see [ModuleAgentCompose]).
   final ModuleAgentCompose? agentCompose;
@@ -215,6 +225,11 @@ class ModuleRuntime implements ModuleBridge {
             'title': module.manifest.title,
             'sessionId': sessionId,
             'entry': module.manifest.entry,
+            // Settings → User Agent integration: modules read the identity
+            // they present (same string the transport sends via zagents.http).
+            if (resolveUserAgent?.call() case final String ua
+                when ua.isNotEmpty)
+              'userAgent': ua,
             if (activationPrompt != null && activationPrompt.isNotEmpty)
               'prompt': activationPrompt,
           },
@@ -477,9 +492,11 @@ class ModuleRuntime implements ModuleBridge {
     'error': 'Permission denied: $permission',
   };
 
-  /// Hop-by-hop / transport-owned headers a module may not set; everything
-  /// else passes through so real API integrations can send Cookie,
-  /// Authorization or Content-Type.
+  /// Hop-by-hop / transport-owned headers a module may not set, plus the
+  /// identity headers owned by the host: `user-agent` ALWAYS carries the
+  /// identity the user picked in Settings → User Agent — a module cannot
+  /// override it. Everything else passes through so real API integrations
+  /// can send Cookie, Authorization or Content-Type.
   static const Set<String> _blockedRequestHeaders = <String>{
     'host',
     'content-length',
@@ -488,6 +505,7 @@ class ModuleRuntime implements ModuleBridge {
     'transfer-encoding',
     'upgrade',
     'keep-alive',
+    'user-agent',
   };
 
   /// Normalizes the JS header object into a plain string map. Caps the

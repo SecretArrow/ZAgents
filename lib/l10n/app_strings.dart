@@ -391,6 +391,7 @@ abstract class AppStrings {
   String moduleInstallFailed(String error);
   String get moduleRemoveTitle;
   String moduleRemoveBody(String name);
+  String moduleRemoved(String name);
   String get pluginMenuTitle;
   String get pluginMenuEmpty;
   String get startWithModule;
@@ -1010,7 +1011,7 @@ class AppStringsEn implements AppStrings {
   String get aboutSection => 'About';
   @override
   String get aboutBody =>
-      'ZAgents v1.22.0 — an Android clone of the chat.z.ai agent mode UI, '
+      'ZAgents v1.23.0 — an Android clone of the chat.z.ai agent mode UI, '
       'with custom OpenAI-compatible providers (OpenRouter, InferHub, '
       'Z.AI, OpenAI, DeepSeek, Groq, and more), per-provider API keys, '
       'light/dark themes, parallel multi-session chat with background '
@@ -1036,7 +1037,10 @@ class AppStringsEn implements AppStrings {
       'this chat\'s own agent to compose every sentence on demand '
       '(zagents.agent.compose, gated and rate-shaped), send custom HTTP '
       'headers, and receive your first activation message for setup '
-      'commands.';
+      'commands. Modules always present the User-Agent identity you pick '
+      'in Settings (readable via zagents.info.userAgent, un-overridable), '
+      'and can be uninstalled by you at any time — from the Modules '
+      'screen or the /plugins menu.';
 
   @override
   String createdBy(String name) => 'Created by $name';
@@ -1146,6 +1150,8 @@ class AppStringsEn implements AppStrings {
   String moduleRemoveBody(String name) =>
       '\u201c$name\u201d and its program files will be removed. Data already stored '
       'inside individual chats stays in each chat sandbox.';
+  @override
+  String moduleRemoved(String name) => 'Module removed: $name';
   @override
   String get pluginMenuTitle => 'Modules for this chat';
   @override
@@ -1784,7 +1790,7 @@ class AppStringsId implements AppStrings {
   String get aboutSection => 'Tentang';
   @override
   String get aboutBody =>
-      'ZAgents v1.22.0 — klon UI agent mode chat.z.ai untuk Android, '
+      'ZAgents v1.23.0 — klon UI agent mode chat.z.ai untuk Android, '
       'dengan custom provider OpenAI-compatible (OpenRouter, InferHub, '
       'Z.AI, OpenAI, DeepSeek, Groq, dan lainnya), API key per-provider, '
       'tema terang/gelap, multi-sesi paralel dengan proses latar '
@@ -1810,7 +1816,10 @@ class AppStringsId implements AppStrings {
       'per chat. Modul dapat meminta agen chat ini menyusun setiap '
       'kalimat sesuai kebutuhan (zagents.agent.compose, dengan gerbang '
       'aturan), mengirim header HTTP khusus, dan menerima pesan aktivasi '
-      'pertama Anda untuk perintah setup.';
+      'pertama Anda untuk perintah setup. Modul selalu memakai identitas '
+      'User-Agent yang Anda pilih di Setelan (terbaca via '
+      'zagents.info.userAgent, tidak bisa digantikan), dan dapat Anda '
+      'hapus kapan saja — dari layar Modul atau menu /plugins.';
 
   @override
   String createdBy(String name) => 'Dibuat oleh $name';
@@ -1922,6 +1931,8 @@ class AppStringsId implements AppStrings {
       '\u201c$name\u201d beserta file programnya akan dihapus. Data yang sudah '
       'tersimpan di dalam chat masing-masing tetap berada di sandbox chat '
       'tersebut.';
+  @override
+  String moduleRemoved(String name) => 'Modul dihapus: $name';
   @override
   String get pluginMenuTitle => 'Modul untuk chat ini';
   @override

@@ -8,6 +8,10 @@ manifest `allowedHosts` allowlist.
   supported by the bridge).
 * Entry: `main.js` — `zagents.http.request`, `res.ok/status/text()`,
   progressive output via `zagents.chat.emit`.
+* User-Agent integration: requests always carry the identity the user
+  picked in Settings → User Agent — readable via `zagents.info.userAgent`,
+  and a module-supplied `User-Agent` header is dropped by the bridge
+  (the setting wins).
 * Security demo: changing the code to call any other host fails with
   `Host is not allowed by this module (allowedHosts)` — enforced by the
   native bridge, not by the module itself.

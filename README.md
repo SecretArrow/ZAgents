@@ -192,7 +192,9 @@ OpenAI-compatible: **OpenRouter, InferHub, Z.AI, OpenAI, DeepSeek, Groq, dan lai
   `require('zagents-sdk')`): `zagents.storage` (key/value per chat),
   `zagents.fs` (file, terkurung di direktori state modul per chat),
   `zagents.http` (jaringan dengan izin + allowlist host, header khusus,
-  `timeoutMs`, `headOnly` untuk SSE),
+  `timeoutMs`, `headOnly` untuk SSE; identitas User-Agent SELALU dari
+  Setelan → User Agent pengguna — `zagents.info.userAgent` terbaca dan
+  tidak bisa digantikan modul),
   `zagents.chat.emit` (kirim output ke percakapan), `zagents.info` (termasuk
   `prompt` — pesan aktivasi pertama, untuk perintah setup modul) dan
   **`zagents.agent.compose` (v1.22.0, izin `agent`)** — modul meminta
@@ -210,7 +212,10 @@ OpenAI-compatible: **OpenRouter, InferHub, Z.AI, OpenAI, DeepSeek, Groq, dan lai
   izin diminta saat aktivasi dan ditegakkan dua lapis (SDK + bridge
   Dart), batas sumber daya (timeout, cap output & storage), dan
   penghentian modul yang aman (nonaktif/Stop membatalkan eksekusi tanpa
-  kehilangan data yang sudah tersimpan).
+  kehilangan data yang sudah tersimpan). **Uninstall oleh pengguna**:
+  modul dihapus langsung dari layar Modul atau menu /plugins (ikon
+  tempat sampah + konfirmasi) — file program dihapus, chat yang memakai
+  otomatis dinonaktifkan, data per-chat tetap aman di sandbox masing-masing.
 - **Pencarian + paging universal (v1.6.0)** — SEMUA list di aplikasi memakai
   widget `PagedList` yang sama: **5 item per halaman** (termasuk dropdown model),
   kolom pencarian, pager first/prev/next/last, dan empty state "No results".

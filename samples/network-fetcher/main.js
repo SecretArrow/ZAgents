@@ -13,9 +13,17 @@
 const ENDPOINT = 'https://api.github.com/zen';
 
 async function main() {
+  // User-Agent integration: every module presents the identity the user
+  // picked in Settings → User Agent. The same string is sent on every
+  // zagents.http request and cannot be overridden by headers.
+  const ua = zagents.info.userAgent || '(unknown)';
   await zagents.chat.emit('Fetching ' + ENDPOINT + ' …');
+  zagents.log('User-Agent (from Settings):', ua);
 
-  const res = await zagents.http.request(ENDPOINT, { method: 'GET' });
+  const res = await zagents.http.request(ENDPOINT, {
+    method: 'GET',
+    headers: { 'User-Agent': 'this header is dropped — Settings wins' },
+  });
   zagents.log('HTTP status:', res.status);
 
   if (!res.ok) {

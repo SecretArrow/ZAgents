@@ -76,7 +76,14 @@ Tersedia sebagai global — atau `const zagents = require('zagents-sdk')`.
 ### `zagents.info`
 Metadata: `name`, `version`, `title`, `sessionId`, `entry` — ditambah
 `prompt` (pesan pengguna yang mengaktivasi) saat run dipicu pesan pertama
-modul yang di-stage di draft baru.
+modul yang di-stage di draft baru, dan `userAgent` — identitas yang
+dipilih pengguna di Setelan → User Agent.
+
+**Kebijakan User-Agent:** modul selalu memakai identitas yang dikonfigurasi
+di Setelan → User Agent. `zagents.http` mengirimkannya di setiap request,
+dan header `User-Agent` dari modul dibuang oleh bridge — setelan SELALU
+menang. Baca identitas aktif lewat `zagents.info.userAgent` (hanya untuk
+tampilan atau debugging).
 
 ### `zagents.log(...)` — selalu tersedia
 Output console, ditangkap ke dalam pesan modul.
@@ -125,7 +132,9 @@ if (res.ok) {
 ```
 
 Opsi: `method`, `body`, `headers` (field hop-by-hop seperti `Host` dan
-`Connection` dibuang), `timeoutMs` (batas seluruh request, maks 60000)
+`Connection` dibuang; `User-Agent` juga dibuang — request selalu membawa
+identitas Setelan → User Agent, lihat `zagents.info.userAgent`),
+`timeoutMs` (batas seluruh request, maks 60000)
 dan `headOnly: true` — kembali begitu status line + header tiba, tanpa
 membaca body (memulai stream SSE tanpa menunggu stream itu selesai).
 
