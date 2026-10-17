@@ -8,6 +8,7 @@ import 'package:zagents/di.dart';
 import 'package:zagents/models/models.dart';
 import 'package:zagents/services/app_lock_service.dart';
 import 'package:zagents/services/background_service.dart';
+import 'package:zagents/services/backup_service.dart';
 import 'package:zagents/services/browser_automation.dart';
 import 'package:zagents/services/chat_store.dart';
 import 'package:zagents/services/context_repository.dart';
@@ -196,6 +197,9 @@ class ThrowingChatStore implements ChatStore {
   @override
   Future<Directory> Function() get resolveBaseDir => _explode;
 
+  @override
+  bool get offloadIsolate => false;
+
   Future<Directory> _explode() async =>
       throw const FileSystemException('disk exploded');
 
@@ -344,6 +348,21 @@ class RecordingBackgroundRun implements BackgroundRun {
     pendingSession = null;
     return value;
   }
+
+  /// Battery-optimization state reported to the settings screen (v1.28.0).
+  bool batteryExempted = false;
+  int batteryRequests = 0;
+
+  @override
+  Future<bool> requestIgnoreBatteryOptimization() async {
+    batteryRequests++;
+    calls.add('battery:request');
+    batteryExempted = true; // simulate the user granting it
+    return true;
+  }
+
+  @override
+  Future<bool> isIgnoringBatteryOptimization() async => batteryExempted;
 }
 
 /// Scripted JS runtime for tests: records executed code and module
@@ -471,4 +490,21 @@ List<Override> testOverrides({
   // the test zone. Every test gets a deterministic scripted double by
   // default.
   jsRuntimeProvider.overrideWithValue(js ?? ScriptedJsRuntime()),
+  // Isolate-offloaded JSON/crypto (v1.28.0 ANR hardening) hangs inside a
+  // FakeAsync widget-test zone (real isolate replies never arrive), and
+  // the tiny test payloads need no offloading anyway. The store is built
+  // against the same [dir] as the rest of the harness.
+  chatStoreProvider.overrideWith(
+    (Ref ref) =>
+        ChatStore(resolveBaseDir: () async => dir, offloadIsolate: false),
+  ),
+  backupServiceProvider.overrideWith(
+    (Ref ref) => BackupService(
+      store: ref.watch(chatStoreProvider),
+      settingsRepository: ref.watch(settingsRepositoryProvider),
+      contextRepository: ref.watch(contextRepositoryProvider),
+      resolveBaseDir: () async => dir,
+      offloadIsolate: false,
+    ),
+  ),
 ];

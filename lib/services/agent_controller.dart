@@ -216,6 +216,11 @@ class _SessionRun {
   /// Module staged on the draft; activates with the first message.
   String? pendingModule;
 
+  /// Serialization tail for [ChatController._persist] — every save for
+  /// this run is queued behind the previous one (ordering guarantee for
+  /// the fire-and-forget persist-at-start vs the final save).
+  Future<void> persistChain = Future<void>.value();
+
   /// Module activation currently blocked behind its per-chat setup form
   /// (null when nothing waits). Mirrored into the UI state on every sync.
   ModuleSetupRequest? setupRequest;
@@ -941,6 +946,7 @@ class ChatController extends Notifier<ChatState> {
       await _maybeNotifyDone(run, settings, result.error);
     }
     _runs.remove(run.sessionId);
+    _lastStreamSync.remove(run.sessionId);
     _markRunning();
   }
 
@@ -1149,6 +1155,15 @@ class ChatController extends Notifier<ChatState> {
     if (prompt != null) {
       run.messages.add(ChatMessage.user(prompt, attachments: attachments));
       _sync(run);
+      // Persist the session the moment the first user message lands
+      // (v1.28.0): previously a session only appeared in the drawer list
+      // after its whole run finished, so a new chat started while another
+      // session was running was invisible (and could be lost to a crash).
+      // Persisting now makes it show up immediately with its running
+      // badge. Fire-and-forget: the run must never BLOCK on disk I/O
+      // here (real-device save latency would stall the loop's start;
+      // ordering is guaranteed by the per-run persist chain).
+      unawaited(_persist(run));
     }
 
     // Staged module (new chat with a module) activates AFTER the user
@@ -1223,7 +1238,7 @@ class ChatController extends Notifier<ChatState> {
                     buffer.toString(),
                     isStreaming: true,
                   );
-                  _sync(run);
+                  _syncStreaming(run);
                 },
                 // Stop must interrupt DURING the stream, not after it.
                 shouldAbort: () => run.stopRequested,
@@ -1298,6 +1313,9 @@ class ChatController extends Notifier<ChatState> {
             call.name,
             call.arguments,
             sessionId: run.sessionId,
+            // Stop must also reach LONG-RUNNING tools (the fan-of-
+            // subagents runner polls this between subagent steps).
+            shouldAbort: () => run.stopRequested,
           );
           call.status = result.ok ? ToolStatus.success : ToolStatus.error;
           call.resultText = result.llmOutput;
@@ -1544,7 +1562,39 @@ class ChatController extends Notifier<ChatState> {
     );
   }
 
-  Future<void> _persist(_SessionRun run) async {
+  /// Minimum gap between two streaming UI updates (ms). Every streamed
+  /// delta used to copy the whole transcript and emit a new state, so a
+  /// fast provider + long conversation rebuilt the chat body dozens of
+  /// times per second — visible jank and a contributor to Android ANRs.
+  /// Coalescing is synchronous (no timers): dropped intermediates are
+  /// always flushed by the authoritative syncs at turn end / finalize.
+  static const int _streamSyncGapMs = 48;
+  final Map<String, int> _lastStreamSync = <String, int>{};
+
+  void _syncStreaming(_SessionRun run) {
+    if (_activeSessionId != run.sessionId) return;
+    final int now = DateTime.now().millisecondsSinceEpoch;
+    final int last = _lastStreamSync[run.sessionId] ?? 0;
+    if (now - last < _streamSyncGapMs) return;
+    _lastStreamSync[run.sessionId] = now;
+    _sync(run);
+  }
+
+  /// Persists [run], serialized through the run's own persist chain so
+  /// concurrent calls (persist-at-start vs mid-run vs final) can never
+  /// write out of order. Deleted sessions are skipped — and an in-flight
+  /// save that races a delete is rolled back — so a chat can never
+  /// resurrect from its own run.
+  Future<void> _persist(_SessionRun run) {
+    if (run.deleted) return Future<void>.value();
+    final Future<void> previous = run.persistChain;
+    final Future<void> next = previous.then((_) => _saveNow(run));
+    run.persistChain = next;
+    return next;
+  }
+
+  Future<void> _saveNow(_SessionRun run) async {
+    if (run.deleted) return;
     final persisted = run.messages
         .where((m) => !(m.isStreaming && m.content.isEmpty))
         .toList();
@@ -1557,6 +1607,13 @@ class ChatController extends Notifier<ChatState> {
             messages: persisted,
             modules: run.activeModules,
           );
+      if (run.deleted) {
+        // The session was deleted while this save was in flight — undo it
+        // so a deleted chat can never resurrect from its own run (the
+        // persist-at-start write can land after deleteChat's own remove).
+        await ref.read(chatStoreProvider).delete(run.sessionId);
+        return;
+      }
       ref.invalidate(chatListProvider);
     } catch (_) {
       // Persistence is best-effort.

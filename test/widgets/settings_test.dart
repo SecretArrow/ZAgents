@@ -9,6 +9,7 @@ import 'package:zagents/models/models.dart';
 import 'package:zagents/ui/screens/preset_editor_screen.dart';
 import 'package:zagents/models/user_agent.dart';
 import 'package:zagents/ui/screens/providers_screen.dart';
+import 'package:zagents/services/background_service.dart';
 import 'package:zagents/ui/screens/settings_screen.dart';
 
 import '../../test/support/test_doubles.dart';
@@ -716,5 +717,50 @@ void main() {
       const Duration(seconds: 15),
     );
     expect(container.read(settingsProvider).askRandomUa, isFalse);
+  });
+
+  group('background reliability tile (v1.28.0)', () {
+    testWidgets('shows the current battery-optimization state', (
+      WidgetTester tester,
+    ) async {
+      await openSettings(tester);
+
+      // Default double: not exempted yet.
+      expect(find.byKey(const Key('battery-reliability-tile')), findsOneWidget);
+      expect(find.textContaining('Optimized (may pause runs)'), findsOneWidget);
+    });
+
+    testWidgets('tapping the tile requests the exemption and refreshes', (
+      WidgetTester tester,
+    ) async {
+      final ProviderContainer container = await openSettings(tester);
+      final RecordingBackgroundRun background = container.read(
+        backgroundRunServiceProvider,
+      ) as RecordingBackgroundRun;
+
+      // The tile sits below the fold in the Agent section: reveal it first.
+      await tester.dragUntilVisible(
+        find.byKey(const Key('battery-reliability-tile')),
+        find.byType(ListView),
+        const Offset(0, -200),
+      );
+      await tester.pumpAndSettle(
+        const Duration(milliseconds: 100),
+        EnginePhase.sendSemanticsUpdate,
+        const Duration(seconds: 15),
+      );
+
+      await tester.tap(find.byKey(const Key('battery-reliability-tile')));
+      // The tile re-queries after a short settle delay.
+      await tester.pump(const Duration(milliseconds: 700));
+      await tester.pumpAndSettle(
+        const Duration(milliseconds: 100),
+        EnginePhase.sendSemanticsUpdate,
+        const Duration(seconds: 15),
+      );
+
+      expect(background.batteryRequests, 1);
+      expect(find.textContaining('Exempted'), findsOneWidget);
+    });
   });
 }

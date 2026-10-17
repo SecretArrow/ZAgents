@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../di.dart';
 import '../../services/app_lock_service.dart';
+import '../../services/background_service.dart';
 import '../../services/backup_service.dart';
 import '../../l10n/app_strings.dart';
 import '../../models/models.dart';
@@ -31,11 +32,40 @@ class SettingsScreen extends ConsumerStatefulWidget {
 class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   late final TextEditingController _maxSteps;
 
+  /// Android battery-optimization state (v1.28.0): null until the first
+  /// platform query resolves; drives the Background reliability tile.
+  bool? _batteryExempted;
+
   @override
   void initState() {
     super.initState();
     final AppSettings settings = ref.read(settingsProvider);
     _maxSteps = TextEditingController(text: '${settings.maxSteps}');
+    _refreshBatteryState();
+  }
+
+  Future<void> _refreshBatteryState() async {
+    try {
+      final bool exempted = await ref
+          .read(backgroundRunServiceProvider)
+          .isIgnoringBatteryOptimization();
+      if (mounted) setState(() => _batteryExempted = exempted);
+    } catch (_) {
+      // Platform without the query (tests/OEM): tile stays neutral.
+    }
+  }
+
+  Future<void> _requestBatteryExemption() async {
+    try {
+      await ref
+          .read(backgroundRunServiceProvider)
+          .requestIgnoreBatteryOptimization();
+    } catch (_) {
+      // Never surface as an app error.
+    }
+    // The system dialog may take a moment; re-query after returning.
+    await Future<void>.delayed(const Duration(milliseconds: 600));
+    if (mounted) await _refreshBatteryState();
   }
 
   @override
@@ -428,6 +458,27 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     ),
                     value: settings.notifyOnDone,
                     onChanged: (bool value) => _commit(notifyOnDone: value),
+                  ),
+                  ListTile(
+                    key: const Key('battery-reliability-tile'),
+                    contentPadding: EdgeInsets.zero,
+                    leading: Icon(
+                      _batteryExempted == true
+                          ? Icons.battery_saver_rounded
+                          : Icons.battery_alert_rounded,
+                      size: 22,
+                      color: _batteryExempted == true
+                          ? const Color(0xFF2E9E5B)
+                          : null,
+                    ),
+                    title: Text(strings.batteryTitle),
+                    subtitle: Text(
+                      _batteryExempted == true
+                          ? strings.batteryExempted
+                          : strings.batteryRestricted,
+                      style: TextStyle(fontSize: 12, color: palette.muted),
+                    ),
+                    onTap: _requestBatteryExemption,
                   ),
                   SwitchListTile(
                     key: const Key('run-until-done-switch'),

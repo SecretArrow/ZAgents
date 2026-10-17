@@ -87,12 +87,21 @@ class MainActivity : FlutterFragmentActivity() {
                             pendingSessionId = null
                             true
                         }
+                        "requestIgnoreBatteryOptimization" -> {
+                            requestIgnoreBatteryOptimization()
+                        }
+                        "isIgnoringBatteryOptimizations" -> {
+                            result.success(isIgnoringBatteryOptimizations())
+                            true
+                        }
                         else -> false
                     }
                 } catch (_: Exception) {
                     false
                 }
-                if (call.method != "getPendingSession") {
+                if (call.method != "getPendingSession" &&
+                    call.method != "isIgnoringBatteryOptimizations"
+                ) {
                     result.success(ok)
                 }
             }
@@ -150,6 +159,32 @@ class MainActivity : FlutterFragmentActivity() {
             putExtra(ZAgentsForegroundService.EXTRA_TITLE, title)
             putExtra(ZAgentsForegroundService.EXTRA_TEXT, text)
         }
+
+    /// Opens the system "ignore battery optimizations" dialog (v1.28.0).
+    /// The REQUEST_IGNORE_BATTERY_OPTIMIZATIONS permission is declared in
+    /// the manifest; the user still decides — the dialog is dismissible.
+    private fun requestIgnoreBatteryOptimization(): Boolean {
+        return try {
+            val intent = Intent(
+                android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                android.net.Uri.parse("package:$packageName"),
+            ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            startActivity(intent)
+            true
+        } catch (_: Exception) {
+            // Some OEM builds ship without the settings activity.
+            false
+        }
+    }
+
+    private fun isIgnoringBatteryOptimizations(): Boolean {
+        return try {
+            val pm = getSystemService(POWER_SERVICE) as android.os.PowerManager
+            pm.isIgnoringBatteryOptimizations(packageName)
+        } catch (_: Exception) {
+            false
+        }
+    }
 
     companion object {
         private const val CHANNEL_DONE = "zagents_done"

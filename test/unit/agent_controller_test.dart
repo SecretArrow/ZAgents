@@ -1661,6 +1661,49 @@ void main() {
       expect(background.doneNotifications, isEmpty);
     });
   });
+
+  group('persist-at-start (v1.28.0)', () {
+    test('a brand-new session appears in the chat list while its run is still '
+        'in flight', () async {
+      final List<Completer<AssistantTurn>> gates = <Completer<AssistantTurn>>[
+        Completer<AssistantTurn>(),
+      ];
+      var calls = 0;
+      final ProviderContainer container = ProviderContainer(
+        overrides: testOverrides(
+          llm: _GatedLlmClient(gates, () => calls++),
+          dir: tempDir,
+          settings: AppSettings(apiKey: 'k', autoTitle: false),
+        ),
+      );
+      addTearDown(container.dispose);
+
+      final ChatController controller = container.read(
+        chatControllerProvider.notifier,
+      );
+      // Do NOT await: the run must be in flight while we inspect the list.
+      final Future<void> inFlight = controller.send('chat baru B');
+      // Let the loop reach the persist-at-start point.
+      await Future<void>.delayed(const Duration(milliseconds: 80));
+
+      final List<ChatSummary> summaries = await container
+          .read(chatStoreProvider)
+          .listSummaries();
+      expect(summaries, hasLength(1));
+      expect(summaries.single.title, 'chat baru B');
+
+      // Badge state: the new session is registered as running.
+      expect(
+        container.read(runningSessionsProvider).contains(summaries.single.id),
+        isTrue,
+      );
+
+      // Finish the run; everything lands normally afterwards.
+      gates.single.complete(AssistantTurn(content: 'selesai'));
+      await inFlight;
+      expect(container.read(chatControllerProvider).isRunning, isFalse);
+    });
+  });
 }
 
 /// LLM test double whose turns are gated behind completers for parallel-run tests.

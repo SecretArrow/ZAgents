@@ -178,4 +178,48 @@ void main() {
       );
     });
   });
+
+  group('isolate offload (v1.28.0 ANR hardening)', () {
+    test(
+      'a multi-megabyte session roundtrips through save/load/list',
+      () async {
+        // ~1.5 MB of message text: the JSON decode/encode of this payload
+        // runs inside Isolate.run — the test doubles as a correctness check
+        // for the isolate boundary (all data must survive the hop).
+        final List<ChatMessage> big = <ChatMessage>[
+          for (var i = 0; i < 400; i++)
+            ChatMessage.assistant(
+              'baris $i — ${'lorem ipsum dolor sit amet ' * 120}',
+            ),
+        ];
+        await store.save(id: 'big-1', title: 'besar', messages: big);
+
+        final List<ChatMessage>? loaded = await store.load('big-1');
+        expect(loaded, hasLength(400));
+        expect(loaded!.last.content, contains('baris 399'));
+
+        final List<ChatSummary> summaries = await store.listSummaries();
+        expect(summaries.single.id, 'big-1');
+
+        final List<ChatSearchHit> hits = await store.searchAll('baris 399');
+        expect(hits, isNotEmpty);
+        expect(hits.first.sessionId, 'big-1');
+      },
+    );
+
+    test('listSummaries skips corrupted files in big folders', () async {
+      await _writeSession(
+        tempDir,
+        'ok-1',
+        title: 'sehat',
+        messages: [_userJson('halo')],
+      );
+      final Directory dir = Directory('${tempDir.path}/chats');
+      await File('${dir.path}/broken.json').writeAsString('{not json');
+
+      final List<ChatSummary> summaries = await store.listSummaries();
+      expect(summaries, hasLength(1));
+      expect(summaries.single.title, 'sehat');
+    });
+  });
 }

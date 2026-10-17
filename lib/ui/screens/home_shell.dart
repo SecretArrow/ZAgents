@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../di.dart';
@@ -83,51 +84,90 @@ class _HomeShellState extends ConsumerState<HomeShell> {
       }
     });
 
-    return Scaffold(
-      drawer: const ChatDrawer(),
-      appBar: AppBar(
-        leading: Builder(
-          // A Builder context BELOW the Scaffold is required for
-          // Scaffold.of(); the widget's own context would throw.
-          builder: (BuildContext menuContext) => IconButton(
-            icon: const Icon(Icons.menu_rounded),
-            tooltip: strings.menu,
-            onPressed: () => Scaffold.of(menuContext).openDrawer(),
-          ),
-        ),
-        titleSpacing: 0,
-        title: Row(
-          children: <Widget>[
-            if (showBrand) ...<Widget>[
-              const BrandMark(size: 28),
-              const SizedBox(width: 10),
+    return PopScope<bool>(
+      // The shell is the root route: Android back must confirm before the
+      // app leaves (v1.28.0) so a running agent task is never lost to a
+      // stray back press. Open drawers and pushed screens pop normally —
+      // they handle back BEFORE this scope is reached.
+      canPop: false,
+      onPopInvokedWithResult: (bool didPop, bool? result) async {
+        if (didPop) return;
+        final AppStrings strings = stringsOf(context);
+        final bool? exit = await showDialog<bool>(
+          context: context,
+          builder: (BuildContext dialogContext) => AlertDialog(
+            key: const Key('exit-confirm-dialog'),
+            backgroundColor: Theme.of(context).colorScheme.surface,
+            title: Text(strings.exitAppTitle),
+            content: Text(strings.exitAppBody),
+            actions: <Widget>[
+              TextButton(
+                key: const Key('exit-confirm-no'),
+                onPressed: () => Navigator.of(dialogContext).pop(false),
+                child: Text(strings.cancel),
+              ),
+              FilledButton(
+                key: const Key('exit-confirm-yes'),
+                onPressed: () => Navigator.of(dialogContext).pop(true),
+                child: Text(strings.exitAppConfirm),
+              ),
             ],
-            // Flexible so a long model name shrinks (ellipsis) instead of
-            // overflowing the app bar into the action icons.
-            const Flexible(child: ModelChip()),
-          ],
-        ),
-        actions: <Widget>[
-          const AgentModeToggle(),
-          if (showLanguageMenu) const _LanguageMenu(),
-          IconButton(
-            icon: const Icon(Icons.settings_outlined),
-            tooltip: strings.settings,
-            onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute<void>(builder: (_) => const SettingsScreen()),
+          ),
+        );
+        if (exit == true) {
+          // Best-effort: platform channels are unavailable in some test
+          // environments; the intent (leave the app) is what matters.
+          try {
+            await SystemNavigator.pop();
+          } catch (_) {}
+        }
+      },
+      child: Scaffold(
+        drawer: const ChatDrawer(),
+        appBar: AppBar(
+          leading: Builder(
+            // A Builder context BELOW the Scaffold is required for
+            // Scaffold.of(); the widget's own context would throw.
+            builder: (BuildContext menuContext) => IconButton(
+              icon: const Icon(Icons.menu_rounded),
+              tooltip: strings.menu,
+              onPressed: () => Scaffold.of(menuContext).openDrawer(),
             ),
           ),
-          const SizedBox(width: 4),
-        ],
-      ),
-      body: SafeArea(
-        child: Column(
-          children: <Widget>[
-            const Expanded(child: ChatBody()),
-            const ModuleRepairCard(),
-            const _ModuleSetupBanner(),
-            const Composer(),
+          titleSpacing: 0,
+          title: Row(
+            children: <Widget>[
+              if (showBrand) ...<Widget>[
+                const BrandMark(size: 28),
+                const SizedBox(width: 10),
+              ],
+              // Flexible so a long model name shrinks (ellipsis) instead of
+              // overflowing the app bar into the action icons.
+              const Flexible(child: ModelChip()),
+            ],
+          ),
+          actions: <Widget>[
+            const AgentModeToggle(),
+            if (showLanguageMenu) const _LanguageMenu(),
+            IconButton(
+              icon: const Icon(Icons.settings_outlined),
+              tooltip: strings.settings,
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute<void>(builder: (_) => const SettingsScreen()),
+              ),
+            ),
+            const SizedBox(width: 4),
           ],
+        ),
+        body: SafeArea(
+          child: Column(
+            children: <Widget>[
+              const Expanded(child: ChatBody()),
+              const ModuleRepairCard(),
+              const _ModuleSetupBanner(),
+              const Composer(),
+            ],
+          ),
         ),
       ),
     );

@@ -67,6 +67,12 @@ class ZAgentsForegroundService : Service() {
                         }
                     }
                 }
+                // Reliability (v1.28.0): every progress step re-arms the
+                // wake lock. With a non-reference-counted lock this simply
+                // refreshes the timeout — so very long "run until done"
+                // sessions (and OEM power managers that silently drop
+                // locks) never leave the CPU asleep mid-run.
+                acquireWakeLock()
             }
             else -> {
                 // ACTION_START (also the default when the intent is null).

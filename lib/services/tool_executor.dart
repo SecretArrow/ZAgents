@@ -7,6 +7,7 @@ import 'file_system_service.dart';
 import 'js_runtime.dart';
 import 'module_registry.dart';
 import 'npm_service.dart';
+import 'subagents.dart';
 import 'web_fetcher.dart';
 
 /// Result of executing one tool.
@@ -49,6 +50,7 @@ class ToolExecutor {
     this.fsFor,
     this.fetcher,
     this.modules,
+    this.subagents,
   });
 
   final BrowserAutomation browser;
@@ -82,6 +84,10 @@ class ToolExecutor {
   /// degrade gracefully when absent.
   final ModuleRegistry? modules;
 
+  /// Fan-of-subagents runner behind `spawn_subagents`. Nullable for
+  /// legacy tests; the tool degrades gracefully when absent.
+  final SubagentRunner? subagents;
+
   static const Set<String> _browserTools = <String>{
     'browser_navigate',
     'browser_click',
@@ -96,6 +102,7 @@ class ToolExecutor {
     String name,
     Map<String, dynamic> args, {
     String? sessionId,
+    bool Function()? shouldAbort,
   }) async {
     try {
       switch (name) {
@@ -149,6 +156,8 @@ class ToolExecutor {
           return await _moduleExport(args, sessionId);
         case 'module_stage_repair':
           return await _moduleStageRepair(args, sessionId);
+        case 'spawn_subagents':
+          return await _spawnSubagents(args, sessionId, shouldAbort);
         default:
           return ToolResult(ok: false, llmOutput: 'Unknown tool: $name');
       }
@@ -157,6 +166,45 @@ class ToolExecutor {
       // the model can read and retry around.
       return ToolResult(ok: false, llmOutput: 'Tool $name failed: $e');
     }
+  }
+
+  /// `spawn_subagents` (v1.28.0): runs 1..N independent subagent loops in
+  /// parallel and returns their labeled answers together. The runner is
+  /// optional (legacy tests); the calling session's id scopes every nested
+  /// tool call to the same per-chat sandbox.
+  Future<ToolResult> _spawnSubagents(
+    Map<String, dynamic> args,
+    String? sessionId,
+    bool Function()? shouldAbort,
+  ) async {
+    final SubagentRunner? runner = subagents;
+    if (runner == null) {
+      return const ToolResult(
+        ok: false,
+        llmOutput:
+            'spawn_subagents is unavailable in this build (no runner '
+            'configured).',
+      );
+    }
+    final (List<SubagentTaskSpec> tasks, String? error) = runner.parseTasks(
+      args['tasks'],
+    );
+    if (error != null) {
+      return ToolResult(ok: false, llmOutput: 'spawn_subagents: $error');
+    }
+    if (shouldAbort?.call() ?? false) {
+      return const ToolResult(ok: false, llmOutput: 'spawn_subagents aborted');
+    }
+    final List<SubagentOutcome> outcomes = await runner.run(
+      tasks,
+      sessionId: sessionId,
+      shouldAbort: shouldAbort,
+    );
+    return ToolResult(
+      ok: true,
+      llmOutput: runner.formatOutcomes(outcomes),
+      displayText: 'subagents ×${outcomes.length}',
+    );
   }
 
   ToolResult? _automationGuard(String name) {

@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
 import 'dart:math';
 import 'dart:typed_data';
 
@@ -70,12 +71,21 @@ class BackupService {
     required this.settingsRepository,
     required this.contextRepository,
     required this.resolveBaseDir,
+    this.offloadIsolate = true,
   });
 
   final ChatStore store;
   final SettingsRepository settingsRepository;
   final ContextRepository contextRepository;
   final Future<Directory> Function() resolveBaseDir;
+
+  /// Like [ChatStore.offloadIsolate]: production crypto runs in a
+  /// background isolate; widget tests flip this off (FakeAsync zones
+  /// cannot service real isolate replies).
+  final bool offloadIsolate;
+
+  Future<T> _offload<T>(T Function() work) =>
+      offloadIsolate ? Isolate.run(work) : Future<T>.value(work());
 
   static const String magic = 'ZABAK1';
   static const int _saltBytes = 16;
@@ -118,25 +128,33 @@ class BackupService {
       'sessions': sessions,
     });
 
-    final Uint8List salt = saltOverride ?? _randomBytes(_saltBytes);
-    final Uint8List keys = _deriveKeys(passphrase, salt);
-    final Uint8List encKey = keys.sublist(0, 32);
-    final Uint8List macKey = keys.sublist(32, 64);
-    final Uint8List iv = _randomBytes(_ivBytes);
-    final Uint8List cipherText = _aesCbc(
-      utf8.encode(payload),
-      encKey,
-      iv,
-      encrypt: true,
-    );
-    final Uint8List mac = _hmac(macKey, <Uint8List>[salt, iv, cipherText]);
+    final Uint8List payloadBytes = utf8.encode(payload);
 
-    final Uint8List body = <Uint8List>[salt, iv, cipherText, mac]
-        .fold<BytesBuilder>(BytesBuilder(), (BytesBuilder b, Uint8List part) {
+    // ANR hardening (v1.28.0): PBKDF2-HMAC-SHA256 with 150k iterations plus
+    // the AES pass take seconds of pure CPU on a phone — running them on
+    // the main isolate froze the whole app ("app isn't responding"). The
+    // closure works on bytes/strings only, all isolate-sendable.
+    final Uint8List body = await _offload(() {
+      final Uint8List salt = saltOverride ?? _randomBytes(_saltBytes);
+      final Uint8List keys = _deriveKeys(passphrase, salt);
+      final Uint8List encKey = keys.sublist(0, 32);
+      final Uint8List macKey = keys.sublist(32, 64);
+      final Uint8List iv = _randomBytes(_ivBytes);
+      final Uint8List cipherText = _aesCbc(
+        payloadBytes,
+        encKey,
+        iv,
+        encrypt: true,
+      );
+      final Uint8List mac = _hmac(macKey, <Uint8List>[salt, iv, cipherText]);
+      return <Uint8List>[salt, iv, cipherText, mac].fold<BytesBuilder>(
+        BytesBuilder(),
+        (BytesBuilder b, Uint8List part) {
           b.add(part);
           return b;
-        })
-        .takeBytes();
+        },
+      ).takeBytes();
+    });
 
     final Directory base = await resolveBaseDir();
     final Directory exportsDir = Directory(
@@ -179,28 +197,47 @@ class BackupService {
       body.length - 32,
     );
 
-    final Uint8List keys = _deriveKeys(passphrase, salt);
-    final Uint8List macKey = keys.sublist(32, 64);
-    final Uint8List expected = _hmac(macKey, <Uint8List>[salt, iv, cipherText]);
-    if (!_constantTimeEquals(expected, mac)) {
-      throw const BackupAuthException();
-    }
-
-    final Uint8List encKey = keys.sublist(0, 32);
-    final Uint8List plain = _aesCbc(cipherText, encKey, iv, encrypt: false);
+    // Verify + decrypt OFF the main isolate (PBKDF2 again) — the plaintext
+    // never leaves the closure, only the decoded JSON map travels back.
     final Object? decoded;
     try {
-      decoded = jsonDecode(utf8.decode(plain));
+      decoded = await _offload(() {
+        final Uint8List keys = _deriveKeys(passphrase, salt);
+        final Uint8List macKey = keys.sublist(32, 64);
+        final Uint8List expected = _hmac(macKey, <Uint8List>[
+          salt,
+          iv,
+          cipherText,
+        ]);
+        if (!_constantTimeEquals(expected, mac)) {
+          return const _RestoreCryptoResult.auth();
+        }
+        final Uint8List encKey = keys.sublist(0, 32);
+        final Uint8List plain = _aesCbc(cipherText, encKey, iv, encrypt: false);
+        try {
+          return _RestoreCryptoResult.payload(jsonDecode(utf8.decode(plain)));
+        } catch (_) {
+          return const _RestoreCryptoResult.format();
+        }
+      });
     } catch (_) {
       throw const BackupFormatException('Backup payload is corrupted');
     }
-    if (decoded is! Map<String, dynamic> || decoded['app'] != 'ZAgents') {
+    if (decoded is! _RestoreCryptoResult) {
+      throw const BackupFormatException('Backup payload is corrupted');
+    }
+    if (decoded.authFailed) throw const BackupAuthException();
+    if (decoded.formatFailed || decoded.payload is! Map<String, dynamic>) {
+      throw const BackupFormatException('Backup payload is corrupted');
+    }
+    final Map<String, dynamic> payloadMap = decoded.payload!;
+    if (payloadMap['app'] != 'ZAgents') {
       throw const BackupFormatException('Not a ZAgents backup file');
     }
 
     // Replace settings.
     var settingsApplied = false;
-    final Object? rawSettings = decoded['settings'];
+    final Object? rawSettings = payloadMap['settings'];
     if (rawSettings is Map<String, dynamic>) {
       await settingsRepository.save(AppSettings.fromJson(rawSettings));
       settingsApplied = true;
@@ -208,7 +245,7 @@ class BackupService {
 
     // Replace context entries.
     var contextCount = 0;
-    final Object? rawContext = decoded['context'];
+    final Object? rawContext = payloadMap['context'];
     if (rawContext is List) {
       final List<ContextEntry> entries = <ContextEntry>[
         for (final Object? item in rawContext)
@@ -224,7 +261,7 @@ class BackupService {
       await store.delete(existing.id);
     }
     var sessionCount = 0;
-    final Object? rawSessions = decoded['sessions'];
+    final Object? rawSessions = payloadMap['sessions'];
     if (rawSessions is List) {
       for (final Object? rawSession in rawSessions) {
         if (rawSession is! Map<String, dynamic>) continue;
@@ -320,4 +357,25 @@ class BackupService {
     }
     return diff == 0;
   }
+}
+
+/// Result envelope crossing the restore isolate boundary: the crypto
+/// verdict plus the decoded payload map (null unless the file decrypted
+/// cleanly). A tagged object instead of a bare dynamic keeps the
+/// type-switch on the main side explicit.
+class _RestoreCryptoResult {
+  const _RestoreCryptoResult._(
+    this.authFailed,
+    this.formatFailed,
+    this.payload,
+  );
+
+  const _RestoreCryptoResult.auth() : this._(true, false, null);
+  const _RestoreCryptoResult.format() : this._(false, true, null);
+  const _RestoreCryptoResult.payload(Map<String, dynamic> map)
+    : this._(false, false, map);
+
+  final bool authFailed;
+  final bool formatFailed;
+  final Map<String, dynamic>? payload;
 }

@@ -27,6 +27,7 @@ import 'services/prompt_repository.dart';
 import 'services/session_export.dart';
 import 'services/session_sandbox.dart';
 import 'services/settings_repository.dart';
+import 'services/subagents.dart';
 import 'services/tool_executor.dart';
 import 'services/user_agent_manager.dart';
 import 'services/web_fetcher.dart';
@@ -288,7 +289,11 @@ final backupServiceProvider = Provider<BackupService>((ref) {
 
 final toolExecutorProvider = Provider<ToolExecutor>((ref) {
   final SessionSandbox sandbox = ref.watch(sessionSandboxProvider);
-  return ToolExecutor(
+  // Fan-of-subagents runner: shares the executor itself for nested tool
+  // calls (the late local resolves the constructor chicken-and-egg) and
+  // reads the user's provider/model settings per spawn.
+  late final ToolExecutor executor;
+  executor = ToolExecutor(
     browser: ref.watch(browserAutomationProvider),
     // Session-scoped root: file tools only ever see their own chat's
     // workspace (null falls back to the legacy documents root).
@@ -301,6 +306,22 @@ final toolExecutorProvider = Provider<ToolExecutor>((ref) {
     // registry is the ONLY doorway to installed modules, and the repair
     // tool merely stages a user-confirmed install card.
     modules: ref.watch(moduleRegistryProvider),
+    subagents: SubagentRunner(
+      llm: ref.watch(llmClientProvider),
+      resolveConfig: () {
+        final AppSettings settings = ref.read(settingsProvider);
+        return LlmConfig(
+          baseUrl: settings.baseUrl,
+          apiKey: settings.apiKey,
+          model: settings.model,
+        );
+      },
+      executeTool: (
+        String name,
+        Map<String, dynamic> args,
+        String? sessionId,
+      ) => executor.execute(name, args, sessionId: sessionId),
+    ),
     // Server-side fetcher behind the `web_fetch` tool; it carries the same
     // User-Agent identity the embedded browser uses.
     fetcher: WebFetcher(
@@ -310,6 +331,7 @@ final toolExecutorProvider = Provider<ToolExecutor>((ref) {
       },
     ),
   );
+  return executor;
 });
 
 final chatControllerProvider = NotifierProvider<ChatController, ChatState>(

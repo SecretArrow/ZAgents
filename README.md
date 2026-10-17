@@ -238,6 +238,28 @@ OpenAI-compatible: **OpenRouter, InferHub, Z.AI, OpenAI, DeepSeek, Groq, dan lai
   modul dihapus langsung dari layar Modul atau menu /plugins (ikon
   tempat sampah + konfirmasi) — file program dihapus, chat yang memakai
   otomatis dinonaktifkan, data per-chat tetap aman di sandbox masing-masing.
+- **v1.28.0 — fan of subagents, exit confirmation & keandalan total**:
+  1. **Fan of subagents**: minta agent bekerja paralel — "buat 5 subagents,
+  masing-masing riset satu pesaing" — dan agent memanggil `spawn_subagents`
+  dengan 2–6 tugas mandiri yang dijalankan BERSAMAAN (LLM call paralel,
+  3 pekerja konkuren). Setiap subagent punya loop sendiri dengan toolset
+  ruang kerja (file/zip/node/web_fetch/git lokal — tanpa browser, tanpa
+  rekursi, langkah dibatasi) di sandbox chat yang sama, dan hasilnya
+  kembali berlabel per tugas untuk dirangkum agent. Tombol Stop langsung
+  menghentikan seluruh fan.
+  2. **Dialog konfirmasi keluar**: tombol back di layar utama kini
+  menanyakan "Keluar dari ZAgents?" (Ya/Tidak) — tekanan back tidak
+  lagi menghentikan tugas agent yang sedang berjalan tanpa sengaja.
+  3. **Keandalan latar belakang**: tile baru di Setelan ("Keandalan
+  latar belakang") meminta pengecualian optimisasi baterai Android
+  (Doze/OEM) lewat dialog sistem; wake lock kini diperpanjang otomatis
+  pada setiap langkah progres sehingga sesi "run until done" yang sangat
+  panjang tidak pernah tertidur di tengah jalan.
+  4. **Anti-ANR ("app not responding")**: encode/decode JSON percakapan
+  (besar bisa >1 MB) dan kripto backup PBKDF2-150k kini berjalan di
+  background isolate — daftar chat, simpan otomatis, pencarian global,
+  dan backup tidak lagi membekukan UI; sinkronisasi streaming juga
+  dikoalesksi (~20 fps) agar transkrip panjang tetap mulus.
 - **Pencarian + paging universal (v1.6.0)** — SEMUA list di aplikasi memakai
   widget `PagedList` yang sama: **5 item per halaman** (termasuk dropdown model),
   kolom pencarian, pager first/prev/next/last, dan empty state "No results".

@@ -40,6 +40,16 @@ abstract class BackgroundRun {
   /// the user taps a done-notification), or null. Draining CONSUMES the
   /// pending value.
   Future<String?> drainPendingSession();
+
+  /// Asks Android to exempt the app from battery optimization
+  /// (v1.28.0): the single biggest reliability lever for long background
+  /// runs on stock Android (Doze) and many OEM ROMs. Returns true when
+  /// the system dialog was shown. Best-effort on all platforms.
+  Future<bool> requestIgnoreBatteryOptimization();
+
+  /// Whether Android currently reports the app as exempt from battery
+  /// optimization. False on platforms without the query (tests).
+  Future<bool> isIgnoringBatteryOptimization();
 }
 
 class BackgroundRunService implements BackgroundRun {
@@ -132,6 +142,32 @@ class BackgroundRunService implements BackgroundRun {
       return await _channel.invokeMethod<String>('getPendingSession');
     } catch (_) {
       return null;
+    }
+  }
+
+  @override
+  Future<bool> requestIgnoreBatteryOptimization() async {
+    try {
+      return await _channel.invokeMethod<bool>(
+            'requestIgnoreBatteryOptimization',
+          ) ??
+          false;
+    } catch (_) {
+      // Missing platform handler (tests) or an OEM restriction: never
+      // surface as an app error.
+      return false;
+    }
+  }
+
+  @override
+  Future<bool> isIgnoringBatteryOptimization() async {
+    try {
+      return await _channel.invokeMethod<bool>(
+            'isIgnoringBatteryOptimizations',
+          ) ??
+          false;
+    } catch (_) {
+      return false;
     }
   }
 }

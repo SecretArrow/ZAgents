@@ -25,6 +25,9 @@ class ScriptedChatStore implements ChatStore {
   });
 
   @override
+  final bool offloadIsolate = false;
+
+  @override
   Future<Directory> Function() get resolveBaseDir => throw UnimplementedError();
 
   @override

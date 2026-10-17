@@ -337,6 +337,15 @@ abstract class AppStrings {
   String get notifDoneTitle;
   String notifDoneBody(String sessionTitle, String? error);
 
+  // -- Exit confirmation + battery optimization (v1.28.0) ---------------
+  String get exitAppTitle;
+  String get exitAppBody;
+  String get exitAppConfirm;
+  String get batteryTitle;
+  String get batterySubtitle;
+  String get batteryRestricted;
+  String get batteryExempted;
+
   String get aboutSection;
   String get aboutBody;
 
@@ -1035,10 +1044,28 @@ class AppStringsEn implements AppStrings {
       : '\u201C$sessionTitle\u201D stopped with an error — tap to open it.';
 
   @override
+  String get exitAppTitle => 'Exit ZAgents?';
+  @override
+  String get exitAppBody =>
+      'Agent tasks keep running in the background while the app is closed.';
+  @override
+  String get exitAppConfirm => 'Exit';
+  @override
+  String get batteryTitle => 'Background reliability';
+  @override
+  String get batterySubtitle =>
+      'Ask Android to exempt ZAgents from battery optimization so long '
+      'agent runs are never paused in the background.';
+  @override
+  String get batteryRestricted => 'Optimized (may pause runs) — tap to exempt';
+  @override
+  String get batteryExempted => 'Exempted — background runs protected';
+
+  @override
   String get aboutSection => 'About';
   @override
   String get aboutBody =>
-      'ZAgents v1.27.0 — an Android clone of the chat.z.ai agent mode UI, '
+      'ZAgents v1.28.0 — an Android clone of the chat.z.ai agent mode UI, '
       'with custom OpenAI-compatible providers (OpenRouter, InferHub, '
       'Z.AI, OpenAI, DeepSeek, Groq, and more), per-provider API keys, '
       'light/dark themes, parallel multi-session chat with background '
@@ -1067,7 +1094,13 @@ class AppStringsEn implements AppStrings {
       'commands. Modules always present the User-Agent identity you pick '
       'in Settings (readable via zagents.info.userAgent, un-overridable), '
       'and can be uninstalled by you at any time — from the Modules '
-      'screen or the /plugins menu.';
+      'screen or the /plugins menu. New in v1.28.0: a fan of subagents '
+      '(spawn_subagents runs up to six parallel self-contained tasks and '
+      'synthesizes their results), an exit confirmation dialog so a '
+      'stray back press never kills a running task, a battery '
+      'optimization exemption for long background runs, and heavy JSON '
+      'and crypto work moved off the UI thread (no more "app not '
+      'responding" freezes).';
 
   @override
   String createdBy(String name) => 'Created by $name';
@@ -1878,10 +1911,30 @@ class AppStringsId implements AppStrings {
       : '\u201C$sessionTitle\u201D berhenti karena error — ketuk untuk membuka.';
 
   @override
+  String get exitAppTitle => 'Keluar dari ZAgents?';
+  @override
+  String get exitAppBody =>
+      'Tugas agent tetap berjalan di latar belakang selama aplikasi ditutup.';
+  @override
+  String get exitAppConfirm => 'Keluar';
+  @override
+  String get batteryTitle => 'Keandalan latar belakang';
+  @override
+  String get batterySubtitle =>
+      'Minta Android mengecualikan ZAgents dari optimisasi baterai agar '
+      'proses agent yang lama tidak pernah dijeda di latar belakang.';
+  @override
+  String get batteryRestricted =>
+      'Dioptimalkan (bisa dijeda) — ketuk untuk pengecualian';
+  @override
+  String get batteryExempted =>
+      'Dikecualikan — proses latar belakang dilindungi';
+
+  @override
   String get aboutSection => 'Tentang';
   @override
   String get aboutBody =>
-      'ZAgents v1.27.0 — klon UI agent mode chat.z.ai untuk Android, '
+      'ZAgents v1.28.0 — klon UI agent mode chat.z.ai untuk Android, '
       'dengan custom provider OpenAI-compatible (OpenRouter, InferHub, '
       'Z.AI, OpenAI, DeepSeek, Groq, dan lainnya), API key per-provider, '
       'tema terang/gelap, multi-sesi paralel dengan proses latar '
@@ -1910,7 +1963,14 @@ class AppStringsId implements AppStrings {
       'pertama Anda untuk perintah setup. Modul selalu memakai identitas '
       'User-Agent yang Anda pilih di Setelan (terbaca via '
       'zagents.info.userAgent, tidak bisa digantikan), dan dapat Anda '
-      'hapus kapan saja — dari layar Modul atau menu /plugins.';
+      'hapus kapan saja — dari layar Modul atau menu /plugins. Baru di '
+      'v1.28.0: fan of subagents (spawn_subagents menjalankan hingga '
+      'enam tugas paralel yang mandiri lalu merangkum hasilnya), dialog '
+      'konfirmasi keluar agar tekanan back tidak menghentikan tugas yang '
+      'sedang berjalan, pengecualian optimisasi baterai untuk proses '
+      'latar belakang yang panjang, serta pemindahan kerja JSON dan '
+      'kripto berat keluar dari thread UI (tidak ada lagi freeze "app '
+      'not responding").';
 
   @override
   String createdBy(String name) => 'Dibuat oleh $name';
