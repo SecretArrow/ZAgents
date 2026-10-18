@@ -56,6 +56,7 @@ class ChatState {
     this.pendingModule,
     this.activeModules = const <String>[],
     this.setupRequest,
+    this.waitingForSetup = false,
     this.pendingModuleInstall,
   });
 
@@ -82,6 +83,13 @@ class ChatState {
   /// Null when no active module is missing required setup input.
   final ModuleSetupRequest? setupRequest;
 
+  /// v1.29.0: true while a sent message WAITS for a module's required
+  /// setup input. The agent must not process the queued message until the
+  /// form is submitted — the send() gate queues the message (visible,
+  /// persisted) and [ChatController.submitModuleSetup] resumes the cycle
+  /// right after the form lands.
+  final bool waitingForSetup;
+
   /// Repaired module zip staged by the agent (`module_stage_repair`) and
   /// awaiting the user's Install/Discard decision on the card.
   final ModuleInstallRequest? pendingModuleInstall;
@@ -98,6 +106,7 @@ class ChatState {
     Object? pendingModule = _unset,
     List<String>? activeModules,
     Object? setupRequest = _unset,
+    bool? waitingForSetup,
     Object? pendingModuleInstall = _unset,
   }) => ChatState(
     sessionId: sessionId ?? this.sessionId,
@@ -113,6 +122,7 @@ class ChatState {
     setupRequest: setupRequest == _unset
         ? this.setupRequest
         : setupRequest as ModuleSetupRequest?,
+    waitingForSetup: waitingForSetup ?? this.waitingForSetup,
     pendingModuleInstall: pendingModuleInstall == _unset
         ? this.pendingModuleInstall
         : pendingModuleInstall as ModuleInstallRequest?,
@@ -224,6 +234,10 @@ class _SessionRun {
   /// Module activation currently blocked behind its per-chat setup form
   /// (null when nothing waits). Mirrored into the UI state on every sync.
   ModuleSetupRequest? setupRequest;
+
+  /// v1.29.0: true while queued user message(s) wait for a module's
+  /// required setup input (see [ChatState.waitingForSetup]).
+  bool waitingForSetup = false;
 
   /// Repaired module zip staged by the agent and awaiting the user's
   /// decision (in-memory per run, like [pendingModule]).
@@ -342,6 +356,40 @@ class ChatController extends Notifier<ChatState> {
     run.pendingModule ??= stagedModule;
     state = state.copyWith(pendingModule: null);
 
+    // v1.29.0 — setup-input gate: when a selected module (staged on the
+    // draft, or already active in this chat) still requires its per-chat
+    // setup form, the message is QUEUED — appended, persisted, visible —
+    // and the agent is NOT started. The queued message is processed right
+    // after the form is submitted (submitModuleSetup), so a chat is never
+    // worked on without the input the module requires.
+    final List<String> gateNames = <String>[
+      if (run.pendingModule != null) run.pendingModule!,
+      ...run.activeModules,
+    ];
+    if (gateNames.isNotEmpty) {
+      final ModuleSetupRequest? gate = await _findSetupRequest(
+        run.sessionId,
+        gateNames,
+      );
+      if (gate != null) {
+        run.setupRequest = gate;
+        run.waitingForSetup = true;
+        run.isRunning = false;
+        run.messages.add(ChatMessage.user(trimmed, attachments: attachments));
+        _sync(run);
+        _markRunning();
+        if (_activeSessionId == run.sessionId) {
+          state = state.copyWith(
+            isRunning: false,
+            activeModules: [...run.activeModules],
+            error: null,
+          );
+        }
+        unawaited(_persist(run));
+        return;
+      }
+    }
+
     await _executeRun(run, settings, prompt: trimmed, attachments: attachments);
   }
 
@@ -411,7 +459,24 @@ class ChatController extends Notifier<ChatState> {
       // Runtime unavailable: the deactivation itself still proceeds.
     }
     // A pending setup request for this module dies with the activation.
+    // v1.29.0: if THIS module was blocking a queued message, the wait is
+    // re-evaluated — another active module may still gate, otherwise the
+    // queued message is released to the agent right away.
+    bool releaseQueued = false;
     if (run.setupRequest?.moduleName == trimmed) run.setupRequest = null;
+    if (run.waitingForSetup && run.setupRequest == null) {
+      final ModuleSetupRequest? nextGate = run.activeModules.isEmpty
+          ? null
+          : await _findSetupRequest(run.sessionId, run.activeModules);
+      if (nextGate != null) {
+        run.setupRequest = nextGate;
+      } else {
+        run.waitingForSetup = false;
+        releaseQueued = run.messages.any(
+          (ChatMessage m) => m.role == Role.user,
+        );
+      }
+    }
     final AppStrings strings = appStringsFor(
       ref.read(settingsProvider).languageCode,
     );
@@ -423,9 +488,14 @@ class ChatController extends Notifier<ChatState> {
     );
     _sync(run);
     if (_activeSessionId == sessionId) {
-      state = state.copyWith(activeModules: [...run.activeModules]);
+      state = state.copyWith(
+        activeModules: [...run.activeModules],
+        setupRequest: run.setupRequest,
+        waitingForSetup: run.waitingForSetup,
+      );
     }
     await _persist(run);
+    if (releaseQueued) await _resumeQueuedRun(run);
     return true;
   }
 
@@ -685,9 +755,63 @@ class ChatController extends Notifier<ChatState> {
     }
     await _persist(run);
     // Re-run the gated activation — the gate now passes and the module
-    // executes with the freshly submitted values.
-    await _activateModule(run, trimmed);
+    // executes with the freshly submitted values. When a send() was
+    // queued behind this form, the module also receives the queued user
+    // text as its activation prompt.
+    final bool queued = run.waitingForSetup;
+    await _activateModule(
+      run,
+      trimmed,
+      activationPrompt: queued ? _lastUserText(run) : null,
+    );
+    if (!queued) return true;
+    // v1.29.0: a send() that hit the setup gate waits here. After the
+    // form is submitted, the queued user message finally reaches the
+    // agent — unless ANOTHER active module still blocks on its own form.
+    final ModuleSetupRequest? nextGate = await _findSetupRequest(
+      run.sessionId,
+      run.activeModules,
+    );
+    if (nextGate != null) {
+      run.setupRequest = nextGate;
+      if (_activeSessionId == sessionId) {
+        state = state.copyWith(setupRequest: nextGate);
+      }
+      await _persist(run);
+      return true;
+    }
+    run.waitingForSetup = false;
+    await _persist(run);
+    await _resumeQueuedRun(run);
     return true;
+  }
+
+  /// Content of the LAST user message in the run (null when none) — used
+  /// as the module activation prompt when a queued message is released.
+  String? _lastUserText(_SessionRun run) {
+    for (var i = run.messages.length - 1; i >= 0; i--) {
+      if (run.messages[i].role == Role.user) return run.messages[i].content;
+    }
+    return null;
+  }
+
+  /// Resumes the queued agent cycle (v1.29.0) once the blocking setup
+  /// form was submitted or the gating module deactivated: replay-only —
+  /// the queued user message(s) are already in the transcript, the wire
+  /// rebuilds from run.messages and the agent finally answers.
+  Future<void> _resumeQueuedRun(_SessionRun run) async {
+    if (run.isRunning) return;
+    if (_activeSessionId == run.sessionId) {
+      state = state.copyWith(
+        sessionId: run.sessionId,
+        title: run.title,
+        messages: [...run.messages],
+        isRunning: true,
+        error: null,
+        waitingForSetup: false,
+      );
+    }
+    await _executeRun(run, ref.read(settingsProvider));
   }
 
   /// Finds the first active module whose required per-chat setup is not
@@ -817,6 +941,9 @@ class ChatController extends Notifier<ChatState> {
     if (run.isRunning || (_activeSessionId == sessionId && state.isRunning)) {
       return false;
     }
+    // v1.29.0: a queued message waits for its module's setup input —
+    // editing/regenerating must not start the agent without that input.
+    if (run.waitingForSetup) return false;
     if (messageIndex < 0 || messageIndex >= run.messages.length) {
       return false;
     }
@@ -856,6 +983,9 @@ class ChatController extends Notifier<ChatState> {
     if (run.isRunning || (_activeSessionId == sessionId && state.isRunning)) {
       return false;
     }
+    // v1.29.0: a queued message waits for its module's setup input —
+    // regenerating must not start the agent without that input.
+    if (run.waitingForSetup) return false;
     int lastUser = -1;
     for (var i = run.messages.length - 1; i >= 0; i--) {
       if (run.messages[i].role == Role.user) {
@@ -1174,6 +1304,19 @@ class ChatController extends Notifier<ChatState> {
     if (stagedModule != null) {
       run.pendingModule = null;
       await _activateModule(run, stagedModule, activationPrompt: prompt);
+      if (run.setupRequest != null) {
+        // v1.29.0: the gate fired during activation (values wiped since
+        // the send() check, manifest changed mid-flight) — the queued
+        // user message must not be answered without the module's input.
+        // Stop BEFORE the first LLM call; submitModuleSetup resumes the
+        // cycle once the form is in.
+        run.waitingForSetup = true;
+        if (_activeSessionId == run.sessionId) {
+          state = state.copyWith(waitingForSetup: true);
+        }
+        await _persist(run);
+        return const _RunResult();
+      }
     }
 
     final wire = <Map<String, dynamic>>[
@@ -1559,6 +1702,7 @@ class ChatController extends Notifier<ChatState> {
       sessionId: run.sessionId,
       todos: run.latestTodos,
       setupRequest: run.setupRequest,
+      waitingForSetup: run.waitingForSetup,
     );
   }
 
@@ -1606,6 +1750,7 @@ class ChatController extends Notifier<ChatState> {
             title: run.title,
             messages: persisted,
             modules: run.activeModules,
+            waitingForSetup: run.waitingForSetup,
           );
       if (run.deleted) {
         // The session was deleted while this save was in flight — undo it
@@ -1759,6 +1904,7 @@ class ChatController extends Notifier<ChatState> {
         isRunning: run.isRunning,
         activeModules: [...run.activeModules],
         setupRequest: run.setupRequest,
+        waitingForSetup: run.waitingForSetup,
       );
       return;
     }
@@ -1780,6 +1926,16 @@ class ChatController extends Notifier<ChatState> {
         summary.id,
         modules,
       );
+      // v1.29.0: the persisted wait flag tells whether a QUEUED user
+      // message is blocked behind that form (the agent must not run).
+      bool waitingForSetup = false;
+      try {
+        waitingForSetup = await ref
+            .read(chatStoreProvider)
+            .loadWaitingForSetup(summary.id);
+      } catch (_) {
+        // Storage hiccup: the banner still resurfaces via setupRequest.
+      }
       if (_activeSessionId != summary.id) return;
       state = ChatState(
         sessionId: summary.id,
@@ -1787,6 +1943,7 @@ class ChatController extends Notifier<ChatState> {
         messages: messages ?? const <ChatMessage>[],
         activeModules: modules,
         setupRequest: setupRequest,
+        waitingForSetup: waitingForSetup,
       );
     } catch (_) {
       // A corrupted history entry must never crash the app: open an empty
@@ -1841,6 +1998,14 @@ class ChatController extends Notifier<ChatState> {
             .chatDeleteError,
       );
       return;
+    }
+    // v1.29.0: the chat's private workspace folder (uploads, module
+    // state, agent files) is deleted WITH the chat — data of a removed
+    // conversation must not linger and mix into the sessions directory.
+    try {
+      await ref.read(sessionSandboxProvider).deleteSession(id);
+    } catch (_) {
+      // Sandbox cleanup is best-effort: the transcript is already gone.
     }
     if (_activeSessionId == id) {
       _activeSessionId = null;

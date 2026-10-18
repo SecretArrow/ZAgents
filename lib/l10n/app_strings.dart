@@ -135,6 +135,23 @@ abstract class AppStrings {
   String get filesTitle;
   String get filesEmpty;
   String get filesHint;
+
+  /// v1.29.0: copies the ACTIVE chat's workspace folder to the device
+  /// file manager (`Downloads/ZAgents/<chat>` via MediaStore).
+  String get filesExportFolder;
+
+  /// Progress dialog text while the folder export runs.
+  String get filesExporting;
+
+  /// Success after a MediaStore export.
+  String filesExportDone(int count);
+
+  /// Pre-Android-10 fallback: folder zipped, share sheet opened.
+  String filesExportZipReady(int count);
+
+  /// Files screen without an ACTIVE chat — no per-chat workspace exists.
+  String get filesNoChatTitle;
+  String get filesNoChatBody;
   String get newFolder;
   String get newFolderTitle;
   String get compress;
@@ -418,6 +435,10 @@ abstract class AppStrings {
   String get moduleSetupPerChatHint;
   String get moduleSetupRequiredTag;
 
+  /// v1.29.0: shown on the setup banner while a sent message is QUEUED
+  /// behind the form — the agent does not process it until submission.
+  String get moduleSetupWaitingHint;
+
   // -- Module doctor (v1.26.0) --------------------------------------------
   String moduleRepairCardTitle(String name, String version);
   String moduleRepairCardBody(String permissions);
@@ -597,6 +618,22 @@ class AppStringsEn implements AppStrings {
   String get filesHint =>
       'This workspace is private to the current chat — files from other '
       'chats never mix in. Copy, paste, zip and share them.';
+  @override
+  String get filesExportFolder => 'Export chat folder to device';
+  @override
+  String get filesExporting => 'Exporting this chat\'s folder…';
+  @override
+  String filesExportDone(int count) =>
+      'Chat folder saved to Downloads/ZAgents ($count files).';
+  @override
+  String filesExportZipReady(int count) =>
+      'Chat folder zipped ($count files) — choose where to save or send it.';
+  @override
+  String get filesNoChatTitle => 'No chat open';
+  @override
+  String get filesNoChatBody =>
+      'Open or start a chat first — every chat has its own private '
+      'workspace folder here, so files never mix between chats.';
   @override
   String get newFolder => 'New folder';
   @override
@@ -1065,7 +1102,7 @@ class AppStringsEn implements AppStrings {
   String get aboutSection => 'About';
   @override
   String get aboutBody =>
-      'ZAgents v1.28.0 — an Android clone of the chat.z.ai agent mode UI, '
+      'ZAgents v1.29.0 — an Android clone of the chat.z.ai agent mode UI, '
       'with custom OpenAI-compatible providers (OpenRouter, InferHub, '
       'Z.AI, OpenAI, DeepSeek, Groq, and more), per-provider API keys, '
       'light/dark themes, parallel multi-session chat with background '
@@ -1094,13 +1131,19 @@ class AppStringsEn implements AppStrings {
       'commands. Modules always present the User-Agent identity you pick '
       'in Settings (readable via zagents.info.userAgent, un-overridable), '
       'and can be uninstalled by you at any time — from the Modules '
-      'screen or the /plugins menu. New in v1.28.0: a fan of subagents '
-      '(spawn_subagents runs up to six parallel self-contained tasks and '
-      'synthesizes their results), an exit confirmation dialog so a '
-      'stray back press never kills a running task, a battery '
-      'optimization exemption for long background runs, and heavy JSON '
-      'and crypto work moved off the UI thread (no more "app not '
-      'responding" freezes).';
+      'screen or the /plugins menu. A fan of subagents '
+      '(spawn_subagents) runs up to six parallel self-contained tasks and '
+      'synthesizes their results, an exit confirmation dialog keeps a '
+      'stray back press from killing a running task, a battery '
+      'optimization exemption protects long background runs, and heavy '
+      'JSON and crypto work stays off the UI thread. New in v1.29.0: a '
+      'chat WAITS when a selected module still needs your input — your '
+      'message is queued and the agent works on it only after you submit '
+      'the module\'s setup form; module file writes with relative paths '
+      '(data.json & friends) now land in the chat\'s own per-chat state '
+      'folder; every chat\'s workspace can be exported to the device '
+      'file manager (Downloads/ZAgents/<chat>) with one tap; and '
+      'deleting a chat also removes its workspace folder.';
 
   @override
   String createdBy(String name) => 'Created by $name';
@@ -1246,6 +1289,10 @@ class AppStringsEn implements AppStrings {
       'Stored for THIS chat only — other chats ask again.';
   @override
   String get moduleSetupRequiredTag => 'required';
+  @override
+  String get moduleSetupWaitingHint =>
+      'Your message is queued — the agent processes it right after this '
+      'setup is submitted.';
 
   // -- Module doctor (v1.26.0) --------------------------------------------
   @override
@@ -1461,6 +1508,24 @@ class AppStringsId implements AppStrings {
   String get filesHint =>
       'Ruang kerja ini khusus untuk chat saat ini — file dari chat lain '
       'tidak akan tercampur. Salin, tempel, zip, dan bagikan.';
+  @override
+  String get filesExportFolder => 'Ekspor folder chat ke perangkat';
+  @override
+  String get filesExporting => 'Mengekspor folder chat ini…';
+  @override
+  String filesExportDone(int count) =>
+      'Folder chat tersimpan di Downloads/ZAgents ($count berkas).';
+  @override
+  String filesExportZipReady(int count) =>
+      'Folder chat dikemas menjadi ZIP ($count berkas) — pilih tempat '
+      'menyimpan atau mengirimnya.';
+  @override
+  String get filesNoChatTitle => 'Tidak ada chat aktif';
+  @override
+  String get filesNoChatBody =>
+      'Buka atau mulai sebuah chat dulu — setiap chat punya folder ruang '
+      'kerja pribadinya di sini, jadi file tidak pernah tercampur antar '
+      'chat.';
   @override
   String get newFolder => 'Folder baru';
   @override
@@ -1934,7 +1999,7 @@ class AppStringsId implements AppStrings {
   String get aboutSection => 'Tentang';
   @override
   String get aboutBody =>
-      'ZAgents v1.28.0 — klon UI agent mode chat.z.ai untuk Android, '
+      'ZAgents v1.29.0 — klon UI agent mode chat.z.ai untuk Android, '
       'dengan custom provider OpenAI-compatible (OpenRouter, InferHub, '
       'Z.AI, OpenAI, DeepSeek, Groq, dan lainnya), API key per-provider, '
       'tema terang/gelap, multi-sesi paralel dengan proses latar '
@@ -1963,14 +2028,20 @@ class AppStringsId implements AppStrings {
       'pertama Anda untuk perintah setup. Modul selalu memakai identitas '
       'User-Agent yang Anda pilih di Setelan (terbaca via '
       'zagents.info.userAgent, tidak bisa digantikan), dan dapat Anda '
-      'hapus kapan saja — dari layar Modul atau menu /plugins. Baru di '
-      'v1.28.0: fan of subagents (spawn_subagents menjalankan hingga '
-      'enam tugas paralel yang mandiri lalu merangkum hasilnya), dialog '
-      'konfirmasi keluar agar tekanan back tidak menghentikan tugas yang '
-      'sedang berjalan, pengecualian optimisasi baterai untuk proses '
-      'latar belakang yang panjang, serta pemindahan kerja JSON dan '
-      'kripto berat keluar dari thread UI (tidak ada lagi freeze "app '
-      'not responding").';
+      'hapus kapan saja — dari layar Modul atau menu /plugins. Fan of '
+      'subagents (spawn_subagents) menjalankan hingga enam tugas paralel '
+      'yang mandiri lalu merangkum hasilnya, dialog konfirmasi keluar '
+      'menjaga tekanan back tidak menghentikan tugas yang berjalan, '
+      'pengecualian optimisasi baterai melindungi proses latar belakang '
+      'yang panjang, dan kerja JSON serta kripto berat tetap keluar dari '
+      'thread UI. Baru di v1.29.0: chat MENUNGGU saat modul terpilih '
+      'masih membutuhkan input Anda — pesan Anda masuk antrean dan agent '
+      'baru mengerjakannya setelah Anda mengirim formulir setup modul; '
+      'penulisan file modul dengan path relatif (data.json dan '
+      'kawan-kawannya) kini masuk ke folder state per-chat masing-masing; '
+      'folder ruang kerja setiap chat bisa diekspor ke file manager '
+      'perangkat (Downloads/ZAgents/<chat>) dengan satu ketukan; dan '
+      'menghapus chat juga menghapus folder ruang kerjanya.';
 
   @override
   String createdBy(String name) => 'Dibuat oleh $name';
@@ -2118,6 +2189,10 @@ class AppStringsId implements AppStrings {
       'Disimpan hanya untuk chat INI — chat lain akan bertanya lagi.';
   @override
   String get moduleSetupRequiredTag => 'wajib';
+  @override
+  String get moduleSetupWaitingHint =>
+      'Pesan Anda menunggu — agent mengerjakannya tepat setelah setup ini '
+      'dikirim.';
 
   // -- Module doctor (v1.26.0) --------------------------------------------
   @override

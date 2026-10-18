@@ -318,4 +318,20 @@ void main() {
     expect(find.byKey(const Key('module-setup-sheet')), findsOneWidget);
     expect(find.byKey(const Key('module-setup-banner')), findsOneWidget);
   });
+
+  testWidgets('the banner says the queued message waits when '
+      'waitingForSetup is on (v1.29.0)', (WidgetTester tester) async {
+    final RecordingChatController controller = RecordingChatController()
+      ..initialState = ChatState(
+        setupRequest: _request(),
+        waitingForSetup: true,
+      );
+    await tester.pumpWidget(
+      _host(const HomeShell(), controller: controller, dir: tempDir),
+    );
+    await tester.pump();
+
+    expect(find.byKey(const Key('module-setup-banner')), findsOneWidget);
+    expect(find.textContaining('queued'), findsOneWidget);
+  });
 }

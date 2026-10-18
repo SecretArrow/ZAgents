@@ -216,6 +216,7 @@ class ThrowingChatStore implements ChatStore {
     required String title,
     required List<ChatMessage> messages,
     List<String> modules = const <String>[],
+    bool waitingForSetup = false,
   }) async {}
 
   @override
@@ -227,6 +228,9 @@ class ThrowingChatStore implements ChatStore {
 
   @override
   Future<void> saveModules(String id, List<String> modules) async {}
+
+  @override
+  Future<bool> loadWaitingForSetup(String id) async => false;
 
   @override
   Future<void> delete(String id) async =>

@@ -672,11 +672,14 @@ void main() {
     );
 
     test(
-      'staged module on a fresh chat hits the gate on the first message',
+      'staged module on a fresh chat QUEUES the first message behind the '
+      'setup gate (v1.29.0: the agent must not run without the input)',
       () async {
         final ProviderContainer c = await container();
         await installSetupModule('staged-gate');
         js.nextResult = const JsRunResult(output: 'nope');
+        final ScriptedLlmClient llm =
+            c.read(llmClientProvider) as ScriptedLlmClient;
 
         final ChatController controller = c.read(
           chatControllerProvider.notifier,
@@ -687,9 +690,168 @@ void main() {
         final ChatState state = c.read(chatControllerProvider);
         expect(js.moduleInvocations, isEmpty);
         expect(state.setupRequest, isNotNull);
-        // The user message still got its agent reply.
+        expect(state.waitingForSetup, isTrue);
+        // v1.29.0: the user message is QUEUED, the agent never answered.
         expect(state.messages.first.role, Role.user);
+        expect(state.messages.last.role, Role.user);
+        expect(llm.calls, isEmpty);
+        expect(state.isRunning, isFalse);
+        // The queued message is persisted together with the wait flag
+        // (fire-and-forget persist — poll until it lands).
+        final String sessionId = state.sessionId!;
+        bool waitingOnDisk = false;
+        List<ChatMessage>? stored;
+        for (var i = 0; i < 100 && (stored == null || !waitingOnDisk); i++) {
+          stored = await c.read(chatStoreProvider).load(sessionId);
+          waitingOnDisk = await c
+              .read(chatStoreProvider)
+              .loadWaitingForSetup(sessionId);
+          if (stored == null || !waitingOnDisk) {
+            await Future<void>.delayed(const Duration(milliseconds: 10));
+          }
+        }
+        expect(stored, isNotEmpty);
+        expect(waitingOnDisk, isTrue);
+      },
+    );
+
+    test(
+      'submitting the setup form releases the queued message to the agent',
+      () async {
+        final ProviderContainer c = await container();
+        final ChatModule mod = await installSetupModule('staged-gate');
+        js.nextResult = const JsRunResult(output: 'gate cleared');
+        final ScriptedLlmClient llm =
+            c.read(llmClientProvider) as ScriptedLlmClient;
+        llm.turns.clear();
+        llm.turns.add(AssistantTurn(content: 'finally processed'));
+
+        final ChatController controller = c.read(
+          chatControllerProvider.notifier,
+        );
+        await controller.activateModule('staged-gate');
+        await controller.send('hello there');
+        expect(c.read(chatControllerProvider).waitingForSetup, isTrue);
+
+        expect(
+          await controller.submitModuleSetup('staged-gate', <String, dynamic>{
+            'email': 'me@example.com',
+            'password': 'hunter2',
+          }),
+          isTrue,
+        );
+
+        final ChatState state = c.read(chatControllerProvider);
+        // The module ran once — right after the form was submitted.
+        expect(js.moduleInvocations, hasLength(1));
+        // The queued user message finally reached the agent.
+        expect(llm.calls, isNotEmpty);
+        expect(state.waitingForSetup, isFalse);
+        expect(state.setupRequest, isNull);
         expect(state.messages.last.role, Role.assistant);
+        expect(state.messages.last.content, 'finally processed');
+        // The module received the queued text as its activation prompt.
+        final Map<String, dynamic> stored = await moduleRuntime.readStoredSetup(
+          state.sessionId!,
+          mod.name,
+        );
+        expect(stored, <String, dynamic>{
+          'email': 'me@example.com',
+          'password': 'hunter2',
+        });
+        // And the wait flag is cleared on disk too.
+        expect(
+          await c.read(chatStoreProvider).loadWaitingForSetup(state.sessionId!),
+          isFalse,
+        );
+      },
+    );
+
+    test(
+      'a second send while waiting only queues — the agent stays idle',
+      () async {
+        final ProviderContainer c = await container();
+        await installSetupModule('staged-gate');
+        final ScriptedLlmClient llm =
+            c.read(llmClientProvider) as ScriptedLlmClient;
+
+        final ChatController controller = c.read(
+          chatControllerProvider.notifier,
+        );
+        await controller.activateModule('staged-gate');
+        await controller.send('first');
+        await controller.send('second');
+
+        final ChatState state = c.read(chatControllerProvider);
+        expect(llm.calls, isEmpty);
+        expect(
+          state.messages.where((ChatMessage m) => m.role == Role.user).length,
+          2,
+        );
+        expect(state.waitingForSetup, isTrue);
+      },
+    );
+
+    test(
+      'regenerate and edit are refused while a message waits for setup',
+      () async {
+        final ProviderContainer c = await container();
+        await installSetupModule('staged-gate');
+        final ChatController controller = c.read(
+          chatControllerProvider.notifier,
+        );
+        await controller.activateModule('staged-gate');
+        await controller.send('hello there');
+        final String sessionId = c.read(chatControllerProvider).sessionId!;
+        expect(
+          await controller.regenerate(sessionId),
+          isFalse,
+          reason: 'the agent must not run while the setup input is missing',
+        );
+        expect(
+          await controller.editUserMessage(sessionId, 0, 'edited'),
+          isFalse,
+        );
+        // And the queued message is untouched.
+        expect(
+          c.read(chatControllerProvider).messages.first.content,
+          'hello there',
+        );
+      },
+    );
+
+    test(
+      'deactivating the gating module releases the queued message',
+      () async {
+        final ProviderContainer c = await container();
+        await installSetupModule('staged-gate');
+        js.nextResult = const JsRunResult(output: 'nope');
+        final ScriptedLlmClient llm =
+            c.read(llmClientProvider) as ScriptedLlmClient;
+
+        final ChatController controller = c.read(
+          chatControllerProvider.notifier,
+        );
+        // The module activates on an OPEN session — its gate surfaces the
+        // form (activation path), but nothing is queued yet.
+        await controller.send('start the chat');
+        await controller.activateModule('staged-gate');
+        expect(c.read(chatControllerProvider).setupRequest, isNotNull);
+        expect(c.read(chatControllerProvider).waitingForSetup, isFalse);
+        // THIS send hits the v1.29.0 send-gate: queued behind the form.
+        await controller.send('hello there');
+        expect(c.read(chatControllerProvider).waitingForSetup, isTrue);
+
+        llm.turns.clear();
+        llm.turns.add(AssistantTurn(content: 'released'));
+        expect(await controller.deactivateModule('staged-gate'), isTrue);
+
+        final ChatState state = c.read(chatControllerProvider);
+        expect(js.moduleInvocations, isEmpty);
+        expect(llm.calls, isNotEmpty);
+        expect(state.waitingForSetup, isFalse);
+        expect(state.setupRequest, isNull);
+        expect(state.messages.last.content, 'released');
       },
     );
 
@@ -776,7 +938,18 @@ void main() {
         mod.name,
       );
       expect(stored['email'], 'late@example.com');
-      expect(state.messages.last.content, contains('late cycle ran'));
+      // v1.29.0: the queued message is now processed — the module output
+      // message is on the transcript AND the agent answered after it.
+      expect(
+        state.messages.any(
+          (ChatMessage m) =>
+              m.moduleName == 'lateflow' &&
+              m.content.contains('late cycle ran'),
+        ),
+        isTrue,
+      );
+      expect(state.messages.last.role, Role.assistant);
+      expect(state.messages.last.moduleName, isNull);
     });
 
     test('satisfied setup (command-path mirror) runs immediately', () async {

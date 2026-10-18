@@ -260,6 +260,27 @@ OpenAI-compatible: **OpenRouter, InferHub, Z.AI, OpenAI, DeepSeek, Groq, dan lai
   background isolate — daftar chat, simpan otomatis, pencarian global,
   dan backup tidak lagi membekukan UI; sinkronisasi streaming juga
   dikoalesksi (~20 fps) agar transkrip panjang tetap mulus.
+- **v1.29.0 — chat menunggu input modul & folder chat di file manager**:
+  1. **Gerbang input pengguna sebelum chat dikerjakan**: saat pesan
+  dikirim dan modul terpilih (atau modul aktif di chat itu) masih
+  membutuhkan isian setup per-chat, **pesan masuk antrean** — tampil di
+  transkrip, tersimpan, dengan banner + formulir setup — dan **agent
+  baru mengerjakannya tepat setelah formulir dikirim** (modul berjalan
+  dengan isian barunya, lalu agent merespons pesan yang menunggu).
+  Chat tidak pernah dikerjakan tanpa input yang diminta modul; mengirim
+  pesan lagi selagi menunggu hanya menambah antrean, dan menonaktifkan
+  modul penghambat langsung melepas pesan yang menunggu.
+  2. **Folder chat di file manager perangkat**: File Manager kini punya
+  tombol **ekspor folder chat** — seluruh ruang kerja chat (data.json,
+  uploads, state modul, file buatan agent) tersalin ke
+  **`Download/ZAgents/<judul-chat>/`** lewat MediaStore (Android 10+,
+  tanpa izin apa pun; versi lama: di-zip lalu dibagikan). Ekspor ulang
+  menggantikan salinan lama. Selain itu modul yang menulis file dengan
+  path relatif (`zagents.fs.writeFile('data.json', …)`) kini benar-benar
+  masuk ke folder `state/` milik chat masing-masing (sebelumnya ditolak
+  sandbox), menghapus chat ikut menghapus folder kerjanya, dan File
+  Manager tanpa chat aktif menampilkan panduan "buka chat dulu" — bukan
+  lagi root bersama yang mencampur file antar chat.
 - **Pencarian + paging universal (v1.6.0)** — SEMUA list di aplikasi memakai
   widget `PagedList` yang sama: **5 item per halaman** (termasuk dropdown model),
   kolom pencarian, pager first/prev/next/last, dan empty state "No results".

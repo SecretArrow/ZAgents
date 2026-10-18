@@ -186,6 +186,11 @@ class _ModuleSetupBanner extends ConsumerWidget {
       chatControllerProvider.select((ChatState s) => s.setupRequest),
     );
     if (request == null) return const SizedBox.shrink();
+    // v1.29.0: when a SENT message is queued behind this form, say so —
+    // the agent deliberately does not work on it until the input lands.
+    final bool waiting = ref.watch(
+      chatControllerProvider.select((ChatState s) => s.waitingForSetup),
+    );
     final AppStrings strings = stringsOf(context);
     return Material(
       key: const Key('module-setup-banner'),
@@ -197,11 +202,27 @@ class _ModuleSetupBanner extends ConsumerWidget {
             const Icon(Icons.extension_rounded, size: 18),
             const SizedBox(width: 10),
             Expanded(
-              child: Text(
-                strings.moduleSetupNeededTitle(request.title),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontSize: 13),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  Text(
+                    strings.moduleSetupNeededTitle(request.title),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontSize: 13),
+                  ),
+                  if (waiting)
+                    Text(
+                      strings.moduleSetupWaitingHint,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: Theme.of(context).hintColor,
+                      ),
+                    ),
+                ],
               ),
             ),
             const SizedBox(width: 8),

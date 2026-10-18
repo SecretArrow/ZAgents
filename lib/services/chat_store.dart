@@ -74,6 +74,7 @@ class ChatStore {
     required String title,
     required List<ChatMessage> messages,
     List<String> modules = const <String>[],
+    bool waitingForSetup = false,
   }) async {
     final dir = await _chatsDir();
     final file = File('${dir.path}${Platform.pathSeparator}$id.json');
@@ -85,6 +86,10 @@ class ChatStore {
       'updatedAt': DateTime.now().toIso8601String(),
       'messages': messages.map((m) => m.toJson()).toList(),
       'modules': modules,
+      // v1.29.0: true while a sent message WAITS for a module's required
+      // setup input — the agent must not process it until the form is
+      // submitted. Persisted so the wait survives app restarts.
+      'waitingForSetup': waitingForSetup,
     };
     final String encoded = await _offload(() => jsonEncode(payload));
     await file.writeAsString(encoded);
@@ -130,6 +135,22 @@ class ChatStore {
       ];
     } catch (_) {
       return const <String>[];
+    }
+  }
+
+  /// Loads the v1.29.0 "waiting for module setup" flag of [sessionId]:
+  /// true while a queued user message is blocked behind a module's
+  /// required setup form. False when unknown/corrupted.
+  Future<bool> loadWaitingForSetup(String id) async {
+    final dir = await _chatsDir();
+    final file = File('${dir.path}${Platform.pathSeparator}$id.json');
+    if (!await file.exists()) return false;
+    try {
+      final data =
+          jsonDecode(await file.readAsString()) as Map<String, dynamic>;
+      return data['waitingForSetup'] == true;
+    } catch (_) {
+      return false;
     }
   }
 

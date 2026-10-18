@@ -5,6 +5,43 @@ import 'dart:io';
 
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 
+/// Resolves an fs-bridge path (v1.29.0). Absolute paths pass through;
+/// RELATIVE paths anchor to [sandboxRoots].first — the run's working
+/// directory (`state/` for module runs, the session sandbox for plain
+/// runs) — instead of the Dart process CWD. `.` and `..` segments are
+/// normalized lexically so a `state/../..` traversal still resolves to
+/// its real location and the sandbox check can reject it.
+///
+/// Pure and top-level so the path contract is directly unit-testable.
+String zResolveFsPath(String rawPath, List<String> sandboxRoots) {
+  final bool isAbsolute =
+      rawPath.startsWith(Platform.pathSeparator) ||
+      RegExp(r'^[A-Za-z]:[\\/]').hasMatch(rawPath);
+  final String base = sandboxRoots.isNotEmpty
+      ? sandboxRoots.first
+      : Directory.current.path;
+  final String joined = isAbsolute
+      ? rawPath
+      : rawPath.isEmpty
+      ? base
+      : '$base${Platform.pathSeparator}$rawPath';
+  final List<String> parts = joined.split(Platform.pathSeparator);
+  final bool hasDrive =
+      parts.isNotEmpty && RegExp(r'^[A-Za-z]:$').hasMatch(parts.first);
+  final List<String> out = <String>[];
+  for (final String part in parts) {
+    if (part.isEmpty || part == '.') continue;
+    if (part == '..') {
+      // Never pop past the root (or the Windows drive prefix).
+      if (out.length > (hasDrive ? 1 : 0)) out.removeLast();
+      continue;
+    }
+    out.add(part);
+  }
+  final String prefix = hasDrive ? '' : Platform.pathSeparator;
+  return '$prefix${out.join(Platform.pathSeparator)}';
+}
+
 /// Normalizes a JavaScript source before it enters the CommonJS registry:
 /// a UTF-8 BOM and a leading shebang line (`#!...`) are stripped.
 ///
@@ -338,7 +375,12 @@ class WebViewJsRuntime implements JsRuntime {
         };
       }
       final String rawPath = request['path']?.toString() ?? '';
-      final String resolved = File(rawPath).absolute.path;
+      // v1.29.0 fix: relative paths are anchored to the run's working
+      // directory (the FIRST sandbox root) instead of the Dart process
+      // CWD — before this fix the documented `zagents.fs.writeFile(
+      // 'data.json', …)` usage was ALWAYS rejected by the sandbox check
+      // (`/data.json` is outside every sandbox root).
+      final String resolved = zResolveFsPath(rawPath, _sandboxRoots);
       if (!_isSandboxed(resolved)) {
         return <String, dynamic>{
           'ok': false,

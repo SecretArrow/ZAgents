@@ -76,4 +76,29 @@ void main() {
       isEmpty,
     );
   });
+
+  group('deleteSession (v1.29.0)', () {
+    test('removes the whole session workspace with the chat', () async {
+      final Directory root = await sandbox.rootFor('gone');
+      await File('${root.path}/data.json').writeAsString('{}');
+      Directory('${root.path}/modules/x/state').createSync(recursive: true);
+      await File('${root.path}/modules/x/state/data.json')
+          .writeAsString('{"a":1}');
+      await sandbox.deleteSession('gone');
+      expect(root.existsSync(), isFalse);
+      expect(Directory('${tempDir.path}/sessions').existsSync(), isTrue);
+    });
+
+    test('refuses dangerous ids and ignores unknown ones', () async {
+      await sandbox.rootFor('keep');
+      // Traversal and relative-path ids are refused outright.
+      await sandbox.deleteSession('../keep');
+      await sandbox.deleteSession('a/b');
+      await sandbox.deleteSession('.hidden');
+      await sandbox.deleteSession('');
+      expect(Directory('${tempDir.path}/sessions/keep').existsSync(), isTrue);
+      // Unknown id: a no-op, never an exception.
+      await sandbox.deleteSession('never-existed');
+    });
+  });
 }

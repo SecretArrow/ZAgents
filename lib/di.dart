@@ -17,6 +17,7 @@ import 'services/browser_automation.dart';
 import 'services/browser_session_isolation.dart';
 import 'services/chat_store.dart';
 import 'services/context_repository.dart';
+import 'services/device_export.dart';
 import 'services/js_runtime.dart';
 import 'services/llm_client.dart';
 import 'services/model_catalog.dart';
@@ -244,6 +245,12 @@ final moduleRuntimeProvider = Provider<ModuleRuntime>(
 final sessionSandboxProvider = Provider<SessionSandbox>((ref) {
   return SessionSandbox(resolveDocumentsDir: ref.watch(documentsDirProvider));
 });
+
+/// Copies a chat's workspace folder to the device file manager
+/// (v1.29.0): MediaStore on Android 10+, zip + share sheet below.
+final deviceExportServiceProvider = Provider<DeviceExportService>(
+  (ref) => DeviceExportService(),
+);
 
 /// Must be overridden in main() — SharedPreferences is async at boot.
 final appLockPrefsProvider = Provider<SharedPreferences>((ref) {

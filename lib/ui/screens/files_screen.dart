@@ -6,6 +6,7 @@ import 'package:share_plus/share_plus.dart';
 
 import '../../di.dart';
 import '../../l10n/app_strings.dart';
+import '../../services/device_export.dart';
 import '../../services/file_system_service.dart';
 import '../theme.dart';
 import '../widgets/paged_list.dart';
@@ -24,6 +25,7 @@ class _FilesScreenState extends ConsumerState<FilesScreen> {
   List<FsEntry> _entries = const <FsEntry>[];
   bool _loading = true;
   ({String path, bool cut})? _clipboard;
+  bool _exporting = false;
 
   /// File workspace of the ACTIVE chat session — every session browses
   /// only its own sandbox (like a browser private window).
@@ -417,16 +419,121 @@ class _FilesScreenState extends ConsumerState<FilesScreen> {
     );
   }
 
+  /// Copies the ACTIVE chat's whole workspace folder to the device file
+  /// manager (v1.29.0): MediaStore `Download/ZAgents/<chat>/` on Android
+  /// 10+, zip + share sheet on older versions.
+  Future<void> _exportChatFolder() async {
+    final AppStrings strings = stringsOf(context);
+    final String? sessionId = ref.read(activeSessionIdProvider);
+    if (sessionId == null || _exporting) return;
+    setState(() => _exporting = true);
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext dialogContext) => AlertDialog(
+        content: Row(
+          children: <Widget>[
+            const CircularProgressIndicator(strokeWidth: 2),
+            const SizedBox(width: 20),
+            Expanded(child: Text(strings.filesExporting)),
+          ],
+        ),
+      ),
+    );
+    try {
+      final Directory root = await ref
+          .read(sessionSandboxProvider)
+          .rootFor(sessionId);
+      final String title = ref.read(chatControllerProvider).title;
+      final DeviceExportResult result = await ref
+          .read(deviceExportServiceProvider)
+          .exportChatFolder(
+            folderName: deviceFolderName(
+              title.trim().isEmpty ? 'chat' : title.trim(),
+              sessionId,
+            ),
+            root: root,
+          );
+      if (!mounted) return;
+      Navigator.of(context, rootNavigator: true).pop(); // progress dialog
+      switch (result) {
+        case MediaStoreExport(:final fileCount):
+          _snack(strings.filesExportDone(fileCount));
+        case SharedZipExport(:final zipPath, :final fileCount):
+          _snack(strings.filesExportZipReady(fileCount));
+          try {
+            await SharePlus.instance.share(
+              ShareParams(files: <XFile>[XFile(zipPath)]),
+            );
+          } catch (_) {
+            // The zip stays in exports/ — user can share it from Files.
+          }
+      }
+    } catch (_) {
+      if (!mounted) return;
+      Navigator.of(context, rootNavigator: true).pop(); // progress dialog
+      _toast(stringsOf(context).operationFailed);
+    } finally {
+      if (mounted) setState(() => _exporting = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final AppStrings strings = stringsOf(context);
     final ZPalette palette = context.palette;
+    // v1.29.0: without an ACTIVE chat there is no per-chat workspace to
+    // browse — showing the legacy shared root here mixed every chat's
+    // files into one confusing view. Ask the user to open a chat instead.
+    final String? activeSession = ref.watch(activeSessionIdProvider);
+    if (activeSession == null) {
+      return Scaffold(
+        appBar: AppBar(title: Text(strings.filesTitle)),
+        body: Padding(
+          padding: const EdgeInsets.all(32),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: <Widget>[
+              Icon(
+                Icons.chat_bubble_outline_rounded,
+                size: 48,
+                color: palette.muted,
+              ),
+              const SizedBox(height: 16),
+              Text(
+                strings.filesNoChatTitle,
+                textAlign: TextAlign.center,
+                style: const TextStyle(fontWeight: FontWeight.w600),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                strings.filesNoChatBody,
+                textAlign: TextAlign.center,
+                style: TextStyle(color: palette.muted, fontSize: 12),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
     return Scaffold(
       appBar: AppBar(
         title: Text(
           _current.isEmpty ? strings.filesTitle : _current.split('/').last,
         ),
         actions: <Widget>[
+          IconButton(
+            key: const Key('files-export-folder'),
+            tooltip: strings.filesExportFolder,
+            icon: _exporting
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.save_alt_rounded),
+            onPressed: _exportChatFolder,
+          ),
           IconButton(
             key: const Key('files-new-folder'),
             tooltip: strings.newFolder,

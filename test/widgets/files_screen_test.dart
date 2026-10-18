@@ -382,4 +382,38 @@ void main() {
     expect(fs.extractedWithPassword, contains('secret.zip'));
     expect(find.text('Extracted.'), findsOneWidget);
   });
+
+  testWidgets('files screen without an active chat asks to open one '
+      '(v1.29.0: no shared-root mixing)', (tester) async {
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: <Override>[
+          ...testOverrides(dir: tempDir),
+          sessionSandboxProvider.overrideWithValue(StaticSessionSandbox(fs)),
+          chatListProvider.overrideWith(
+            (Ref ref) async => const <ChatSummary>[],
+          ),
+          // NO activeSessionIdProvider override: the fresh app has no
+          // open chat, so there is no per-chat workspace to browse.
+        ],
+        child: const ZAgentsApp(),
+      ),
+    );
+    await tester.pump();
+    await tester.tap(find.byIcon(Icons.menu_rounded));
+    await tester.pumpAndSettle(
+      const Duration(milliseconds: 100),
+      EnginePhase.sendSemanticsUpdate,
+      const Duration(seconds: 10),
+    );
+    await tester.tap(find.byKey(const Key('drawer-files')));
+    await tester.pumpAndSettle(
+      const Duration(milliseconds: 100),
+      EnginePhase.sendSemanticsUpdate,
+      const Duration(seconds: 10),
+    );
+    expect(find.textContaining('No chat open'), findsOneWidget);
+    // The legacy shared root is NOT listed anymore.
+    expect(find.byKey(const Key('files-new-folder')), findsNothing);
+  });
 }

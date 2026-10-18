@@ -51,6 +51,28 @@ class SessionSandbox {
   FileSystemService fsFor(String? sessionId) =>
       FileSystemService(resolveBaseDir: () => rootFor(sessionId));
 
+  /// Deletes a session's whole sandbox directory (v1.29.0) — called when
+  /// the chat itself is deleted, so its workspace (uploads, module state,
+  /// agent files) never lingers behind. Strictly guards [sessionId]:
+  /// empty, path separators, leading dots and reserved names are refused
+  /// so the call can never delete anything but a session folder.
+  Future<void> deleteSession(String sessionId) async {
+    final String id = sessionId.trim();
+    if (id.isEmpty) return;
+    if (id.contains('/') ||
+        id.contains('\\') ||
+        id.contains(Platform.pathSeparator) ||
+        id.startsWith('.')) {
+      return;
+    }
+    final Directory docs = await resolveDocumentsDir();
+    final Directory dir = Directory(
+      '${docs.path}${Platform.pathSeparator}sessions'
+      '${Platform.pathSeparator}$id',
+    );
+    if (dir.existsSync()) await dir.delete(recursive: true);
+  }
+
   Future<void> _importLegacyOnce(Directory docs, Directory target) async {
     if (_legacyChecked) return;
     _legacyChecked = true;

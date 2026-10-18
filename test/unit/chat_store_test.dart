@@ -222,4 +222,36 @@ void main() {
       expect(summaries.single.title, 'sehat');
     });
   });
+
+  group('waiting-for-setup flag (v1.29.0)', () {
+    test(
+      'save persists the flag and loadWaitingForSetup reads it back',
+      () async {
+        await store.save(
+          id: 'waiting-1',
+          title: 't',
+          messages: [ChatMessage.user('queued')],
+          waitingForSetup: true,
+        );
+        expect(await store.loadWaitingForSetup('waiting-1'), isTrue);
+        // Default is false when the flag is omitted.
+        await store.save(
+          id: 'waiting-2',
+          title: 't',
+          messages: [ChatMessage.user('normal')],
+        );
+        expect(await store.loadWaitingForSetup('waiting-2'), isFalse);
+      },
+    );
+
+    test(
+      'loadWaitingForSetup defaults to false for unknown/corrupt ids',
+      () async {
+        expect(await store.loadWaitingForSetup('missing'), isFalse);
+        final Directory dir = Directory('${tempDir.path}/chats');
+        await File('${dir.path}/broken.json').writeAsString('{not json');
+        expect(await store.loadWaitingForSetup('broken'), isFalse);
+      },
+    );
+  });
 }
