@@ -132,6 +132,7 @@ class ModuleRuntime implements ModuleBridge {
     this.resolveUserAgent,
     this.deviceCommandsEnabled,
     this.deviceShell,
+    this.airplaneProbe,
   });
 
   final JsRuntime js;
@@ -174,6 +175,13 @@ class ModuleRuntime implements ModuleBridge {
     int timeoutMs,
   )?
   deviceShell;
+
+  /// Read-only airplane-mode probe for `zagents.device.airplane`
+  /// (v1.32.0): no root, no master switch — a world-readable setting.
+  /// Null (tests without the seam) degrades to `available: false` so a
+  /// module can branch on the capability instead of crashing. The probe
+  /// returns null when the platform cannot answer ("unknown").
+  final Future<bool?> Function()? airplaneProbe;
 
   /// Shell-command caps for `device.shell`: a hostile module can neither
   /// smuggle in megabyte-long command lines nor pin the executor beyond
@@ -567,6 +575,41 @@ class ModuleRuntime implements ModuleBridge {
           };
         } catch (e) {
           return <String, dynamic>{'ok': false, 'error': 'Shell failed: $e'};
+        }
+      case 'device.airplane':
+        // v1.32.0 — read-only airplane-mode state (manual mode of the
+        // airplane module, auto-retry awareness). NO root and NO master
+        // switch: `Settings.Global.AIRPLANE_MODE_ON` is world-readable
+        // and the probe cannot change anything. The manifest `device`
+        // permission still gates it (declared intent, uniform surface).
+        if (!context.permissions.contains('device')) return _denied('device');
+        final Future<bool?> Function()? probe = airplaneProbe;
+        if (probe == null) {
+          return const <String, dynamic>{
+            'ok': true,
+            'data': <String, dynamic>{'available': false, 'on': false},
+          };
+        }
+        if (context.cancelled) {
+          return const <String, dynamic>{
+            'ok': true,
+            'data': <String, dynamic>{'available': true, 'on': false},
+          };
+        }
+        try {
+          final bool? on = await probe();
+          return <String, dynamic>{
+            'ok': true,
+            'data': <String, dynamic>{
+              'available': on != null,
+              'on': on == true,
+            },
+          };
+        } catch (e) {
+          return <String, dynamic>{
+            'ok': true,
+            'data': <String, dynamic>{'available': false, 'on': false},
+          };
         }
       case 'storage.get':
         if (!context.permissions.contains('storage')) return _denied('storage');

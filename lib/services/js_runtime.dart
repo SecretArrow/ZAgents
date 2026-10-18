@@ -647,6 +647,18 @@ window.__zDone = false;
             ok: !!(data && !data.error && !data.timedOut && data.exitCode === 0)
           };
         });
+      },
+      // v1.32.0 — read-only airplane-mode state WITHOUT root and WITHOUT
+      // the master switch (a world-readable setting). available:false on
+      // platforms that cannot answer lets modules pick manual fallbacks.
+      airplane: function(){
+        if (!zHas('device')) return zDeny('device');
+        return zCall('device.airplane', {}).then(function(data){
+          return {
+            available: !!(data && data.available),
+            on: !!(data && data.on)
+          };
+        });
       }
     }
   };

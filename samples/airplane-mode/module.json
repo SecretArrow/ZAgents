@@ -1,8 +1,8 @@
 {
   "name": "airplane-mode",
-  "version": "1.0.0",
-  "title": "Airplane Mode (root)",
-  "description": "Toggles Android airplane mode from the chat via root (su). Type /airplane on, /airplane off or /airplane status while this module is active in the chat — the command runs the module directly instead of the LLM. Requires: rooted phone + the 'Device commands' switch in Settings → Modules.",
+  "version": "1.2.0",
+  "title": "Airplane Mode",
+  "description": "Controls Android airplane mode from the chat. Rooted phones: fully automatic verified toggle. Non-rooted phones: guided MANUAL mode — the module verifies the REAL state with the world-readable probe (works offline) and walks you through the toggle. Type /airplane on, /airplane off or /airplane status while this module is active; commands run app-side, so they keep working even while airplane mode is ON and the AI chat is unreachable. Root toggles additionally need the 'Device commands (root)' switch in Settings → Modules.",
   "entry": "main.js",
   "permissions": ["device"],
   "commands": ["airplane"]

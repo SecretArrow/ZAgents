@@ -276,6 +276,35 @@ const r = await zagents.device.shell('settings get global airplane_mode_on', {
 * Lihat [`samples/airplane-mode/`](../../samples/airplane-mode/) untuk
   modul otomasi root lengkap yang memakai perintah slash.
 
+### `zagents.device.airplane()` — izin `device` (v1.32.0)
+Baca **state mode pesawat TANPA root** dari setelan world-readable
+`Settings.Global.AIRPLANE_MODE_ON`:
+
+```js
+const p = await zagents.device.airplane();
+// p.available — true bila platform ini bisa membaca state asli
+// p.on        — keadaan mode pesawat sebenarnya
+```
+
+* TANPA root dan TIDAK digerbangi sakelar "Perintah perangkat" — probe
+  tidak bisa mengubah apa pun, hanya membaca satu setelan tak berbahaya.
+* Bekerja **offline** (tanpa jaringan), sehingga modul mode pesawat
+  manual bisa memverifikasi state asli selagi radio mati dan chat AI tak
+  terjangkau.
+* `available: false` (non-Android, sisi native hilang) berarti "tidak
+  diketahui" — pakai instruksi manual, jangan mengklaim state yang tak
+  pernah dilihat.
+
+```js
+// Pola manual (tanpa root) — verifikasi, jangan percaya "yes" buta:
+const p = await zagents.device.airplane();
+if (p.available && p.on) {
+  await zagents.log('Mode pesawat AKTIF (terverifikasi).');
+} else {
+  await zagents.log('Masih OFF — nyalakan dari Quick Settings, lalu jalankan ulang.');
+}
+```
+
 ## 4. Model isolasi (jendela privat per chat)
 
 * **Proses** — setiap eksekusi memulai konteks JS baru; tidak ada yang
@@ -289,8 +318,10 @@ const r = await zagents.device.shell('settings get global airplane_mode_on', {
 * **Agen** — butuh `agent`; generasi lewat LLM chat sendiri plus gerbang
   composer di sisi host, sehingga output modul selalu di dalam kontrak
   yang diatur.
-* **Perangkat** — butuh `device` plus sakelar utama Setelan (mati
-  bawaan); untuk ponsel root, setiap panggilan dicek ulang di host.
+* **Perangkat** — butuh `device`; `device.shell` tambahan butuh sakelar
+  utama Setelan (mati bawaan) dan memang untuk ponsel root;
+  `device.airplane` adalah probe baca-saja world-readable (tanpa sakelar
+  utama, tanpa root). Setiap panggilan dicek ulang di host.
 * **Sumber daya** — timeout, batas output, batas storage.
 * **Penghentian** — menonaktifkan modul atau menghentikan chat membatalkan
   run yang berjalan dengan aman: pengiriman berhenti, state tersimpan.
@@ -307,7 +338,7 @@ Contoh yang sama, siap dipasang, ada di [`samples/counter/`](../../samples/count
 | [`samples/file-notes/`](../../samples/file-notes/) | `files` — catatan tersandbox di `state/` |
 | [`samples/chat-streamer/`](../../samples/chat-streamer/) | `chat` — output bertahap `chat.emit` |
 | [`samples/onhomeroom-daily/`](../../samples/onhomeroom-daily/) | `agent` — bot harian dunia nyata yang setiap kalimatnya disusun agen chat; formulir setup per chat untuk akunnya |
-| [`samples/airplane-mode/`](../../samples/airplane-mode/) | `device` — pengalih mode pesawat (root) lewat perintah slash `/airplane on \| off \| status` (v1.31.0) |
+| [`samples/airplane-mode/`](../../samples/airplane-mode/) | `device` — pengalih mode pesawat: AUTO (root) + mode MANUAL terverifikasi tanpa root, perintah slash `/airplane on \| off \| status` (v1.32.0) |
 
 `module.json`
 

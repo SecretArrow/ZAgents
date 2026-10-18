@@ -2,12 +2,14 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/services.dart' show MissingPluginException;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zagents/di.dart';
 import 'package:zagents/l10n/app_strings.dart';
 import 'package:zagents/models/models.dart';
 import 'package:zagents/services/agent_controller.dart';
+import 'package:zagents/services/device_shell.dart';
 import 'package:zagents/services/llm_client.dart';
 
 import '../support/test_doubles.dart';
@@ -56,6 +58,45 @@ Future<ProviderContainer> _container(
 ) async {
   final ProviderContainer container = ProviderContainer(
     overrides: testOverrides(llm: llm, dir: dir, settings: settings),
+  );
+  addTearDown(container.dispose);
+  return container;
+}
+
+/// Scripted `zagents/device` invoker: answers only the airplane probe,
+/// handing out the given sequence (last value repeats). Used to simulate
+/// the manual airplane window opening/closing around retry attempts.
+class _ScriptedAirplane {
+  _ScriptedAirplane(this.answers);
+
+  final List<bool?> answers;
+  int index = 0;
+
+  Future<Object?> call(String method, Map<String, Object?> args) async {
+    if (method != 'getAirplaneMode') {
+      throw MissingPluginException('not scripted: $method');
+    }
+    if (index >= answers.length) {
+      return answers.isEmpty ? null : answers.last;
+    }
+    return answers[index++];
+  }
+}
+
+Future<ProviderContainer> _airplaneContainer(
+  LlmClient llm,
+  Directory dir,
+  AppSettings settings,
+  List<bool?> probes,
+) async {
+  final _ScriptedAirplane airplane = _ScriptedAirplane(probes);
+  final ProviderContainer container = ProviderContainer(
+    overrides: <Override>[
+      ...testOverrides(llm: llm, dir: dir, settings: settings),
+      deviceShellServiceProvider.overrideWithValue(
+        DeviceShellService(invoker: airplane.call),
+      ),
+    ],
   );
   addTearDown(container.dispose);
   return container;
@@ -299,6 +340,169 @@ void main() {
         isTrue,
         reason: 'the stalled plan should trigger an automatic resume note',
       );
+    });
+  });
+
+  group('airplane-aware auto retry (v1.32.0)', () {
+    setUp(() {
+      ChatController.airplanePollInterval = Duration.zero;
+    });
+
+    tearDown(() {
+      ChatController.airplanePollInterval = const Duration(seconds: 2);
+      ChatController.airplaneWaitCap = const Duration(minutes: 10);
+    });
+
+    test(
+      'an airplane-ON failure HOLDS without burning the attempt budget',
+      () async {
+        // attempts=1: the plain v1.30.0 loop would exhaust on the first
+        // failure. With airplane mode ON the hold passes the failure
+        // through WITHOUT consuming an attempt, so the retry succeeds.
+        final _FlakyLlmClient llm = _FlakyLlmClient(1, <AssistantTurn>[
+          AssistantTurn(content: 'continued after airplane'),
+        ]);
+        final ProviderContainer container = await _airplaneContainer(
+          llm,
+          tempDir,
+          _retrySettings(attempts: 1),
+          <bool?>[true], // every probe reports airplane ON
+        );
+
+        await container.read(chatControllerProvider.notifier).send('hello');
+        final ChatState state = container.read(chatControllerProvider);
+
+        expect(state.isRunning, isFalse);
+        expect(state.error, isNull, reason: state.error);
+        expect(llm.calls, 2); // failure + post-hold retry
+        expect(state.messages.last.content, 'continued after airplane');
+      },
+    );
+
+    test('airplane OFF keeps the plain v1.30.0 accounting', () async {
+      final _FlakyLlmClient llm = _FlakyLlmClient(99, <AssistantTurn>[
+        AssistantTurn(content: 'never'),
+      ]);
+      final AppStrings en = appStringsFor('en');
+      final ProviderContainer container = await _airplaneContainer(
+        llm,
+        tempDir,
+        _retrySettings(attempts: 1),
+        <bool?>[false], // airplane OFF → no hold
+      );
+
+      await container.read(chatControllerProvider.notifier).send('hello');
+      final ChatState state = container.read(chatControllerProvider);
+
+      expect(state.error, isNotNull);
+      // One per-call failure + the single v1.30.0 run-level resume; the
+      // airplane note must NEVER appear when the radio is off.
+      expect(llm.calls, 2);
+      expect(
+        state.messages.any(
+          (ChatMessage m) => m.content == en.autoRetryAirplaneResumeNote,
+        ),
+        isFalse,
+      );
+    });
+
+    test(
+      'an unanswerable probe never holds (tests / non-Android keep v1.30.0)',
+      () async {
+        final _FlakyLlmClient llm = _FlakyLlmClient(99, <AssistantTurn>[
+          AssistantTurn(content: 'never'),
+        ]);
+        final AppStrings en = appStringsFor('en');
+        final ProviderContainer container = await _airplaneContainer(
+          llm,
+          tempDir,
+          _retrySettings(attempts: 1),
+          <bool?>[null], // probe cannot answer
+        );
+
+        await container.read(chatControllerProvider.notifier).send('hello');
+        final ChatState state = container.read(chatControllerProvider);
+
+        expect(state.error, isNotNull);
+        expect(llm.calls, 2);
+        expect(
+          state.messages.any(
+            (ChatMessage m) => m.content == en.autoRetryAirplaneResumeNote,
+          ),
+          isFalse,
+        );
+      },
+    );
+
+    test(
+      'run-level hold adds the airplane note and resumes the task',
+      () async {
+        // Probe script: the stream-level checks see airplane OFF (both
+        // per-call attempts burn), the RUN-level check then sees it ON —
+        // the manual airplane window opened right after the stream gave
+        // up. The hold must add the airplane note and resume without
+        // consuming the resume budget.
+        final _FlakyLlmClient llm = _FlakyLlmClient(2, <AssistantTurn>[
+          AssistantTurn(content: 'resumed after the radio came back'),
+        ]);
+        final ProviderContainer container = await _airplaneContainer(
+          llm,
+          tempDir,
+          _retrySettings(attempts: 2),
+          <bool?>[false, false, true],
+        );
+
+        await container.read(chatControllerProvider.notifier).send('hello');
+        final ChatState state = container.read(chatControllerProvider);
+
+        expect(state.isRunning, isFalse);
+        expect(state.error, isNull, reason: state.error);
+        final AppStrings en = appStringsFor('en');
+        expect(
+          state.messages.any(
+            (ChatMessage m) => m.content == en.autoRetryAirplaneResumeNote,
+          ),
+          isTrue,
+          reason: 'the transcript should explain the airplane hold',
+        );
+        expect(
+          state.messages.any(
+            (ChatMessage m) => m.content == en.autoRetryResumeNote(1, 2),
+          ),
+          isTrue,
+          reason: 'the resume note must still appear after the hold',
+        );
+        expect(
+          state.messages.last.content,
+          'resumed after the radio came back',
+        );
+      },
+    );
+
+    test('Stop during the airplane hold aborts instantly', () async {
+      ChatController.airplanePollInterval = const Duration(milliseconds: 10);
+      ChatController.airplaneWaitCap = const Duration(milliseconds: 80);
+      final _FlakyLlmClient llm = _FlakyLlmClient(99, <AssistantTurn>[
+        AssistantTurn(content: 'never'),
+      ]);
+      final ProviderContainer container = await _airplaneContainer(
+        llm,
+        tempDir,
+        _retrySettings(attempts: 3, delay: 60),
+        <bool?>[true],
+      );
+      // Press Stop a moment after the first failure — while the hold is
+      // polling. The wait must abort instead of retrying.
+      Timer(const Duration(milliseconds: 25), () {
+        container.read(chatControllerProvider.notifier).stop();
+      });
+
+      await container.read(chatControllerProvider.notifier).send('hello');
+      final ChatState state = container.read(chatControllerProvider);
+
+      expect(state.isRunning, isFalse);
+      expect(state.error, isNull, reason: 'Stop must win over the hold');
+      expect(llm.calls, 1, reason: 'no retry may start after Stop');
     });
   });
 

@@ -106,4 +106,23 @@ class DeviceShellService {
       return DeviceShellResult(error: '$e');
     }
   }
+
+  /// Reads the airplane-mode state WITHOUT root (v1.32.0) — the native
+  /// side answers from the world-readable `Settings.Global
+  /// .AIRPLANE_MODE_ON` setting. Returns null when the platform cannot
+  /// answer (tests, iOS, missing native side) so callers can degrade to
+  /// "unknown" instead of asserting a state they never saw.
+  Future<bool?> readAirplaneMode() async {
+    try {
+      final Object? raw = await _invoker(
+        'getAirplaneMode',
+        const <String, Object?>{},
+      );
+      return raw is bool ? raw : null;
+    } on Exception {
+      return null;
+    } catch (_) {
+      return null;
+    }
+  }
 }

@@ -3,6 +3,7 @@ import 'dart:io';
 
 import '../models/models.dart';
 import 'browser_automation.dart';
+import 'device_shell.dart';
 import 'file_system_service.dart';
 import 'js_runtime.dart';
 import 'module_registry.dart';
@@ -51,6 +52,7 @@ class ToolExecutor {
     this.fetcher,
     this.modules,
     this.subagents,
+    this.deviceStatus,
   });
 
   final BrowserAutomation browser;
@@ -87,6 +89,17 @@ class ToolExecutor {
   /// Fan-of-subagents runner behind `spawn_subagents`. Nullable for
   /// legacy tests; the tool degrades gracefully when absent.
   final SubagentRunner? subagents;
+
+  /// Device-state probe behind the `device_status` tool (v1.32.0):
+  /// verified airplane state (world-readable, NO root) + root
+  /// availability. Nullable for legacy tests; the tool degrades
+  /// gracefully when absent. The root probe is expensive (`su -c id -u`),
+  /// so its outcome is cached for the process lifetime — root status
+  /// never changes while the app runs.
+  final DeviceShellService? Function()? deviceStatus;
+
+  /// Cached root-availability outcome (null = not probed yet).
+  bool? _rootAvailable;
 
   static const Set<String> _browserTools = <String>{
     'browser_navigate',
@@ -158,6 +171,8 @@ class ToolExecutor {
           return await _moduleStageRepair(args, sessionId);
         case 'spawn_subagents':
           return await _spawnSubagents(args, sessionId, shouldAbort);
+        case 'device_status':
+          return await _deviceStatus();
         default:
           return ToolResult(ok: false, llmOutput: 'Unknown tool: $name');
       }
@@ -204,6 +219,54 @@ class ToolExecutor {
       ok: true,
       llmOutput: runner.formatOutcomes(outcomes),
       displayText: 'subagents ×${outcomes.length}',
+    );
+  }
+
+  /// `device_status` (v1.32.0): the verified device facts the agent needs
+  /// to ground airplane-mode workflows — the REAL airplane state (world
+  /// readable, no root) and whether `su` is available (rooted phone).
+  /// Grounding matters: the agent can now CHECK a user's "yes, airplane
+  /// is on/off" claim instead of trusting it blindly.
+  Future<ToolResult> _deviceStatus() async {
+    final DeviceShellService? Function()? resolve = deviceStatus;
+    final DeviceShellService? shell = resolve?.call();
+    if (shell == null) {
+      return const ToolResult(
+        ok: false,
+        llmOutput:
+            'device_status is unavailable in this build (no shell bridge).',
+      );
+    }
+    final bool? airplane = await shell.readAirplaneMode();
+    if (_rootAvailable == null) {
+      // One-shot probe with a short budget: `su -c id -u` prints 0 on a
+      // rooted phone; anything else (missing su, user denial, timeout)
+      // counts as "no root". Cached — root never changes at runtime.
+      final DeviceShellResult probe = await shell.run(
+        command: 'id -u',
+        root: true,
+        timeoutMs: 5000,
+      );
+      _rootAvailable =
+          probe.succeeded &&
+          probe.stdout.trim().split(RegExp(r'\s+')).last == '0';
+    }
+    final String airplaneText = airplane == null
+        ? 'unknown (this platform cannot report it)'
+        : airplane
+        ? 'ON'
+        : 'OFF';
+    return ToolResult(
+      ok: true,
+      llmOutput:
+          'Device status:\n'
+          '- airplane_mode: $airplaneText\n'
+          '- root_available: ${_rootAvailable!}\n'
+          'Note: with airplane_mode ON the device has no internet — chat '
+          'requests to the AI provider will fail until the user turns it '
+          'back off (auto-retry then resumes the task automatically).',
+      displayText:
+          'airplane: ${airplane == null ? "?" : (airplane ? "ON" : "OFF")}, root: ${_rootAvailable!}',
     );
   }
 

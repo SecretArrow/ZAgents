@@ -175,6 +175,10 @@ final moduleRuntimeProvider = Provider<ModuleRuntime>(
     deviceShell: (String command, bool root, int timeoutMs) => ref
         .read(deviceShellServiceProvider)
         .run(command: command, root: root, timeoutMs: timeoutMs),
+    // v1.32.0 — read-only airplane probe (zagents.device.airplane): no
+    // root, no master switch; null on non-Android/test platforms.
+    airplaneProbe: () =>
+        ref.read(deviceShellServiceProvider).readAirplaneMode(),
     httpTransport:
         (
           String url,
@@ -353,6 +357,10 @@ final toolExecutorProvider = Provider<ToolExecutor>((ref) {
         return ref.read(userAgentManagerProvider).resolve(settings.uaMode).ua;
       },
     ),
+    // v1.32.0 — device_status tool: verified airplane state (no root) +
+    // root availability, so the agent can confirm what the user claims
+    // instead of trusting a blind "yes".
+    deviceStatus: () => ref.read(deviceShellServiceProvider),
   );
   return executor;
 });

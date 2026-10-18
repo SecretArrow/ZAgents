@@ -12,6 +12,7 @@ import '../l10n/app_strings.dart';
 import '../models/models.dart';
 import '../tools/tool_defs.dart';
 import 'background_service.dart';
+import 'device_shell.dart';
 import 'image_downscale.dart';
 import 'llm_client.dart';
 import 'make_plugins.dart';
@@ -1111,6 +1112,25 @@ class ChatController extends Notifier<ChatState> {
       final bool planStalled =
           result.error == null && _planInterrupted(run, settings);
       if (!retryableFailure && !planStalled) break;
+      // v1.32.0 — airplane-aware hold at run level: a retryable network
+      // failure while airplane mode is ON is the expected manual-airplane
+      // window. Hold (with a visible note) WITHOUT consuming a resume
+      // until the radio comes back; Stop still wins. An unanswerable
+      // probe keeps the plain v1.30.0 accounting.
+      if (retryableFailure && await _airplaneModeOn()) {
+        _finalizeDanglingStream(run);
+        run.messages.add(
+          ChatMessage.assistant(strings.autoRetryAirplaneResumeNote),
+        );
+        _sync(run);
+        await _persist(run);
+        if (!await _airplaneWait(run)) {
+          // Stop pressed while holding: a user-stopped run must not
+          // present the transport error as if something went wrong.
+          result = const _RunResult();
+          break;
+        }
+      }
       _finalizeDanglingStream(run);
       run.messages.add(
         ChatMessage.assistant(
@@ -1656,6 +1676,14 @@ class ChatController extends Notifier<ChatState> {
   /// While waiting, the streaming placeholder shows the reconnect note;
   /// as soon as the next attempt emits, live content takes over again.
   /// A user Stop aborts instantly ([LlmAbortedException]) — never retried.
+  ///
+  /// v1.32.0 airplane-aware hold: a retryable failure while airplane mode
+  /// is ON is EXPECTED (the user turned the radio off on purpose). The
+  /// loop then HOLDS — showing the airplane note — without consuming an
+  /// attempt, until airplane mode is OFF again (connection restored), the
+  /// cap elapses, or the user presses Stop. This is what makes the
+  /// manual airplane workflow actually "auto-continue": the user's queued
+  /// reply is delivered the moment the radio comes back.
   Future<AssistantTurn> _completeWithRetry(
     _SessionRun run,
     AppSettings settings, {
@@ -1693,6 +1721,32 @@ class ChatController extends Notifier<ChatState> {
       } on LlmAbortedException {
         rethrow;
       } catch (e) {
+        // v1.32.0 — airplane-aware hold BEFORE the attempt accounting:
+        // only when the failure is retryable, the device can actually
+        // report the airplane state, and it IS on. Stop aborts; the cap
+        // falls through to normal accounting so a stuck radio can never
+        // pin a run forever.
+        if (settings.autoRetryEnabled &&
+            isRetryableLlmError(e) &&
+            !run.stopRequested &&
+            await _airplaneModeOn()) {
+          run.messages[run.messages.length - 1] = ChatMessage.assistant(
+            strings.autoRetryAirplaneNote,
+            isStreaming: true,
+          );
+          _sync(run);
+          if (!await _airplaneWait(run)) {
+            // Stop pressed while holding: restore what the failed
+            // attempt had streamed, then abort through the normal path.
+            run.messages[run.messages.length - 1] = ChatMessage.assistant(
+              partial,
+              isStreaming: true,
+            );
+            _sync(run);
+            throw const LlmAbortedException('');
+          }
+          continue;
+        }
         attempt++;
         final bool exhausted =
             !isRetryableLlmError(e) ||
@@ -1734,6 +1788,61 @@ class ChatController extends Notifier<ChatState> {
         }
       }
     }
+  }
+
+  /// Test hook (v1.32.0): poll cadence of the airplane-aware wait. Tests
+  /// set [Duration.zero] to run a single probe pass without real delays.
+  static Duration airplanePollInterval = const Duration(seconds: 2);
+
+  /// Test hook (v1.32.0): hard cap of the airplane-aware wait — a radio
+  /// stuck ON must not pin a run forever; past the cap the normal retry
+  /// accounting takes over (visible attempts, visible notes).
+  static Duration airplaneWaitCap = const Duration(minutes: 10);
+
+  /// v1.32.0 — true when the device reports airplane mode ON. Unknown
+  /// (null) counts as OFF: the airplane-aware hold only applies where
+  /// the state can actually be verified, so tests and non-Android
+  /// platforms keep the plain v1.30.0 behavior.
+  Future<bool> _airplaneModeOn() async {
+    try {
+      final bool? on = await ref
+          .read(deviceShellServiceProvider)
+          .readAirplaneMode();
+      return on == true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// v1.32.0 — airplane-aware hold: polls the airplane state every
+  /// [airplanePollInterval] until it turns OFF (connection restored),
+  /// the cap elapses, or the user presses Stop. Returns false ONLY on
+  /// Stop — a cap timeout falls through to the caller, which proceeds
+  /// with normal retry accounting. An unanswerable probe (null) ends
+  /// the hold immediately: no verifiable airplane state, no hold.
+  Future<bool> _airplaneWait(_SessionRun run) async {
+    if (airplanePollInterval == Duration.zero) {
+      // Test cadence: one probe pass, no real delay — always proceed
+      // (unless Stop). The surrounding retry loop drives the sequence;
+      // tests flip the fake probe between attempts as needed.
+      return !run.stopRequested;
+    }
+    final DeviceShellService shell = ref.read(deviceShellServiceProvider);
+    int waitedMs = 0;
+    final int capMs = airplaneWaitCap.inMilliseconds;
+    while (waitedMs < capMs) {
+      if (run.stopRequested) return false;
+      bool? on;
+      try {
+        on = await shell.readAirplaneMode();
+      } catch (_) {
+        on = null;
+      }
+      if (on != true) return true; // OFF or unknown → stop holding
+      await Future<void>.delayed(airplanePollInterval);
+      waitedMs += airplanePollInterval.inMilliseconds;
+    }
+    return true; // cap reached → normal accounting takes over
   }
 
   /// Abortable backoff wait for auto-retry (v1.30.0): polls the Stop flag

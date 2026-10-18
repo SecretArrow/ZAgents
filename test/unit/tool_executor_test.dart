@@ -1,8 +1,10 @@
 import 'dart:io';
 
+import 'package:flutter/services.dart' show MissingPluginException;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
+import 'package:zagents/services/device_shell.dart';
 import 'package:zagents/services/file_system_service.dart';
 import 'package:archive/archive.dart';
 import 'package:zagents/services/js_runtime.dart';
@@ -893,6 +895,103 @@ void main() {
 
       // Missing path argument.
       expect((await doctor.execute('module_stage_repair', {})).ok, isFalse);
+    });
+  });
+
+  group('device_status tool (v1.32.0)', () {
+    // Scripted shell bridge: answers the airplane probe and the root
+    // probe (`exec` with root=true) from a mutable script.
+    late bool? airplaneState;
+    late DeviceShellResult rootProbe;
+    int rootProbes = 0;
+    late ToolExecutor deviceExecutor;
+
+    setUp(() {
+      airplaneState = false;
+      rootProbe = const DeviceShellResult(exitCode: 0, stdout: '0\n');
+      rootProbes = 0;
+      final DeviceShellService shell = DeviceShellService(
+        invoker: (String method, Map<String, Object?> args) async {
+          if (method == 'getAirplaneMode') return airplaneState;
+          if (method == 'exec' && args['root'] == true) {
+            rootProbes++;
+            return rootProbe.toJson();
+          }
+          throw MissingPluginException('not scripted: $method');
+        },
+      );
+      deviceExecutor = ToolExecutor(
+        browser: scriptedBrowser,
+        resolveBaseDir: (_) async => tempDir,
+        isAutomationEnabled: () => true,
+        deviceStatus: () => shell,
+      );
+    });
+
+    test('reports the verified airplane state and root availability', () async {
+      airplaneState = true;
+      final ToolResult result = await deviceExecutor.execute(
+        'device_status',
+        <String, dynamic>{},
+      );
+      expect(result.ok, isTrue);
+      expect(result.llmOutput, contains('airplane_mode: ON'));
+      expect(result.llmOutput, contains('root_available: true'));
+      expect(result.llmOutput, contains('no internet'));
+      expect(result.displayText, contains('airplane: ON'));
+      expect(rootProbes, 1);
+    });
+
+    test(
+      'airplane OFF reports OFF with root denied counted as no root',
+      () async {
+        airplaneState = false;
+        rootProbe = const DeviceShellResult(
+          exitCode: 1,
+          stderr: 'su: permission denied',
+        );
+        final ToolResult result = await deviceExecutor.execute(
+          'device_status',
+          <String, dynamic>{},
+        );
+        expect(result.ok, isTrue);
+        expect(result.llmOutput, contains('airplane_mode: OFF'));
+        expect(result.llmOutput, contains('root_available: false'));
+      },
+    );
+
+    test('the expensive root probe is cached across calls', () async {
+      await deviceExecutor.execute('device_status', <String, dynamic>{});
+      await deviceExecutor.execute('device_status', <String, dynamic>{});
+      expect(rootProbes, 1);
+    });
+
+    test(
+      'an unanswerable airplane probe reads as unknown, not a state',
+      () async {
+        airplaneState = null;
+        final ToolResult result = await deviceExecutor.execute(
+          'device_status',
+          <String, dynamic>{},
+        );
+        expect(result.ok, isTrue);
+        expect(result.llmOutput, contains('airplane_mode: unknown'));
+        expect(result.displayText, contains('airplane: ?'));
+      },
+    );
+
+    test('degrades cleanly without a shell bridge', () async {
+      final ToolExecutor bare = ToolExecutor(
+        browser: scriptedBrowser,
+        resolveBaseDir: (_) async => tempDir,
+        isAutomationEnabled: () => true,
+      );
+      final ToolResult result = await bare.execute(
+        'device_status',
+        <String, dynamic>{},
+      );
+      expect(result.ok, isFalse);
+      expect(result.llmOutput, contains('unavailable'));
     });
   });
 }

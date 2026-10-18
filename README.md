@@ -331,6 +331,29 @@ OpenAI-compatible: **OpenRouter, InferHub, Z.AI, OpenAI, DeepSeek, Groq, dan lai
   4. Dokumentasi SDK (EN/ID, termasuk yang di dalam aplikasi), typings
   TypeScript, dan guard arsip sampel diperluas untuk `device` +
   `commands`.
+- **v1.32.0 — mode pesawat tanpa root: mode manual terverifikasi + auto-retry sadar mode pesawat**:
+  1. **Baca status TANPA root** (`zagents.device.airplane`): state mode
+  pesawat kini terbaca dari setelan sistem yang world-readable — tanpa
+  root, tanpa sakelar "Perintah perangkat", dan **tetap bekerja saat
+  mode pesawat ON** (perintah slash dijalankan app-side, bukan lewat AI).
+  2. **Modul Airplane Mode v1.2 — dua mode**: ponsel root tetap AUTO
+  (toggle terverifikasi); ponsel **tanpa root kini MANUAL mode** — tidak
+  lagi gagal mentah: `/airplane on|off` mencetak panduan langkah demi
+  langkah, pengguna membalik radio dari Quick Settings, dan
+  `/airplane status` memverifikasi keadaan ASLI (jawaban "yes" telanjang
+  tidak pernah dipercaya).
+  3. **Tool agent baru `device_status`** (ke-27): mode pesawat +
+  ketersediaan root (hasil su di-cache) — agent kini bisa MEMERIKSA
+  klaim pengguna ("sudah dinyalakan") lewat fakta perangkat, bukan
+  percaya buta; system prompt agent diajari pola instruksi
+  round-trip (nyalakan → uji offline → matikan → lanjut otomatis).
+  4. **Auto-retry sadar mode pesawat**: saat kegagalan jaringan terjadi
+  DAN mode pesawat sedang ON, loop retry MENAHAN tanpa membakar kuota
+  percobaan (default 3 × ~30 dtk terlalu pendek untuk jendela offline
+  manual) sampai radio kembali OFF — cap 10 menit, Stop selalu menang,
+  dan platform yang tak bisa membaca state memakai akuntansi lama.
+  Inilah yang membuat "jawab yes → auto lanjutkan" benar-benar bekerja:
+  pesan yang mengantre selama offline terkirim seketika koneksi pulih.
 - **Pencarian + paging universal (v1.6.0)** — SEMUA list di aplikasi memakai
   widget `PagedList` yang sama: **5 item per halaman** (termasuk dropdown model),
   kolom pencarian, pager first/prev/next/last, dan empty state "No results".

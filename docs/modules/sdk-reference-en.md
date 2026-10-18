@@ -280,6 +280,34 @@ const r = await zagents.device.shell('settings get global airplane_mode_on', {
 * See [`samples/airplane-mode/`](../../samples/airplane-mode/) for a
   complete rooted automation module using slash commands.
 
+### `zagents.device.airplane()` — permission `device` (v1.32.0)
+Read the **airplane-mode state WITHOUT root** from the world-readable
+`Settings.Global.AIRPLANE_MODE_ON` setting:
+
+```js
+const p = await zagents.device.airplane();
+// p.available — true when this platform can read the real state
+// p.on        — the actual airplane-mode state
+```
+
+* NO root and NOT gated by the "Device commands" master switch — the
+  probe cannot change anything, it only reads one harmless setting.
+* Works **offline** (no network involved), so a manual airplane module
+  can verify the real state while the radio is off and the AI chat is
+  unreachable.
+* `available: false` (non-Android, missing native side) means "unknown"
+  — fall back to manual instructions instead of asserting a state.
+
+```js
+// Manual (non-root) pattern — verify, never trust a bare "yes":
+const p = await zagents.device.airplane();
+if (p.available && p.on) {
+  await zagents.log('Airplane mode is ON (verified).');
+} else {
+  await zagents.log('Still OFF — enable it from Quick Settings, then re-run.');
+}
+```
+
 ## 4. Isolation model (private window per chat)
 
 * **Process** — every execution boots a fresh JS context; nothing
@@ -293,8 +321,10 @@ const r = await zagents.device.shell('settings get global airplane_mode_on', {
 * **Agent** — requires `agent`; generation goes through the chat's own
   LLM plus the host-side composer gate, so module output stays inside
   the regulated contract.
-* **Device** — requires `device` plus the Settings master switch (off by
-  default); meant for rooted phones, every call re-checked host-side.
+* **Device** — requires `device`; `device.shell` additionally requires
+  the Settings master switch (off by default) and is meant for rooted
+  phones; `device.airplane` is a read-only world-readable probe (no
+  master switch, no root). Every call re-checked host-side.
 * **Resources** — timeout, output caps, storage caps.
 * **Termination** — deactivating a module or stopping the chat cancels a
   live run safely: delivery stops, persisted state is kept.

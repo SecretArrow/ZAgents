@@ -455,6 +455,14 @@ abstract class AppStrings {
   String autoRetryResumeNote(int attempt, int max);
   String autoRetryPlanNote(int attempt, int max);
 
+  /// v1.32.0 — shown in the streaming placeholder while the retry loop
+  /// HOLDS because airplane mode is ON (expected outage, no attempt is
+  /// consumed until the radio comes back).
+  String get autoRetryAirplaneNote;
+
+  /// v1.32.0 — run-level note added before an airplane-mode hold.
+  String get autoRetryAirplaneResumeNote;
+
   // -- Module doctor (v1.26.0) --------------------------------------------
   String moduleRepairCardTitle(String name, String version);
   String moduleRepairCardBody(String permissions);
@@ -1118,7 +1126,7 @@ class AppStringsEn implements AppStrings {
   String get aboutSection => 'About';
   @override
   String get aboutBody =>
-      'ZAgents v1.31.0 — an Android clone of the chat.z.ai agent mode UI, '
+      'ZAgents v1.32.0 — an Android clone of the chat.z.ai agent mode UI, '
       'with custom OpenAI-compatible providers (OpenRouter, InferHub, '
       'Z.AI, OpenAI, DeepSeek, Groq, and more), per-provider API keys, '
       'light/dark themes, parallel multi-session chat with background '
@@ -1363,6 +1371,15 @@ class AppStringsEn implements AppStrings {
   String autoRetryPlanNote(int attempt, int max) =>
       '*Auto resume $attempt/$max — the plan is not finished yet. '
       'Continuing the task…*';
+  @override
+  String get autoRetryAirplaneNote =>
+      '*Airplane mode is ON — holding retries until it is turned off. '
+      'No attempt is consumed; the task continues automatically as soon '
+      'as the connection returns.*';
+  @override
+  String get autoRetryAirplaneResumeNote =>
+      '*Airplane mode is ON — the task auto-resumes as soon as it is '
+      'turned off (no retry budget is used while offline).*';
 
   // -- Module doctor (v1.26.0) --------------------------------------------
   @override
@@ -2069,7 +2086,7 @@ class AppStringsId implements AppStrings {
   String get aboutSection => 'Tentang';
   @override
   String get aboutBody =>
-      'ZAgents v1.31.0 — klon UI agent mode chat.z.ai untuk Android, '
+      'ZAgents v1.32.0 — klon UI agent mode chat.z.ai untuk Android, '
       'dengan custom provider OpenAI-compatible (OpenRouter, InferHub, '
       'Z.AI, OpenAI, DeepSeek, Groq, dan lainnya), API key per-provider, '
       'tema terang/gelap, multi-sesi paralel dengan proses latar '
@@ -2318,6 +2335,15 @@ class AppStringsId implements AppStrings {
   String autoRetryPlanNote(int attempt, int max) =>
       '*Lanjut otomatis $attempt/$max — rencana belum selesai. '
       'Melanjutkan tugas…*';
+  @override
+  String get autoRetryAirplaneNote =>
+      '*Mode pesawat AKTIF — percobaan ulang ditahan sampai dimatikan. '
+      'Kuota retry tidak terpakai; tugas lanjut otomatis begitu '
+      'koneksi kembali.*';
+  @override
+  String get autoRetryAirplaneResumeNote =>
+      '*Mode pesawat AKTIF — tugas lanjut otomatis begitu dimatikan '
+      '(kuota retry tidak terpakai selama offline).*';
 
   // -- Module doctor (v1.26.0) --------------------------------------------
   @override

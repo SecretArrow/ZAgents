@@ -1209,4 +1209,143 @@ void main() {
       expect(big.length, greaterThan(ModuleRuntime.maxShellStreamChars));
     });
   });
+
+  group('device.airplane — read-only state probe (v1.32.0)', () {
+    late ScriptedJsRuntime airJs;
+    late ModuleRuntime airRuntime;
+    bool? scripted; // null = probe cannot answer
+    bool probeThrows = false;
+    final List<int> probeCalls = <int>[];
+
+    setUp(() {
+      airJs = ScriptedJsRuntime();
+      scripted = false;
+      probeThrows = false;
+      probeCalls.clear();
+      airRuntime = ModuleRuntime(
+        js: airJs,
+        resolveSandboxRoot: sandbox.rootFor,
+        resolveModulePath: (String name) async {
+          final String path =
+              '${docs.path}${Platform.pathSeparator}modules'
+              '${Platform.pathSeparator}$name';
+          return Directory(path).existsSync() ? path : null;
+        },
+        resolveSdkSource: () async => 'module.exports = zagents;',
+        resolveNpmModulesRoot: () async =>
+            '${docs.path}${Platform.pathSeparator}node_modules',
+        airplaneProbe: () async {
+          probeCalls.add(1);
+          if (probeThrows) throw Exception('probe blew up');
+          return scripted;
+        },
+      );
+    });
+
+    Future<Map<String, dynamic>?> callOp(
+      ChatModule mod,
+      Set<ModulePermission> granted,
+    ) async {
+      Map<String, dynamic>? response;
+      airJs.onModuleInvocation = (ModuleInvocation invocation) async {
+        response = await airRuntime.handleOp(<String, dynamic>{
+          'zop': 'device.airplane',
+        });
+      };
+      await airRuntime.run(sessionId: 's', module: mod, granted: granted);
+      airJs.onModuleInvocation = null;
+      return response;
+    }
+
+    test('requires the device permission (uniform surface)', () async {
+      final ChatModule mod = module(permissions: <ModulePermission>{});
+      final Map<String, dynamic>? response = await callOp(
+        mod,
+        const <ModulePermission>{},
+      );
+      expect(response!['ok'], isFalse);
+      expect(response['error'], 'Permission denied: device');
+      expect(probeCalls, isEmpty);
+    });
+
+    test('needs NO master switch — reports the real state', () async {
+      // The airplane probe is world-readable and read-only: unlike
+      // device.shell it must answer with the master switch absent
+      // (no deviceCommandsEnabled configured at all).
+      scripted = true;
+      final ChatModule mod = module(
+        permissions: <ModulePermission>{ModulePermission.device},
+      );
+      final Map<String, dynamic>? response = await callOp(
+        mod,
+        mod.manifest.permissions,
+      );
+      expect(response!['ok'], isTrue);
+      final Map<String, dynamic> data =
+          response['data'] as Map<String, dynamic>;
+      expect(data['available'], isTrue);
+      expect(data['on'], isTrue);
+    });
+
+    test('unknown state degrades to available:false (never asserts)', () async {
+      scripted = null;
+      final ChatModule mod = module(
+        permissions: <ModulePermission>{ModulePermission.device},
+      );
+      final Map<String, dynamic>? response = await callOp(
+        mod,
+        mod.manifest.permissions,
+      );
+      expect(response!['ok'], isTrue);
+      final Map<String, dynamic> data =
+          response['data'] as Map<String, dynamic>;
+      expect(data['available'], isFalse);
+      expect(data['on'], isFalse);
+    });
+
+    test('a throwing probe degrades instead of crashing the module', () async {
+      probeThrows = true;
+      final ChatModule mod = module(
+        permissions: <ModulePermission>{ModulePermission.device},
+      );
+      final Map<String, dynamic>? response = await callOp(
+        mod,
+        mod.manifest.permissions,
+      );
+      expect(response!['ok'], isTrue);
+      expect((response['data'] as Map<String, dynamic>)['available'], isFalse);
+    });
+
+    test('missing probe seam reports available:false cleanly', () async {
+      final ModuleRuntime noProbe = ModuleRuntime(
+        js: airJs,
+        resolveSandboxRoot: sandbox.rootFor,
+        resolveModulePath: (String name) async {
+          final String path =
+              '${docs.path}${Platform.pathSeparator}modules'
+              '${Platform.pathSeparator}$name';
+          return Directory(path).existsSync() ? path : null;
+        },
+        resolveSdkSource: () async => 'module.exports = zagents;',
+        resolveNpmModulesRoot: () async => '',
+      );
+      final ChatModule mod = module(
+        permissions: <ModulePermission>{ModulePermission.device},
+      );
+      Map<String, dynamic>? response;
+      airJs.onModuleInvocation = (ModuleInvocation invocation) async {
+        response = await noProbe.handleOp(<String, dynamic>{
+          'zop': 'device.airplane',
+        });
+      };
+      await noProbe.run(
+        sessionId: 's',
+        module: mod,
+        granted: mod.manifest.permissions,
+      );
+      airJs.onModuleInvocation = null;
+      expect(response!['ok'], isTrue);
+      expect((response!['data'] as Map<String, dynamic>)['available'], isFalse);
+    });
+  });
 }

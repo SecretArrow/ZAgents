@@ -148,6 +148,17 @@ export interface ZAgentsShellOptions {
   timeoutMs?: number;
 }
 
+/** Result of zagents.device.airplane (v1.32.0). */
+export interface ZAgentsAirplaneResult {
+  /** True when the platform can read the real state (Android). When
+   *  false, `on` is meaningless — the module should fall back to manual
+   *  instructions instead of asserting a state it never saw. */
+  available: boolean;
+  /** The actual airplane-mode state (world-readable setting, NO root
+   *  required, NOT gated by the "Device commands" master switch). */
+  on: boolean;
+}
+
 /** The SDK object injected as a global and exported by `zagents-sdk`. */
 export interface ZAgentsSdk {
   /** Instance metadata. */
@@ -192,6 +203,10 @@ export interface ZAgentsSdk {
       command: string,
       options?: ZAgentsShellOptions,
     ): Promise<ZAgentsShellResult>;
+    /** Read the airplane-mode state WITHOUT root (v1.32.0) — the real,
+     *  verified state behind manual (non-root) airplane workflows.
+     *  Permission: `device`. */
+    airplane(): Promise<ZAgentsAirplaneResult>;
   };
 }
 
