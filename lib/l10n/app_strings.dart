@@ -439,6 +439,11 @@ abstract class AppStrings {
   /// behind the form — the agent does not process it until submission.
   String get moduleSetupWaitingHint;
 
+  /// v1.31.0: master switch for the module `device` capability
+  /// (`zagents.device.shell`) — rooted phones only.
+  String get deviceCommandsTitle;
+  String get deviceCommandsSubtitle;
+
   // -- Auto retry & red stop button (v1.30.0) ------------------------------
   String get autoRetrySection;
   String get autoRetryTitle;
@@ -1113,7 +1118,7 @@ class AppStringsEn implements AppStrings {
   String get aboutSection => 'About';
   @override
   String get aboutBody =>
-      'ZAgents v1.30.0 — an Android clone of the chat.z.ai agent mode UI, '
+      'ZAgents v1.31.0 — an Android clone of the chat.z.ai agent mode UI, '
       'with custom OpenAI-compatible providers (OpenRouter, InferHub, '
       'Z.AI, OpenAI, DeepSeek, Groq, and more), per-provider API keys, '
       'light/dark themes, parallel multi-session chat with background '
@@ -1147,8 +1152,14 @@ class AppStringsEn implements AppStrings {
       'synthesizes their results, an exit confirmation dialog keeps a '
       'stray back press from killing a running task, a battery '
       'optimization exemption protects long background runs, and heavy '
-      'JSON and crypto work stays off the UI thread. Auto retry (new in '
-      'v1.30.0): network errors, weak connections, dropped streams and '
+      'JSON and crypto work stays off the UI thread. Modules can now '
+      'declare slash commands (new in v1.31.0): type /airplane on or '
+      '/airplane off in a chat where such a module is active and the '
+      'command runs the module directly instead of the LLM — on rooted '
+      'phones the bundled Airplane Mode module toggles airplane mode via '
+      'zagents.device.shell, gated by a Settings master switch (off by '
+      'default). Auto retry (v1.30.0): network errors, weak connections, '
+      'dropped streams and '
       'transient provider failures no longer kill the agent task — it '
       'waits and re-attempts automatically (configurable attempts and '
       'delay in Settings), and a task that stops with an unfinished plan '
@@ -1310,6 +1321,16 @@ class AppStringsEn implements AppStrings {
   String get moduleSetupWaitingHint =>
       'Your message is queued — the agent processes it right after this '
       'setup is submitted.';
+
+  // -- Module device commands (v1.31.0) -----------------------------------
+  @override
+  String get deviceCommandsTitle => 'Device commands (root)';
+  @override
+  String get deviceCommandsSubtitle =>
+      'Let approved modules run shell commands on this device via '
+      'zagents.device.shell — airplane mode toggles and similar '
+      'automation. Needs a rooted phone; every activation still asks for '
+      'your consent.';
 
   // -- Auto retry & red stop button (v1.30.0) ------------------------------
   @override
@@ -2048,7 +2069,7 @@ class AppStringsId implements AppStrings {
   String get aboutSection => 'Tentang';
   @override
   String get aboutBody =>
-      'ZAgents v1.30.0 — klon UI agent mode chat.z.ai untuk Android, '
+      'ZAgents v1.31.0 — klon UI agent mode chat.z.ai untuk Android, '
       'dengan custom provider OpenAI-compatible (OpenRouter, InferHub, '
       'Z.AI, OpenAI, DeepSeek, Groq, dan lainnya), API key per-provider, '
       'tema terang/gelap, multi-sesi paralel dengan proses latar '
@@ -2083,7 +2104,13 @@ class AppStringsId implements AppStrings {
       'menjaga tekanan back tidak menghentikan tugas yang berjalan, '
       'pengecualian optimisasi baterai melindungi proses latar belakang '
       'yang panjang, dan kerja JSON serta kripto berat tetap keluar dari '
-      'thread UI. Coba-ulang otomatis (baru di v1.30.0): error jaringan, '
+      'thread UI. Modul kini bisa mendeklarasikan perintah slash (baru di '
+      'v1.31.0): ketik /airplane on atau /airplane off di chat yang '
+      'memiliki modul tersebut aktif, dan perintah itu menjalankan modul '
+      'langsung tanpa LLM — di ponsel yang di-root, modul Airplane Mode '
+      'bawaan mengganti mode pesawat lewat zagents.device.shell dengan '
+      'sakelar utama di Setelan (mati secara bawaan). Coba-ulang otomatis '
+      '(v1.30.0): error jaringan, '
       'koneksi lemah, aliran terputus, dan error sementara provider tidak '
       'lagi mematikan tugas agent — ia menunggu lalu mencoba ulang secara '
       'otomatis (jumlah percobaan dan jeda bisa diatur di Setelan), dan '
@@ -2248,6 +2275,16 @@ class AppStringsId implements AppStrings {
   String get moduleSetupWaitingHint =>
       'Pesan Anda menunggu — agent mengerjakannya tepat setelah setup ini '
       'dikirim.';
+
+  // -- Perintah perangkat modul (v1.31.0) ----------------------------------
+  @override
+  String get deviceCommandsTitle => 'Perintah perangkat (root)';
+  @override
+  String get deviceCommandsSubtitle =>
+      'Izinkan modul yang disetujui menjalankan perintah shell di '
+      'perangkat ini lewat zagents.device.shell — misal mode pesawat. '
+      'Hanya untuk ponsel yang di-root; aktivasi modul tetap meminta '
+      'persetujuan Anda.';
 
   // -- Auto retry & tombol stop merah (v1.30.0) -----------------------------
   @override

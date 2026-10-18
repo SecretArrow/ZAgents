@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'agent_composer.dart';
+import 'device_shell.dart';
 import 'js_runtime.dart';
 import 'module_registry.dart';
 
@@ -129,6 +130,8 @@ class ModuleRuntime implements ModuleBridge {
     this.httpTransport,
     this.agentCompose,
     this.resolveUserAgent,
+    this.deviceCommandsEnabled,
+    this.deviceShell,
   });
 
   final JsRuntime js;
@@ -156,6 +159,29 @@ class ModuleRuntime implements ModuleBridge {
 
   /// Text composer for `zagents.agent.compose` (see [ModuleAgentCompose]).
   final ModuleAgentCompose? agentCompose;
+
+  /// Master switch for `zagents.device.shell` (v1.31.0): read on EVERY
+  /// call — the Settings → Modules toggle turns the capability off live.
+  /// Null resolver (tests) counts as disabled.
+  final bool Function()? deviceCommandsEnabled;
+
+  /// Native shell executor for `zagents.device.shell` (see
+  /// [DeviceShellService]). Null (tests without the seam) counts as
+  /// unavailable — the op degrades into a clean error.
+  final Future<DeviceShellResult> Function(
+    String command,
+    bool root,
+    int timeoutMs,
+  )?
+  deviceShell;
+
+  /// Shell-command caps for `device.shell`: a hostile module can neither
+  /// smuggle in megabyte-long command lines nor pin the executor beyond
+  /// the 120s ceiling (mirrored by the native side).
+  static const int maxShellCommandChars = 2000;
+  static const int defaultShellTimeoutMs = 30000;
+  static const int maxShellTimeoutMs = 120000;
+  static const int maxShellStreamChars = 32 * 1024;
 
   /// Cooperative per-chat setup key inside the (chat, module) storage:
   /// the host writes the submitted setup-form values here; modules may
@@ -325,6 +351,14 @@ class ModuleRuntime implements ModuleBridge {
     return context.moduleName;
   }
 
+  /// Caps one shell output stream (`device.shell` stdout/stderr) so a
+  /// chatty command cannot blow up the module message or the bridge frame.
+  String _capShellStream(String stream) {
+    if (stream.length <= maxShellStreamChars) return stream;
+    return '${stream.substring(0, maxShellStreamChars)}'
+        '…[truncated at $maxShellStreamChars chars]';
+  }
+
   String _capOutput(String output) {
     if (output.isEmpty) return output;
     final List<String> lines = output.split('\n');
@@ -462,6 +496,77 @@ class ModuleRuntime implements ModuleBridge {
             'ok': false,
             'error': 'Agent compose failed: $e',
           };
+        }
+      case 'device.shell':
+        // v1.31.0 — root-capable device commands for modules (airplane
+        // mode, VPN toggles, …). Triple gate: manifest permission →
+        // Settings master switch → bridge availability, then size/timeout
+        // caps before anything reaches the OS.
+        if (!context.permissions.contains('device')) return _denied('device');
+        if (context.cancelled) {
+          return const <String, dynamic>{
+            'ok': true,
+            'data': <String, dynamic>{
+              'exitCode': -1,
+              'stdout': '',
+              'stderr': '',
+              'timedOut': false,
+            },
+          };
+        }
+        if (!(deviceCommandsEnabled?.call() ?? false)) {
+          return const <String, dynamic>{
+            'ok': false,
+            'error':
+                'Device commands are disabled — enable "Device commands" '
+                'under Settings → Modules (rooted phones only)',
+          };
+        }
+        final String command = (request['command']?.toString() ?? '').trim();
+        if (command.isEmpty) {
+          return const <String, dynamic>{
+            'ok': false,
+            'error': 'device.shell requires a non-empty command',
+          };
+        }
+        if (command.length > maxShellCommandChars) {
+          return <String, dynamic>{
+            'ok': false,
+            'error':
+                'Command exceeds the $maxShellCommandChars-character limit',
+          };
+        }
+        final Object? rawShellTimeout = request['timeoutMs'];
+        final int timeoutMs = rawShellTimeout is int && rawShellTimeout > 0
+            ? (rawShellTimeout > maxShellTimeoutMs
+                  ? maxShellTimeoutMs
+                  : rawShellTimeout)
+            : defaultShellTimeoutMs;
+        final shell = deviceShell;
+        if (shell == null) {
+          return const <String, dynamic>{
+            'ok': false,
+            'error': 'Shell bridge is unavailable',
+          };
+        }
+        try {
+          final DeviceShellResult result = await shell(
+            command,
+            request['root'] == true,
+            timeoutMs,
+          );
+          return <String, dynamic>{
+            'ok': true,
+            'data': <String, dynamic>{
+              'exitCode': result.exitCode,
+              'stdout': _capShellStream(result.stdout),
+              'stderr': _capShellStream(result.stderr),
+              'timedOut': result.timedOut,
+              if (result.error != null) 'error': result.error,
+            },
+          };
+        } catch (e) {
+          return <String, dynamic>{'ok': false, 'error': 'Shell failed: $e'};
         }
       case 'storage.get':
         if (!context.permissions.contains('storage')) return _denied('storage');

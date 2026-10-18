@@ -63,6 +63,7 @@ void main() {
           'storage',
           'fs',
           'agent',
+          'device',
         ]) {
           expect(dts, contains(member), reason: 'missing SDK member: $member');
         }
@@ -81,6 +82,7 @@ void main() {
           'unlink',
           'stat',
           'compose',
+          'shell',
         ]) {
           expect(
             dts,
@@ -114,6 +116,7 @@ void main() {
           'zagents.http',
           'zagents.chat',
           'zagents.agent',
+          'zagents.device',
           'agent.compose',
           'allowedHosts',
           'module.json',
@@ -121,6 +124,7 @@ void main() {
           'samples/',
           'sdk/',
           'onhomeroom-daily',
+          'airplane-mode',
         ]) {
           expect(
             doc,

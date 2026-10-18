@@ -87,6 +87,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     bool? autoRetryEnabled,
     Object? autoRetryAttempts,
     Object? autoRetryDelay,
+    bool? deviceCommandsEnabled,
     Object? maxSteps,
     String? languageCode,
     ThemeModeSetting? themeMode,
@@ -109,6 +110,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             autoRetryEnabled: autoRetryEnabled,
             autoRetryAttempts: autoRetryAttempts ?? current.autoRetryAttempts,
             autoRetryDelay: autoRetryDelay ?? current.autoRetryDelay,
+            deviceCommandsEnabled:
+                deviceCommandsEnabled ?? current.deviceCommandsEnabled,
             maxSteps: maxSteps ?? current.maxSteps,
             languageCode: languageCode,
             themeMode: themeMode,
@@ -804,23 +807,44 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             // -- Modules (plugins) ------------------------------------------
             _sectionTitle(strings.modulesTitle),
             _card(
-              child: ListTile(
-                key: const Key('modules-manager-tile'),
-                contentPadding: EdgeInsets.zero,
-                leading: const Icon(Icons.extension_rounded),
-                title: Text(strings.modulesTitle),
-                subtitle: Text(
-                  strings.modulesEmptyHint,
-                  style: TextStyle(fontSize: 12, color: palette.muted),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                trailing: const Icon(Icons.chevron_right_rounded),
-                onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute<void>(
-                    builder: (_) => const ModulesScreen(),
+              child: Column(
+                children: <Widget>[
+                  ListTile(
+                    key: const Key('modules-manager-tile'),
+                    contentPadding: EdgeInsets.zero,
+                    leading: const Icon(Icons.extension_rounded),
+                    title: Text(strings.modulesTitle),
+                    subtitle: Text(
+                      strings.modulesEmptyHint,
+                      style: TextStyle(fontSize: 12, color: palette.muted),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    trailing: const Icon(Icons.chevron_right_rounded),
+                    onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => const ModulesScreen(),
+                      ),
+                    ),
                   ),
-                ),
+                  const Divider(height: 1),
+                  // v1.31.0 — master switch for the module `device`
+                  // capability (zagents.device.shell). Off by default:
+                  // rooted phones only, activation consent still applies.
+                  SwitchListTile(
+                    key: const Key('device-commands-switch'),
+                    contentPadding: EdgeInsets.zero,
+                    secondary: const Icon(Icons.developer_mode_rounded),
+                    title: Text(strings.deviceCommandsTitle),
+                    subtitle: Text(
+                      strings.deviceCommandsSubtitle,
+                      style: TextStyle(fontSize: 12, color: palette.muted),
+                    ),
+                    value: settings.deviceCommandsEnabled,
+                    onChanged: (bool value) =>
+                        _commit(deviceCommandsEnabled: value),
+                  ),
+                ],
               ),
             ),
             const SizedBox(height: 16),

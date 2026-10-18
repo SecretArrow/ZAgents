@@ -302,6 +302,35 @@ OpenAI-compatible: **OpenRouter, InferHub, Z.AI, OpenAI, DeepSeek, Groq, dan lai
   4. **Tombol Stop kini merah** (bukan abu-abu permukaan) — kontrol
   interupsi terlihat jelas, dan gagal-turn tidak lagi meninggalkan
   gelembung "thinking" abadi di transkrip.
+- **v1.31.0 — perintah slash modul & kontrol mode pesawat (root)**:
+  1. **Perintah slash untuk modul (`commands` di module.json)**: modul
+  kini bisa mendeklarasikan kata kunci slash, mis. `"commands":
+  ["airplane"]`. Ketik **`/airplane on`**, **`/airplane off`** atau
+  **`/airplane status`** di chat — dari pesan pertama chat baru maupun di
+  tengah chat — dan pesan itu **dijalankan modulnya langsung tanpa LLM**
+  (pesan mentah tiba sebagai `zagents.info.prompt`). Bila modul belum
+  aktif, perintah **mengaktifkannya otomatis** (persetujuan izin tetap
+  berlaku); modul ter-stage yang mendeklarasikan kata kunci yang diketik
+  mengonsumsi pesan pertama seperti biasa. Disanitasi ketat (huruf kecil
+  `[a-z0-9_-]`, maks 4 kata kunci, `plugins`/`make_plugins`/`doctor`
+  dicadangkan).
+  2. **Izin `device` + `zagents.device.shell`**: modul dengan izin
+  `device` (disetujui saat aktivasi) dapat menjalankan SATU perintah
+  shell di perangkat — `su -c` di ponsel root, `sh -c` tanpa root —
+  dengan hasil terstruktur (exitCode/stdout/stderr/timedOut/error),
+  batas perintah 2000 karakter, timeout 1–120 dtk (bawaan 30 dtk), dan
+  stdout/stderr dibatasi 32 KB. Digerbang tiga lapis: izin manifest →
+  **sakelar "Perintah perangkat (root)" di Setelan → Modul (mati
+  bawaan)** → bridge native (`zagents/device`).
+  3. **Modul sampel Airplane Mode**: `samples/airplane-mode/` (plus ZIP
+  siap pasang) — pengalih mode pesawat untuk ponsel root: cek su,
+  `cmd connectivity airplane-mode` dengan fallback `settings put` +
+  broadcast, dan **verifikasi baca-balik** `settings get global
+  airplane_mode_on` sehingga laporannya selalu keadaan perangkat
+  sebenarnya.
+  4. Dokumentasi SDK (EN/ID, termasuk yang di dalam aplikasi), typings
+  TypeScript, dan guard arsip sampel diperluas untuk `device` +
+  `commands`.
 - **Pencarian + paging universal (v1.6.0)** — SEMUA list di aplikasi memakai
   widget `PagedList` yang sama: **5 item per halaman** (termasuk dropdown model),
   kolom pencarian, pager first/prev/next/last, dan empty state "No results".

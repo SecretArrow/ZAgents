@@ -625,6 +625,29 @@ window.__zDone = false;
       mkdir: function(p){ if (!zHas('files')) return zDeny('files'); return post2({op:'fs', action:'mkdir', path:p}); },
       unlink: function(p){ if (!zHas('files')) return zDeny('files'); return post2({op:'fs', action:'unlink', path:p}); },
       stat: function(p){ if (!zHas('files')) return zDeny('files'); return post2({op:'fs', action:'stat', path:p}); }
+    },
+    device: {
+      // v1.31.0 — permission `device` + the Settings → Modules master
+      // switch (the Dart bridge re-checks both on every call). Runs one
+      // shell command; root:true routes through `su -c` (rooted phones).
+      shell: function(cmd, opts){
+        if (!zHas('device')) return zDeny('device');
+        opts = opts || {};
+        return zCall('device.shell', {
+          command: String(cmd),
+          root: opts.root === true,
+          timeoutMs: typeof opts.timeoutMs === 'number' ? opts.timeoutMs : null
+        }).then(function(data){
+          return {
+            exitCode: (data && typeof data.exitCode === 'number') ? data.exitCode : -1,
+            stdout: (data && data.stdout) ? data.stdout : '',
+            stderr: (data && data.stderr) ? data.stderr : '',
+            timedOut: !!(data && data.timedOut),
+            error: (data && data.error) ? data.error : null,
+            ok: !!(data && !data.error && !data.timedOut && data.exitCode === 0)
+          };
+        });
+      }
     }
   };
 })();

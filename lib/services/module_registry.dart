@@ -12,7 +12,25 @@ import 'package:archive/archive.dart';
 /// * `agent`   — ask the chat's own agent (LLM) to compose text
 ///   (`zagents.agent.compose`) — every sentence is generated live from the
 ///   context the module provides and passes the host-side composer gate
-enum ModulePermission { storage, network, files, chat, agent }
+/// * `device`  — run device shell commands via `zagents.device.shell`
+///   (v1.31.0) — always subject to the Settings → Modules master switch
+///   (off by default) and meant for rooted devices (`su`); every call is
+///   re-checked on the Dart side (defense in depth)
+enum ModulePermission { storage, network, files, chat, agent, device }
+
+/// Extracts the slash-command keyword from a chat message:
+/// `"/airplane on"` → `"airplane"` (lowercased). Null when the message
+/// is not a `/keyword …` command. Used by the module command passthrough
+/// (v1.31.0): a keyword declared in an installed module's manifest
+/// `commands` routes the message to that module instead of the LLM.
+String? moduleCommandKeyword(String? message) {
+  if (message == null) return null;
+  final String trimmed = message.trim();
+  if (!trimmed.startsWith('/')) return null;
+  final Match? match = RegExp(r'^/([A-Za-z0-9_-]+)(\s|$)').firstMatch(trimmed);
+  if (match == null) return null;
+  return match.group(1)!.toLowerCase();
+}
 
 /// Parses a manifest permission name; unknown names are dropped so a
 /// typo in a third-party manifest can never widen the sandbox.
@@ -204,6 +222,7 @@ class ModuleManifest {
     this.allowedHosts,
     this.timeoutSeconds = defaultTimeoutSeconds,
     this.setup,
+    this.commands = const <String>[],
   });
 
   /// Default execution budget for one module run (seconds). A manifest may
@@ -233,6 +252,49 @@ class ModuleManifest {
   /// gate the execution ("needs setup" instead of a failed cycle).
   final ModuleSetup? setup;
 
+  /// Slash commands this module handles (v1.31.0, module.json `commands`):
+  /// when the user types `/airplane on` in a chat where a module declares
+  /// the `airplane` keyword, the message runs THAT module (its entry point
+  /// re-executes with the raw message as `zagents.info.prompt`) instead of
+  /// reaching the LLM. Already-sanitized at parse time — lowercase
+  /// `[a-z0-9_-]`, at most [maxCommands] entries, built-ins reserved.
+  final List<String> commands;
+
+  /// True when this manifest declares [keyword] as one of its commands.
+  bool declaresCommand(String keyword) => commands.contains(keyword);
+
+  /// Built-in composer/agent keywords a third-party module may never
+  /// claim: `/plugins` is consumed locally by the composer, `make_plugins`
+  /// drives the module builder, `doctor` is the module doctor.
+  static const Set<String> reservedCommands = <String>{
+    'plugins',
+    'make_plugins',
+    'doctor',
+  };
+  static const int maxCommands = 4;
+  static const int maxCommandLength = 24;
+
+  /// Sanitizes a manifest `commands` list: lowercase, strip a leading
+  /// `/`, keep `[a-z0-9_-]`, drop empties/overlongs/built-ins, dedupe,
+  /// cap at [maxCommands]. A hostile or typo'd manifest can therefore
+  /// never shadow the composer's own commands.
+  static List<String> sanitizeCommands(Object? raw) {
+    if (raw is! List) return const <String>[];
+    final Set<String> out = <String>{};
+    for (final Object? item in raw) {
+      String cmd = item?.toString().trim().toLowerCase() ?? '';
+      while (cmd.startsWith('/')) {
+        cmd = cmd.substring(1);
+      }
+      cmd = cmd.replaceAll(RegExp(r'[^a-z0-9_-]+'), '');
+      if (cmd.isEmpty || cmd.length > maxCommandLength) continue;
+      if (reservedCommands.contains(cmd)) continue;
+      out.add(cmd);
+      if (out.length >= maxCommands) break;
+    }
+    return out.toList(growable: false);
+  }
+
   Duration get timeout =>
       Duration(seconds: timeoutSeconds.clamp(1, maxTimeoutSeconds));
 
@@ -246,6 +308,7 @@ class ModuleManifest {
     if (allowedHosts != null) 'allowedHosts': allowedHosts,
     'timeoutSeconds': timeoutSeconds,
     if (setup != null) 'setup': setup!.toJson(),
+    if (commands.isNotEmpty) 'commands': commands,
   };
 
   /// Defensive parse: bad types fall back to safe defaults, unknown
@@ -270,6 +333,7 @@ class ModuleManifest {
     setup: json['setup'] is Map
         ? ModuleSetup.fromJson((json['setup'] as Map).cast<String, dynamic>())
         : null,
+    commands: sanitizeCommands(json['commands']),
   );
 
   /// Lowercase, keep `[a-z0-9._-]`, collapse the rest into `-`, trim

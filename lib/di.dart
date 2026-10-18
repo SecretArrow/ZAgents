@@ -18,6 +18,7 @@ import 'services/browser_session_isolation.dart';
 import 'services/chat_store.dart';
 import 'services/context_repository.dart';
 import 'services/device_export.dart';
+import 'services/device_shell.dart';
 import 'services/js_runtime.dart';
 import 'services/llm_client.dart';
 import 'services/model_catalog.dart';
@@ -123,6 +124,12 @@ final moduleRegistryProvider = Provider<ModuleRegistry>(
   (ref) => ModuleRegistry(resolveBaseDir: ref.watch(documentsDirProvider)),
 );
 
+/// Native shell runner for the module `device` capability (v1.31.0):
+/// rooted-device commands behind the Settings → Modules master switch.
+final deviceShellServiceProvider = Provider<DeviceShellService>(
+  (ref) => DeviceShellService(),
+);
+
 /// Official SDK shim source (`require('zagents-sdk')`), shipped from the
 /// canonical `sdk/` directory of the repository. Overridden in tests.
 final moduleSdkSourceProvider = FutureProvider<String>(
@@ -159,6 +166,15 @@ final moduleRuntimeProvider = Provider<ModuleRuntime>(
       final AppSettings settings = ref.read(settingsProvider);
       return ref.read(userAgentManagerProvider).resolve(settings.uaMode).ua;
     },
+    // v1.31.0 — module device commands (zagents.device.shell): the
+    // manifest `device` permission gates the JS side, this settings
+    // master switch gates the bridge, and the native channel is only
+    // ever reached through both. Read per call so the toggle is live.
+    deviceCommandsEnabled: () =>
+        ref.read(settingsProvider).deviceCommandsEnabled,
+    deviceShell: (String command, bool root, int timeoutMs) => ref
+        .read(deviceShellServiceProvider)
+        .run(command: command, root: root, timeoutMs: timeoutMs),
     httpTransport:
         (
           String url,

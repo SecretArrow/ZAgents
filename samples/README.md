@@ -12,12 +12,14 @@ see [`../docs/modules/`](../docs/modules/) for the full reference and
 | [`file-notes/`](file-notes/) | `files` | Sandboxed filesystem under the per-chat `state/` directory: mkdir / appendFile / readFile / readdir / stat |
 | [`chat-streamer/`](chat-streamer/) | `chat` | Progressive output into the conversation with `zagents.chat.emit` |
 | [`onhomeroom-daily/`](onhomeroom-daily/) | `storage`, `network`, `agent` | Real-world daily bot for app.onhomeroom.com — challenge board, yes votes, chat replies, proposal pipeline. Every sentence is composed live by the chat agent via `zagents.agent.compose` (no templates). The app collects the account with a per-chat setup form before the first run (`zagents.info.setup`); text commands (`setup <email> <password>`, `status`, `reset`) still re-configure an already set-up chat |
+| [`airplane-mode/`](airplane-mode/) | `device` | Rooted-phone automation (v1.31.0): toggles Android airplane mode via `zagents.device.shell` (`su -c`), driven by the `/airplane on \| off \| status` slash commands — the manifest `commands` field routes the message to the module instead of the LLM. Needs the Settings → Modules "Device commands (root)" switch (off by default) and a rooted phone; toggles are verified against the real device state |
 
 ## Ready-made ZIPs — download and install directly
 
 Every sample also ships pre-packaged **next to its folder** as
 `<name>.zip` (`counter.zip`, `network-fetcher.zip`, `file-notes.zip`,
-`chat-streamer.zip`, `onhomeroom-daily.zip`). Download one, then install
+`chat-streamer.zip`, `onhomeroom-daily.zip`, `airplane-mode.zip`).
+Download one, then install
 it via **Settings → Modules → Install module** — no packaging needed.
 A test guards these archives: each `<name>.zip` must always match its
 folder exactly, so they can never silently go stale. To rebuild one by
@@ -70,3 +72,6 @@ On Windows: right-click the sample folder → *Send to → Compressed
   one cycle per activation: challenge board lines, yes votes, at most one
   composed text per run, a run summary line. Run it in two chats with two
   different accounts and the sessions never mix.
+* `airplane-mode` — type `/airplane status` (or `on` / `off`) in a chat:
+  the module runs directly (no LLM turn), reports the verified airplane
+  state, and asks for root / the Device-commands switch when missing.

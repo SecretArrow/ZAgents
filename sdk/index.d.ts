@@ -9,7 +9,7 @@
  * Every capability below maps to a manifest permission (`module.json`):
  *   storage → zagents.storage      network → zagents.http
  *   files   → zagents.fs           chat    → zagents.chat
- *   agent   → zagents.agent
+ *   agent   → zagents.agent        device  → zagents.device
  * Calling an API whose permission was not granted throws
  * `Permission denied: <permission>` at runtime.
  */
@@ -122,6 +122,32 @@ export interface ZAgentsAgentComposeOptions {
   trailingPeriod?: boolean;
 }
 
+/** Result of zagents.device.shell. */
+export interface ZAgentsShellResult {
+  /** True only when the process ran, was not killed by the timeout, and
+   *  exited with code 0. */
+  ok: boolean;
+  /** Process exit code (-1 when the process could not start or was
+   *  destroyed after the timeout). */
+  exitCode: number;
+  /** Standard output (capped by the host). */
+  stdout: string;
+  /** Standard error (capped by the host). */
+  stderr: string;
+  /** True when the process exceeded the time budget and was destroyed. */
+  timedOut: boolean;
+  /** Bridge-level failure (missing `su` binary, spawn error, ...). */
+  error: string | null;
+}
+
+/** Options for zagents.device.shell. */
+export interface ZAgentsShellOptions {
+  /** Run through `su -c` — requires a rooted phone. Default false. */
+  root?: boolean;
+  /** Whole-command cap in milliseconds (1000–120000, default 30000). */
+  timeoutMs?: number;
+}
+
 /** The SDK object injected as a global and exported by `zagents-sdk`. */
 export interface ZAgentsSdk {
   /** Instance metadata. */
@@ -153,6 +179,19 @@ export interface ZAgentsSdk {
     compose(
       options: ZAgentsAgentComposeOptions,
     ): Promise<{ text: string }>;
+  };
+  /**
+   * Run ONE shell command on the device (`sh -c`, or `su -c` with
+   * `root: true`) — for rooted-phone automation such as airplane-mode
+   * toggles. Gated twice: the manifest `device` permission AND the
+   * Settings → Modules "Device commands" master switch (off by default).
+   * Permission: `device`.
+   */
+  device: {
+    shell(
+      command: string,
+      options?: ZAgentsShellOptions,
+    ): Promise<ZAgentsShellResult>;
   };
 }
 

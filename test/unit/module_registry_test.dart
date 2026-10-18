@@ -659,4 +659,91 @@ void main() {
       expect(read.content, contains('[truncated'));
     });
   });
+
+  group('manifest commands + module command passthrough (v1.31.0)', () {
+    test('moduleCommandKeyword extracts the slash keyword', () {
+      expect(moduleCommandKeyword('/airplane on'), 'airplane');
+      expect(moduleCommandKeyword('  /AIRPLANE off '), 'airplane');
+      expect(moduleCommandKeyword('/make_plugins'), 'make_plugins');
+      expect(moduleCommandKeyword('/my_cmd status'), 'my_cmd');
+      expect(moduleCommandKeyword('/hyphen-ated x'), 'hyphen-ated');
+      expect(moduleCommandKeyword('/airplane'), 'airplane');
+      expect(moduleCommandKeyword('airplane on'), isNull);
+      expect(moduleCommandKeyword('/'), isNull);
+      expect(moduleCommandKeyword('/ spaced'), isNull);
+      expect(moduleCommandKeyword(''), isNull);
+      expect(moduleCommandKeyword(null), isNull);
+    });
+
+    test(
+      'sanitizeCommands keeps valid keywords and strips a leading slash',
+      () {
+        expect(
+          ModuleManifest.sanitizeCommands(<dynamic>['Airplane', '/status']),
+          <String>['airplane', 'status'],
+        );
+        expect(ModuleManifest.sanitizeCommands(<dynamic>['  on  ']), <String>[
+          'on',
+        ]);
+      },
+    );
+
+    test('sanitizeCommands drops hostile, reserved and overlong entries', () {
+      // Reserved built-ins can never be claimed.
+      expect(
+        ModuleManifest.sanitizeCommands(<dynamic>[
+          'plugins',
+          'make_plugins',
+          'doctor',
+        ]),
+        isEmpty,
+      );
+      // Overlong and character-hostile entries vanish; stripped variants
+      // of legitimate words survive the sanitization pass.
+      expect(
+        ModuleManifest.sanitizeCommands(<dynamic>['a' * 25, '!!!', 'ok!']),
+        <String>['ok'],
+      );
+      // Non-list payloads parse to the empty list.
+      expect(ModuleManifest.sanitizeCommands('airplane'), isEmpty);
+      expect(ModuleManifest.sanitizeCommands(null), isEmpty);
+    });
+
+    test('caps at four commands and dedupes', () {
+      expect(
+        ModuleManifest.sanitizeCommands(<dynamic>[
+          'a',
+          'b',
+          'b',
+          'c',
+          'd',
+          'e',
+        ]),
+        <String>['a', 'b', 'c', 'd'],
+      );
+    });
+
+    test('manifest parses commands defensively and round-trips', () {
+      final ModuleManifest manifest = ModuleManifest.fromJson(<String, dynamic>{
+        'name': 'airplane-mode',
+        'version': '1.0.0',
+        'commands': <dynamic>['Airplane', 'doctor', 'ok'],
+      });
+      expect(manifest.commands, <String>['airplane', 'ok']);
+      expect(manifest.declaresCommand('airplane'), isTrue);
+      expect(manifest.declaresCommand('status'), isFalse);
+      expect(
+        ModuleManifest.fromJson(<String, dynamic>{
+          'name': 'x',
+          'commands': <dynamic>['a'],
+        }).toJson()['commands'],
+        <String>['a'],
+      );
+      // Manifests without commands stay back-compat: empty + never match.
+      expect(
+        ModuleManifest.fromJson(<String, dynamic>{'name': 'y'}).commands,
+        isEmpty,
+      );
+    });
+  });
 }

@@ -1,4 +1,4 @@
-# ZAgents Module SDK (v1.24.2)
+# ZAgents Module SDK (v1.31.0)
 
 Official guide for building **chat modules**: JavaScript packages that run
 natively inside a ZAgents chat session, isolated per chat like a browser
@@ -36,6 +36,7 @@ my-module.zip
   "permissions": ["storage", "network", "files", "chat"],
   "allowedHosts": ["api.example.com"],
   "timeoutSeconds": 30,
+  "commands": ["airplane"],
   "setup": {
     "title": "My Module account",
     "description": "Collected once per chat before the first run.",
@@ -56,10 +57,11 @@ my-module.zip
 | `title` | — | Display name (defaults to `name`). |
 | `description` | — | Shown to the user and injected into the chat context. |
 | `entry` | — | Entry point, default `main.js`. |
-| `permissions` | — | `storage`, `network`, `files`, `chat`, `agent` — the user approves each activation. |
+| `permissions` | — | `storage`, `network`, `files`, `chat`, `agent`, `device` — the user approves each activation. |
 | `allowedHosts` | — | Restrict `zagents.http` to these hosts (`*.example.com` allows subdomains). Omit for any host. |
 | `timeoutSeconds` | — | Execution budget per run (30 default, 120 max). |
 | `setup` | — | Per-chat setup form — see below. |
+| `commands` | — | Slash keywords the module handles (v1.31.0) — see below. |
 
 Without `module.json`, a `package.json` (`name`, `version`, `main`) is
 honored; with neither, the ZIP file name becomes the module name.
@@ -86,6 +88,30 @@ first cycle, no `setup <…>` parsing required:
   `await zagents.storage.get('zagentsSetup')`.
 * A manifest without a `setup` block (or without required fields) never
   triggers the form — behavior is unchanged for existing modules.
+
+### Slash commands — module.json `commands` (v1.31.0)
+
+Declare keywords your module handles and the user can run it by typing
+`/<keyword> …` directly in the chat — from the FIRST message of a fresh
+chat and MID-chat:
+
+```json
+{ "name": "airplane-mode", "commands": ["airplane"], "permissions": ["device"] }
+```
+
+* Typing **`/airplane on`** in a chat where such a module is active runs
+  the module's entry point again — the raw message arrives as
+  `zagents.info.prompt` — and the LLM is NOT called for that turn.
+* When no module is active yet, an installed module declaring the keyword
+  is **auto-activated** by the command (typing it IS the intent); its
+  permission consent still applies as usual.
+* When a staged module declares the typed keyword, the first message is
+  consumed by the staged activation — same `info.prompt` contract.
+* Sanitized strictly: lowercase `[a-z0-9_-]`, at most 4 keywords, max 24
+  chars each; the built-ins `plugins`, `make_plugins` and `doctor` are
+  reserved and rejected.
+* Command runs re-use the full sandbox (per-chat state, permissions,
+  timeout) and land in the transcript as a module message.
 
 ## 2. Installing and running
 
@@ -229,6 +255,31 @@ Post progressive output into the conversation while running:
 await zagents.chat.emit('Step 1 done…');
 ```
 
+### `zagents.device` — permission `device` (v1.31.0)
+Run ONE shell command on the device — rooted-phone automation such as
+airplane-mode toggles, VPN switches, profile changes:
+
+```js
+const r = await zagents.device.shell('settings get global airplane_mode_on', {
+  root: true,     // runs via `su -c` — needs a rooted phone
+  timeoutMs: 20000,
+});
+// r.ok, r.exitCode, r.stdout, r.stderr, r.timedOut, r.error
+```
+
+* `root: true` routes the command through `su -c`; without it the command
+  runs as the app's own uid via `sh -c`.
+* Triple-gated: the manifest `device` permission (user approves at
+  activation) AND the Settings → Modules **"Device commands (root)"
+  master switch (off by default)** AND the native bridge. Unauthorized
+  calls throw `Permission denied: device` / explain the switch.
+* Caps: command ≤ 2000 chars, timeout 1–120 s (default 30 s), stdout and
+  stderr each capped at 32 KB.
+* Failures (missing `su`, spawn errors) return a result with `error` set
+  instead of throwing — branch on `r.ok`.
+* See [`samples/airplane-mode/`](../../samples/airplane-mode/) for a
+  complete rooted automation module using slash commands.
+
 ## 4. Isolation model (private window per chat)
 
 * **Process** — every execution boots a fresh JS context; nothing
@@ -242,6 +293,8 @@ await zagents.chat.emit('Step 1 done…');
 * **Agent** — requires `agent`; generation goes through the chat's own
   LLM plus the host-side composer gate, so module output stays inside
   the regulated contract.
+* **Device** — requires `device` plus the Settings master switch (off by
+  default); meant for rooted phones, every call re-checked host-side.
 * **Resources** — timeout, output caps, storage caps.
 * **Termination** — deactivating a module or stopping the chat cancels a
   live run safely: delivery stops, persisted state is kept.
@@ -258,6 +311,7 @@ The same example, ready to install, lives at [`samples/counter/`](../../samples/
 | [`samples/file-notes/`](../../samples/file-notes/) | `files` — sandboxed note taking under `state/` |
 | [`samples/chat-streamer/`](../../samples/chat-streamer/) | `chat` — progressive `chat.emit` output |
 | [`samples/onhomeroom-daily/`](../../samples/onhomeroom-daily/) | `agent` — real-world daily bot whose every sentence is composed by the chat agent; per-chat setup form for its account |
+| [`samples/airplane-mode/`](../../samples/airplane-mode/) | `device` — rooted airplane-mode toggle driven by the `/airplane on \| off \| status` slash command (v1.31.0) |
 
 `module.json`
 

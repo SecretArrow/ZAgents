@@ -359,4 +359,29 @@ void main() {
       expect(off.copyWith(askRandomUa: true).askRandomUa, isTrue);
     });
   });
+
+  group('device commands master switch (v1.31.0)', () {
+    test('defaults to OFF — module shell commands are opt-in', () {
+      expect(AppSettings().deviceCommandsEnabled, isFalse);
+    });
+
+    test('legacy storage without the flag stays off (safe default)', () {
+      expect(
+        AppSettings.fromJson(<String, dynamic>{'apiKey': 'k'})
+            .deviceCommandsEnabled,
+        isFalse,
+      );
+    });
+
+    test('roundtrip + copyWith persist the toggle', () {
+      final AppSettings on = AppSettings().copyWith(
+        deviceCommandsEnabled: true,
+      );
+      expect(on.deviceCommandsEnabled, isTrue);
+      expect(AppSettings.fromJson(on.toJson()).deviceCommandsEnabled, isTrue);
+      final AppSettings off = AppSettings(deviceCommandsEnabled: true)
+          .copyWith(deviceCommandsEnabled: false);
+      expect(AppSettings.fromJson(off.toJson()).deviceCommandsEnabled, isFalse);
+    });
+  });
 }

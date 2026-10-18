@@ -52,6 +52,7 @@ void main() {
       ModulePermission.storage,
     ],
     Map<String, dynamic>? setup,
+    List<String> commands = const <String>[],
   }) async {
     final String manifest = jsonEncode(<String, dynamic>{
       'name': name,
@@ -60,6 +61,7 @@ void main() {
       'entry': 'main.js',
       'permissions': permissions.map((p) => p.name).toList(),
       'setup': ?setup,
+      'commands': ?commands.isEmpty ? null : commands,
     });
     final List<int> entry = utf8.encode('// $name entry');
     final Archive archive = Archive()
@@ -79,14 +81,21 @@ void main() {
     return result.module!;
   }
 
-  Future<ProviderContainer> container({List<AssistantTurn>? turns}) async {
+  Future<ProviderContainer> container({
+    List<AssistantTurn>? turns,
+    ScriptedLlmClient? llm,
+  }) async {
     final ProviderContainer c = ProviderContainer(
       overrides: <Override>[
         ...testOverrides(
-          llm: ScriptedLlmClient(
-            turns ??
-                <AssistantTurn>[AssistantTurn(content: 'Module output noted.')],
-          ),
+          llm:
+              llm ??
+              ScriptedLlmClient(
+                turns ??
+                    <AssistantTurn>[
+                      AssistantTurn(content: 'Module output noted.'),
+                    ],
+              ),
           dir: tempDir,
           settings: AppSettings(apiKey: 'k', autoTitle: false),
         ),
@@ -1035,5 +1044,174 @@ void main() {
       // Labels fall back to the field keys when the manifest omits them.
       expect(system, contains('email, password'));
     });
+  });
+
+  group('module command passthrough — /cmd routes to the module (v1.31.0)', () {
+    test('typed command re-runs the ACTIVE module with the raw message '
+        'and never calls the LLM', () async {
+      final ProviderContainer c = await container();
+      await installModule(
+        'airplane',
+        description: 'Airplane control',
+        commands: <String>['airplane'],
+      );
+      js.nextResult = const JsRunResult(output: 'Airplane mode: ON');
+
+      final ChatController controller = c.read(chatControllerProvider.notifier);
+      // Fresh draft → staging only; nothing runs yet.
+      await controller.activateModule('airplane');
+      expect(c.read(chatControllerProvider).pendingModule, 'airplane');
+      expect(js.moduleInvocations, isEmpty);
+
+      await controller.send('/airplane on');
+
+      final ChatState state = c.read(chatControllerProvider);
+      expect(state.isRunning, isFalse);
+      // Exactly ONE run: the staged activation consumed the command.
+      expect(js.moduleInvocations, hasLength(1));
+      expect(
+        js.moduleInvocations.single.info['prompt'],
+        '/airplane on',
+        reason: 'the raw command arrives as zagents.info.prompt',
+      );
+      // Transcript: user → module (command output), NO assistant turn.
+      expect(state.messages.first.role, Role.user);
+      expect(state.messages.first.content, '/airplane on');
+      final ChatMessage moduleMessage = state.messages[1];
+      expect(moduleMessage.moduleName, 'airplane');
+      expect(moduleMessage.content, contains('Airplane mode: ON'));
+      expect(state.messages, hasLength(2));
+      // The LLM was never involved.
+      final ScriptedLlmClient llm =
+          c.read(llmClientProvider) as ScriptedLlmClient;
+      expect(llm.calls, isEmpty);
+    });
+
+    test(
+      'installed-but-inactive module auto-activates on its command',
+      () async {
+        final ProviderContainer c = await container();
+        await installModule(
+          'airplane',
+          description: 'Airplane control',
+          commands: <String>['airplane'],
+        );
+        js.nextResult = const JsRunResult(output: 'Airplane mode: OFF');
+
+        final ChatController controller = c.read(
+          chatControllerProvider.notifier,
+        );
+        await controller.send('/airplane off');
+
+        final ChatState state = c.read(chatControllerProvider);
+        expect(state.activeModules, contains('airplane'));
+        expect(js.moduleInvocations, hasLength(1));
+        expect(js.moduleInvocations.single.info['prompt'], '/airplane off');
+        expect(state.messages[1].moduleName, 'airplane');
+        final ScriptedLlmClient llm =
+            c.read(llmClientProvider) as ScriptedLlmClient;
+        expect(llm.calls, isEmpty);
+      },
+    );
+
+    test('a staged module declaring the command consumes the first message '
+        'with a single run and no LLM call', () async {
+      final ProviderContainer c = await container();
+      await installModule(
+        'airplane',
+        description: 'Airplane control',
+        commands: <String>['airplane'],
+      );
+      js.nextResult = const JsRunResult(output: 'Airplane status: OFF');
+
+      final ChatController controller = c.read(chatControllerProvider.notifier);
+      await controller.activateModule('airplane'); // fresh draft → staged
+      expect(c.read(chatControllerProvider).pendingModule, 'airplane');
+      await controller.send('/airplane status');
+
+      final ChatState state = c.read(chatControllerProvider);
+      expect(state.pendingModule, isNull);
+      expect(state.activeModules, contains('airplane'));
+      // ONE run total — the staged activation, not a second command run.
+      expect(js.moduleInvocations, hasLength(1));
+      expect(js.moduleInvocations.single.info['prompt'], '/airplane status');
+      expect(state.messages[1].content, contains('Airplane status: OFF'));
+      final ScriptedLlmClient llm =
+          c.read(llmClientProvider) as ScriptedLlmClient;
+      expect(llm.calls, isEmpty);
+    });
+
+    test('a staged module WITHOUT the command does not swallow the typed '
+        'command: both run and the LLM stays out', () async {
+      final ProviderContainer c = await container();
+      await installModule('counter'); // no commands declared
+      await installModule(
+        'airplane',
+        description: 'Airplane control',
+        commands: <String>['airplane'],
+      );
+      js.nextResult = const JsRunResult(output: 'Airplane mode: ON');
+
+      final ChatController controller = c.read(chatControllerProvider.notifier);
+      await controller.activateModule('counter'); // staged
+      await controller.send('/airplane on');
+
+      final ChatState state = c.read(chatControllerProvider);
+      // The staged module ran with the prompt, then airplane auto-ran.
+      expect(js.moduleInvocations, hasLength(2));
+      expect(js.moduleInvocations.first.info['prompt'], '/airplane on');
+      expect(js.moduleInvocations.last.info['prompt'], '/airplane on');
+      expect(state.activeModules, containsAll(<String>['counter', 'airplane']));
+      final ScriptedLlmClient llm =
+          c.read(llmClientProvider) as ScriptedLlmClient;
+      expect(llm.calls, isEmpty);
+    });
+
+    test('unknown slash keywords keep flowing to the LLM', () async {
+      final ScriptedLlmClient llm = ScriptedLlmClient(<AssistantTurn>[
+        AssistantTurn(content: 'I do not know that command.'),
+      ]);
+      final ProviderContainer custom = await container(llm: llm);
+      await installModule(
+        'airplane',
+        description: 'Airplane control',
+        commands: <String>['airplane'],
+      );
+
+      await custom.read(chatControllerProvider.notifier).send('/wat now');
+
+      final ChatState state = custom.read(chatControllerProvider);
+      expect(state.messages.last.role, Role.assistant);
+      expect(state.messages.last.content, 'I do not know that command.');
+      expect(js.moduleInvocations, isEmpty);
+      expect(llm.calls, hasLength(1));
+    });
+
+    test(
+      'non-command messages with an active module still reach the LLM',
+      () async {
+        final ProviderContainer c = await container();
+        await installModule(
+          'airplane',
+          description: 'Airplane control',
+          commands: <String>['airplane'],
+        );
+        js.nextResult = const JsRunResult(output: 'ready');
+
+        final ChatController controller = c.read(
+          chatControllerProvider.notifier,
+        );
+        await controller.activateModule('airplane'); // activation run
+        await controller.send('hello there');
+
+        final ChatState state = c.read(chatControllerProvider);
+        // Activation ran once; 'hello there' is NOT a command — LLM replies.
+        expect(js.moduleInvocations, hasLength(1));
+        expect(state.messages.last.role, Role.assistant);
+        final ScriptedLlmClient llm =
+            c.read(llmClientProvider) as ScriptedLlmClient;
+        expect(llm.calls, hasLength(1));
+      },
+    );
   });
 }

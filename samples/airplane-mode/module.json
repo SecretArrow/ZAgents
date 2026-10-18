@@ -1,0 +1,9 @@
+{
+  "name": "airplane-mode",
+  "version": "1.0.0",
+  "title": "Airplane Mode (root)",
+  "description": "Toggles Android airplane mode from the chat via root (su). Type /airplane on, /airplane off or /airplane status while this module is active in the chat — the command runs the module directly instead of the LLM. Requires: rooted phone + the 'Device commands' switch in Settings → Modules.",
+  "entry": "main.js",
+  "permissions": ["device"],
+  "commands": ["airplane"]
+}

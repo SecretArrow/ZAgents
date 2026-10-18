@@ -10,6 +10,7 @@ import io.flutter.embedding.android.FlutterFragmentActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 import java.io.File
+import java.util.concurrent.TimeUnit
 
 /**
  * Bridges the Dart agent loop to [ZAgentsForegroundService] so a running
@@ -34,6 +35,7 @@ class MainActivity : FlutterFragmentActivity() {
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        configureDeviceChannel(flutterEngine)
         pendingSessionId = intent?.getStringExtra(EXTRA_PENDING_SESSION)
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, channelName())
             .setMethodCallHandler { call, result ->
@@ -134,6 +136,85 @@ class MainActivity : FlutterFragmentActivity() {
         super.onNewIntent(intent)
         intent.getStringExtra(EXTRA_PENDING_SESSION)?.let {
             pendingSessionId = it
+        }
+    }
+
+    /**
+     * v1.31.0 — native shell runner for chat modules with the `device`
+     * permission ("Device commands" master switch is enforced on the Dart
+     * side on every call; this channel is intentionally dumb and only ever
+     * reached through that gate). Runs ONE command via `sh -c`, or
+     * `su -c` when root=true (rooted phones), with a hard time budget and
+     * fully drained stdout/stderr (separate threads so a chatty command
+     * can never deadlock on the pipe buffer).
+     *
+     * Always replies with a result map — failures (missing `su`, spawn
+     * errors) land in the `error` field instead of an error reply, so the
+     * module side can branch on the outcome uniformly.
+     */
+    private fun configureDeviceChannel(flutterEngine: FlutterEngine) {
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "zagents/device")
+            .setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "exec" -> result.success(
+                        execShell(
+                            command = call.argument<String>("command") ?: "",
+                            root = call.argument<Boolean>("root") ?: false,
+                            timeoutMs = call.argument<Number>("timeoutMs")?.toLong() ?: 30_000L,
+                        ),
+                    )
+                    else -> result.notImplemented()
+                }
+            }
+    }
+
+    private fun execShell(command: String, root: Boolean, timeoutMs: Long): Map<String, Any> {
+        return try {
+            val argv = if (root) listOf("su", "-c", command) else listOf("sh", "-c", command)
+            val process = ProcessBuilder(argv).start()
+            val stdout = StringBuilder()
+            val stderr = StringBuilder()
+            val outThread = Thread {
+                try {
+                    process.inputStream.bufferedReader().use { reader ->
+                        reader.forEachLine { line -> stdout.appendLine(line) }
+                    }
+                } catch (_: Exception) {
+                }
+            }
+            val errThread = Thread {
+                try {
+                    process.errorStream.bufferedReader().use { reader ->
+                        reader.forEachLine { line -> stderr.appendLine(line) }
+                    }
+                } catch (_: Exception) {
+                }
+            }
+            outThread.start()
+            errThread.start()
+            val budget = timeoutMs.coerceIn(1_000L, 120_000L)
+            val finished = process.waitFor(budget, TimeUnit.MILLISECONDS)
+            var timedOut = false
+            if (!finished) {
+                timedOut = true
+                process.destroyForcibly()
+            }
+            outThread.join(2_000)
+            errThread.join(2_000)
+            mapOf(
+                "exitCode" to (if (finished) process.exitValue() else -1),
+                "stdout" to stdout.toString(),
+                "stderr" to stderr.toString(),
+                "timedOut" to timedOut,
+            )
+        } catch (e: Exception) {
+            mapOf(
+                "exitCode" to -1,
+                "stdout" to "",
+                "stderr" to (e.message ?: e.javaClass.simpleName),
+                "timedOut" to false,
+                "error" to (e.message ?: "shell failed"),
+            )
         }
     }
 

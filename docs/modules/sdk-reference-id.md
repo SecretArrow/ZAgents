@@ -1,4 +1,4 @@
-# ZAgents Module SDK (v1.24.2)
+# ZAgents Module SDK (v1.31.0)
 
 Panduan resmi untuk membuat **modul chat**: paket JavaScript yang berjalan
 secara native di dalam sesi chat ZAgents, terisolasi per chat seperti
@@ -56,10 +56,11 @@ modul-saya.zip
 | `title` | — | Nama tampilan (bawaan: `name`). |
 | `description` | — | Ditampilkan ke pengguna dan disuntikkan ke konteks chat. |
 | `entry` | — | Entry point, bawaan `main.js`. |
-| `permissions` | — | `storage`, `network`, `files`, `chat`, `agent` — pengguna menyetujui setiap aktivasi. |
+| `permissions` | — | `storage`, `network`, `files`, `chat`, `agent`, `device` — pengguna menyetujui setiap aktivasi. |
 | `allowedHosts` | — | Membatasi `zagents.http` ke host tersebut (`*.contoh.com` mengizinkan subdomain). Kosongkan untuk semua host. |
 | `timeoutSeconds` | — | Anggaran eksekusi per run (30 bawaan, maks 120). |
 | `setup` | — | Formulir setup per chat — lihat di bawah. |
+| `commands` | — | Kata kunci slash yang ditangani modul (v1.31.0) — lihat di bawah. |
 
 Tanpa `module.json`, `package.json` (`name`, `version`, `main`) tetap
 dihormati; tanpa keduanya, nama file ZIP menjadi nama modul.
@@ -86,6 +87,30 @@ siklus pertama yang gagal, tanpa parsing `setup <…>` sendiri:
   `await zagents.storage.get('zagentsSetup')`.
 * Manifest tanpa blok `setup` (atau tanpa field wajib) tidak pernah
   memunculkan formulir — perilaku modul lama tidak berubah.
+
+### Perintah slash — `commands` di module.json (v1.31.0)
+
+Deklarasikan kata kunci yang ditangani modul Anda dan pengguna bisa
+menjalankannya dengan mengetik `/<kata-kunci> …` langsung di chat — dari
+pesan PERTAMA chat baru maupun di TENGAH chat:
+
+```json
+{ "name": "airplane-mode", "commands": ["airplane"], "permissions": ["device"] }
+```
+
+* Mengetik **`/airplane on`** di chat yang memiliki modul tersebut aktif
+  menjalankan kembali entry point modul — pesan mentahnya tiba sebagai
+  `zagents.info.prompt` — dan LLM TIDAK dipanggil untuk giliran itu.
+* Bila belum ada modul aktif, modul terpasang yang mendeklarasikan kata
+  kunci itu diaktifkan OTOMATIS oleh perintah (mengetiknya memang itu
+  niatnya); persetujuan izin tetap berlaku seperti biasa.
+* Saat modul ter-stage mendeklarasikan kata kunci yang diketik, pesan
+  pertama dikonsumsi aktivasi staged — kontrak `info.prompt` yang sama.
+* Disanitasi ketat: huruf kecil `[a-z0-9_-]`, maksimal 4 kata kunci, maks
+  24 karakter masing-masing; bawaan `plugins`, `make_plugins` dan
+  `doctor` dicadangkan dan ditolak.
+* Run perintah memakai sandbox penuh (state per chat, izin, timeout) dan
+  masuk transkrip sebagai pesan modul.
 
 ## 2. Memasang dan menjalankan
 
@@ -226,6 +251,31 @@ Kirim output bertahap ke percakapan selama modul berjalan:
 await zagents.chat.emit('Langkah 1 selesai…');
 ```
 
+### `zagents.device` — izin `device` (v1.31.0)
+Jalankan SATU perintah shell di perangkat — otomasi ponsel root seperti
+mode pesawat, VPN, atau perubahan profil:
+
+```js
+const r = await zagents.device.shell('settings get global airplane_mode_on', {
+  root: true,     // dijalankan via `su -c` — butuh ponsel root
+  timeoutMs: 20000,
+});
+// r.ok, r.exitCode, r.stdout, r.stderr, r.timedOut, r.error
+```
+
+* `root: true` menjalankan perintah lewat `su -c`; tanpa itu perintah
+  berjalan dengan uid aplikasi sendiri via `sh -c`.
+* Tiga lapis gerbang: izin `device` di manifest (disetujui saat
+  aktivasi) DAN sakelar utama **"Perintah perangkat (root)" di Setelan →
+  Modul (mati secara bawaan)** DAN bridge native. Panggilan tanpa izin
+  melempar `Permission denied: device` / menjelaskan sakelarnya.
+* Batas: perintah ≤ 2000 karakter, timeout 1–120 detik (bawaan 30 dtk),
+  stdout dan stderr masing-masing dibatasi 32 KB.
+* Kegagalan (biner `su` hilang, error spawn) mengembalikan hasil dengan
+  `error` terisi alih-alih melempar — cabang berdasarkan `r.ok`.
+* Lihat [`samples/airplane-mode/`](../../samples/airplane-mode/) untuk
+  modul otomasi root lengkap yang memakai perintah slash.
+
 ## 4. Model isolasi (jendela privat per chat)
 
 * **Proses** — setiap eksekusi memulai konteks JS baru; tidak ada yang
@@ -239,6 +289,8 @@ await zagents.chat.emit('Langkah 1 selesai…');
 * **Agen** — butuh `agent`; generasi lewat LLM chat sendiri plus gerbang
   composer di sisi host, sehingga output modul selalu di dalam kontrak
   yang diatur.
+* **Perangkat** — butuh `device` plus sakelar utama Setelan (mati
+  bawaan); untuk ponsel root, setiap panggilan dicek ulang di host.
 * **Sumber daya** — timeout, batas output, batas storage.
 * **Penghentian** — menonaktifkan modul atau menghentikan chat membatalkan
   run yang berjalan dengan aman: pengiriman berhenti, state tersimpan.
@@ -255,6 +307,7 @@ Contoh yang sama, siap dipasang, ada di [`samples/counter/`](../../samples/count
 | [`samples/file-notes/`](../../samples/file-notes/) | `files` — catatan tersandbox di `state/` |
 | [`samples/chat-streamer/`](../../samples/chat-streamer/) | `chat` — output bertahap `chat.emit` |
 | [`samples/onhomeroom-daily/`](../../samples/onhomeroom-daily/) | `agent` — bot harian dunia nyata yang setiap kalimatnya disusun agen chat; formulir setup per chat untuk akunnya |
+| [`samples/airplane-mode/`](../../samples/airplane-mode/) | `device` — pengalih mode pesawat (root) lewat perintah slash `/airplane on \| off \| status` (v1.31.0) |
 
 `module.json`
 

@@ -200,6 +200,35 @@ void main() {
     expect(container.read(settingsProvider).planFirst, isFalse);
   });
 
+  testWidgets('device commands switch defaults OFF and persists (v1.31.0)', (
+    WidgetTester tester,
+  ) async {
+    final ProviderContainer container = await openSettings(tester);
+
+    await tester.dragUntilVisible(
+      find.byKey(const Key('device-commands-switch')),
+      find.byType(ListView),
+      const Offset(0, -120),
+    );
+    await tester.pumpAndSettle(
+      const Duration(milliseconds: 100),
+      EnginePhase.sendSemanticsUpdate,
+      const Duration(seconds: 15),
+    );
+
+    // Root shell commands are opt-in: the switch ships off.
+    expect(container.read(settingsProvider).deviceCommandsEnabled, isFalse);
+    expect(find.byKey(const Key('device-commands-switch')), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('device-commands-switch')));
+    await tester.pumpAndSettle(
+      const Duration(milliseconds: 100),
+      EnginePhase.sendSemanticsUpdate,
+      const Duration(seconds: 15),
+    );
+    expect(container.read(settingsProvider).deviceCommandsEnabled, isTrue);
+  });
+
   testWidgets('theme picker switches light/dark/system and persists', (
     WidgetTester tester,
   ) async {

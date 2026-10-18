@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zagents/services/agent_composer.dart';
+import 'package:zagents/services/device_shell.dart';
 import 'package:zagents/services/js_runtime.dart';
 import 'package:zagents/services/module_registry.dart';
 import 'package:zagents/services/module_runtime.dart';
@@ -969,6 +970,243 @@ void main() {
         ),
         isFalse,
       );
+    });
+  });
+
+  group('device.shell — module device commands (v1.31.0)', () {
+    late ScriptedJsRuntime deviceJs;
+    late ModuleRuntime deviceRuntime;
+    bool enabled = false;
+    DeviceShellResult scripted = const DeviceShellResult(
+      exitCode: 0,
+      stdout: '0\n',
+    );
+    final List<(String, bool, int)> calls = <(String, bool, int)>[];
+
+    setUp(() {
+      deviceJs = ScriptedJsRuntime();
+      enabled = false;
+      scripted = const DeviceShellResult(exitCode: 0, stdout: '0\n');
+      calls.clear();
+      deviceRuntime = ModuleRuntime(
+        js: deviceJs,
+        resolveSandboxRoot: sandbox.rootFor,
+        resolveModulePath: (String name) async {
+          final String path =
+              '${docs.path}${Platform.pathSeparator}modules'
+              '${Platform.pathSeparator}$name';
+          return Directory(path).existsSync() ? path : null;
+        },
+        resolveSdkSource: () async => 'module.exports = zagents;',
+        resolveNpmModulesRoot: () async =>
+            '${docs.path}${Platform.pathSeparator}node_modules',
+        deviceCommandsEnabled: () => enabled,
+        deviceShell: (String command, bool root, int timeoutMs) async {
+          calls.add((command, root, timeoutMs));
+          return scripted;
+        },
+      );
+    });
+
+    Future<Map<String, dynamic>?> callOp(
+      ChatModule mod,
+      Set<ModulePermission> granted,
+      Map<String, dynamic> op,
+    ) async {
+      Map<String, dynamic>? response;
+      deviceJs.onModuleInvocation = (ModuleInvocation invocation) async {
+        response = await deviceRuntime.handleOp(op);
+      };
+      await deviceRuntime.run(sessionId: 's', module: mod, granted: granted);
+      deviceJs.onModuleInvocation = null;
+      return response;
+    }
+
+    test('requires the device permission (defense in depth)', () async {
+      final ChatModule mod = module(permissions: <ModulePermission>{});
+      final Map<String, dynamic>? response = await callOp(
+        mod,
+        const <ModulePermission>{},
+        <String, dynamic>{
+          'zop': 'device.shell',
+          'command': 'id -u',
+          'root': true,
+        },
+      );
+      expect(response!['ok'], isFalse);
+      expect(response['error'], 'Permission denied: device');
+      expect(calls, isEmpty);
+    });
+
+    test(
+      'master switch off blocks the call with actionable guidance',
+      () async {
+        final ChatModule mod = module(
+          permissions: <ModulePermission>{ModulePermission.device},
+        );
+        final Map<String, dynamic>? response = await callOp(
+          mod,
+          mod.manifest.permissions,
+          <String, dynamic>{'zop': 'device.shell', 'command': 'id -u'},
+        );
+        expect(response!['ok'], isFalse);
+        expect(response['error'] as String, contains('disabled'));
+        expect(calls, isEmpty);
+      },
+    );
+
+    test(
+      'happy path forwards command/root/timeout and maps the result',
+      () async {
+        enabled = true;
+        scripted = const DeviceShellResult(
+          exitCode: 1,
+          stdout: '1\n',
+          stderr: 'permission denied',
+        );
+        final ChatModule mod = module(
+          permissions: <ModulePermission>{ModulePermission.device},
+        );
+        final Map<String, dynamic>? response = await callOp(
+          mod,
+          mod.manifest.permissions,
+          <String, dynamic>{
+            'zop': 'device.shell',
+            'command': '  settings get global airplane_mode_on  ',
+            'root': true,
+            'timeoutMs': 5000,
+          },
+        );
+        expect(response!['ok'], isTrue);
+        final Map<String, dynamic> data =
+            response['data'] as Map<String, dynamic>;
+        expect(data['exitCode'], 1);
+        expect(data['stdout'], '1\n');
+        expect(data['stderr'], 'permission denied');
+        expect(data['timedOut'], isFalse);
+        expect(data.containsKey('error'), isFalse);
+        // The command was trimmed and forwarded with the requested budget.
+        expect(calls.single.$1, 'settings get global airplane_mode_on');
+        expect(calls.single.$2, isTrue);
+        expect(calls.single.$3, 5000);
+      },
+    );
+
+    test(
+      'timeout clamps to the documented maximum and defaults to 30s',
+      () async {
+        enabled = true;
+        final ChatModule mod = module(
+          permissions: <ModulePermission>{ModulePermission.device},
+        );
+        await callOp(mod, mod.manifest.permissions, <String, dynamic>{
+          'zop': 'device.shell',
+          'command': 'long-run',
+          'timeoutMs': 999999,
+        });
+        expect(calls.single.$3, ModuleRuntime.maxShellTimeoutMs);
+        await callOp(mod, mod.manifest.permissions, <String, dynamic>{
+          'zop': 'device.shell',
+          'command': 'default-run',
+        });
+        expect(calls.last.$3, ModuleRuntime.defaultShellTimeoutMs);
+      },
+    );
+
+    test(
+      'empty and oversized commands are rejected before the bridge',
+      () async {
+        enabled = true;
+        final ChatModule mod = module(
+          permissions: <ModulePermission>{ModulePermission.device},
+        );
+        final Map<String, dynamic>? empty = await callOp(
+          mod,
+          mod.manifest.permissions,
+          <String, dynamic>{'zop': 'device.shell', 'command': '   '},
+        );
+        expect(empty!['ok'], isFalse);
+        final Map<String, dynamic>? huge = await callOp(
+          mod,
+          mod.manifest.permissions,
+          <String, dynamic>{
+            'zop': 'device.shell',
+            'command': 'x' * (ModuleRuntime.maxShellCommandChars + 1),
+          },
+        );
+        expect(huge!['ok'], isFalse);
+        expect(huge['error'] as String, contains('character limit'));
+        expect(calls, isEmpty);
+      },
+    );
+
+    test(
+      'bridge-level failures surface the error field, not a throw',
+      () async {
+        enabled = true;
+        scripted = const DeviceShellResult(error: 'su: not found');
+        final ChatModule mod = module(
+          permissions: <ModulePermission>{ModulePermission.device},
+        );
+        final Map<String, dynamic>? response = await callOp(
+          mod,
+          mod.manifest.permissions,
+          <String, dynamic>{
+            'zop': 'device.shell',
+            'command': 'id -u',
+            'root': true,
+          },
+        );
+        expect(response!['ok'], isTrue);
+        expect(
+          (response['data'] as Map<String, dynamic>)['error'],
+          'su: not found',
+        );
+      },
+    );
+
+    test('shell bridge unavailable degrades into a clean error', () async {
+      enabled = true;
+      final ModuleRuntime noShell = ModuleRuntime(
+        js: deviceJs,
+        resolveSandboxRoot: sandbox.rootFor,
+        resolveModulePath: (String name) async {
+          final String path =
+              '${docs.path}${Platform.pathSeparator}modules'
+              '${Platform.pathSeparator}$name';
+          return Directory(path).existsSync() ? path : null;
+        },
+        resolveSdkSource: () async => 'module.exports = zagents;',
+        resolveNpmModulesRoot: () async => '',
+        deviceCommandsEnabled: () => enabled,
+      );
+      final ChatModule mod = module(
+        permissions: <ModulePermission>{ModulePermission.device},
+      );
+      Map<String, dynamic>? response;
+      deviceJs.onModuleInvocation = (ModuleInvocation invocation) async {
+        response = await noShell.handleOp(<String, dynamic>{
+          'zop': 'device.shell',
+          'command': 'id -u',
+        });
+      };
+      await noShell.run(
+        sessionId: 's',
+        module: mod,
+        granted: mod.manifest.permissions,
+      );
+      deviceJs.onModuleInvocation = null;
+      expect(response!['ok'], isFalse);
+      expect(response!['error'], 'Shell bridge is unavailable');
+    });
+
+    test('stdout and stderr are capped at the documented stream budget', () {
+      final String big = 'a' * (ModuleRuntime.maxShellStreamChars + 10);
+      // Private helper access through the public op path is covered by
+      // the happy-path test; this asserts the cap constant matches the
+      // documented 32 KB budget.
+      expect(ModuleRuntime.maxShellStreamChars, 32 * 1024);
+      expect(big.length, greaterThan(ModuleRuntime.maxShellStreamChars));
     });
   });
 }

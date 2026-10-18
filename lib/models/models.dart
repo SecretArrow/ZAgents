@@ -682,6 +682,7 @@ class AppSettings {
     this.autoRetryEnabled = true,
     this.autoRetryAttempts = defaultAutoRetryAttempts,
     this.autoRetryDelay = defaultAutoRetryDelay,
+    this.deviceCommandsEnabled = false,
     this.languageCode = defaultLanguageCode,
     this.themeMode = ThemeModeSetting.dark,
     this.uaMode = UaMode.auto,
@@ -744,6 +745,13 @@ class AppSettings {
   /// grows with each attempt (0-60 s, default 5 s).
   final int autoRetryDelay;
 
+  /// v1.31.0 — master switch for chat-module device commands
+  /// (`zagents.device.shell`). OFF by default: only rooted phones can use
+  /// it meaningfully, and it gates a capability with system-wide impact
+  /// (airplane mode, VPN, ...). Modules that declare the `device`
+  /// permission additionally ask for consent at activation.
+  final bool deviceCommandsEnabled;
+
   /// When true (default) conversations created from the automatic prompt
   /// prefix get a short model-generated title after the first answer.
   /// Renamed conversations are never retitled.
@@ -795,6 +803,7 @@ class AppSettings {
     bool? autoRetryEnabled,
     Object? autoRetryAttempts,
     Object? autoRetryDelay,
+    bool? deviceCommandsEnabled,
     String? languageCode,
     ThemeModeSetting? themeMode,
     UaMode? uaMode,
@@ -821,6 +830,7 @@ class AppSettings {
       autoRetryAttempts ?? this.autoRetryAttempts,
     ),
     autoRetryDelay: clampAutoRetryDelay(autoRetryDelay ?? this.autoRetryDelay),
+    deviceCommandsEnabled: deviceCommandsEnabled ?? this.deviceCommandsEnabled,
     languageCode: languageCode ?? this.languageCode,
     themeMode: themeMode ?? this.themeMode,
     uaMode: uaMode ?? this.uaMode,
@@ -847,6 +857,7 @@ class AppSettings {
     'autoRetryEnabled': autoRetryEnabled,
     'autoRetryAttempts': autoRetryAttempts,
     'autoRetryDelay': autoRetryDelay,
+    'deviceCommandsEnabled': deviceCommandsEnabled,
     'languageCode': languageCode,
     'themeMode': themeMode.name,
     'uaMode': uaMode.name,
@@ -878,6 +889,7 @@ class AppSettings {
       autoRetryDelay: clampAutoRetryDelay(
         json['autoRetryDelay'] ?? defaultAutoRetryDelay,
       ),
+      deviceCommandsEnabled: json['deviceCommandsEnabled'] as bool? ?? false,
       languageCode: json['languageCode'] as String? ?? defaultLanguageCode,
       themeMode: themeModeSettingFromName(json['themeMode'] as String?),
       uaMode: uaModeFromName(json['uaMode'] as String?),
@@ -941,6 +953,7 @@ class AppSettings {
       autoRetryEnabled: autoRetryEnabled,
       autoRetryAttempts: autoRetryAttempts,
       autoRetryDelay: autoRetryDelay,
+      deviceCommandsEnabled: deviceCommandsEnabled,
       languageCode: languageCode,
       themeMode: themeMode,
       uaMode: uaMode,

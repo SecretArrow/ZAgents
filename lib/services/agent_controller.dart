@@ -795,6 +795,42 @@ class ChatController extends Notifier<ChatState> {
     return null;
   }
 
+  /// True when [moduleName]'s manifest declares the "/keyword" typed in
+  /// [prompt] (v1.31.0 module command passthrough).
+  Future<bool> _declaresCommand(String moduleName, String? prompt) async {
+    final String? keyword = moduleCommandKeyword(prompt);
+    if (keyword == null) return false;
+    final ChatModule? module = await ref
+        .read(moduleRegistryProvider)
+        .get(moduleName);
+    return module?.manifest.declaresCommand(keyword) ?? false;
+  }
+
+  /// Resolves the target module for a typed "/cmd …" message (v1.31.0):
+  /// the FIRST ACTIVE module whose manifest declares the keyword wins;
+  /// otherwise — when nothing is staged — the first INSTALLED module
+  /// declaring it (typing the command IS the activation intent). Null
+  /// when no module claims the keyword: the message flows to the LLM.
+  Future<String?> _moduleCommandTarget(_SessionRun run, String prompt) async {
+    final String? keyword = moduleCommandKeyword(prompt);
+    if (keyword == null) return null;
+    final ModuleRegistry registry = ref.read(moduleRegistryProvider);
+    for (final String name in run.activeModules) {
+      final ChatModule? module = await registry.get(name);
+      if (module?.manifest.declaresCommand(keyword) ?? false) return name;
+    }
+    if (run.pendingModule != null) return null;
+    try {
+      final List<ChatModule> installed = await registry.listInstalled();
+      for (final ChatModule module in installed) {
+        if (module.manifest.declaresCommand(keyword)) return module.name;
+      }
+    } catch (_) {
+      // Registry read failure must never break the send path.
+    }
+    return null;
+  }
+
   /// Resumes the queued agent cycle (v1.29.0) once the blocking setup
   /// form was submitted or the gating module deactivated: replay-only —
   /// the queued user message(s) are already in the transcript, the wire
@@ -1356,6 +1392,40 @@ class ChatController extends Notifier<ChatState> {
           state = state.copyWith(waitingForSetup: true);
         }
         await _persist(run);
+        return const _RunResult();
+      }
+      // v1.31.0 — a staged module that DECLARES the typed "/cmd" keyword
+      // already ran with the raw message as zagents.info.prompt: the
+      // command is consumed, the LLM stays out of a pure command chat.
+      if (await _declaresCommand(stagedModule, prompt)) {
+        run.autoTitlePending = false;
+        return const _RunResult();
+      }
+    }
+
+    // v1.31.0 — module command passthrough: a message like "/airplane on"
+    // whose keyword is declared by an ACTIVE module's manifest routes to
+    // that module (its entry point re-runs with the raw message as
+    // zagents.info.prompt) instead of reaching the LLM. When no module
+    // claims the keyword there, an INSTALLED module declaring it is
+    // auto-activated first — typing the command IS the activation intent.
+    if (prompt != null) {
+      final String? commandTarget = await _moduleCommandTarget(run, prompt);
+      if (commandTarget != null) {
+        // The title of a command-only chat is the command itself — no
+        // point burning an LLM call to retitle "/airplane on".
+        run.autoTitlePending = false;
+        await _activateModule(run, commandTarget, activationPrompt: prompt);
+        if (run.setupRequest != null) {
+          // The activated module wants its per-chat setup first: surface
+          // the form; submitModuleSetup re-runs the module with the
+          // queued command text as its activation prompt.
+          run.waitingForSetup = true;
+          if (_activeSessionId == run.sessionId) {
+            state = state.copyWith(waitingForSetup: true);
+          }
+          await _persist(run);
+        }
         return const _RunResult();
       }
     }

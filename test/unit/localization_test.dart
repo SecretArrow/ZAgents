@@ -157,8 +157,8 @@ void main() {
     expect(id.randomUaAccept, 'Ya, acak');
     expect(id.randomUaDecline, 'Pertahankan');
     expect(id.createdBy('Maragung'), 'Dibuat oleh Maragung');
-    expect(en.aboutBody, contains('v1.30.0'));
-    expect(id.aboutBody, contains('v1.30.0'));
+    expect(en.aboutBody, contains('v1.31.0'));
+    expect(id.aboutBody, contains('v1.31.0'));
   });
 
   test('module doctor strings are localized in both bundles', () {
