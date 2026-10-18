@@ -569,6 +569,31 @@ int clampMaxSteps(Object? value) {
   return parsed;
 }
 
+/// Bounds of the auto-retry settings (v1.30.0): how many times the agent
+/// may re-attempt a failed turn / resume an interrupted task, and how long
+/// (seconds) it waits before each retry — the wait grows with the attempt
+/// (delay x attempt) so a struggling network gets progressively more room.
+const int minAutoRetryAttempts = 1;
+const int maxAutoRetryAttempts = 10;
+const int defaultAutoRetryAttempts = 3;
+const int minAutoRetryDelay = 0;
+const int maxAutoRetryDelay = 60;
+const int defaultAutoRetryDelay = 5;
+
+int clampAutoRetryAttempts(Object? value) {
+  final int parsed = value is int ? value : int.tryParse('$value') ?? 0;
+  if (parsed < minAutoRetryAttempts) return minAutoRetryAttempts;
+  if (parsed > maxAutoRetryAttempts) return maxAutoRetryAttempts;
+  return parsed;
+}
+
+int clampAutoRetryDelay(Object? value) {
+  final int parsed = value is int ? value : int.tryParse('$value') ?? 0;
+  if (parsed < minAutoRetryDelay) return minAutoRetryDelay;
+  if (parsed > maxAutoRetryDelay) return maxAutoRetryDelay;
+  return parsed;
+}
+
 /// Guesses the [AttachmentKind] of a picked file from its extension.
 AttachmentKind attachmentKindFor(String fileName) {
   final String ext = fileName.contains('.')
@@ -654,6 +679,9 @@ class AppSettings {
     this.autoTitle = true,
     this.appLockEnabled = false,
     this.notifyOnDone = true,
+    this.autoRetryEnabled = true,
+    this.autoRetryAttempts = defaultAutoRetryAttempts,
+    this.autoRetryDelay = defaultAutoRetryDelay,
     this.languageCode = defaultLanguageCode,
     this.themeMode = ThemeModeSetting.dark,
     this.uaMode = UaMode.auto,
@@ -700,6 +728,21 @@ class AppSettings {
   /// When true (default) a local notification is posted when an agent run
   /// finishes while the app is in the background (v1.18.0).
   final bool notifyOnDone;
+
+  /// v1.30.0 auto-retry: when true (default), a failed LLM turn (network
+  /// error, weak connection, dropped stream, transient provider HTTP
+  /// 429/5xx) is re-attempted automatically, and a task that stopped
+  /// mid-way is RESUMED from its transcript — an unfinished todo plan is
+  /// picked back up instead of staying stalled. The retry count and the
+  /// wait between attempts are user-configurable.
+  final bool autoRetryEnabled;
+
+  /// Max automatic re-attempts per failure (1-10, default 3).
+  final int autoRetryAttempts;
+
+  /// Base wait in seconds before the n-th retry: delay x n, so the wait
+  /// grows with each attempt (0-60 s, default 5 s).
+  final int autoRetryDelay;
 
   /// When true (default) conversations created from the automatic prompt
   /// prefix get a short model-generated title after the first answer.
@@ -749,6 +792,9 @@ class AppSettings {
     bool? autoTitle,
     bool? appLockEnabled,
     bool? notifyOnDone,
+    bool? autoRetryEnabled,
+    Object? autoRetryAttempts,
+    Object? autoRetryDelay,
     String? languageCode,
     ThemeModeSetting? themeMode,
     UaMode? uaMode,
@@ -770,6 +816,11 @@ class AppSettings {
     autoTitle: autoTitle ?? this.autoTitle,
     appLockEnabled: appLockEnabled ?? this.appLockEnabled,
     notifyOnDone: notifyOnDone ?? this.notifyOnDone,
+    autoRetryEnabled: autoRetryEnabled ?? this.autoRetryEnabled,
+    autoRetryAttempts: clampAutoRetryAttempts(
+      autoRetryAttempts ?? this.autoRetryAttempts,
+    ),
+    autoRetryDelay: clampAutoRetryDelay(autoRetryDelay ?? this.autoRetryDelay),
     languageCode: languageCode ?? this.languageCode,
     themeMode: themeMode ?? this.themeMode,
     uaMode: uaMode ?? this.uaMode,
@@ -793,6 +844,9 @@ class AppSettings {
     'autoTitle': autoTitle,
     'appLockEnabled': appLockEnabled,
     'notifyOnDone': notifyOnDone,
+    'autoRetryEnabled': autoRetryEnabled,
+    'autoRetryAttempts': autoRetryAttempts,
+    'autoRetryDelay': autoRetryDelay,
     'languageCode': languageCode,
     'themeMode': themeMode.name,
     'uaMode': uaMode.name,
@@ -817,6 +871,13 @@ class AppSettings {
       autoTitle: json['autoTitle'] as bool? ?? true,
       appLockEnabled: json['appLockEnabled'] as bool? ?? false,
       notifyOnDone: json['notifyOnDone'] as bool? ?? true,
+      autoRetryEnabled: json['autoRetryEnabled'] as bool? ?? true,
+      autoRetryAttempts: clampAutoRetryAttempts(
+        json['autoRetryAttempts'] ?? defaultAutoRetryAttempts,
+      ),
+      autoRetryDelay: clampAutoRetryDelay(
+        json['autoRetryDelay'] ?? defaultAutoRetryDelay,
+      ),
       languageCode: json['languageCode'] as String? ?? defaultLanguageCode,
       themeMode: themeModeSettingFromName(json['themeMode'] as String?),
       uaMode: uaModeFromName(json['uaMode'] as String?),
@@ -877,6 +938,9 @@ class AppSettings {
       autoTitle: autoTitle,
       appLockEnabled: appLockEnabled,
       notifyOnDone: notifyOnDone,
+      autoRetryEnabled: autoRetryEnabled,
+      autoRetryAttempts: autoRetryAttempts,
+      autoRetryDelay: autoRetryDelay,
       languageCode: languageCode,
       themeMode: themeMode,
       uaMode: uaMode,

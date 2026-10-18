@@ -439,6 +439,17 @@ abstract class AppStrings {
   /// behind the form — the agent does not process it until submission.
   String get moduleSetupWaitingHint;
 
+  // -- Auto retry & red stop button (v1.30.0) ------------------------------
+  String get autoRetrySection;
+  String get autoRetryTitle;
+  String get autoRetrySubtitle;
+  String get autoRetryAttemptsTitle;
+  String get autoRetryDelayTitle;
+  String get autoRetryHint;
+  String autoRetryStreamNote(int attempt, int max);
+  String autoRetryResumeNote(int attempt, int max);
+  String autoRetryPlanNote(int attempt, int max);
+
   // -- Module doctor (v1.26.0) --------------------------------------------
   String moduleRepairCardTitle(String name, String version);
   String moduleRepairCardBody(String permissions);
@@ -1102,7 +1113,7 @@ class AppStringsEn implements AppStrings {
   String get aboutSection => 'About';
   @override
   String get aboutBody =>
-      'ZAgents v1.29.0 — an Android clone of the chat.z.ai agent mode UI, '
+      'ZAgents v1.30.0 — an Android clone of the chat.z.ai agent mode UI, '
       'with custom OpenAI-compatible providers (OpenRouter, InferHub, '
       'Z.AI, OpenAI, DeepSeek, Groq, and more), per-provider API keys, '
       'light/dark themes, parallel multi-session chat with background '
@@ -1136,7 +1147,13 @@ class AppStringsEn implements AppStrings {
       'synthesizes their results, an exit confirmation dialog keeps a '
       'stray back press from killing a running task, a battery '
       'optimization exemption protects long background runs, and heavy '
-      'JSON and crypto work stays off the UI thread. New in v1.29.0: a '
+      'JSON and crypto work stays off the UI thread. Auto retry (new in '
+      'v1.30.0): network errors, weak connections, dropped streams and '
+      'transient provider failures no longer kill the agent task — it '
+      'waits and re-attempts automatically (configurable attempts and '
+      'delay in Settings), and a task that stops with an unfinished plan '
+      'is resumed too, with a red Stop button that always interrupts '
+      'instantly. New in v1.29.0: a '
       'chat WAITS when a selected module still needs your input — your '
       'message is queued and the agent works on it only after you submit '
       'the module\'s setup form; module file writes with relative paths '
@@ -1293,6 +1310,38 @@ class AppStringsEn implements AppStrings {
   String get moduleSetupWaitingHint =>
       'Your message is queued — the agent processes it right after this '
       'setup is submitted.';
+
+  // -- Auto retry & red stop button (v1.30.0) ------------------------------
+  @override
+  String get autoRetrySection => 'Auto retry';
+  @override
+  String get autoRetryTitle => 'Retry automatically on failures';
+  @override
+  String get autoRetrySubtitle =>
+      'Network errors, weak connection, dropped streams or transient '
+      'provider errors no longer kill the task: the agent waits and tries '
+      'again, and unfinished work is resumed.';
+  @override
+  String get autoRetryAttemptsTitle => 'Max retry attempts';
+  @override
+  String get autoRetryDelayTitle => 'Wait between retries (seconds)';
+  @override
+  String get autoRetryHint =>
+      'The wait grows with each attempt (delay x attempt). When a task '
+      'stops with an unfinished plan, it is also picked back up '
+      'automatically. Stop always wins — nothing retries after you press '
+      'it.';
+  @override
+  String autoRetryStreamNote(int attempt, int max) =>
+      '*Auto retry $attempt/$max — reconnecting to the provider…*';
+  @override
+  String autoRetryResumeNote(int attempt, int max) =>
+      '*Auto retry $attempt/$max — the run was interrupted (network '
+      'error). Resuming the task…*';
+  @override
+  String autoRetryPlanNote(int attempt, int max) =>
+      '*Auto resume $attempt/$max — the plan is not finished yet. '
+      'Continuing the task…*';
 
   // -- Module doctor (v1.26.0) --------------------------------------------
   @override
@@ -1999,7 +2048,7 @@ class AppStringsId implements AppStrings {
   String get aboutSection => 'Tentang';
   @override
   String get aboutBody =>
-      'ZAgents v1.29.0 — klon UI agent mode chat.z.ai untuk Android, '
+      'ZAgents v1.30.0 — klon UI agent mode chat.z.ai untuk Android, '
       'dengan custom provider OpenAI-compatible (OpenRouter, InferHub, '
       'Z.AI, OpenAI, DeepSeek, Groq, dan lainnya), API key per-provider, '
       'tema terang/gelap, multi-sesi paralel dengan proses latar '
@@ -2034,7 +2083,13 @@ class AppStringsId implements AppStrings {
       'menjaga tekanan back tidak menghentikan tugas yang berjalan, '
       'pengecualian optimisasi baterai melindungi proses latar belakang '
       'yang panjang, dan kerja JSON serta kripto berat tetap keluar dari '
-      'thread UI. Baru di v1.29.0: chat MENUNGGU saat modul terpilih '
+      'thread UI. Coba-ulang otomatis (baru di v1.30.0): error jaringan, '
+      'koneksi lemah, aliran terputus, dan error sementara provider tidak '
+      'lagi mematikan tugas agent — ia menunggu lalu mencoba ulang secara '
+      'otomatis (jumlah percobaan dan jeda bisa diatur di Setelan), dan '
+      'tugas yang berhenti dengan rencana belum selesai juga dilanjutkan, '
+      'dengan tombol Stop merah yang selalu langsung memotong. Baru di '
+      'v1.29.0: chat MENUNGGU saat modul terpilih '
       'masih membutuhkan input Anda — pesan Anda masuk antrean dan agent '
       'baru mengerjakannya setelah Anda mengirim formulir setup modul; '
       'penulisan file modul dengan path relatif (data.json dan '
@@ -2193,6 +2248,39 @@ class AppStringsId implements AppStrings {
   String get moduleSetupWaitingHint =>
       'Pesan Anda menunggu — agent mengerjakannya tepat setelah setup ini '
       'dikirim.';
+
+  // -- Auto retry & tombol stop merah (v1.30.0) -----------------------------
+  @override
+  String get autoRetrySection => 'Coba-ulang otomatis';
+  @override
+  String get autoRetryTitle => 'Coba ulang otomatis saat gagal';
+  @override
+  String get autoRetrySubtitle =>
+      'Error jaringan, koneksi lemah, aliran terputus, atau error '
+      'sementara dari provider tidak lagi mematikan tugas: agent '
+      'menunggu lalu mencoba lagi, dan pekerjaan yang belum selesai '
+      'dilanjutkan.';
+  @override
+  String get autoRetryAttemptsTitle => 'Maks. percobaan ulang';
+  @override
+  String get autoRetryDelayTitle => 'Jeda antar percobaan (detik)';
+  @override
+  String get autoRetryHint =>
+      'Jeda membesar tiap percobaan (jeda x percobaan). Saat tugas berhenti '
+      'dengan rencana yang belum selesai, ia juga dilanjutkan otomatis. '
+      'Stop selalu menang — tidak ada percobaan ulang setelah tombolnya '
+      'ditekan.';
+  @override
+  String autoRetryStreamNote(int attempt, int max) =>
+      '*Coba-ulang $attempt/$max — menyambung ulang ke provider…*';
+  @override
+  String autoRetryResumeNote(int attempt, int max) =>
+      '*Coba-ulang $attempt/$max — run terputus (error jaringan). '
+      'Melanjutkan tugas…*';
+  @override
+  String autoRetryPlanNote(int attempt, int max) =>
+      '*Lanjut otomatis $attempt/$max — rencana belum selesai. '
+      'Melanjutkan tugas…*';
 
   // -- Module doctor (v1.26.0) --------------------------------------------
   @override

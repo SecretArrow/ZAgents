@@ -281,6 +281,27 @@ OpenAI-compatible: **OpenRouter, InferHub, Z.AI, OpenAI, DeepSeek, Groq, dan lai
   sandbox), menghapus chat ikut menghapus folder kerjanya, dan File
   Manager tanpa chat aktif menampilkan panduan "buka chat dulu" — bukan
   lagi root bersama yang mencampur file antar chat.
+- **v1.30.0 — auto retry, tugas tidak mati kena jaringan & tombol Stop merah**:
+  1. **Auto retry dua lapis**: error jaringan, koneksi lemah, aliran
+  streaming terputus, dan error sementara provider (HTTP 408/425/429/5xx)
+  tidak lagi mematikan tugas agent. Lapis pertama mencoba ulang giliran
+  LLM yang gagal langsung di tempat (catatan "reconnecting" tampil di
+  gelembung, lalu tergantikan konten hidup); lapis kedua melanjutkan run
+  yang mati di tengah jalan dari transkrip tersimpan dengan catatan
+  "Auto retry n/N — resuming" di chat. Error permanen (401/400/404/422)
+  tidak diboroskan percobaannya, dan **Stop selalu menang** — tidak ada
+  retry setelah Anda menekannya.
+  2. **Lanjut otomatis saat rencana belum selesai**: bila run berhenti
+  (batas langkah habis / model menyimpulkan terlalu cepat) padahal todo
+  plan masih ada yang belum selesai, tugas diangkat kembali otomatis
+  sampai budget percobaan habis.
+  3. **Opsi custom di Pengaturan → Auto retry**: saklar aktif/nonaktif
+  (default aktif), slider **maks. percobaan** (1–10, default 3), dan
+  slider **jeda antar percobaan** (0–60 detik, default 5 — jeda membesar
+  tiap percobaan: jeda × percobaan).
+  4. **Tombol Stop kini merah** (bukan abu-abu permukaan) — kontrol
+  interupsi terlihat jelas, dan gagal-turn tidak lagi meninggalkan
+  gelembung "thinking" abadi di transkrip.
 - **Pencarian + paging universal (v1.6.0)** — SEMUA list di aplikasi memakai
   widget `PagedList` yang sama: **5 item per halaman** (termasuk dropdown model),
   kolom pencarian, pager first/prev/next/last, dan empty state "No results".

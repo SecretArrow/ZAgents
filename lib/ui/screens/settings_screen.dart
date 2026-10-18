@@ -84,6 +84,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     bool? autoTitle,
     bool? appLockEnabled,
     bool? notifyOnDone,
+    bool? autoRetryEnabled,
+    Object? autoRetryAttempts,
+    Object? autoRetryDelay,
     Object? maxSteps,
     String? languageCode,
     ThemeModeSetting? themeMode,
@@ -103,6 +106,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             autoTitle: autoTitle,
             appLockEnabled: appLockEnabled,
             notifyOnDone: notifyOnDone,
+            autoRetryEnabled: autoRetryEnabled,
+            autoRetryAttempts: autoRetryAttempts ?? current.autoRetryAttempts,
+            autoRetryDelay: autoRetryDelay ?? current.autoRetryDelay,
             maxSteps: maxSteps ?? current.maxSteps,
             languageCode: languageCode,
             themeMode: themeMode,
@@ -571,6 +577,73 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                       settings.runUntilDone
                           ? strings.runUntilDoneHint
                           : strings.maxStepsHint,
+                      style: TextStyle(fontSize: 12, color: palette.muted),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+
+            // -- Auto retry (v1.30.0) -------------------------------------
+            _sectionTitle(strings.autoRetrySection),
+            _card(
+              child: Column(
+                children: <Widget>[
+                  SwitchListTile(
+                    key: const Key('auto-retry-switch'),
+                    contentPadding: EdgeInsets.zero,
+                    title: Text(strings.autoRetryTitle),
+                    subtitle: Text(
+                      strings.autoRetrySubtitle,
+                      style: TextStyle(fontSize: 12, color: palette.muted),
+                    ),
+                    value: settings.autoRetryEnabled,
+                    onChanged: (bool value) => _commit(autoRetryEnabled: value),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    strings.autoRetryAttemptsTitle,
+                    style: TextStyle(
+                      fontWeight: FontWeight.w600,
+                      color: settings.autoRetryEnabled ? null : palette.muted,
+                    ),
+                  ),
+                  Slider(
+                    key: const Key('auto-retry-attempts-slider'),
+                    min: minAutoRetryAttempts.toDouble(),
+                    max: maxAutoRetryAttempts.toDouble(),
+                    divisions: maxAutoRetryAttempts - minAutoRetryAttempts,
+                    label: '${settings.autoRetryAttempts}',
+                    value: settings.autoRetryAttempts.toDouble(),
+                    onChanged: settings.autoRetryEnabled
+                        ? (double value) =>
+                              _commit(autoRetryAttempts: value.round())
+                        : null,
+                  ),
+                  Text(
+                    strings.autoRetryDelayTitle,
+                    style: TextStyle(
+                      fontWeight: FontWeight.w600,
+                      color: settings.autoRetryEnabled ? null : palette.muted,
+                    ),
+                  ),
+                  Slider(
+                    key: const Key('auto-retry-delay-slider'),
+                    min: minAutoRetryDelay.toDouble(),
+                    max: maxAutoRetryDelay.toDouble(),
+                    divisions: maxAutoRetryDelay - minAutoRetryDelay,
+                    label: '${settings.autoRetryDelay}',
+                    value: settings.autoRetryDelay.toDouble(),
+                    onChanged: settings.autoRetryEnabled
+                        ? (double value) =>
+                              _commit(autoRetryDelay: value.round())
+                        : null,
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: Text(
+                      strings.autoRetryHint,
                       style: TextStyle(fontSize: 12, color: palette.muted),
                     ),
                   ),

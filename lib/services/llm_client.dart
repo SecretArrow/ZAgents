@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io' show HttpException, SocketException;
 
 import 'package:http/http.dart' as http;
 
@@ -73,13 +74,43 @@ class AssistantTurn {
 }
 
 class LlmException implements Exception {
-  LlmException(this.message);
+  LlmException(this.message, {this.statusCode});
 
   final String message;
+
+  /// HTTP status code when the failure came from a provider response —
+  /// lets the auto-retry logic (v1.30.0) tell transient server errors
+  /// (429/5xx, worth another attempt) from permanent ones (401/400).
+  final int? statusCode;
 
   @override
   String toString() => message;
 }
+
+/// True when [error] is worth another automatic attempt (v1.30.0):
+/// transport failures (unreachable provider, dropped stream, socket or
+/// timeout errors) and transient HTTP responses (408/425/429 and all
+/// 5xx). Authentication and bad-request errors are permanent — retrying
+/// them would only burn the attempt budget. A user-initiated
+/// [LlmAbortedException] (Stop) is never retried.
+bool isRetryableLlmError(Object? error) {
+  if (error is LlmAbortedException) return false;
+  if (error is LlmException) {
+    final int? code = error.statusCode;
+    if (code != null) return _retryableStatusCode(code);
+    final String m = error.message.toLowerCase();
+    return m.contains('could not connect') ||
+        m.contains('connection lost') ||
+        m.contains('failed to read response') ||
+        m.contains('timeout');
+  }
+  return error is SocketException ||
+      error is HttpException ||
+      error is TimeoutException;
+}
+
+bool _retryableStatusCode(int code) =>
+    code == 408 || code == 425 || code == 429 || (code >= 500 && code <= 599);
 
 /// Streaming client for OpenAI-compatible chat completion APIs
 /// (OpenRouter, Z.AI, OpenAI, DeepSeek, Groq, ...).
@@ -147,6 +178,7 @@ class LlmClient {
       }
       throw LlmException(
         'HTTP ${response.statusCode}: ${_truncate(errorBody, 300)}',
+        statusCode: 400,
       );
     }
 
@@ -154,6 +186,7 @@ class LlmClient {
       final body = await response.stream.bytesToString();
       throw LlmException(
         'HTTP ${response.statusCode}: ${_truncate(body, 300)}',
+        statusCode: response.statusCode,
       );
     }
 

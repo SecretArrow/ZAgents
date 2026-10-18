@@ -512,7 +512,12 @@ void main() {
         ...testOverrides(
           llm: _ThrowingLlmClient(),
           dir: tempDir,
-          settings: AppSettings(apiKey: 'k', autoTitle: false),
+          // Auto-retry OFF: this test pins the RAW error path (no retries).
+          settings: AppSettings(
+            apiKey: 'k',
+            autoTitle: false,
+            autoRetryEnabled: false,
+          ),
         ),
         backgroundRunServiceProvider.overrideWithValue(background),
       ],

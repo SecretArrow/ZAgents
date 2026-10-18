@@ -586,7 +586,9 @@ class _ComposerState extends ConsumerState<Composer> {
               Container(
                 decoration: BoxDecoration(
                   gradient: isRunning ? null : kBrandGradient,
-                  color: isRunning ? context.zSurfaceAlt : null,
+                  // v1.30.0: the Stop button is clearly red — it must read
+                  // as an interrupt control, not a disabled send button.
+                  color: isRunning ? const Color(0xFFE5484D) : null,
                   shape: BoxShape.circle,
                 ),
                 child: IconButton(

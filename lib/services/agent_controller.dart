@@ -1052,12 +1052,53 @@ class ChatController extends Notifier<ChatState> {
     run.docsPath ??= (await ref.read(documentsDirProvider)()).path;
     await _prepareAttachments(run, attachments);
 
-    final _RunResult result = await _runLoop(
-      run,
-      settings,
-      prompt,
-      attachments,
-    );
+    _RunResult result = await _runLoop(run, settings, prompt, attachments);
+
+    // v1.30.0 auto-retry at RUN level: when the run died from a retryable
+    // failure (network error, weak connection, dropped stream, transient
+    // provider 429/5xx) or ended mid-way with an unfinished todo plan, the
+    // task is RESUMED from the persisted transcript instead of staying
+    // stalled. Each resume adds a visible note to the chat and waits
+    // (delay x attempt) before picking the work back up. Stop always wins:
+    // nothing resumes after the user pressed Stop.
+    final int maxResumes = settings.autoRetryEnabled
+        ? settings.autoRetryAttempts
+        : 0;
+    final AppStrings strings = appStringsFor(settings.languageCode);
+    for (
+      int attempt = 1;
+      !run.stopRequested && attempt <= maxResumes;
+      attempt++
+    ) {
+      final bool retryableFailure =
+          result.error != null && isRetryableLlmError(result.cause);
+      final bool planStalled =
+          result.error == null && _planInterrupted(run, settings);
+      if (!retryableFailure && !planStalled) break;
+      _finalizeDanglingStream(run);
+      run.messages.add(
+        ChatMessage.assistant(
+          retryableFailure
+              ? strings.autoRetryResumeNote(attempt, maxResumes)
+              : strings.autoRetryPlanNote(attempt, maxResumes),
+        ),
+      );
+      _sync(run);
+      await _persist(run);
+      if (!await _retryWait(run, settings.autoRetryDelay * attempt)) {
+        // Stop wins: a user-stopped run must not present the transport
+        // error as if something had gone wrong.
+        if (result.error != null) {
+          result = const _RunResult();
+        }
+        break;
+      }
+      result = await _runLoop(run, settings, null, const <ChatAttachment>[]);
+    }
+
+    // A failed turn can leave a streaming placeholder behind; mark it
+    // finished so the transcript never shows an eternal thinking bubble.
+    _finalizeDanglingStream(run);
 
     run.isRunning = false;
     _markRunning();
@@ -1369,23 +1410,14 @@ class ChatController extends Notifier<ChatState> {
         final buffer = StringBuffer();
         final AssistantTurn turn;
         try {
-          turn = await ref
-              .read(llmClientProvider)
-              .complete(
-                config: config,
-                messages: wire,
-                tools: tools,
-                onDelta: (delta) {
-                  buffer.write(delta);
-                  run.messages[run.messages.length - 1] = ChatMessage.assistant(
-                    buffer.toString(),
-                    isStreaming: true,
-                  );
-                  _syncStreaming(run);
-                },
-                // Stop must interrupt DURING the stream, not after it.
-                shouldAbort: () => run.stopRequested,
-              );
+          turn = await _completeWithRetry(
+            run,
+            settings,
+            config: config,
+            wire: wire,
+            tools: tools,
+            buffer: buffer,
+          );
         } on LlmAbortedException {
           // Keep the partial answer on screen; the finalize step below
           // marks it as stopped. No wire entry is added, so the next
@@ -1539,12 +1571,145 @@ class ChatController extends Notifier<ChatState> {
       }
       return const _RunResult();
     } catch (e) {
-      return _RunResult(error: e.toString());
+      return _RunResult(error: e.toString(), cause: e);
     } finally {
       // Always release the background hold — success, error, or stop.
       // Refcounted: parallel sessions keep the service alive until all end.
       if (holdStarted) await background.stop();
     }
+  }
+
+  /// Streams one assistant turn with v1.30.0 auto-retry: a retryable
+  /// failure (unreachable provider, weak network, dropped stream, HTTP
+  /// 429/5xx) is re-attempted up to [AppSettings.autoRetryAttempts] times,
+  /// waiting [AppSettings.autoRetryDelay] x attempt seconds between tries.
+  /// While waiting, the streaming placeholder shows the reconnect note;
+  /// as soon as the next attempt emits, live content takes over again.
+  /// A user Stop aborts instantly ([LlmAbortedException]) — never retried.
+  Future<AssistantTurn> _completeWithRetry(
+    _SessionRun run,
+    AppSettings settings, {
+    required LlmConfig config,
+    required List<Map<String, dynamic>> wire,
+    required List<Map<String, dynamic>>? tools,
+    required StringBuffer buffer,
+  }) async {
+    final AppStrings strings = appStringsFor(settings.languageCode);
+    final int maxAttempts = settings.autoRetryEnabled
+        ? settings.autoRetryAttempts
+        : 1;
+    int attempt = 0;
+    bool noteShown = false;
+    String partial = '';
+    while (true) {
+      try {
+        return await ref
+            .read(llmClientProvider)
+            .complete(
+              config: config,
+              messages: wire,
+              tools: tools,
+              onDelta: (delta) {
+                buffer.write(delta);
+                run.messages[run.messages.length - 1] = ChatMessage.assistant(
+                  buffer.toString(),
+                  isStreaming: true,
+                );
+                _syncStreaming(run);
+              },
+              // Stop must interrupt DURING the stream, not after it.
+              shouldAbort: () => run.stopRequested,
+            );
+      } on LlmAbortedException {
+        rethrow;
+      } catch (e) {
+        attempt++;
+        final bool exhausted =
+            !isRetryableLlmError(e) ||
+            attempt >= maxAttempts ||
+            run.stopRequested;
+        if (exhausted) {
+          // A Stop pressed while the attempt was failing must surface the
+          // normal stop flow — never a transport error.
+          if (run.stopRequested) throw const LlmAbortedException('');
+          // Give up: put back the last content the user actually saw if
+          // the final attempt died before producing anything (the note
+          // would otherwise be the only thing left on screen).
+          if (noteShown && buffer.isEmpty) {
+            run.messages[run.messages.length - 1] = ChatMessage.assistant(
+              partial,
+              isStreaming: true,
+            );
+            _sync(run);
+          }
+          rethrow;
+        }
+        partial = buffer.toString();
+        buffer.clear();
+        noteShown = true;
+        run.messages[run.messages.length - 1] = ChatMessage.assistant(
+          strings.autoRetryStreamNote(attempt, maxAttempts),
+          isStreaming: true,
+        );
+        _sync(run);
+        if (!await _retryWait(run, settings.autoRetryDelay * attempt)) {
+          // Stop pressed while waiting: restore what the failed attempt
+          // had streamed, then abort through the normal stop path.
+          run.messages[run.messages.length - 1] = ChatMessage.assistant(
+            partial,
+            isStreaming: true,
+          );
+          _sync(run);
+          throw const LlmAbortedException('');
+        }
+      }
+    }
+  }
+
+  /// Abortable backoff wait for auto-retry (v1.30.0): polls the Stop flag
+  /// so a stop request always lands quickly even during a long wait.
+  /// Returns false when the user pressed Stop — the caller must abort.
+  Future<bool> _retryWait(_SessionRun run, int seconds) async {
+    if (seconds <= 0) return !run.stopRequested;
+    const int sliceMs = 200;
+    int waitedMs = 0;
+    final int totalMs = seconds * 1000;
+    while (waitedMs < totalMs) {
+      if (run.stopRequested) return false;
+      await Future<void>.delayed(const Duration(milliseconds: sliceMs));
+      waitedMs += sliceMs;
+    }
+    return !run.stopRequested;
+  }
+
+  /// Finalizes a dangling streaming placeholder left behind by a failed
+  /// LLM turn (v1.30.0): without this the transcript would keep an eternal
+  /// "thinking" bubble. The content (partial answer or retry note) is
+  /// kept as-is, only the streaming flag is cleared.
+  void _finalizeDanglingStream(_SessionRun run) {
+    if (run.messages.isEmpty) return;
+    final ChatMessage last = run.messages.last;
+    if (last.role == Role.assistant && last.isStreaming) {
+      run.messages[run.messages.length - 1] = ChatMessage.assistant(
+        last.content,
+      );
+      _sync(run);
+    }
+  }
+
+  /// v1.30.0: true when the loop ended NORMALLY (no error, no Stop) but
+  /// the todo plan is still unfinished — the step cap was exhausted or the
+  /// model wrapped up early. With auto-retry on, the task is picked back
+  /// up instead of staying stalled mid-plan.
+  bool _planInterrupted(_SessionRun run, AppSettings settings) {
+    if (!settings.agentMode || !settings.planFirst) return false;
+    if (!hasIncompleteTodos(run.latestTodos)) return false;
+    if (run.messages.isEmpty) return false;
+    final ChatMessage last = run.messages.last;
+    return last.role == Role.assistant &&
+        !last.isStreaming &&
+        last.toolCalls.isEmpty &&
+        last.content.trim().isNotEmpty;
   }
 
   /// System message: agent prompt (agent mode) + plan-first addendum +
@@ -2017,8 +2182,13 @@ class ChatController extends Notifier<ChatState> {
 }
 
 class _RunResult {
-  const _RunResult({this.error});
+  const _RunResult({this.error, this.cause});
   final String? error;
+
+  /// Original thrown object behind [error] (v1.30.0) — lets the auto-retry
+  /// logic classify the failure (retryable transport error vs permanent
+  /// bad request) without parsing the message string.
+  final Object? cause;
 }
 
 /// Settings controller: holds AppSettings and persists on every update.
