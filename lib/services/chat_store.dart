@@ -75,6 +75,10 @@ class ChatStore {
     required List<ChatMessage> messages,
     List<String> modules = const <String>[],
     bool waitingForSetup = false,
+    // v1.35.0 crash recovery: the latest agent plan written via todo_write
+    // is stored WITH the transcript, so a mid-run crash can no longer wipe
+    // the plan the user was watching (it used to live in memory only).
+    List<TodoItem> todos = const <TodoItem>[],
   }) async {
     final dir = await _chatsDir();
     final file = File('${dir.path}${Platform.pathSeparator}$id.json');
@@ -90,6 +94,7 @@ class ChatStore {
       // setup input — the agent must not process it until the form is
       // submitted. Persisted so the wait survives app restarts.
       'waitingForSetup': waitingForSetup,
+      'todos': todos.map((t) => t.toJson()).toList(),
     };
     final String encoded = await _offload(() => jsonEncode(payload));
     await file.writeAsString(encoded);
@@ -159,6 +164,28 @@ class ChatStore {
       });
     } catch (_) {
       return false;
+    }
+  }
+
+  /// Loads the latest agent plan (todos) persisted for [sessionId]
+  /// (v1.35.0 crash recovery). Empty when the session predates plan
+  /// persistence, the file is unreadable or the payload is malformed —
+  /// a broken plan must never block opening a chat.
+  Future<List<TodoItem>> loadTodos(String id) async {
+    final dir = await _chatsDir();
+    final file = File('${dir.path}${Platform.pathSeparator}$id.json');
+    if (!await file.exists()) return const <TodoItem>[];
+    try {
+      final String raw = await file.readAsString();
+      return await _offload(() {
+        final Object? decoded = jsonDecode(raw);
+        if (decoded is! Map) return const <TodoItem>[];
+        // parseTodoList accepts loose maps and skips malformed entries —
+        // the same defensive path the todo_write tool call uses.
+        return parseTodoList(decoded['todos']);
+      });
+    } catch (_) {
+      return const <TodoItem>[];
     }
   }
 

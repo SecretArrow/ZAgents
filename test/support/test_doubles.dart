@@ -217,6 +217,7 @@ class ThrowingChatStore implements ChatStore {
     required List<ChatMessage> messages,
     List<String> modules = const <String>[],
     bool waitingForSetup = false,
+    List<TodoItem> todos = const <TodoItem>[],
   }) async {}
 
   @override
@@ -231,6 +232,10 @@ class ThrowingChatStore implements ChatStore {
 
   @override
   Future<bool> loadWaitingForSetup(String id) async => false;
+
+  @override
+  Future<List<TodoItem>> loadTodos(String id) async =>
+      throw const FileSystemException('disk exploded');
 
   @override
   Future<void> delete(String id) async =>

@@ -1136,7 +1136,7 @@ class AppStringsEn implements AppStrings {
   String get aboutSection => 'About';
   @override
   String get aboutBody =>
-      'ZAgents v1.34.0 — an Android clone of the chat.z.ai agent mode UI, '
+      'ZAgents v1.35.0 — an Android clone of the chat.z.ai agent mode UI, '
       'with custom OpenAI-compatible providers (OpenRouter, InferHub, '
       'Z.AI, OpenAI, DeepSeek, Groq, and more), per-provider API keys, '
       'light/dark themes, parallel multi-session chat with background '
@@ -1197,7 +1197,14 @@ class AppStringsEn implements AppStrings {
       '(data.json & friends) now land in the chat\'s own per-chat state '
       'folder; every chat\'s workspace can be exported to the device '
       'file manager (Downloads/ZAgents/<chat>) with one tap; and '
-      'deleting a chat also removes its workspace folder.';
+      'deleting a chat also removes its workspace folder. New in '
+      'v1.35.0: the agent\'s plan (todos) is now crash-proof — the '
+      'transcript is saved after every working step and the current plan '
+      'state travels with it, so an app crash, ANR kill or dead battery '
+      'no longer wipes the plan you were watching: reopen the chat and '
+      'the plan card, its progress and the live plan panel all come back, '
+      'and continuing the task picks the unfinished plan straight back '
+      'up.';
 
   @override
   String createdBy(String name) => 'Created by $name';
@@ -2110,7 +2117,7 @@ class AppStringsId implements AppStrings {
   String get aboutSection => 'Tentang';
   @override
   String get aboutBody =>
-      'ZAgents v1.34.0 — klon UI agent mode chat.z.ai untuk Android, '
+      'ZAgents v1.35.0 — klon UI agent mode chat.z.ai untuk Android, '
       'dengan custom provider OpenAI-compatible (OpenRouter, InferHub, '
       'Z.AI, OpenAI, DeepSeek, Groq, dan lainnya), API key per-provider, '
       'tema terang/gelap, multi-sesi paralel dengan proses latar '
@@ -2172,7 +2179,14 @@ class AppStringsId implements AppStrings {
       'kawan-kawannya) kini masuk ke folder state per-chat masing-masing; '
       'folder ruang kerja setiap chat bisa diekspor ke file manager '
       'perangkat (Downloads/ZAgents/<chat>) dengan satu ketukan; dan '
-      'menghapus chat juga menghapus folder ruang kerjanya.';
+      'menghapus chat juga menghapus folder ruang kerjanya. Baru di '
+      'v1.35.0: rencana agent (todos) kini tahan crash — transkrip '
+      'tersimpan setelah setiap langkah kerja dan status rencana terkini '
+      'ikut tersimpan, sehingga aplikasi crash, dibunuh ANR, atau baterai '
+      'habis tidak lagi menghapus rencana yang sedang Anda pantau: buka '
+      'kembali chat dan kartu rencana, progresnya, serta panel rencana '
+      'live semuanya kembali, dan melanjutkan tugas langsung menyambung '
+      'rencana yang belum selesai.';
 
   @override
   String createdBy(String name) => 'Dibuat oleh $name';

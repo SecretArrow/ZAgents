@@ -336,6 +336,10 @@ class ChatController extends Notifier<ChatState> {
           sessionId: openId,
           title: run.title,
           messages: [...run.messages],
+          // v1.35.0: the plan restored from disk stays visible while the
+          // continuation run takes over (a crash-interrupted task keeps
+          // its plan instead of starting from a blank panel).
+          todos: [...run.latestTodos],
           isRunning: true,
         );
       } else {
@@ -1323,6 +1327,16 @@ class ChatController extends Notifier<ChatState> {
       // Storage failure: continue with whatever is on screen (possibly
       // empty) rather than blocking the user's request.
     }
+    // v1.35.0 crash recovery: the persisted plan feeds run.latestTodos so
+    // continuing a crash-interrupted session keeps the plan panel alive —
+    // and the plan-first nudge / resume logic can pick the task back up.
+    // edit/regenerate still clear it explicitly (a rewritten transcript
+    // invalidates the old plan).
+    try {
+      run.latestTodos = await ref.read(chatStoreProvider).loadTodos(sessionId);
+    } catch (_) {
+      // Plan restore is best-effort.
+    }
     return run;
   }
 
@@ -1694,6 +1708,13 @@ class ChatController extends Notifier<ChatState> {
             'content': result.llmOutput,
           });
         }
+        // v1.35.0 crash recovery: persist after every step's tool batch —
+        // previously the transcript was only written at run START, so a
+        // mid-run crash (OOM kill, ANR, dead battery) wiped everything
+        // after the opening user message, plan cards included. The save is
+        // fire-and-forget: the per-run persist chain guarantees ordering
+        // and the loop never blocks on disk I/O.
+        unawaited(_persist(run));
         if (run.stopRequested) break;
       }
 
@@ -2199,6 +2220,8 @@ class ChatController extends Notifier<ChatState> {
             messages: persisted,
             modules: run.activeModules,
             waitingForSetup: run.waitingForSetup,
+            // v1.35.0 crash recovery: the plan travels with the transcript.
+            todos: run.latestTodos,
           );
       if (run.deleted) {
         // The session was deleted while this save was in flight — undo it
@@ -2350,6 +2373,9 @@ class ChatController extends Notifier<ChatState> {
         // A stopping run is still running until its loop actually exits —
         // showing send here would silently swallow the next message.
         isRunning: run.isRunning,
+        // v1.35.0: switching away and back no longer blanks the plan
+        // panel for a finished run (no further _sync would restore it).
+        todos: [...run.latestTodos],
         activeModules: [...run.activeModules],
         setupRequest: run.setupRequest,
         waitingForSetup: run.waitingForSetup,
@@ -2385,10 +2411,21 @@ class ChatController extends Notifier<ChatState> {
         // Storage hiccup: the banner still resurfaces via setupRequest.
       }
       if (_activeSessionId != summary.id) return;
+      // v1.35.0 crash recovery: the latest plan comes back from disk so
+      // reopening a chat after a crash still shows what the agent was
+      // doing (and continuing the task picks the plan back up).
+      List<TodoItem> todos = const <TodoItem>[];
+      try {
+        todos = await ref.read(chatStoreProvider).loadTodos(summary.id);
+      } catch (_) {
+        // Plan restore is best-effort — never blocks opening a chat.
+      }
+      if (_activeSessionId != summary.id) return;
       state = ChatState(
         sessionId: summary.id,
         title: summary.title,
         messages: messages ?? const <ChatMessage>[],
+        todos: todos,
         activeModules: modules,
         setupRequest: setupRequest,
         waitingForSetup: waitingForSetup,

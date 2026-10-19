@@ -254,4 +254,86 @@ void main() {
       },
     );
   });
+
+  group('todo plan persistence (v1.35.0 crash recovery)', () {
+    test('save persists the plan and loadTodos reads it back', () async {
+      const List<TodoItem> plan = <TodoItem>[
+        TodoItem(content: 'research topic', status: TodoStatus.completed),
+        TodoItem(content: 'draft report', status: TodoStatus.inProgress),
+        TodoItem(content: 'review output', status: TodoStatus.pending),
+      ];
+      await store.save(
+        id: 'plan-1',
+        title: 't',
+        messages: [ChatMessage.user('kerja')],
+        todos: plan,
+      );
+      final List<TodoItem> loaded = await store.loadTodos('plan-1');
+      expect(loaded, hasLength(3));
+      expect(loaded[0].content, 'research topic');
+      expect(loaded[0].status, TodoStatus.completed);
+      expect(loaded[1].status, TodoStatus.inProgress);
+      expect(loaded[2].status, TodoStatus.pending);
+    });
+
+    test(
+      'saving without todos keeps loadTodos empty (overwrites stale)',
+      () async {
+        await store.save(
+          id: 'plan-2',
+          title: 't',
+          messages: [ChatMessage.user('a')],
+          todos: const [TodoItem(content: 'old plan')],
+        );
+        expect(await store.loadTodos('plan-2'), hasLength(1));
+        // A later save without a plan (fresh run) must clear the stale one.
+        await store.save(
+          id: 'plan-2',
+          title: 't',
+          messages: [ChatMessage.user('b')],
+        );
+        expect(await store.loadTodos('plan-2'), isEmpty);
+      },
+    );
+
+    test('loadTodos is empty for unknown ids and legacy sessions', () async {
+      expect(await store.loadTodos('missing'), isEmpty);
+      // A session written by an older app version has no 'todos' key.
+      await _writeSession(
+        tempDir,
+        'legacy-1',
+        title: 'lama',
+        messages: [_userJson('halo')],
+      );
+      expect(await store.loadTodos('legacy-1'), isEmpty);
+    });
+
+    test('loadTodos skips malformed entries defensively', () async {
+      final Directory dir = Directory('${tempDir.path}/chats')
+        ..createSync(recursive: true);
+      await File('${dir.path}/loose.json').writeAsString(
+        jsonEncode(<String, dynamic>{
+          'id': 'loose',
+          'title': 't',
+          'messages': <Object>[],
+          'todos': <Object>[
+            <String, dynamic>{'content': 'valid one', 'status': 'pending'},
+            <String, dynamic>{'content': '   '}, // blank → dropped
+            <String, dynamic>{'nope': true}, // malformed → dropped
+            'just a string', // junk → dropped
+          ],
+        }),
+      );
+      final List<TodoItem> loaded = await store.loadTodos('loose');
+      expect(loaded, hasLength(1));
+      expect(loaded.single.content, 'valid one');
+    });
+
+    test('loadTodos survives a corrupted session file', () async {
+      final Directory dir = Directory('${tempDir.path}/chats')
+        ..createSync(recursive: true);
+      await File('${dir.path}/broken.json').writeAsString('{not json');
+      expect(await store.loadTodos('broken'), isEmpty);
+    });
+  });
 }

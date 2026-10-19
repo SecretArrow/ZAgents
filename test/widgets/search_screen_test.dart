@@ -44,6 +44,7 @@ class ScriptedChatStore implements ChatStore {
     required List<ChatMessage> messages,
     List<String> modules = const <String>[],
     bool waitingForSetup = false,
+    List<TodoItem> todos = const <TodoItem>[],
   }) async {}
 
   @override
@@ -54,6 +55,9 @@ class ScriptedChatStore implements ChatStore {
 
   @override
   Future<bool> loadWaitingForSetup(String id) async => false;
+
+  @override
+  Future<List<TodoItem>> loadTodos(String id) async => const <TodoItem>[];
 
   @override
   Future<List<ChatMessage>?> load(String id) async => sessions[id];
