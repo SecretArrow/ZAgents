@@ -9,6 +9,8 @@ import 'package:zagents/services/file_system_service.dart';
 import 'package:archive/archive.dart';
 import 'package:zagents/services/js_runtime.dart';
 import 'package:zagents/services/module_registry.dart';
+import 'package:zagents/services/module_runtime.dart';
+import 'package:zagents/services/session_sandbox.dart';
 import 'package:zagents/services/npm_service.dart';
 import 'package:zagents/services/tool_executor.dart';
 import 'package:zagents/services/web_fetcher.dart';
@@ -741,15 +743,29 @@ void main() {
   });
   group('module doctor tools', () {
     late ModuleRegistry registry;
+    late SessionSandbox sandbox;
+    late ModuleRuntime moduleRuntime;
     late ToolExecutor doctor;
 
     setUp(() async {
       registry = ModuleRegistry(resolveBaseDir: () async => tempDir);
+      sandbox = SessionSandbox(resolveDocumentsDir: () async => tempDir);
+      moduleRuntime = ModuleRuntime(
+        js: ScriptedJsRuntime(),
+        resolveSandboxRoot: sandbox.rootFor,
+        resolveSessionsRoot: sandbox.sessionsRoot,
+        resolveModulePath: (String name) async =>
+            (await registry.get(name))?.path,
+        resolveSdkSource: () async => 'module.exports = zagents;',
+        resolveNpmModulesRoot: () async =>
+            '${tempDir.path}${Platform.pathSeparator}node_modules',
+      );
       doctor = ToolExecutor(
         browser: scriptedBrowser,
         resolveBaseDir: (_) async => tempDir,
         isAutomationEnabled: () => true,
         modules: registry,
+        moduleRuntime: moduleRuntime,
       );
     });
 
@@ -768,6 +784,58 @@ void main() {
       expect(result.llmOutput, contains('permissions: storage,agent'));
       expect(result.llmOutput, contains('setup form: no'));
     });
+
+    test(
+      'module_list reports per-chat setup completion with masked secrets',
+      () async {
+        writeModuleZip('${tempDir.path}/acct.zip', <String, String>{
+          'module.json':
+              '{"name":"acct","version":"1.0.0","title":"Acct",'
+              '"setup":{"title":"Acct account","fields":['
+              '{"key":"email","label":"Email","type":"text","required":true},'
+              '{"key":"password","label":"Password","type":"password","required":true}]}}',
+          'main.js': '//',
+        });
+        await registry.installFromZip('${tempDir.path}/acct.zip');
+
+        // Nothing stored for this chat yet: NOT completed.
+        final ToolResult missing = await doctor.execute(
+          'module_list',
+          const <String, dynamic>{},
+          sessionId: 'chatA',
+        );
+        expect(missing.ok, isTrue);
+        expect(missing.llmOutput, contains('setup form: yes'));
+        expect(
+          missing.llmOutput,
+          contains('setup for this chat: NOT completed'),
+        );
+
+        // The user submits the form for chatA: COMPLETED for this chat,
+        // the email is visible, the password is ALWAYS masked.
+        await moduleRuntime.writeStoredSetup('chatA', 'acct', <String, dynamic>{
+          'email': 'me@example.com',
+          'password': 'hunter2',
+        });
+        final ToolResult done = await doctor.execute(
+          'module_list',
+          const <String, dynamic>{},
+          sessionId: 'chatA',
+        );
+        expect(done.llmOutput, contains('setup for this chat: COMPLETED'));
+        expect(done.llmOutput, contains('Email: me@example.com'));
+        expect(done.llmOutput, contains('Password: ********'));
+        expect(done.llmOutput, isNot(contains('hunter2')));
+
+        // Per-chat isolation: another chat still reports NOT completed.
+        final ToolResult other = await doctor.execute(
+          'module_list',
+          const <String, dynamic>{},
+          sessionId: 'chatB',
+        );
+        expect(other.llmOutput, contains('setup for this chat: NOT completed'));
+      },
+    );
 
     test('module_list degrades gracefully without a registry', () async {
       final ToolResult result = await executor.execute('module_list', {});

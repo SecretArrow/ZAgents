@@ -1126,7 +1126,7 @@ class AppStringsEn implements AppStrings {
   String get aboutSection => 'About';
   @override
   String get aboutBody =>
-      'ZAgents v1.32.0 — an Android clone of the chat.z.ai agent mode UI, '
+      'ZAgents v1.33.0 — an Android clone of the chat.z.ai agent mode UI, '
       'with custom OpenAI-compatible providers (OpenRouter, InferHub, '
       'Z.AI, OpenAI, DeepSeek, Groq, and more), per-provider API keys, '
       'light/dark themes, parallel multi-session chat with background '
@@ -1152,7 +1152,11 @@ class AppStringsEn implements AppStrings {
       'this chat\'s own agent to compose every sentence on demand '
       '(zagents.agent.compose, gated and rate-shaped), send custom HTTP '
       'headers, and receive your first activation message for setup '
-      'commands. Modules always present the User-Agent identity you pick '
+      'commands. The agent sees each module\'s per-chat setup state '
+      '(completed or not, secrets always masked) so it never re-asks for '
+      'credentials you already gave, and a new chat prefills the setup '
+      'form with your latest submitted values. Modules always present the '
+      'User-Agent identity you pick '
       'in Settings (readable via zagents.info.userAgent, un-overridable), '
       'and can be uninstalled by you at any time — from the Modules '
       'screen or the /plugins menu. A fan of subagents '
@@ -2086,7 +2090,7 @@ class AppStringsId implements AppStrings {
   String get aboutSection => 'Tentang';
   @override
   String get aboutBody =>
-      'ZAgents v1.32.0 — klon UI agent mode chat.z.ai untuk Android, '
+      'ZAgents v1.33.0 — klon UI agent mode chat.z.ai untuk Android, '
       'dengan custom provider OpenAI-compatible (OpenRouter, InferHub, '
       'Z.AI, OpenAI, DeepSeek, Groq, dan lainnya), API key per-provider, '
       'tema terang/gelap, multi-sesi paralel dengan proses latar '
@@ -2112,7 +2116,11 @@ class AppStringsId implements AppStrings {
       'per chat. Modul dapat meminta agen chat ini menyusun setiap '
       'kalimat sesuai kebutuhan (zagents.agent.compose, dengan gerbang '
       'aturan), mengirim header HTTP khusus, dan menerima pesan aktivasi '
-      'pertama Anda untuk perintah setup. Modul selalu memakai identitas '
+      'pertama Anda untuk perintah setup. Agen dapat melihat status '
+      'setup per-chat setiap modul (selesai atau belum, rahasia selalu '
+      'disamarkan) sehingga tidak lagi meminta kredensial yang sudah '
+      'Anda berikan, dan chat baru mengisi form setup dengan nilai '
+      'terakhir Anda. Modul selalu memakai identitas '
       'User-Agent yang Anda pilih di Setelan (terbaca via '
       'zagents.info.userAgent, tidak bisa digantikan), dan dapat Anda '
       'hapus kapan saja — dari layar Modul atau menu /plugins. Fan of '

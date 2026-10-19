@@ -31,6 +31,7 @@ void main() {
     moduleRuntime = ModuleRuntime(
       js: js,
       resolveSandboxRoot: sandbox.rootFor,
+      resolveSessionsRoot: sandbox.sessionsRoot,
       resolveModulePath: (String name) async =>
           (await registry.get(name))?.path,
       resolveSdkSource: () async => 'module.exports = zagents;',
@@ -649,6 +650,75 @@ void main() {
       },
     );
 
+    test('agent system prompt reports COMPLETED per-chat setup with masked '
+        'secret after the form is submitted', () async {
+      final ProviderContainer c = await container();
+      await installSetupModule('wirecomp');
+      js.nextResult = const JsRunResult(output: 'cycle ran');
+      final ScriptedLlmClient llm =
+          c.read(llmClientProvider) as ScriptedLlmClient;
+      llm.turns.clear();
+      llm.turns.add(AssistantTurn(content: 'noted'));
+
+      final ChatController controller = c.read(chatControllerProvider.notifier);
+      await controller.activateModule('wirecomp');
+      await controller.send('go');
+      expect(
+        await controller.submitModuleSetup('wirecomp', <String, dynamic>{
+          'email': 'me@example.com',
+          'password': 'hunter2',
+        }),
+        isTrue,
+      );
+
+      // The agent turn after the resume carries the ground truth:
+      // setup is COMPLETED for this chat, the email is visible, the
+      // password NEVER is — so the model stops asking for it.
+      expect(llm.calls, isNotEmpty);
+      final String system = llm.calls.last.first['content'] as String;
+      expect(system, contains('# Active module: wirecomp'));
+      expect(system, contains('Setup for THIS chat: COMPLETED'));
+      // Labels fall back to the field keys when the manifest omits them.
+      expect(system, contains('email: me@example.com'));
+      expect(system, contains('password: ********'));
+      expect(system, isNot(contains('hunter2')));
+      expect(system, contains('NEVER ask the user to type or repeat'));
+    });
+
+    test('setup form in a NEW chat is prefilled with the latest values from '
+        'another chat', () async {
+      final ProviderContainer c = await container();
+      await installSetupModule('prefillme');
+      js.nextResult = const JsRunResult(output: 'cycle ran');
+      final ChatController controller = c.read(chatControllerProvider.notifier);
+
+      // Chat 1: the user submits the form normally.
+      await controller.activateModule('prefillme');
+      await controller.send('go');
+      expect(
+        await controller.submitModuleSetup('prefillme', <String, dynamic>{
+          'email': 'first@example.com',
+          'password': 'hunter2',
+        }),
+        isTrue,
+      );
+
+      // Chat 2: a brand-new chat — nothing stored for it yet.
+      await controller.newChat();
+      await controller.activateModule('prefillme');
+      await controller.send('run');
+
+      final ModuleSetupRequest? request = c
+          .read(chatControllerProvider)
+          .setupRequest;
+      expect(request, isNotNull);
+      expect(request!.moduleName, 'prefillme');
+      // Prefilled from chat 1's latest submission (the user still
+      // confirms with Save & run — per-chat isolation is untouched).
+      expect(request.values['email'], 'first@example.com');
+      expect(request.values['password'], 'hunter2');
+    });
+
     test(
       'unsatisfied setup: module does NOT run, form request surfaces',
       () async {
@@ -1040,9 +1110,13 @@ void main() {
       final List<Map<String, dynamic>> wire = llm.calls.last;
       final String system = (wire.first['content'] as String?) ?? '';
       expect(system, contains('# Active module: noted v1.0.0'));
-      expect(system, contains('Setup (per chat, collected by the app'));
+      // v1.33.0: the prompt reports the PER-CHAT setup state, not just the
+      // declared fields — here the values were already stored, so the
+      // model learns the credentials are on file (secret masked).
+      expect(system, contains('Setup for THIS chat: COMPLETED'));
       // Labels fall back to the field keys when the manifest omits them.
-      expect(system, contains('email, password'));
+      expect(system, contains('email: a@b.c, password: ********'));
+      expect(system, isNot(contains('password: p')));
     });
   });
 

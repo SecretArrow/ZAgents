@@ -7,6 +7,7 @@ import 'device_shell.dart';
 import 'file_system_service.dart';
 import 'js_runtime.dart';
 import 'module_registry.dart';
+import 'module_runtime.dart';
 import 'npm_service.dart';
 import 'subagents.dart';
 import 'web_fetcher.dart';
@@ -51,6 +52,7 @@ class ToolExecutor {
     this.fsFor,
     this.fetcher,
     this.modules,
+    this.moduleRuntime,
     this.subagents,
     this.deviceStatus,
   });
@@ -85,6 +87,12 @@ class ToolExecutor {
   /// `module_stage_repair`). Nullable for legacy tests; the tools
   /// degrade gracefully when absent.
   final ModuleRegistry? modules;
+
+  /// Chat-module RUNTIME behind the per-chat setup state reported by
+  /// `module_list` (v1.33.0): whether each module's setup form is
+  /// already completed for the CURRENT chat. Nullable for legacy tests;
+  /// the status degrades to the manifest-declared form only.
+  final ModuleRuntime? moduleRuntime;
 
   /// Fan-of-subagents runner behind `spawn_subagents`. Nullable for
   /// legacy tests; the tool degrades gracefully when absent.
@@ -162,7 +170,7 @@ class ToolExecutor {
         case 'git_log':
           return await _gitLog(args, sessionId);
         case 'module_list':
-          return await _moduleList();
+          return await _moduleList(sessionId);
         case 'module_read':
           return await _moduleRead(args);
         case 'module_export':
@@ -1068,7 +1076,7 @@ return commits.length + ' commit(s)';
   // overwrite a module silently: `module_stage_repair` only validates a
   // zip and surfaces a confirmation card the user must tap. -------------
 
-  Future<ToolResult> _moduleList() async {
+  Future<ToolResult> _moduleList(String? sessionId) async {
     final ModuleRegistry? registry = modules;
     if (registry == null) {
       return const ToolResult(
@@ -1084,12 +1092,37 @@ return commits.length + ' commit(s)';
     final StringBuffer out = StringBuffer();
     for (final ChatModule module in installed) {
       final ModuleManifest m = module.manifest;
-      out.writeln(
+      out.write(
         '${m.name} v${m.version} — ${m.title.isEmpty ? m.name : m.title} — '
         'permissions: ${m.permissions.isEmpty ? '(none)' : m.permissions.map((p) => p.name).join(',')} '
         '— setup form: ${m.setup != null && m.setup!.hasRequired ? 'yes' : 'no'} '
         '— entry: ${m.entry}',
       );
+      // v1.33.0: report whether the per-chat setup form is ALREADY
+      // completed for the calling chat — the model can finally see that
+      // credentials are on file instead of asking the user for them.
+      // Secret (password) fields are always masked by the shared helper.
+      if (m.setup != null && m.setup!.hasRequired) {
+        Map<String, dynamic> stored = const <String, dynamic>{};
+        if (moduleRuntime != null && sessionId != null) {
+          try {
+            stored = await moduleRuntime!.readStoredSetup(sessionId, m.name);
+          } catch (_) {
+            // Unreadable storage counts as "not set up yet".
+          }
+        }
+        out.write(
+          m.setup!.satisfiedBy(stored)
+              ? ' — setup for this chat: COMPLETED '
+                    '(${describeModuleSetupValues(m.setup!, stored)}) — the '
+                    'module gets these values automatically; never ask the '
+                    'user to retype them'
+              : ' — setup for this chat: NOT completed — the app\'s form '
+                    'collects it on activation; do not ask the user to type '
+                    'the values in chat',
+        );
+      }
+      out.writeln();
     }
     return ToolResult(ok: true, llmOutput: out.toString().trim());
   }

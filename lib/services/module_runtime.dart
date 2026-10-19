@@ -133,12 +133,18 @@ class ModuleRuntime implements ModuleBridge {
     this.deviceCommandsEnabled,
     this.deviceShell,
     this.airplaneProbe,
+    this.resolveSessionsRoot,
   });
 
   final JsRuntime js;
 
   /// Session sandbox root resolver (`SessionSandbox.rootFor`).
   final Future<Directory> Function(String? sessionId) resolveSandboxRoot;
+
+  /// Parent of every per-chat sandbox (`SessionSandbox.sessionsRoot`) —
+  /// powers [latestStoredSetup], the cross-chat setup-form prefill scan.
+  /// Nullable so legacy tests and minimal setups simply get no prefill.
+  final Future<Directory?> Function()? resolveSessionsRoot;
 
   /// Resolves a module's install directory (null = unknown module).
   final Future<String?> Function(String name) resolveModulePath;
@@ -765,6 +771,63 @@ class ModuleRuntime implements ModuleBridge {
     );
     store[setupStorageKey] = values;
     await _writeStorage(sessionId, moduleName, store);
+  }
+
+  /// Most recently submitted per-chat setup values for [moduleName]
+  /// across ALL chats — the form-prefill convenience: a brand-new chat
+  /// opens the setup form with the user's last submitted values for this
+  /// module already filled in, so re-enabling a module is a one-tap
+  /// confirmation instead of re-typing credentials. Scans every
+  /// `<sessions-root>/<chat>/modules/<name>/storage.json` and keeps the
+  /// non-empty [setupStorageKey] map with the newest file mtime. The
+  /// legacy (pre-per-chat) documents root is NOT scanned on purpose:
+  /// prefill is a convenience, never a silent data bridge. Empty map
+  /// when no chat ever submitted this module's form. Failures degrade
+  /// to an empty map — prefill must never break the gate.
+  Future<Map<String, dynamic>> latestStoredSetup(String moduleName) async {
+    final Future<Directory?> Function()? resolver = resolveSessionsRoot;
+    if (resolver == null) return const <String, dynamic>{};
+    try {
+      final Directory? sessionsRoot = await resolver();
+      if (sessionsRoot == null || !sessionsRoot.existsSync()) {
+        return const <String, dynamic>{};
+      }
+      Map<String, dynamic>? best;
+      DateTime newest = DateTime.fromMillisecondsSinceEpoch(0);
+      for (final FileSystemEntity entry in sessionsRoot.listSync(
+        followLinks: false,
+      )) {
+        if (entry is! Directory) continue;
+        final File file = File(
+          '${entry.path}${Platform.pathSeparator}modules'
+          '${Platform.pathSeparator}$moduleName'
+          '${Platform.pathSeparator}storage.json',
+        );
+        if (!file.existsSync()) continue;
+        final DateTime modified = file.statSync().modified;
+        if (!modified.isAfter(newest)) continue;
+        Map<String, dynamic> store;
+        try {
+          final Object? decoded = jsonDecode(file.readAsStringSync());
+          if (decoded is! Map) continue;
+          store = decoded.cast<String, dynamic>();
+        } catch (_) {
+          continue;
+        }
+        final Object? raw = store[setupStorageKey];
+        final Map<String, dynamic> values = raw is Map<String, dynamic>
+            ? raw
+            : raw is Map
+            ? raw.cast<String, dynamic>()
+            : const <String, dynamic>{};
+        if (values.isEmpty) continue;
+        best = values;
+        newest = modified;
+      }
+      return best ?? const <String, dynamic>{};
+    } catch (_) {
+      return const <String, dynamic>{};
+    }
   }
 
   // -- storage io ---------------------------------------------------------

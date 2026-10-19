@@ -421,7 +421,7 @@ List<Map<String, dynamic>> buildAgentTools({
   ),
   _fn(
     'module_list',
-    'List the chat modules (plugins) installed on this device with version, title, permissions and whether each declares a setup form. Call this before the other module tools.',
+    'List the chat modules (plugins) installed on this device with version, title, permissions, whether each declares a setup form, and — for modules with one — whether that per-chat setup is ALREADY COMPLETED for the current chat (secret values masked). When the setup is completed, NEVER ask the user to type or repeat those values in chat: the module receives them automatically on every run. When it is not completed, the app shows its own setup form on activation — do not collect the values yourself. Call this before the other module tools.',
     <String, dynamic>{},
     const <String>[],
   ),

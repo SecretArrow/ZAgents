@@ -150,6 +150,10 @@ final moduleRuntimeProvider = Provider<ModuleRuntime>(
   (ref) => ModuleRuntime(
     js: ref.watch(jsRuntimeProvider),
     resolveSandboxRoot: ref.watch(sessionSandboxProvider).rootFor,
+    // Cross-chat setup-form prefill scan (v1.33.0): the parent of every
+    // per-chat sandbox, so a new chat can prefill a module's setup form
+    // with the user's last submitted values for that module.
+    resolveSessionsRoot: ref.watch(sessionSandboxProvider).sessionsRoot,
     resolveModulePath: (String name) async =>
         (await ref.read(moduleRegistryProvider).get(name))?.path,
     resolveSdkSource: () async =>
@@ -333,6 +337,10 @@ final toolExecutorProvider = Provider<ToolExecutor>((ref) {
     // registry is the ONLY doorway to installed modules, and the repair
     // tool merely stages a user-confirmed install card.
     modules: ref.watch(moduleRegistryProvider),
+    // Per-chat setup state for module_list (v1.33.0): the agent sees
+    // whether each module's setup form is already completed for THIS
+    // chat — so it stops asking for credentials the user already gave.
+    moduleRuntime: ref.watch(moduleRuntimeProvider),
     subagents: SubagentRunner(
       llm: ref.watch(llmClientProvider),
       resolveConfig: () {

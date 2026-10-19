@@ -146,7 +146,11 @@ class ModuleSetupRequest {
   final String moduleTitle;
   final ModuleSetup setup;
 
-  /// Previously submitted values (when editing an existing setup).
+  /// Previously submitted values (when editing an existing setup) — or,
+  /// when THIS chat has not satisfied the form yet, a convenience
+  /// PREFILL merged from the user's latest submitted values for this
+  /// module in another chat (current-chat values win per field). Either
+  /// way the user confirms with Save & run before anything persists.
   final Map<String, dynamic> values;
 
   /// Display heading: manifest setup title or "<title> setup".
@@ -550,7 +554,7 @@ class ChatController extends Notifier<ChatState> {
               ? module.name
               : module.manifest.title,
           setup: setup,
-          values: values,
+          values: await _setupFormValues(run.sessionId, module, values),
         );
         run.setupRequest = request;
         final ChatMessage moduleMessage = ChatMessage.assistant(
@@ -686,7 +690,7 @@ class ChatController extends Notifier<ChatState> {
               ? fresh.name
               : fresh.manifest.title,
           setup: liveSetup,
-          values: values,
+          values: await _setupFormValues(run.sessionId, fresh, values),
         );
         run.setupRequest = request;
         body
@@ -851,6 +855,33 @@ class ChatController extends Notifier<ChatState> {
     await _executeRun(run, ref.read(settingsProvider));
   }
 
+  /// Form values for a [ModuleSetupRequest]: the THIS-chat values when
+  /// they already satisfy the setup (edit path); otherwise a convenience
+  /// PREFILL — the user's latest submitted values for this module from
+  /// ANY chat, merged under the current chat's own (possibly partial)
+  /// values. Per-chat isolation is untouched: nothing is shared at run
+  /// time, the prefill only saves re-typing and still requires an
+  /// explicit Save & run in the new chat. Failures degrade to [current].
+  Future<Map<String, dynamic>> _setupFormValues(
+    String sessionId,
+    ChatModule module,
+    Map<String, dynamic> current,
+  ) async {
+    final ModuleSetup? setup = module.manifest.setup;
+    if (setup == null || setup.satisfiedBy(current)) return current;
+    try {
+      final Map<String, dynamic> prefill = await ref
+          .read(moduleRuntimeProvider)
+          .latestStoredSetup(module.name);
+      if (prefill.isNotEmpty) {
+        return <String, dynamic>{...prefill, ...current};
+      }
+    } catch (_) {
+      // Prefill is best-effort only.
+    }
+    return current;
+  }
+
   /// Finds the first active module whose required per-chat setup is not
   /// satisfied yet (null when every active module is ready to run).
   Future<ModuleSetupRequest?> _findSetupRequest(
@@ -878,7 +909,7 @@ class ChatController extends Notifier<ChatState> {
             ? module.name
             : module.manifest.title,
         setup: setup,
-        values: values,
+        values: await _setupFormValues(sessionId, module, values),
       );
     }
     return null;
@@ -1451,7 +1482,7 @@ class ChatController extends Notifier<ChatState> {
     }
 
     final wire = <Map<String, dynamic>>[
-      _systemWire(settings, run),
+      await _systemWire(settings, run),
       // Full replay: previous turns (assistant + tool results + user msgs,
       // attachments included) followed by the freshly added user message.
       ..._buildWire(run, run.messages),
@@ -1894,7 +1925,16 @@ class ChatController extends Notifier<ChatState> {
   /// System message: agent prompt (agent mode) + plan-first addendum +
   /// active-module context + enabled Context Manager entries merged into
   /// ONE system message (some providers reject several).
-  Map<String, dynamic> _systemWire(AppSettings settings, _SessionRun run) {
+  ///
+  /// v1.33.0: async so each active module's PER-CHAT setup state can be
+  /// read and reported to the model. Before this, the prompt only said a
+  /// setup form EXISTS — the model had no way to know the user had
+  /// already filled it, so it kept asking for credentials in chat even
+  /// though the module received them on every run.
+  Future<Map<String, dynamic>> _systemWire(
+    AppSettings settings,
+    _SessionRun run,
+  ) async {
     final StringBuffer content = StringBuffer();
     if (settings.agentMode) {
       content.write(agentSystemPrompt);
@@ -1922,16 +1962,42 @@ class ChatController extends Notifier<ChatState> {
                   : module.manifest.description.trim(),
             );
           if (module.manifest.setup != null) {
+            final ModuleSetup setup = module.manifest.setup!;
             final List<String> labels = <String>[
-              for (final ModuleSetupField f in module.manifest.setup!.fields)
-                f.label,
+              for (final ModuleSetupField f in setup.fields) f.label,
             ];
-            content
-              ..writeln()
-              ..write(
-                'Setup (per chat, collected by the app\'s form): '
-                '${labels.join(', ')}.',
-              );
+            Map<String, dynamic> stored = const <String, dynamic>{};
+            try {
+              stored = await ref
+                  .read(moduleRuntimeProvider)
+                  .readStoredSetup(run.sessionId, module.name);
+            } catch (_) {
+              // Unreadable storage counts as "not set up yet".
+            }
+            if (setup.satisfiedBy(stored)) {
+              content
+                ..writeln()
+                ..write(
+                  'Setup for THIS chat: COMPLETED — the user already '
+                  'submitted the app\'s setup form for this module '
+                  '(${describeModuleSetupValues(setup, stored)}). The '
+                  'module receives these values automatically on every '
+                  'run (zagents.info.setup); secret fields are masked '
+                  'here on purpose. NEVER ask the user to type or repeat '
+                  'these values in chat — they are already on file and '
+                  'the module uses them by itself.',
+                );
+            } else {
+              content
+                ..writeln()
+                ..write(
+                  'Setup for THIS chat: NOT completed (${labels.join(', ')} '
+                  'are still missing) — the app shows the module\'s setup '
+                  'form automatically before the module runs. Do NOT ask '
+                  'the user to type these values in chat; the form '
+                  'collects them and the run resumes on its own.',
+                );
+            }
           }
         } catch (_) {
           // Registry hiccup: skip the context block.

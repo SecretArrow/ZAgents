@@ -37,6 +37,7 @@ void main() {
     runtime = ModuleRuntime(
       js: js,
       resolveSandboxRoot: sandbox.rootFor,
+      resolveSessionsRoot: sandbox.sessionsRoot,
       // Stand-in for the registry lookup: modules created by the helper
       // exist on disk under docs/modules/<name>.
       resolveModulePath: (String name) async {
@@ -811,6 +812,51 @@ void main() {
         isFalse,
       );
     });
+  });
+
+  group('latestStoredSetup (cross-chat prefill scan)', () {
+    test('returns the newest non-empty setup values across chats', () async {
+      final ChatModule mod = module();
+      await runtime.writeStoredSetup('s1', mod.name, <String, dynamic>{
+        'email': 'old@example.com',
+        'password': 'p1',
+      });
+      // Distinct mtimes: the scan picks the newest file.
+      await Future<void>.delayed(const Duration(milliseconds: 30));
+      await runtime.writeStoredSetup('s2', mod.name, <String, dynamic>{
+        'email': 'new@example.com',
+        'password': 'p2',
+      });
+      expect(await runtime.latestStoredSetup(mod.name), <String, dynamic>{
+        'email': 'new@example.com',
+        'password': 'p2',
+      });
+    });
+
+    test(
+      'skips empty and corrupt storages; empty for unknown modules',
+      () async {
+        final ChatModule mod = module();
+        // A chat whose storage.json is corrupt must not break the scan.
+        final Directory corrupt = Directory(
+          '${docs.path}${Platform.pathSeparator}sessions'
+          '${Platform.pathSeparator}s-corrupt'
+          '${Platform.pathSeparator}modules'
+          '${Platform.pathSeparator}${mod.name}',
+        )..createSync(recursive: true);
+        File('${corrupt.path}${Platform.pathSeparator}storage.json')
+            .writeAsStringSync('{not json');
+        // A chat that stored an EMPTY setup map is not a prefill source.
+        await runtime.writeStoredSetup(
+          's-empty',
+          mod.name,
+          <String, dynamic>{},
+        );
+
+        expect(await runtime.latestStoredSetup(mod.name), isEmpty);
+        expect(await runtime.latestStoredSetup('never-installed'), isEmpty);
+      },
+    );
   });
 
   group('per-chat setup values (cooperative zagentsSetup key)', () {

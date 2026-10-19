@@ -51,6 +51,20 @@ class SessionSandbox {
   FileSystemService fsFor(String? sessionId) =>
       FileSystemService(resolveBaseDir: () => rootFor(sessionId));
 
+  /// Parent of every per-chat sandbox: `<documents>/sessions/` (created
+  /// on demand). Exposed for the module runtime's cross-chat setup-form
+  /// prefill scan (v1.33.0) — deliberately does NOT run the legacy
+  /// import and never touches individual session folders.
+  Future<Directory> sessionsRoot() async {
+    final Directory docs = await resolveDocumentsDir();
+    if (!docs.existsSync()) docs.createSync(recursive: true);
+    final Directory root = Directory(
+      '${docs.path}${Platform.pathSeparator}sessions',
+    );
+    if (!root.existsSync()) root.createSync(recursive: true);
+    return root;
+  }
+
   /// Deletes a session's whole sandbox directory (v1.29.0) — called when
   /// the chat itself is deleted, so its workspace (uploads, module state,
   /// agent files) never lingers behind. Strictly guards [sessionId]:

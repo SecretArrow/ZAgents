@@ -210,6 +210,31 @@ class ModuleSetup {
   static const int maxFields = 12;
 }
 
+/// One-line, agent-safe summary of stored per-chat setup [values] for
+/// [setup]: "Email: a@b.c, Password: ********". Password-type fields are
+/// ALWAYS masked (the real secret never enters the LLM context — the
+/// module itself reads it from `zagents.info.setup` at run time). Empty
+/// or missing values render as "(empty)".
+String describeModuleSetupValues(
+  ModuleSetup setup,
+  Map<String, dynamic> values,
+) {
+  final List<String> parts = <String>[];
+  for (final ModuleSetupField field in setup.fields) {
+    final Object? v = values[field.key];
+    final String rendered;
+    if (field.type == ModuleSetupFieldType.password) {
+      rendered = (v is String && v.trim().isNotEmpty) ? '********' : '(empty)';
+    } else if (v == null || (v is String && v.trim().isEmpty)) {
+      rendered = '(empty)';
+    } else {
+      rendered = v.toString();
+    }
+    parts.add('${field.label}: $rendered');
+  }
+  return parts.join(', ');
+}
+
 /// Declared + parsed manifest of an installed chat module.
 class ModuleManifest {
   const ModuleManifest({

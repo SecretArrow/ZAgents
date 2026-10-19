@@ -331,6 +331,23 @@ OpenAI-compatible: **OpenRouter, InferHub, Z.AI, OpenAI, DeepSeek, Groq, dan lai
   4. Dokumentasi SDK (EN/ID, termasuk yang di dalam aplikasi), typings
   TypeScript, dan guard arsip sampel diperluas untuk `device` +
   `commands`.
+- **v1.33.0 — agen melihat status setup modul: tidak lagi meminta kredensial dua kali**:
+  1. **Status setup per-chat di prompt sistem**: setiap modul aktif kini
+  melaporkan ke agen apakah form setup-nya sudah **COMPLETED** untuk
+  chat ini (nilai non-rahasia ditampilkan, field password **selalu
+  disamarkan `********`**) lengkap dengan instruksi tegas untuk tidak
+  meminta kredensial yang sudah diisi — atau **NOT completed** sehingga
+  agen tahu form app yang mengumpulkannya, bukan dia.
+  2. **`module_list` lapangan**: hasil tool kini menyertakan
+  `setup for this chat: COMPLETED (Email: …, Password: ********)` atau
+  `NOT completed` per chat — agen tidak perlu menebak lagi saat
+  mendiagnosis modul.
+  3. **Prefill lintas chat**: form setup di chat baru otomatis terisi
+  nilai terakhir yang pernah Anda kirim untuk modul yang sama di chat
+  lain (nilai chat aktif tetap menang per field; Save & run tetap
+  wajib — isolasi per-chat tidak berubah).
+  4. `SessionSandbox.sessionsRoot()` + `ModuleRuntime.latestStoredSetup`
+  (pemindai mtime terbaru, tahan file korup) + uji unit wire/module_list.
 - **v1.32.0 — mode pesawat tanpa root: mode manual terverifikasi + auto-retry sadar mode pesawat**:
   1. **Baca status TANPA root** (`zagents.device.airplane`): state mode
   pesawat kini terbaca dari setelan sistem yang world-readable — tanpa
