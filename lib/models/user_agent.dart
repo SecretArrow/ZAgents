@@ -32,7 +32,7 @@ enum UserAgentBrowser {
   vivaldi,
 }
 
-/// One entry of the bundled User-Agent database (500 records).
+/// One entry of the bundled User-Agent database (1500 records).
 ///
 /// Every record was generated and format-validated by
 /// `scripts/gen_user_agents.py` so [ua] matches the wire format of the real
@@ -49,7 +49,9 @@ class UserAgentRecord {
     required this.ua,
   });
 
-  /// Stable id, unique across the whole database (1..500).
+  /// Stable id, unique across the whole database (1..1500). Ids 1..500 are
+  /// byte-identical to the v1.7.0 database, so persisted user picks never
+  /// drift to a different identity when the database grows.
   final int id;
 
   final UserAgentCategory category;
@@ -66,7 +68,7 @@ class UserAgentRecord {
   bool get isDesktop => category == UserAgentCategory.desktop;
 }
 
-/// All records (250 desktop + 250 Android), generated + validated.
+/// All records (500 desktop + 1000 Android), generated + validated.
 List<UserAgentRecord> get userAgentDatabase => kUserAgentDatabase;
 
 /// Records of one category, ordered by id.

@@ -1136,7 +1136,7 @@ class AppStringsEn implements AppStrings {
   String get aboutSection => 'About';
   @override
   String get aboutBody =>
-      'ZAgents v1.35.0 — an Android clone of the chat.z.ai agent mode UI, '
+      'ZAgents v1.36.0 — an Android clone of the chat.z.ai agent mode UI, '
       'with custom OpenAI-compatible providers (OpenRouter, InferHub, '
       'Z.AI, OpenAI, DeepSeek, Groq, and more), per-provider API keys, '
       'light/dark themes, parallel multi-session chat with background '
@@ -1198,6 +1198,14 @@ class AppStringsEn implements AppStrings {
       'folder; every chat\'s workspace can be exported to the device '
       'file manager (Downloads/ZAgents/<chat>) with one tap; and '
       'deleting a chat also removes its workspace folder. New in '
+      'v1.36.0: the bundled User-Agent database grows from 500 to '
+      '1500 validated identities (500 desktop + 1000 Android) — '
+      'newer real browser trains (Chrome/Edge 144-146, Firefox '
+      '150-155 plus ESR point releases, Safari 26.5/27.0, Opera for '
+      'Linux, Samsung Internet 28) and every bundled Android device '
+      'paired with every browser, so rotating or randomizing your '
+      'identity in Settings draws from a far larger pool of '
+      'realistic fingerprints. New in '
       'v1.35.0: the agent\'s plan (todos) is now crash-proof — the '
       'transcript is saved after every working step and the current plan '
       'state travels with it, so an app crash, ANR kill or dead battery '
@@ -2117,7 +2125,7 @@ class AppStringsId implements AppStrings {
   String get aboutSection => 'Tentang';
   @override
   String get aboutBody =>
-      'ZAgents v1.35.0 — klon UI agent mode chat.z.ai untuk Android, '
+      'ZAgents v1.36.0 — klon UI agent mode chat.z.ai untuk Android, '
       'dengan custom provider OpenAI-compatible (OpenRouter, InferHub, '
       'Z.AI, OpenAI, DeepSeek, Groq, dan lainnya), API key per-provider, '
       'tema terang/gelap, multi-sesi paralel dengan proses latar '
@@ -2180,6 +2188,14 @@ class AppStringsId implements AppStrings {
       'folder ruang kerja setiap chat bisa diekspor ke file manager '
       'perangkat (Downloads/ZAgents/<chat>) dengan satu ketukan; dan '
       'menghapus chat juga menghapus folder ruang kerjanya. Baru di '
+      'v1.36.0: database User-Agent bawaan bertambah dari 500 menjadi '
+      '1500 identitas tervalidasi (500 desktop + 1000 Android) — '
+      'rilis browser nyata yang lebih baru (Chrome/Edge 144-146, '
+      'Firefox 150-155 plus rilis titik ESR, Safari 26.5/27.0, Opera '
+      'untuk Linux, Samsung Internet 28) dan setiap perangkat Android '
+      'bawaan dipadukan dengan setiap browser, sehingga memutar atau '
+      'mengacak identitas di Pengaturan memakai kolam sidik jari '
+      'realistis yang jauh lebih besar. Baru di '
       'v1.35.0: rencana agent (todos) kini tahan crash — transkrip '
       'tersimpan setelah setiap langkah kerja dan status rencana terkini '
       'ikut tersimpan, sehingga aplikasi crash, dibunuh ANR, atau baterai '

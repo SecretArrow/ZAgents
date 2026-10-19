@@ -348,6 +348,24 @@ OpenAI-compatible: **OpenRouter, InferHub, Z.AI, OpenAI, DeepSeek, Groq, dan lai
   wajib — isolasi per-chat tidak berubah).
   4. `SessionSandbox.sessionsRoot()` + `ModuleRuntime.latestStoredSetup`
   (pemindai mtime terbaru, tahan file korup) + uji unit wire/module_list.
+- **v1.36.0 — database User-Agent 500 → 1500 identitas valid**:
+  1. **+1000 User-Agent baru** dibangkitkan & divalidasi dari perangkat dan
+     browser yang SAMA dengan database lama (tanpa vendor palsu) — total
+     **1500 identitas unik (500 desktop + 1000 Android)**, semua lolos
+     validasi format otomatis (`scripts/gen_user_agents.py` + unit test).
+  2. **Desktop (+250)**: Chrome/Edge 144-146 di Windows/macOS/Linux, Chrome
+     32-bit asli di Windows 64-bit (token `WOW64`), Edge 120-131 di
+     macOS/Linux, Firefox 150-155 + rilis titik .0.1/.0.2 + ESR 128.x/140.x
+     (rv = major.minor, persis Firefox asli), Safari 26.5/27.0, Opera untuk
+     Linux (Chromium 136-146), Vivaldi 7.7/7.8 + Vivaldi Linux.
+  3. **Android (+750)**: semua 35 ponsel + 6 tablet bawaan × Android 13-16 ×
+     Chrome 120-146 (Chrome ponsel +260, tablet +50), Samsung Internet 28
+     (Chromium 130) + kombinasi 25/26/27 yang belum terpakai (+40), Firefox
+     Android rv 130-155 (+130), Edge/Opera Mobile diperluas ke semua ponsel
+     (+135 masing-masing).
+  4. **ID 1..500 tidak berubah satu byte pun** — pilihan UA tersimpan
+     pengguna lama tetap menunjuk identitas yang sama; tes stabilitas id
+     legacy menjaga invarian ini di masa depan.
 - **v1.34.0 — pass performa anti-lag/ANR + siklus mode pesawat rotasi IP + ikon impor/ekspor**:
   1. **Form setup tidak lagi macet**: sheet setup tertutup seketika setelah
   dikirim — eksekusi modul + resume agen jalan di latar belakang
@@ -401,8 +419,9 @@ OpenAI-compatible: **OpenRouter, InferHub, Z.AI, OpenAI, DeepSeek, Groq, dan lai
   Berlaku untuk: daftar model (picker + hasil fetch di editor provider), daftar
   provider, riwayat chat (drawer), File Manager, Context Manager, dan library
   npm — masing-masing dengan hint pencarian berbahasa.
-- **Database 500 User-Agent + Mode UA (v1.7.0)** — database internal berisi
-  **500 User-Agent unik & realistis** (250 PC/desktop + 250 Android; Chrome,
+- **Database 1500 User-Agent + Mode UA (v1.7.0, diperluas v1.36.0)** — database
+  internal berisi **1500 User-Agent unik & realistis** (500 PC/desktop + 1000
+  Android; Chrome,
   Edge, Firefox, Safari, Opera, Samsung Internet, Vivaldi) yang dibangkitkan
   dan divalidasi otomatis (`scripts/gen_user_agents.py` + unit test):
   - format 100% mengikuti browser asli — versi Edge/EdgA selalu sama dengan
