@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
 
 import 'package:uuid/uuid.dart';
 
@@ -16,10 +17,22 @@ const Uuid _uuid = Uuid();
 ///   "sessions": [ { "id","title","updatedAt","messages":[…] } ] }
 /// ```
 class SessionExporter {
-  SessionExporter({required this.store, required this.resolveBaseDir});
+  SessionExporter({
+    required this.store,
+    required this.resolveBaseDir,
+    this.offloadIsolate = true,
+  });
 
   final ChatStore store;
   final Future<Directory> Function() resolveBaseDir;
+
+  /// v1.34.0 ANR hardening: the pretty-printed whole-app JSON export and
+  /// the import decode run off the UI isolate. Test zones pass false
+  /// (real isolate replies never arrive inside a FakeAsync zone).
+  final bool offloadIsolate;
+
+  Future<T> _maybeIsolate<T>(T Function() work) =>
+      offloadIsolate ? Isolate.run(work) : Future<T>.value(work());
 
   /// Writes every stored session into
   /// `<docs>/exports/zagents-sessions-<timestamp>.json` and returns the file.
@@ -49,12 +62,15 @@ class SessionExporter {
       '${exportsDir.path}${Platform.pathSeparator}zagents-sessions-$stamp.json',
     );
     await file.writeAsString(
-      const JsonEncoder.withIndent('  ').convert(<String, dynamic>{
-        'app': 'ZAgents',
-        'format': 1,
-        'exportedAt': DateTime.now().toIso8601String(),
-        'sessions': sessions,
-      }),
+      // v1.34.0: pretty-printing every session is pure CPU — off-isolate.
+      await _maybeIsolate(
+        () => const JsonEncoder.withIndent('  ').convert(<String, dynamic>{
+          'app': 'ZAgents',
+          'format': 1,
+          'exportedAt': DateTime.now().toIso8601String(),
+          'sessions': sessions,
+        }),
+      ),
     );
     return file;
   }
@@ -64,7 +80,8 @@ class SessionExporter {
   /// Returns the number of imported sessions.
   Future<int> importFrom(String filePath) async {
     final String raw = await File(filePath).readAsString();
-    final Object? decoded = jsonDecode(raw);
+    // v1.34.0: whole-file decode off the UI isolate.
+    final Object? decoded = await _maybeIsolate(() => jsonDecode(raw));
     if (decoded is! Map || decoded['sessions'] is! List) {
       throw const FormatException('Not a ZAgents sessions export file');
     }

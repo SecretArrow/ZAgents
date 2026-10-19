@@ -28,8 +28,9 @@ class RecordingChatController extends ChatController {
   @override
   Future<bool> submitModuleSetup(
     String moduleName,
-    Map<String, dynamic> values,
-  ) async {
+    Map<String, dynamic> values, {
+    bool awaitRun = true,
+  }) async {
     submissions.add((name: moduleName, values: values));
     return nextResult;
   }

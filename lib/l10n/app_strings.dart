@@ -300,6 +300,10 @@ abstract class AppStrings {
   String importDone(int count);
   String get importFailed;
 
+  // -- Session import/export icon tooltips (v1.34.0) ---------------------
+  String get importSessionsIconTip;
+  String get exportSessionsIconTip;
+
   // -- Markdown export, token stats & encrypted backup (v1.17.0) ---------
   String get exportChatMarkdown;
   String get exportChatMarkdownEmpty;
@@ -983,6 +987,12 @@ class AppStringsEn implements AppStrings {
   @override
   String get importFailed => 'Import failed: not a valid export file.';
 
+  // -- Session import/export icon tooltips (v1.34.0) ---------------------
+  @override
+  String get importSessionsIconTip => 'Import sessions (JSON)';
+  @override
+  String get exportSessionsIconTip => 'Export sessions (JSON)';
+
   // -- Markdown export, token stats & encrypted backup (v1.17.0) ---------
   @override
   String get exportChatMarkdown => 'Export chat (Markdown)';
@@ -1126,7 +1136,7 @@ class AppStringsEn implements AppStrings {
   String get aboutSection => 'About';
   @override
   String get aboutBody =>
-      'ZAgents v1.33.0 — an Android clone of the chat.z.ai agent mode UI, '
+      'ZAgents v1.34.0 — an Android clone of the chat.z.ai agent mode UI, '
       'with custom OpenAI-compatible providers (OpenRouter, InferHub, '
       'Z.AI, OpenAI, DeepSeek, Groq, and more), per-provider API keys, '
       'light/dark themes, parallel multi-session chat with background '
@@ -1155,7 +1165,11 @@ class AppStringsEn implements AppStrings {
       'commands. The agent sees each module\'s per-chat setup state '
       '(completed or not, secrets always masked) so it never re-asks for '
       'credentials you already gave, and a new chat prefills the setup '
-      'form with your latest submitted values. Modules always present the '
+      'form with your latest submitted values. A v1.34.0 performance pass '
+      'moves zip/unzip, JPEG downscaling, backup encryption and large '
+      'JSON work off the UI thread, throttles streaming and module-output '
+      'rebuilds, and closes the setup sheet instantly after submitting so '
+      'the app stays smooth. Modules always present the '
       'User-Agent identity you pick '
       'in Settings (readable via zagents.info.userAgent, un-overridable), '
       'and can be uninstalled by you at any time — from the Modules '
@@ -1944,6 +1958,12 @@ class AppStringsId implements AppStrings {
   @override
   String get importFailed => 'Impor gagal: file ekspor tidak valid.';
 
+  // -- Tooltip ikon impor/ekspor sesi (v1.34.0) --------------------------
+  @override
+  String get importSessionsIconTip => 'Impor sesi (JSON)';
+  @override
+  String get exportSessionsIconTip => 'Ekspor sesi (JSON)';
+
   // -- Ekspor Markdown, statistik token & backup terenkripsi (v1.17.0) ---
   @override
   String get exportChatMarkdown => 'Ekspor chat (Markdown)';
@@ -2090,7 +2110,7 @@ class AppStringsId implements AppStrings {
   String get aboutSection => 'Tentang';
   @override
   String get aboutBody =>
-      'ZAgents v1.33.0 — klon UI agent mode chat.z.ai untuk Android, '
+      'ZAgents v1.34.0 — klon UI agent mode chat.z.ai untuk Android, '
       'dengan custom provider OpenAI-compatible (OpenRouter, InferHub, '
       'Z.AI, OpenAI, DeepSeek, Groq, dan lainnya), API key per-provider, '
       'tema terang/gelap, multi-sesi paralel dengan proses latar '
@@ -2120,7 +2140,11 @@ class AppStringsId implements AppStrings {
       'setup per-chat setiap modul (selesai atau belum, rahasia selalu '
       'disamarkan) sehingga tidak lagi meminta kredensial yang sudah '
       'Anda berikan, dan chat baru mengisi form setup dengan nilai '
-      'terakhir Anda. Modul selalu memakai identitas '
+      'terakhir Anda. Pass performa v1.34.0 memindahkan zip/unzip, '
+      'penurunan skala JPEG, enkripsi backup, dan kerja JSON besar keluar '
+      'dari thread UI, men-throttle rebuild streaming dan output modul, '
+      'serta menutup sheet setup seketika setelah dikirim agar aplikasi '
+      'tetap mulus. Modul selalu memakai identitas '
       'User-Agent yang Anda pilih di Setelan (terbaca via '
       'zagents.info.userAgent, tidak bisa digantikan), dan dapat Anda '
       'hapus kapan saja — dari layar Modul atau menu /plugins. Fan of '

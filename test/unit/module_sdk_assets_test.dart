@@ -83,6 +83,8 @@ void main() {
           'stat',
           'compose',
           'shell',
+          'airplane',
+          'airplaneCycle',
         ]) {
           expect(
             dts,

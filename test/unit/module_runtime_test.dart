@@ -1394,4 +1394,390 @@ void main() {
       expect((response!['data'] as Map<String, dynamic>)['available'], isFalse);
     });
   });
+
+  group('device.airplaneCycle — one-command IP rotation (v1.34.0)', () {
+    late ScriptedJsRuntime cycJs;
+    late ModuleRuntime cycRuntime;
+    bool enabled = false;
+    // Simulated rooted device state.
+    bool airplaneOn = false;
+    bool rootWorks = true;
+    // How many ON/OFF puts "don't stick" on the device (the set command
+    // runs but the simulated state stays put) — verification mismatch.
+    int onPutMismatchesLeft = 0;
+    int offPutMismatchesLeft = 0;
+    bool cancelOnFirstSleep = false;
+    bool? probeAnswer; // null = probe cannot answer
+    int probeCalls = 0;
+    final List<String> commands = <String>[];
+    final List<bool> roots = <bool>[];
+    final List<int> sleeps = <int>[];
+
+    // The exact command strings the bridge must issue.
+    final String cmdGet = 'settings get global airplane_mode_on';
+    final String cmdPutOn =
+        'settings put global airplane_mode_on 1 && '
+        'am broadcast -a android.intent.action.AIRPLANE_MODE --ez state true';
+    final String cmdPutOff =
+        'settings put global airplane_mode_on 0 && '
+        'am broadcast -a android.intent.action.AIRPLANE_MODE --ez state false';
+
+    setUp(() {
+      cycJs = ScriptedJsRuntime();
+      enabled = false;
+      airplaneOn = false;
+      rootWorks = true;
+      onPutMismatchesLeft = 0;
+      offPutMismatchesLeft = 0;
+      cancelOnFirstSleep = false;
+      probeAnswer = null;
+      probeCalls = 0;
+      commands.clear();
+      roots.clear();
+      sleeps.clear();
+      cycRuntime = ModuleRuntime(
+        js: cycJs,
+        resolveSandboxRoot: sandbox.rootFor,
+        resolveModulePath: (String name) async {
+          final String path =
+              '${docs.path}${Platform.pathSeparator}modules'
+              '${Platform.pathSeparator}$name';
+          return Directory(path).existsSync() ? path : null;
+        },
+        resolveSdkSource: () async => 'module.exports = zagents;',
+        resolveNpmModulesRoot: () async =>
+            '${docs.path}${Platform.pathSeparator}node_modules',
+        deviceCommandsEnabled: () => enabled,
+        airplaneProbe: () async {
+          probeCalls++;
+          return probeAnswer;
+        },
+        sleepFn: (int ms) async {
+          sleeps.add(ms);
+          if (cancelOnFirstSleep) {
+            cycRuntime.terminate('s', 'airplane-mod');
+          }
+        },
+        deviceShell: (String command, bool root, int timeoutMs) async {
+          commands.add(command);
+          roots.add(root);
+          if (!rootWorks) {
+            return const DeviceShellResult(error: 'su: not found');
+          }
+          if (command == cmdGet) {
+            return DeviceShellResult(
+              exitCode: 0,
+              stdout: airplaneOn ? '1\n' : '0\n',
+            );
+          }
+          if (command == cmdPutOn) {
+            if (onPutMismatchesLeft > 0) {
+              onPutMismatchesLeft--;
+            } else {
+              airplaneOn = true;
+            }
+            return const DeviceShellResult(exitCode: 0);
+          }
+          if (command == cmdPutOff) {
+            if (offPutMismatchesLeft > 0) {
+              offPutMismatchesLeft--;
+            } else {
+              airplaneOn = false;
+            }
+            return const DeviceShellResult(exitCode: 0);
+          }
+          return const DeviceShellResult(exitCode: 0);
+        },
+      );
+    });
+
+    Future<Map<String, dynamic>?> callOp(
+      ChatModule mod,
+      Set<ModulePermission> granted, [
+      Map<String, dynamic> extra = const <String, dynamic>{},
+    ]) async {
+      Map<String, dynamic>? response;
+      cycJs.onModuleInvocation = (ModuleInvocation invocation) async {
+        response = await cycRuntime.handleOp(<String, dynamic>{
+          'zop': 'device.airplaneCycle',
+          ...extra,
+        });
+      };
+      await cycRuntime.run(sessionId: 's', module: mod, granted: granted);
+      cycJs.onModuleInvocation = null;
+      return response;
+    }
+
+    test('requires the device permission (defense in depth)', () async {
+      final ChatModule mod = module(permissions: <ModulePermission>{});
+      final Map<String, dynamic>? response = await callOp(
+        mod,
+        const <ModulePermission>{},
+      );
+      expect(response!['ok'], isFalse);
+      expect(response['error'], 'Permission denied: device');
+      expect(commands, isEmpty);
+      expect(sleeps, isEmpty);
+    });
+
+    test(
+      'master switch off blocks the call with actionable guidance',
+      () async {
+        final ChatModule mod = module(
+          permissions: <ModulePermission>{ModulePermission.device},
+        );
+        final Map<String, dynamic>? response = await callOp(
+          mod,
+          mod.manifest.permissions,
+        );
+        expect(response!['ok'], isFalse);
+        expect(response['error'] as String, contains('disabled'));
+        expect(commands, isEmpty);
+        expect(sleeps, isEmpty);
+      },
+    );
+
+    test('shell bridge unavailable degrades into a clean error', () async {
+      enabled = true;
+      final ModuleRuntime noShell = ModuleRuntime(
+        js: cycJs,
+        resolveSandboxRoot: sandbox.rootFor,
+        resolveModulePath: (String name) async {
+          final String path =
+              '${docs.path}${Platform.pathSeparator}modules'
+              '${Platform.pathSeparator}$name';
+          return Directory(path).existsSync() ? path : null;
+        },
+        resolveSdkSource: () async => 'module.exports = zagents;',
+        resolveNpmModulesRoot: () async => '',
+        deviceCommandsEnabled: () => enabled,
+      );
+      final ChatModule mod = module(
+        permissions: <ModulePermission>{ModulePermission.device},
+      );
+      Map<String, dynamic>? response;
+      cycJs.onModuleInvocation = (ModuleInvocation invocation) async {
+        response = await noShell.handleOp(<String, dynamic>{
+          'zop': 'device.airplaneCycle',
+        });
+      };
+      await noShell.run(
+        sessionId: 's',
+        module: mod,
+        granted: mod.manifest.permissions,
+      );
+      cycJs.onModuleInvocation = null;
+      expect(response!['ok'], isFalse);
+      expect(response!['error'], 'Shell bridge is unavailable');
+      expect(sleeps, isEmpty);
+    });
+
+    test(
+      'happy path from OFF: ensure ON → hold → OFF → settle (verified)',
+      () async {
+        enabled = true;
+        final ChatModule mod = module(
+          permissions: <ModulePermission>{ModulePermission.device},
+        );
+        final Map<String, dynamic>? response = await callOp(
+          mod,
+          mod.manifest.permissions,
+        );
+        expect(response!['ok'], isTrue);
+        final Map<String, dynamic> data =
+            response['data'] as Map<String, dynamic>;
+        expect(data['wasOn'], isFalse);
+        expect(data['finalOn'], isFalse);
+        expect(data['heldMs'], 2500);
+        expect(data['settleMs'], 8000);
+        expect(data['verified'], isTrue);
+        // Command order: read → put ON → verify → put OFF → verify.
+        expect(commands, <String>[cmdGet, cmdPutOn, cmdGet, cmdPutOff, cmdGet]);
+        // Everything rides the root shell with the documented budget.
+        expect(roots, everyElement(isTrue));
+        expect(sleeps, <int>[2500, 8000]);
+        // The simulated device ends OFF (online, new IP).
+        expect(airplaneOn, isFalse);
+      },
+    );
+
+    test(
+      'starting ON skips the ensure-ON step but still holds and ends OFF',
+      () async {
+        enabled = true;
+        airplaneOn = true;
+        final ChatModule mod = module(
+          permissions: <ModulePermission>{ModulePermission.device},
+        );
+        final Map<String, dynamic>? response = await callOp(
+          mod,
+          mod.manifest.permissions,
+        );
+        expect(response!['ok'], isTrue);
+        final Map<String, dynamic> data =
+            response['data'] as Map<String, dynamic>;
+        expect(data['wasOn'], isTrue);
+        expect(data['finalOn'], isFalse);
+        expect(data['verified'], isTrue);
+        expect(commands, <String>[cmdGet, cmdPutOff, cmdGet]);
+        expect(sleeps, <int>[2500, 8000]);
+      },
+    );
+
+    test(
+      'hold and settle waits are clamped into the documented windows',
+      () async {
+        enabled = true;
+        final ChatModule mod = module(
+          permissions: <ModulePermission>{ModulePermission.device},
+        );
+        final Map<String, dynamic>? response = await callOp(
+          mod,
+          mod.manifest.permissions,
+          <String, dynamic>{'holdMs': 99999, 'settleMs': -5},
+        );
+        expect(response!['ok'], isTrue);
+        final Map<String, dynamic> data =
+            response['data'] as Map<String, dynamic>;
+        expect(data['heldMs'], ModuleRuntime.maxAirplaneCycleHoldMs);
+        expect(data['settleMs'], 0);
+        expect(sleeps, <int>[ModuleRuntime.maxAirplaneCycleHoldMs, 0]);
+      },
+    );
+
+    test('a verification mismatch retries the set exactly once', () async {
+      enabled = true;
+      onPutMismatchesLeft = 1; // first ON put "doesn't stick"
+      final ChatModule mod = module(
+        permissions: <ModulePermission>{ModulePermission.device},
+      );
+      final Map<String, dynamic>? response = await callOp(
+        mod,
+        mod.manifest.permissions,
+      );
+      expect(response!['ok'], isTrue);
+      expect((response['data'] as Map<String, dynamic>)['verified'], isTrue);
+      // get → put ON → verify(mismatch) → put ON retry → verify → put OFF
+      // → verify.
+      expect(commands, <String>[
+        cmdGet,
+        cmdPutOn,
+        cmdGet,
+        cmdPutOn,
+        cmdGet,
+        cmdPutOff,
+        cmdGet,
+      ]);
+      expect(
+        commands.where((String c) => c == cmdPutOn).length,
+        2,
+        reason: 'the set is retried exactly once, never more',
+      );
+      expect(sleeps, <int>[2500, 8000]);
+    });
+
+    test('cancelled mid-cycle still restores airplane OFF', () async {
+      enabled = true;
+      cancelOnFirstSleep = true; // user hits stop during the hold
+      final ChatModule mod = module(
+        name: 'airplane-mod',
+        permissions: <ModulePermission>{ModulePermission.device},
+      );
+      final Map<String, dynamic>? response = await callOp(
+        mod,
+        mod.manifest.permissions,
+      );
+      // Cancelled-safe result: ok with conservative data, no settle.
+      expect(response!['ok'], isTrue);
+      final Map<String, dynamic> data =
+          response['data'] as Map<String, dynamic>;
+      expect(data['wasOn'], isFalse);
+      expect(data['finalOn'], isFalse);
+      expect(data['heldMs'], 2500);
+      expect(data['settleMs'], 0);
+      expect(data['verified'], isFalse);
+      // The hold happened, the settle did not.
+      expect(sleeps, <int>[2500]);
+      // The OFF restore was issued and verified by a final read.
+      expect(commands, <String>[cmdGet, cmdPutOn, cmdGet, cmdPutOff, cmdGet]);
+      expect(airplaneOn, isFalse);
+    });
+
+    test(
+      'not rooted (no probe): clean actionable manual-fallback error',
+      () async {
+        enabled = true;
+        rootWorks = false;
+        probeAnswer = null; // probe cannot answer either
+        final ChatModule mod = module(
+          permissions: <ModulePermission>{ModulePermission.device},
+        );
+        final Map<String, dynamic>? response = await callOp(
+          mod,
+          mod.manifest.permissions,
+        );
+        expect(response!['ok'], isFalse);
+        expect(response['error'] as String, contains('rooted'));
+        expect(response['error'] as String, contains('manual'));
+        // The shell read failed → the world-readable probe answered once.
+        expect(probeCalls, 1);
+        expect(commands, <String>[cmdGet]);
+        expect(sleeps, isEmpty);
+      },
+    );
+
+    test(
+      'not rooted (working probe): actionable root error, no waits',
+      () async {
+        enabled = true;
+        rootWorks = false;
+        probeAnswer = false; // probe reports OFF, the puts still fail
+        final ChatModule mod = module(
+          permissions: <ModulePermission>{ModulePermission.device},
+        );
+        final Map<String, dynamic>? response = await callOp(
+          mod,
+          mod.manifest.permissions,
+        );
+        expect(response!['ok'], isFalse);
+        expect(response['error'] as String, contains('rooted'));
+        expect(response['error'] as String, contains('manual'));
+        // The initial read failed, the probe answered, the first put failed.
+        expect(commands, <String>[cmdGet, cmdPutOn]);
+        expect(sleeps, isEmpty);
+      },
+    );
+
+    test(
+      'OFF verification failing after the retry triggers the OFF recovery',
+      () async {
+        enabled = true;
+        airplaneOn = true;
+        offPutMismatchesLeft = 99; // the radio never confirms OFF
+        final ChatModule mod = module(
+          permissions: <ModulePermission>{ModulePermission.device},
+        );
+        final Map<String, dynamic>? response = await callOp(
+          mod,
+          mod.manifest.permissions,
+        );
+        expect(response!['ok'], isFalse);
+        final String error = response['error'] as String;
+        expect(error, contains('OFF'));
+        expect(error, contains('check the phone'));
+        // get → (hold) → put OFF → verify → put OFF retry → verify →
+        // recovery put OFF. The phone is never left silently in airplane
+        // mode: the recovery always fires.
+        expect(commands, <String>[
+          cmdGet,
+          cmdPutOff,
+          cmdGet,
+          cmdPutOff,
+          cmdGet,
+          cmdPutOff,
+        ]);
+        expect(sleeps, <int>[2500], reason: 'no settle wait after a failure');
+      },
+    );
+  });
 }

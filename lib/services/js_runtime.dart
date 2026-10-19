@@ -659,6 +659,28 @@ window.__zDone = false;
             on: !!(data && data.on)
           };
         });
+      },
+      // v1.34.0 — ONE-command airplane-mode cycle that rotates the carrier
+      // IP: the data IP changes when the radio RE-REGISTERS (airplane back
+      // OFF), so the bridge ensures ON (radio deregisters) → holds → OFF
+      // (re-register, carrier assigns a new IP) → settle. The cycle ALWAYS
+      // ends with airplane OFF (online). Root + master switch, verified
+      // steps; errors reject with the actionable bridge message.
+      airplaneCycle: function(opts){
+        if (!zHas('device')) return zDeny('device');
+        opts = opts || {};
+        return zCall('device.airplaneCycle', {
+          holdMs: typeof (opts && opts.holdMs) === 'number' ? opts.holdMs : null,
+          settleMs: typeof (opts && opts.settleMs) === 'number' ? opts.settleMs : null
+        }).then(function(data){
+          return {
+            wasOn: !!(data && data.wasOn),
+            finalOn: !!(data && data.finalOn),
+            heldMs: (data && typeof data.heldMs === 'number') ? data.heldMs : 0,
+            settleMs: (data && typeof data.settleMs === 'number') ? data.settleMs : 0,
+            verified: !!(data && data.verified)
+          };
+        });
       }
     }
   };

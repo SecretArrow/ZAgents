@@ -157,8 +157,8 @@ void main() {
     expect(id.randomUaAccept, 'Ya, acak');
     expect(id.randomUaDecline, 'Pertahankan');
     expect(id.createdBy('Maragung'), 'Dibuat oleh Maragung');
-    expect(en.aboutBody, contains('v1.33.0'));
-    expect(id.aboutBody, contains('v1.33.0'));
+    expect(en.aboutBody, contains('v1.34.0'));
+    expect(id.aboutBody, contains('v1.34.0'));
     expect(en.autoRetryAirplaneNote, contains('Airplane mode'));
     expect(id.autoRetryAirplaneNote, contains('Mode pesawat'));
     expect(en.autoRetryAirplaneResumeNote, isNotEmpty);

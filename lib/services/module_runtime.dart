@@ -32,6 +32,22 @@ typedef ModuleAgentCompose = Future<String> Function(
 /// user picked in Settings → User Agent (resolved at run start).
 typedef ModuleUserAgentResolver = String? Function();
 
+/// Outcome of one airplane-mode transition inside the IP-rotation cycle
+/// (`device.airplaneCycle`, v1.34.0). The distinction drives the failure
+/// policy: `notRun` (not rooted / `su` denied) answers with the actionable
+/// root error, `mismatch` (command ran, verification failed after the
+/// single retry) triggers the best-effort OFF restore.
+enum _AirplaneSetOutcome {
+  /// The read-back matches the requested state.
+  verified,
+
+  /// The shell command could not run at all — nothing changed.
+  notRun,
+
+  /// The command ran but the state never matched after the retry.
+  mismatch,
+}
+
 /// Outcome of one chat-module execution.
 class ModuleRunResult {
   const ModuleRunResult({
@@ -133,6 +149,7 @@ class ModuleRuntime implements ModuleBridge {
     this.deviceCommandsEnabled,
     this.deviceShell,
     this.airplaneProbe,
+    this.sleepFn,
     this.resolveSessionsRoot,
   });
 
@@ -189,6 +206,12 @@ class ModuleRuntime implements ModuleBridge {
   /// returns null when the platform cannot answer ("unknown").
   final Future<bool?> Function()? airplaneProbe;
 
+  /// Injectable wait for the airplane IP-rotation cycle
+  /// (`device.airplaneCycle`, v1.34.0) — the hold-ON and settle waits.
+  /// Defaults to [Future.delayed]; tests inject a recording/immediate
+  /// fake so the suite never really waits seconds.
+  final Future<void> Function(int ms)? sleepFn;
+
   /// Shell-command caps for `device.shell`: a hostile module can neither
   /// smuggle in megabyte-long command lines nor pin the executor beyond
   /// the 120s ceiling (mirrored by the native side).
@@ -196,6 +219,21 @@ class ModuleRuntime implements ModuleBridge {
   static const int defaultShellTimeoutMs = 30000;
   static const int maxShellTimeoutMs = 120000;
   static const int maxShellStreamChars = 32 * 1024;
+
+  /// Airplane-cycle wait clamps for `device.airplaneCycle` (v1.34.0):
+  /// the ON hold gives the radio time to fully deregister; the settle
+  /// wait gives the carrier time to hand out the new IP after the radio
+  /// re-registers. A hold below the minimum would risk cycling while the
+  /// radio never left the network (no IP rotation).
+  static const int defaultAirplaneCycleHoldMs = 2500;
+  static const int minAirplaneCycleHoldMs = 500;
+  static const int maxAirplaneCycleHoldMs = 15000;
+  static const int defaultAirplaneCycleSettleMs = 8000;
+  static const int maxAirplaneCycleSettleMs = 30000;
+
+  /// Default wait seam when [sleepFn] is not injected.
+  static Future<void> _defaultSleep(int ms) =>
+      Future<void>.delayed(Duration(milliseconds: ms));
 
   /// Cooperative per-chat setup key inside the (chat, module) storage:
   /// the host writes the submitted setup-form values here; modules may
@@ -617,6 +655,71 @@ class ModuleRuntime implements ModuleBridge {
             'data': <String, dynamic>{'available': false, 'on': false},
           };
         }
+      case 'device.airplaneCycle':
+        // v1.34.0 — ONE-command airplane-mode cycle that rotates the
+        // carrier IP. Physics: the phone's data IP changes when the radio
+        // RE-REGISTERS, i.e. when airplane mode goes back OFF — so the
+        // cycle is: ensure airplane ON (radio deregisters) → hold →
+        // airplane OFF (re-register, carrier assigns a new IP) → settle.
+        // It ALWAYS ends with airplane OFF (online, new IP). Reuses the
+        // device.shell triple gate: manifest permission → Settings master
+        // switch → bridge availability. Every transition is verified by
+        // reading the setting back; a failing verification escalates to a
+        // best-effort OFF restore so the device is never left silently
+        // in airplane mode.
+        if (!context.permissions.contains('device')) return _denied('device');
+        if (context.cancelled) {
+          return const <String, dynamic>{
+            'ok': true,
+            'data': <String, dynamic>{
+              'wasOn': false,
+              'finalOn': false,
+              'heldMs': 0,
+              'settleMs': 0,
+              'verified': false,
+            },
+          };
+        }
+        if (!(deviceCommandsEnabled?.call() ?? false)) {
+          return const <String, dynamic>{
+            'ok': false,
+            'error':
+                'Device commands are disabled — enable "Device commands" '
+                'under Settings → Modules (rooted phones only)',
+          };
+        }
+        final shell = deviceShell;
+        if (shell == null) {
+          return const <String, dynamic>{
+            'ok': false,
+            'error': 'Shell bridge is unavailable',
+          };
+        }
+        final int cycleHoldMs = _clampCycleWait(
+          request['holdMs'],
+          defaultMs: defaultAirplaneCycleHoldMs,
+          minMs: minAirplaneCycleHoldMs,
+          maxMs: maxAirplaneCycleHoldMs,
+        );
+        final int cycleSettleMs = _clampCycleWait(
+          request['settleMs'],
+          defaultMs: defaultAirplaneCycleSettleMs,
+          minMs: 0,
+          maxMs: maxAirplaneCycleSettleMs,
+        );
+        try {
+          return await _runAirplaneCycle(
+            context,
+            shell,
+            holdMs: cycleHoldMs,
+            settleMs: cycleSettleMs,
+          );
+        } catch (e) {
+          return <String, dynamic>{
+            'ok': false,
+            'error': 'Airplane cycle failed: $e',
+          };
+        }
       case 'storage.get':
         if (!context.permissions.contains('storage')) return _denied('storage');
         final Map<String, dynamic> store = await _readStorage(
@@ -685,6 +788,224 @@ class ModuleRuntime implements ModuleBridge {
     'ok': false,
     'error': 'Permission denied: $permission',
   };
+
+  // -- device.airplaneCycle (v1.34.0) --------------------------------------
+
+  /// Clamps one airplane-cycle wait. A non-int (missing/garbage) value
+  /// falls back to [defaultMs]; a provided int is clamped into
+  /// [minMs, maxMs] — so `settleMs: 0` is a legal "no settle" while
+  /// `holdMs: 0` still holds the documented minimum (the radio must
+  /// really deregister or no IP is rotated).
+  int _clampCycleWait(
+    Object? raw, {
+    required int defaultMs,
+    required int minMs,
+    required int maxMs,
+  }) {
+    if (raw is! int) return defaultMs;
+    if (raw < minMs) return minMs;
+    if (raw > maxMs) return maxMs;
+    return raw;
+  }
+
+  /// Runs the airplane-mode IP-rotation cycle. Sequence: read the
+  /// verified current state → ensure airplane ON (verified, one retry) →
+  /// hold ON ([holdMs], radio deregisters) → airplane OFF (verified, one
+  /// retry, radio re-registers and the carrier assigns the new IP) →
+  /// settle ([settleMs]). Always ends with airplane OFF; a failed
+  /// verification escalates to a best-effort OFF restore.
+  Future<Map<String, dynamic>> _runAirplaneCycle(
+    _RunContext context,
+    Future<DeviceShellResult> Function(String, bool, int) shell, {
+    required int holdMs,
+    required int settleMs,
+  }) async {
+    final Future<void> Function(int ms) wait = sleepFn ?? _defaultSleep;
+    // a. Verified current state: root `settings get` first, the
+    // world-readable probe as fallback — never cycle blind.
+    bool? on = await _readAirplaneState(shell);
+    if (on == null) {
+      final Future<bool?> Function()? probe = airplaneProbe;
+      if (probe != null) {
+        try {
+          on = await probe();
+        } catch (_) {
+          on = null;
+        }
+      }
+    }
+    if (on == null) {
+      return const <String, dynamic>{
+        'ok': false,
+        'error':
+            'Airplane cycle could not read the airplane-mode state — '
+            'the cycle needs a rooted phone; fall back to the guided '
+            'manual mode',
+      };
+    }
+    final bool wasOn = on;
+    // b. Ensure airplane ON (settings put + legacy broadcast as one
+    // command), verified by reading back; one retry on a mismatch.
+    if (!wasOn) {
+      final _AirplaneSetOutcome onOutcome = await _setAirplaneMode(
+        shell,
+        on: true,
+      );
+      if (onOutcome != _AirplaneSetOutcome.verified) {
+        if (onOutcome == _AirplaneSetOutcome.mismatch) {
+          // The state is uncertain — force the safe OFF state.
+          await _restoreAirplaneOff(shell);
+        }
+        return <String, dynamic>{
+          'ok': false,
+          'error': onOutcome == _AirplaneSetOutcome.notRun
+              ? 'Airplane cycle needs a rooted phone — the device command '
+                    'failed (su unavailable or denied). Fall back to the '
+                    'guided manual mode.'
+              : 'Airplane cycle failed: the device did not confirm airplane '
+                    'ON — no rotation happened, airplane mode is OFF',
+        };
+      }
+    }
+    // Cancelled before the hold: restore the safe OFF state, return the
+    // cancelled-safe result (mirrors the other bridge ops).
+    if (context.cancelled) {
+      await _restoreAirplaneOff(shell);
+      return _airplaneCycleCancelled(wasOn);
+    }
+    // c. Hold ON — the radio deregisters.
+    await wait(holdMs);
+    // d. Airplane OFF — the radio re-registers and the carrier assigns
+    // the new IP. Verified; one retry on a mismatch; then the recovery
+    // pass so the phone is never left silently in airplane mode.
+    final _AirplaneSetOutcome offOutcome = await _setAirplaneMode(
+      shell,
+      on: false,
+    );
+    if (offOutcome != _AirplaneSetOutcome.verified) {
+      if (offOutcome == _AirplaneSetOutcome.mismatch) {
+        // The state is uncertain — force the safe OFF state.
+        await _restoreAirplaneOff(shell);
+      }
+      return <String, dynamic>{
+        'ok': false,
+        'error': offOutcome == _AirplaneSetOutcome.notRun
+            ? 'Airplane cycle needs a rooted phone — the device command '
+                  'failed (su unavailable or denied); airplane mode may '
+                  'still be ON. Check the phone and fall back to the '
+                  'guided manual mode.'
+            : 'Airplane cycle failed: the device did not confirm airplane '
+                  'OFF — check the phone (airplane mode may still be ON)',
+      };
+    }
+    // Cancelled mid-cycle: the safe OFF state is in place — skip the
+    // settle wait and return the cancelled-safe result.
+    if (context.cancelled) {
+      return _airplaneCycleCancelled(wasOn, heldMs: holdMs);
+    }
+    // e. Settle — give the carrier time to hand out the new IP.
+    await wait(settleMs);
+    // f. Done: online again, airplane OFF, IP rotated.
+    return <String, dynamic>{
+      'ok': true,
+      'data': <String, dynamic>{
+        'wasOn': wasOn,
+        'finalOn': false,
+        'heldMs': holdMs,
+        'settleMs': settleMs,
+        'verified': true,
+      },
+    };
+  }
+
+  /// Cancelled-safe result shape for a cycle interrupted by [terminate].
+  Map<String, dynamic> _airplaneCycleCancelled(bool wasOn, {int heldMs = 0}) =>
+      <String, dynamic>{
+        'ok': true,
+        'data': <String, dynamic>{
+          'wasOn': wasOn,
+          'finalOn': false,
+          'heldMs': heldMs,
+          'settleMs': 0,
+          'verified': false,
+        },
+      };
+
+  /// Reads the airplane-mode state through a root `settings get` —
+  /// null when the shell cannot answer (not rooted, `su` denied, garbage
+  /// output). The caller falls back to the world-readable probe.
+  Future<bool?> _readAirplaneState(
+    Future<DeviceShellResult> Function(String, bool, int) shell,
+  ) async {
+    try {
+      final DeviceShellResult result = await shell(
+        'settings get global airplane_mode_on',
+        true,
+        defaultShellTimeoutMs,
+      );
+      if (result.error != null || result.timedOut || result.exitCode != 0) {
+        return null;
+      }
+      final String out = result.stdout.trim();
+      if (out == '1') return true;
+      if (out == '0') return false;
+      return null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// One airplane-mode transition: `settings put global
+  /// airplane_mode_on 0|1 && am broadcast -a android.intent.action
+  /// .AIRPLANE_MODE --ez state true|false` (one joined command), then a
+  /// verification read-back. The set is retried ONCE on a verification
+  /// mismatch. Returns [_AirplaneSetOutcome.notRun] when the command
+  /// could not run at all (not rooted / `su` denied), `mismatch` when
+  /// the state never matched after the retry, `verified` on success.
+  Future<_AirplaneSetOutcome> _setAirplaneMode(
+    Future<DeviceShellResult> Function(String, bool, int) shell, {
+    required bool on,
+  }) async {
+    final String command = _airplaneSetCommand(on);
+    for (int attempt = 0; attempt < 2; attempt++) {
+      try {
+        final DeviceShellResult put = await shell(
+          command,
+          true,
+          defaultShellTimeoutMs,
+        );
+        final bool ran =
+            put.error == null && !put.timedOut && put.exitCode == 0;
+        if (!ran) return _AirplaneSetOutcome.notRun;
+        final bool? now = await _readAirplaneState(shell);
+        if (now == on) return _AirplaneSetOutcome.verified;
+        // Verification mismatch → the single retry (second pass).
+      } catch (_) {
+        return _AirplaneSetOutcome.notRun;
+      }
+    }
+    return _AirplaneSetOutcome.mismatch;
+  }
+
+  /// Best-effort recovery after a failed verification: attempt the OFF
+  /// command one more time (fire-and-forget) so a failed cycle never
+  /// leaves the phone silently in airplane mode.
+  Future<void> _restoreAirplaneOff(
+    Future<DeviceShellResult> Function(String, bool, int) shell,
+  ) async {
+    try {
+      await shell(_airplaneSetCommand(false), true, defaultShellTimeoutMs);
+    } catch (_) {
+      // Best effort only — the caller already reports the failure.
+    }
+  }
+
+  /// The airplane transition command: settings write + legacy broadcast
+  /// joined into one `su -c` line so the radio switch is atomic-ish.
+  String _airplaneSetCommand(bool on) =>
+      'settings put global airplane_mode_on ${on ? 1 : 0} && '
+      'am broadcast -a android.intent.action.AIRPLANE_MODE --ez state '
+      '${on ? 'true' : 'false'}';
 
   /// Hop-by-hop / transport-owned headers a module may not set, plus the
   /// identity headers owned by the host: `user-agent` ALWAYS carries the
@@ -794,6 +1115,9 @@ class ModuleRuntime implements ModuleBridge {
       }
       Map<String, dynamic>? best;
       DateTime newest = DateTime.fromMillisecondsSinceEpoch(0);
+      // v1.34.0: the session-name listing stays sync (one shallow dir),
+      // but every per-chat stat/read is async now — this scan runs on the
+      // send()/gate path and used to block the UI isolate per chat.
       for (final FileSystemEntity entry in sessionsRoot.listSync(
         followLinks: false,
       )) {
@@ -803,12 +1127,12 @@ class ModuleRuntime implements ModuleBridge {
           '${Platform.pathSeparator}$moduleName'
           '${Platform.pathSeparator}storage.json',
         );
-        if (!file.existsSync()) continue;
-        final DateTime modified = file.statSync().modified;
+        if (!await file.exists()) continue;
+        final DateTime modified = (await file.stat()).modified;
         if (!modified.isAfter(newest)) continue;
         Map<String, dynamic> store;
         try {
-          final Object? decoded = jsonDecode(file.readAsStringSync());
+          final Object? decoded = jsonDecode(await file.readAsString());
           if (decoded is! Map) continue;
           store = decoded.cast<String, dynamic>();
         } catch (_) {
@@ -842,7 +1166,9 @@ class ModuleRuntime implements ModuleBridge {
     String module,
   ) async {
     final File file = await _storageFileFor(sessionId, module);
-    if (!file.existsSync()) return <String, dynamic>{};
+    // v1.34.0: async stat — existsSync() blocked the UI isolate on every
+    // storage.get/set and every setup read on the module run path.
+    if (!await file.exists()) return <String, dynamic>{};
     try {
       final Object? decoded = jsonDecode(await file.readAsString());
       if (decoded is Map<String, dynamic>) return decoded;

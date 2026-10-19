@@ -148,6 +148,36 @@ export interface ZAgentsShellOptions {
   timeoutMs?: number;
 }
 
+/** Options for zagents.device.airplaneCycle (v1.34.0). */
+export interface ZAgentsAirplaneCycleOptions {
+  /** How long to HOLD airplane ON before turning it OFF — the radio
+   *  must fully deregister or no IP is rotated. Default 2500 ms,
+   *  clamped 500–15000. */
+  holdMs?: number;
+  /** Extra wait AFTER airplane OFF while the carrier registers the
+   *  data connection with the new IP. Default 8000 ms, clamped 0–30000. */
+  settleMs?: number;
+}
+
+/** Result of zagents.device.airplaneCycle (v1.34.0). Physics: the
+ *  phone's data IP changes when the radio RE-REGISTERS — i.e. when
+ *  airplane mode goes back OFF — so the cycle is ON → hold → OFF →
+ *  settle, and it ALWAYS ends with airplane OFF (online, new IP). */
+export interface ZAgentsAirplaneCycleResult {
+  /** The verified airplane state before the cycle started. */
+  wasOn: boolean;
+  /** Always `false` — the cycle ends with airplane OFF (online). */
+  finalOn: boolean;
+  /** How long airplane was held ON (the clamped `holdMs`). */
+  heldMs: number;
+  /** The settle wait applied after airplane OFF (the clamped
+   *  `settleMs`; 0 when the run was cancelled mid-cycle). */
+  settleMs: number;
+  /** True when the final OFF state was verified by reading the setting
+   *  back from the device; `false` on a cancelled run. */
+  verified: boolean;
+}
+
 /** Result of zagents.device.airplane (v1.32.0). */
 export interface ZAgentsAirplaneResult {
   /** True when the platform can read the real state (Android). When
@@ -207,6 +237,15 @@ export interface ZAgentsSdk {
      *  verified state behind manual (non-root) airplane workflows.
      *  Permission: `device`. */
     airplane(): Promise<ZAgentsAirplaneResult>;
+    /** ONE-command airplane-mode cycle that rotates the carrier IP
+     *  (v1.34.0): ensure airplane ON (radio deregisters) → hold →
+     *  airplane OFF (radio re-registers with a NEW IP) → settle. Always
+     *  ends airplane OFF (online). Rooted phones + the Settings →
+     *  Modules "Device commands" master switch; every step is verified
+     *  by the host, failures reject with an actionable error (fall back
+     *  to the guided manual mode).
+     *  Permission: `device`. */
+    airplaneCycle(options?: ZAgentsAirplaneCycleOptions): Promise<ZAgentsAirplaneCycleResult>;
   };
 }
 

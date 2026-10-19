@@ -590,9 +590,17 @@ class ChatController extends Notifier<ChatState> {
     }
 
     final StringBuffer body = StringBuffer();
-    void refresh() {
+    // v1.34.0 jank fix: chatty modules (console/emit lines) used to
+    // trigger an unthrottled full-state sync PER LINE. Coalesce with the
+    // same 48ms streaming gap; a forced final refresh lands the complete
+    // output when the run finishes.
+    int lastModuleSync = 0;
+    void refresh({bool force = false}) {
       final int index = run.messages.indexOf(moduleMessage);
       if (index == -1) return;
+      final int now = DateTime.now().millisecondsSinceEpoch;
+      if (!force && now - lastModuleSync < _streamSyncGapMs) return;
+      lastModuleSync = now;
       run.messages[index] = ChatMessage.assistant(
         body.toString(),
         moduleName: name,
@@ -650,7 +658,7 @@ class ChatController extends Notifier<ChatState> {
       }
       body.write(strings.moduleRunFailed('$e'));
     }
-    refresh();
+    refresh(force: true);
     await _persist(run);
   }
 
@@ -720,10 +728,19 @@ class ChatController extends Notifier<ChatState> {
   /// Robust against the finished agent loop: [_executeRun] drops its run
   /// object when the loop ends, so the pending request is re-derived from
   /// the persisted per-chat module scope when needed.
+  /// Persists the submitted per-chat setup values and re-runs the gated
+  /// module. With [awaitRun] (default) the returned future completes after
+  /// the module run (and any queued-message release) finished — the
+  /// original contract, used by tests. The SETUP SHEET passes
+  /// `awaitRun: false`: the form closes as soon as the values are on
+  /// disk and the module run + agent resume continue in the background
+  /// (v1.34.0 — submitting used to freeze the sheet for the whole
+  /// WebView boot + run).
   Future<bool> submitModuleSetup(
     String moduleName,
-    Map<String, dynamic> values,
-  ) async {
+    Map<String, dynamic> values, {
+    bool awaitRun = true,
+  }) async {
     final String trimmed = moduleName.trim();
     final String? sessionId = _activeSessionId;
     if (trimmed.isEmpty || sessionId == null) return false;
@@ -759,17 +776,33 @@ class ChatController extends Notifier<ChatState> {
       state = state.copyWith(setupRequest: null);
     }
     await _persist(run);
-    // Re-run the gated activation — the gate now passes and the module
-    // executes with the freshly submitted values. When a send() was
-    // queued behind this form, the module also receives the queued user
-    // text as its activation prompt.
     final bool queued = run.waitingForSetup;
+    // v1.34.0: the sheet pops as soon as the values are persisted — the
+    // module run + agent resume (WebView boot, module cycle, streaming)
+    // continue in the background instead of freezing the form.
+    if (!awaitRun) {
+      unawaited(_finishSetupSubmission(run, trimmed, queued));
+      return true;
+    }
+    await _finishSetupSubmission(run, trimmed, queued);
+    return true;
+  }
+
+  /// Shared tail of [submitModuleSetup]: re-run the gated activation —
+  /// the gate now passes and the module executes with the freshly
+  /// submitted values — and, when a send() was queued behind this form,
+  /// release that message to the agent.
+  Future<void> _finishSetupSubmission(
+    _SessionRun run,
+    String trimmed,
+    bool queued,
+  ) async {
     await _activateModule(
       run,
       trimmed,
       activationPrompt: queued ? _lastUserText(run) : null,
     );
-    if (!queued) return true;
+    if (!queued) return;
     // v1.29.0: a send() that hit the setup gate waits here. After the
     // form is submitted, the queued user message finally reaches the
     // agent — unless ANOTHER active module still blocks on its own form.
@@ -779,16 +812,15 @@ class ChatController extends Notifier<ChatState> {
     );
     if (nextGate != null) {
       run.setupRequest = nextGate;
-      if (_activeSessionId == sessionId) {
+      if (_activeSessionId == run.sessionId) {
         state = state.copyWith(setupRequest: nextGate);
       }
       await _persist(run);
-      return true;
+      return;
     }
     run.waitingForSetup = false;
     await _persist(run);
     await _resumeQueuedRun(run);
-    return true;
   }
 
   /// Content of the LAST user message in the run (null when none) — used
@@ -1740,11 +1772,24 @@ class ChatController extends Notifier<ChatState> {
               tools: tools,
               onDelta: (delta) {
                 buffer.write(delta);
+                // v1.34.0 jank fix: the O(n) transcript copy (buffer →
+                // ChatMessage) used to run on EVERY delta — hundreds of
+                // copies per answer on fast providers. Gate it behind the
+                // same 48ms streaming gap as the state emission; the turn
+                // consumer writes the authoritative message from the final
+                // turn anyway. When the user presses Stop, every remaining
+                // delta DOES update again so the abort keeps full text.
+                final int now = DateTime.now().millisecondsSinceEpoch;
+                final int last = _lastStreamSync[run.sessionId] ?? 0;
+                if (now - last < _streamSyncGapMs && !run.stopRequested) {
+                  return;
+                }
+                _lastStreamSync[run.sessionId] = now;
                 run.messages[run.messages.length - 1] = ChatMessage.assistant(
                   buffer.toString(),
                   isStreaming: true,
                 );
-                _syncStreaming(run);
+                _sync(run);
               },
               // Stop must interrupt DURING the stream, not after it.
               shouldAbort: () => run.stopRequested,
@@ -2122,17 +2167,10 @@ class ChatController extends Notifier<ChatState> {
   /// times per second — visible jank and a contributor to Android ANRs.
   /// Coalescing is synchronous (no timers): dropped intermediates are
   /// always flushed by the authoritative syncs at turn end / finalize.
+  /// v1.34.0: the same gap now also gates the per-delta ChatMessage copy
+  /// itself (the O(n) part), not just the state emission.
   static const int _streamSyncGapMs = 48;
   final Map<String, int> _lastStreamSync = <String, int>{};
-
-  void _syncStreaming(_SessionRun run) {
-    if (_activeSessionId != run.sessionId) return;
-    final int now = DateTime.now().millisecondsSinceEpoch;
-    final int last = _lastStreamSync[run.sessionId] ?? 0;
-    if (now - last < _streamSyncGapMs) return;
-    _lastStreamSync[run.sessionId] = now;
-    _sync(run);
-  }
 
   /// Persists [run], serialized through the run's own persist chain so
   /// concurrent calls (persist-at-start vs mid-run vs final) can never

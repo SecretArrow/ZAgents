@@ -1,13 +1,16 @@
 /**
- * Airplane Mode — ZAgents chat module (v1.2: root AUTO + manual mode).
+ * Airplane Mode — ZAgents chat module (v1.3: root AUTO + manual + IP cycle).
  *
- * Toggles Android airplane mode from the chat. Two modes, picked per
- * device — no blind trust anywhere, the final report is always the
- * ACTUAL verified state:
+ * Toggles Android airplane mode from the chat AND rotates the carrier IP.
+ * Two modes, picked per device — no blind trust anywhere, the final report
+ * is always the ACTUAL verified state:
  *
  *   ROOTED (su available)  → AUTO: the module toggles the radio itself
  *     (cmd connectivity → settings put + broadcast fallback, read-back
- *     verification after every step).
+ *     verification after every step). `/airplane cycle` runs the
+ *     one-command IP rotation via zagents.device.airplaneCycle:
+ *     airplane ON (radio deregisters) → hold → airplane OFF (radio
+ *     re-registers with a NEW IP) → settle — always ends OFF (online).
  *
  *   NOT ROOTED             → MANUAL: the module verifies the state with
  *     the world-readable native probe (zagents.device.airplane — works
@@ -19,6 +22,10 @@
  * app-side, so they keep working while airplane mode is ON and the AI
  * chat itself is unreachable):
  *
+ *   /airplane cycle   ONE-command IP rotation (rooted, auto): airplane
+ *                     ON → hold → OFF → settle; new carrier IP. Aliases:
+ *                     /airplane ip and /airplane rotate. Non-rooted
+ *                     devices get the guided-manual fallback.
  *   /airplane on      enable airplane mode (auto on root, guided manual otherwise)
  *   /airplane off     disable airplane mode (auto on root, guided manual otherwise)
  *   /airplane status  report the verified current state + active mode
@@ -48,7 +55,10 @@ async function main() {
   if (parts.length > 0) {
     if (parts[0] === '/airplane') {
       arg = parts[1] || 'status';
-    } else if (parts[0] === 'on' || parts[0] === 'off' || parts[0] === 'status') {
+    } else if (
+      parts[0] === 'on' || parts[0] === 'off' || parts[0] === 'status' ||
+      parts[0] === 'cycle' || parts[0] === 'ip' || parts[0] === 'rotate'
+    ) {
       arg = parts[0];
     }
   }
@@ -60,6 +70,33 @@ async function main() {
   }
 
   const su = (cmd) => zagents.device.shell(cmd, { root: true, timeoutMs: 20000 });
+
+  // -- cycle (v1.3): one-command IP rotation -------------------------------
+  // The phone's data IP changes when the radio RE-REGISTERS — i.e. when
+  // airplane mode goes back OFF. The bridge runs the whole physics for us
+  // (ensure ON → hold → OFF → settle, verified, always ends OFF); the
+  // module only reports it. Rooted phones + master switch; everything
+  // else gets the guided-manual fallback.
+  if (arg === 'cycle' || arg === 'ip' || arg === 'rotate') {
+    if (!zagents.device || typeof zagents.device.airplaneCycle !== 'function') {
+      zagents.log('Airplane cycle needs ZAgents v1.34.0+ — update the app, or use /airplane on + /airplane off.');
+      return { ok: false, action: 'cycle', reason: 'sdk-missing' };
+    }
+    try {
+      const r = await zagents.device.airplaneCycle();
+      const held = (r.heldMs / 1000).toString().replace(/\.0$/, '');
+      const settle = (r.settleMs / 1000).toString().replace(/\.0$/, '');
+      zagents.log(
+        'Airplane cycled: ON ' + held + 's → OFF; new IP in ~' + settle + 's' +
+        (r.verified ? ' (verified).' : '.'),
+      );
+      return { ok: true, action: 'cycle', wasOn: r.wasOn, verified: r.verified, heldMs: r.heldMs, settleMs: r.settleMs };
+    } catch (e) {
+      zagents.log('Airplane cycle failed: ' + ((e && e.message) ? e.message : e));
+      zagents.log('Not rooted (or "Device commands" off)? Use /airplane on | off — guided MANUAL mode.');
+      return { ok: false, action: 'cycle', reason: 'cycle-failed' };
+    }
+  }
 
   // -- Verified state (NO root needed) ------------------------------------
   // Prefer the native world-readable probe: it answers without root and
@@ -106,7 +143,7 @@ async function main() {
       zagents.log('While ON the AI chat is offline — these commands keep working.');
       zagents.log('Turn airplane OFF when done; auto-retry continues the task.');
     }
-    zagents.log('(commands: /airplane on | off | status)');
+    zagents.log('(commands: /airplane cycle | on | off | status)');
     return { ok: true, action: 'status', on: current, auto: rooted };
   }
 

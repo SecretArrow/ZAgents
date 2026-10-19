@@ -12,7 +12,7 @@ see [`../docs/modules/`](../docs/modules/) for the full reference and
 | [`file-notes/`](file-notes/) | `files` | Sandboxed filesystem under the per-chat `state/` directory: mkdir / appendFile / readFile / readdir / stat |
 | [`chat-streamer/`](chat-streamer/) | `chat` | Progressive output into the conversation with `zagents.chat.emit` |
 | [`onhomeroom-daily/`](onhomeroom-daily/) | `storage`, `network`, `agent` | Real-world daily bot for app.onhomeroom.com — challenge board, yes votes, chat replies, proposal pipeline. Every sentence is composed live by the chat agent via `zagents.agent.compose` (no templates). The app collects the account with a per-chat setup form before the first run (`zagents.info.setup`); text commands (`setup <email> <password>`, `status`, `reset`) still re-configure an already set-up chat |
-| [`airplane-mode/`](airplane-mode/) | `device` | Android airplane mode (v1.32.0): **AUTO** toggle via `zagents.device.shell` (`su -c`) on rooted phones, **MANUAL** guided mode on non-rooted ones — the state is always verified with the world-readable `zagents.device.airplane` probe (no root, works offline). Driven by the `/airplane on \| off \| status` slash commands — the manifest `commands` field routes the message to the module instead of the LLM, and the commands keep working while airplane mode is ON. Root toggles need the Settings → Modules "Device commands (root)" switch (off by default) |
+| [`airplane-mode/`](airplane-mode/) | `device` | Android airplane mode + carrier IP rotation: **CYCLE** — the one-command IP rotation `/airplane cycle` (aliases `ip`, `rotate`) via `zagents.device.airplaneCycle` (v1.34.0): airplane ON → hold → OFF → settle; the radio re-registers with a NEW IP and the cycle always ends OFF/online (rooted, needs the "Device commands (root)" switch). **AUTO** toggle via `zagents.device.shell` (`su -c`) on rooted phones, **MANUAL** guided mode on non-rooted ones — the state is always verified with the world-readable `zagents.device.airplane` probe (no root, works offline). Driven by the `/airplane cycle \| on \| off \| status` slash commands — the manifest `commands` field routes the message to the module instead of the LLM, and the commands keep working while airplane mode is ON |
 
 ## Ready-made ZIPs — download and install directly
 
@@ -77,5 +77,8 @@ On Windows: right-click the sample folder → *Send to → Compressed
   airplane state. Rooted phones toggle automatically; non-rooted phones
   get the guided MANUAL steps (flip the radio in Quick Settings, then
   re-run `/airplane status` — the probe verifies the real state, a bare
-  "yes" is never trusted). The commands keep working while airplane mode
-  is ON; when the radio comes back, auto-retry continues the chat.
+  "yes" is never trusted). `/airplane cycle` (v1.3, aliases `ip` /
+  `rotate`) rotates the carrier IP in ONE command: airplane ON → hold →
+  OFF → settle, verified, always ends OFF — online with a fresh IP. The
+  commands keep working while airplane mode is ON; when the radio comes
+  back, auto-retry continues the chat.

@@ -419,29 +419,42 @@ class ChatDrawer extends ConsumerWidget {
               ),
             ),
             const Divider(height: 1),
-            ListTile(
-              dense: true,
-              leading: const Icon(Icons.file_upload_outlined, size: 20),
-              title: Text(
-                strings.importSessions,
-                style: const TextStyle(fontSize: 13),
+            // Session import/export as icon-only actions (v1.34.0).
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  IconButton(
+                    key: const Key('drawer-import-sessions'),
+                    tooltip: strings.importSessionsIconTip,
+                    visualDensity: VisualDensity.compact,
+                    constraints: const BoxConstraints(
+                      minWidth: 48,
+                      minHeight: 48,
+                    ),
+                    icon: const Icon(Icons.file_upload_outlined, size: 20),
+                    onPressed: () async {
+                      Navigator.of(context).pop();
+                      await _importSessions(context, ref);
+                    },
+                  ),
+                  IconButton(
+                    key: const Key('drawer-export-sessions'),
+                    tooltip: strings.exportSessionsIconTip,
+                    visualDensity: VisualDensity.compact,
+                    constraints: const BoxConstraints(
+                      minWidth: 48,
+                      minHeight: 48,
+                    ),
+                    icon: const Icon(Icons.file_download_outlined, size: 20),
+                    onPressed: () async {
+                      Navigator.of(context).pop();
+                      await _exportSessions(context, ref);
+                    },
+                  ),
+                ],
               ),
-              onTap: () async {
-                Navigator.of(context).pop();
-                await _importSessions(context, ref);
-              },
-            ),
-            ListTile(
-              dense: true,
-              leading: const Icon(Icons.file_download_outlined, size: 20),
-              title: Text(
-                strings.exportSessions,
-                style: const TextStyle(fontSize: 13),
-              ),
-              onTap: () async {
-                Navigator.of(context).pop();
-                await _exportSessions(context, ref);
-              },
             ),
             ListTile(
               dense: true,

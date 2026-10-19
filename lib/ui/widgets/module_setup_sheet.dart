@@ -102,9 +102,12 @@ class _ModuleSetupSheetState extends ConsumerState<ModuleSetupSheet> {
     setState(() => _submitting = true);
     bool submitted = false;
     try {
+      // awaitRun:false (v1.34.0) — the future completes once the values
+      // are persisted; the module run + agent resume continue in the
+      // background so the sheet never freezes during the WebView boot.
       submitted = await ref
           .read(chatControllerProvider.notifier)
-          .submitModuleSetup(_request.moduleName, values);
+          .submitModuleSetup(_request.moduleName, values, awaitRun: false);
     } finally {
       if (mounted) setState(() => _submitting = false);
     }

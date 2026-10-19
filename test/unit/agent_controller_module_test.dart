@@ -719,6 +719,47 @@ void main() {
       expect(request.values['password'], 'hunter2');
     });
 
+    test('submitModuleSetup with awaitRun:false returns before the module '
+        'runs; the run then completes in the background', () async {
+      final ProviderContainer c = await container();
+      await installSetupModule('eagerbg');
+      js.nextResult = const JsRunResult(output: 'bg cycle');
+      final ChatController controller = c.read(chatControllerProvider.notifier);
+      await controller.activateModule('eagerbg');
+      await controller.send('go');
+      expect(
+        await controller.submitModuleSetup('eagerbg', <String, dynamic>{
+          'email': 'me@example.com',
+          'password': 'hunter2',
+        }, awaitRun: false),
+        isTrue,
+      );
+      // The heavy run was scheduled in the background: it completes on
+      // its own without anyone awaiting it (this is what keeps the
+      // setup sheet from freezing — v1.34.0). Poll until the whole
+      // background chain (module run + queued-message release) lands.
+      for (var i = 0; i < 200 && js.moduleInvocations.isEmpty; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      }
+      expect(js.moduleInvocations, hasLength(1));
+      ChatState state = c.read(chatControllerProvider);
+      for (
+        var i = 0;
+        i < 200 && (state.waitingForSetup || state.isRunning);
+        i++
+      ) {
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+        state = c.read(chatControllerProvider);
+      }
+      expect(state.waitingForSetup, isFalse);
+      expect(state.isRunning, isFalse);
+      final Map<String, dynamic> stored = await moduleRuntime.readStoredSetup(
+        state.sessionId!,
+        'eagerbg',
+      );
+      expect(stored['email'], 'me@example.com');
+    });
+
     test(
       'unsatisfied setup: module does NOT run, form request surfaces',
       () async {

@@ -117,7 +117,7 @@ class BackupService {
       });
     }
 
-    final String payload = jsonEncode(<String, dynamic>{
+    final Map<String, dynamic> payload = <String, dynamic>{
       'app': 'ZAgents',
       'format': 1,
       'createdAt': DateTime.now().toIso8601String(),
@@ -126,15 +126,17 @@ class BackupService {
         for (final ContextEntry e in context) e.toJson(),
       ],
       'sessions': sessions,
-    });
-
-    final Uint8List payloadBytes = utf8.encode(payload);
+    };
 
     // ANR hardening (v1.28.0): PBKDF2-HMAC-SHA256 with 150k iterations plus
     // the AES pass take seconds of pure CPU on a phone — running them on
     // the main isolate froze the whole app ("app isn't responding"). The
     // closure works on bytes/strings only, all isolate-sendable.
+    // v1.34.0: the whole-app jsonEncode + utf8 encode moved INSIDE the
+    // worker isolate too — a multi-megabyte payload used to encode on the
+    // UI isolate before the crypto even started.
     final Uint8List body = await _offload(() {
+      final Uint8List payloadBytes = utf8.encode(jsonEncode(payload));
       final Uint8List salt = saltOverride ?? _randomBytes(_saltBytes);
       final Uint8List keys = _deriveKeys(passphrase, salt);
       final Uint8List encKey = keys.sublist(0, 32);

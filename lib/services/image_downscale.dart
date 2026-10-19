@@ -1,4 +1,5 @@
 import 'dart:typed_data';
+import 'dart:isolate';
 import 'dart:ui' as ui;
 
 import 'package:image/image.dart' as img;
@@ -92,30 +93,35 @@ Future<DownscaledImage> downscaleForUpload(
       if (raw == null) {
         return DownscaledImage(bytes: data, mime: 'image/jpeg');
       }
-      final img.Image decoded = img.Image.fromBytes(
-        width: w,
-        height: h,
-        bytes: raw.buffer,
-        numChannels: 4,
+      // v1.34.0 ANR hardening: copyResize + encodeJpg on a 12MP RGBA
+      // buffer is 100ms–1s+ of pure-CPU work that used to run on the UI
+      // isolate at send-time AND on every history replay. The pure-Dart
+      // pipeline (construct from bytes → resize → encode) now runs in a
+      // short-lived worker isolate; only bytes cross the boundary (the
+      // dart:ui decode stays here — GPU types cannot cross isolates).
+      final Uint8List rawBytes = raw.buffer.asUint8List(
+        raw.offsetInBytes,
+        raw.lengthInBytes,
       );
-      if (!withinBox) {
-        final int targetW = tw;
-        final int targetH = th;
-        final img.Image resized = img.copyResize(
-          decoded,
-          width: targetW,
-          height: targetH,
-          interpolation: img.Interpolation.average,
+      final List<int> jpg = await Isolate.run(() {
+        final img.Image decoded = img.Image.fromBytes(
+          width: w,
+          height: h,
+          bytes: rawBytes.buffer,
+          numChannels: 4,
         );
-        return DownscaledImage(
-          bytes: img.encodeJpg(resized, quality: quality),
-          mime: 'image/jpeg',
-        );
-      }
-      return DownscaledImage(
-        bytes: img.encodeJpg(decoded, quality: quality),
-        mime: 'image/jpeg',
-      );
+        if (!withinBox) {
+          final img.Image resized = img.copyResize(
+            decoded,
+            width: tw,
+            height: th,
+            interpolation: img.Interpolation.average,
+          );
+          return img.encodeJpg(resized, quality: quality);
+        }
+        return img.encodeJpg(decoded, quality: quality);
+      });
+      return DownscaledImage(bytes: jpg, mime: 'image/jpeg');
     } finally {
       image.dispose();
     }

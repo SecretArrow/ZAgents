@@ -124,15 +124,21 @@ class ChatStore {
     final file = File('${dir.path}${Platform.pathSeparator}$id.json');
     if (!await file.exists()) return const <String>[];
     try {
-      final data =
-          jsonDecode(await file.readAsString()) as Map<String, dynamic>;
-      final raw = data['modules'];
-      if (raw is! List) return const <String>[];
-      return <String>[
-        for (final Object? name in raw)
-          if (name != null && name.toString().trim().isNotEmpty)
-            name.toString().trim(),
-      ];
+      // v1.34.0: full-transcript decode off the UI isolate (openChat used
+      // to decode the whole file on main a second/third time here).
+      final String raw = await file.readAsString();
+      final List<String>? modules = await _offload(() {
+        final Object? decoded = jsonDecode(raw);
+        if (decoded is! Map) return null;
+        final Object? rawModules = decoded['modules'];
+        if (rawModules is! List) return const <String>[];
+        return <String>[
+          for (final Object? name in rawModules)
+            if (name != null && name.toString().trim().isNotEmpty)
+              name.toString().trim(),
+        ];
+      });
+      return modules ?? const <String>[];
     } catch (_) {
       return const <String>[];
     }
@@ -146,9 +152,11 @@ class ChatStore {
     final file = File('${dir.path}${Platform.pathSeparator}$id.json');
     if (!await file.exists()) return false;
     try {
-      final data =
-          jsonDecode(await file.readAsString()) as Map<String, dynamic>;
-      return data['waitingForSetup'] == true;
+      final String raw = await file.readAsString();
+      return await _offload(() {
+        final Object? decoded = jsonDecode(raw);
+        return decoded is Map && decoded['waitingForSetup'] == true;
+      });
     } catch (_) {
       return false;
     }
@@ -160,11 +168,16 @@ class ChatStore {
     final file = File('${dir.path}${Platform.pathSeparator}$id.json');
     if (!await file.exists()) return;
     try {
-      final data = jsonDecode(await file.readAsString());
-      if (data is Map<String, dynamic>) {
-        data['modules'] = modules;
-        await file.writeAsString(jsonEncode(data));
-      }
+      // v1.34.0: decode + re-encode of the full transcript off the UI
+      // isolate — only the resulting JSON string crosses back.
+      final String raw = await file.readAsString();
+      final String? updated = await _offload(() {
+        final Object? decoded = jsonDecode(raw);
+        if (decoded is! Map<String, dynamic>) return null;
+        decoded['modules'] = modules;
+        return jsonEncode(decoded);
+      });
+      if (updated != null) await file.writeAsString(updated);
     } catch (_) {
       // Corrupted file: module bookkeeping must never crash the caller.
     }
@@ -182,11 +195,16 @@ class ChatStore {
     final file = File('${dir.path}${Platform.pathSeparator}$id.json');
     if (!await file.exists()) return;
     try {
-      final data = jsonDecode(await file.readAsString());
-      if (data is Map<String, dynamic>) {
-        data['title'] = title;
-        await file.writeAsString(jsonEncode(data));
-      }
+      // v1.34.0: decode + re-encode of the full transcript off the UI
+      // isolate.
+      final String raw = await file.readAsString();
+      final String? updated = await _offload(() {
+        final Object? decoded = jsonDecode(raw);
+        if (decoded is! Map<String, dynamic>) return null;
+        decoded['title'] = title;
+        return jsonEncode(decoded);
+      });
+      if (updated != null) await file.writeAsString(updated);
     } catch (_) {
       // Corrupted file: renaming must never crash the caller.
     }

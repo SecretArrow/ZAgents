@@ -52,6 +52,10 @@ class ChatBody extends ConsumerWidget {
                 .take(messageIndex)
                 .any((ChatMessage m) => m.role == Role.user);
         return MessageBubble(
+          // v1.34.0: stable identity per message — Flutter can reuse the
+          // element and skip rebuilding every historical bubble while a
+          // streaming delta only changes the LAST item.
+          key: ValueKey<String>(message.id),
           message: message,
           // Live plan for the thinking indicator's show/hide panel.
           todos: state.todos,

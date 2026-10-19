@@ -308,6 +308,44 @@ if (p.available && p.on) {
 }
 ```
 
+### `zagents.device.airplaneCycle(options?)` — permission `device` (v1.34.0)
+Rotate the carrier IP with ONE command — the whole airplane-mode cycle in
+a single verified call:
+
+```js
+const r = await zagents.device.airplaneCycle({ holdMs: 2500, settleMs: 8000 });
+// r.wasOn — verified airplane state before the cycle
+// r.finalOn — always false: the cycle ALWAYS ends airplane OFF (online)
+// r.heldMs, r.settleMs — the applied waits
+// r.verified — true when the final OFF state was read back from the device
+```
+
+Physics: the phone's data IP changes when the radio RE-REGISTERS — i.e.
+when airplane mode goes back OFF. The host therefore runs, in order:
+
+1. read the verified current state (`settings get`, world-readable probe
+   as fallback) — never cycle blind;
+2. ensure airplane ON — `settings put global airplane_mode_on 1` + the
+   legacy `AIRPLANE_MODE` broadcast (one joined command), verified by
+   reading back; one retry on a mismatch;
+3. HOLD ON (`holdMs`, default 2500 ms, clamped 500–15000) — the radio
+   deregisters;
+4. airplane OFF — put + broadcast, verified by reading back (one retry)
+   — the radio re-registers and the carrier assigns a NEW IP;
+5. settle (`settleMs`, default 8000 ms, clamped 0–30000).
+
+* The cycle ALWAYS ends with airplane OFF (online again). Any failing
+  verification escalates to a best-effort OFF restore — the phone is
+  never left silently in airplane mode.
+* Gated exactly like `device.shell`: the `device` permission, the
+  Settings → Modules **"Device commands (root)" master switch** and a
+  rooted phone (real shell commands). Without root the call rejects with
+  an actionable error — fall back to the guided manual mode.
+* A run cancelled mid-cycle still restores airplane OFF, then resolves
+  with `verified: false`.
+* See [`samples/airplane-mode/`](../../samples/airplane-mode/) —
+  `/airplane cycle` (aliases: `ip`, `rotate`).
+
 ## 4. Isolation model (private window per chat)
 
 * **Process** — every execution boots a fresh JS context; nothing
@@ -321,9 +359,10 @@ if (p.available && p.on) {
 * **Agent** — requires `agent`; generation goes through the chat's own
   LLM plus the host-side composer gate, so module output stays inside
   the regulated contract.
-* **Device** — requires `device`; `device.shell` additionally requires
-  the Settings master switch (off by default) and is meant for rooted
-  phones; `device.airplane` is a read-only world-readable probe (no
+* **Device** — requires `device`; `device.shell` and `device.airplaneCycle`
+  additionally require the Settings master switch (off by default) and are
+  meant for rooted phones (the cycle is the verified ON → hold → OFF IP
+  rotation); `device.airplane` is a read-only world-readable probe (no
   master switch, no root). Every call re-checked host-side.
 * **Resources** — timeout, output caps, storage caps.
 * **Termination** — deactivating a module or stopping the chat cancels a
@@ -341,7 +380,7 @@ The same example, ready to install, lives at [`samples/counter/`](../../samples/
 | [`samples/file-notes/`](../../samples/file-notes/) | `files` — sandboxed note taking under `state/` |
 | [`samples/chat-streamer/`](../../samples/chat-streamer/) | `chat` — progressive `chat.emit` output |
 | [`samples/onhomeroom-daily/`](../../samples/onhomeroom-daily/) | `agent` — real-world daily bot whose every sentence is composed by the chat agent; per-chat setup form for its account |
-| [`samples/airplane-mode/`](../../samples/airplane-mode/) | `device` — rooted airplane-mode toggle driven by the `/airplane on \| off \| status` slash command (v1.31.0) |
+| [`samples/airplane-mode/`](../../samples/airplane-mode/) | `device` — rooted airplane-mode toggle + one-command carrier-IP rotation driven by the `/airplane cycle \| on \| off \| status` slash commands (v1.31.0, cycle v1.34.0) |
 
 `module.json`
 

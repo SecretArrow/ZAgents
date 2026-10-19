@@ -348,6 +348,30 @@ OpenAI-compatible: **OpenRouter, InferHub, Z.AI, OpenAI, DeepSeek, Groq, dan lai
   wajib — isolasi per-chat tidak berubah).
   4. `SessionSandbox.sessionsRoot()` + `ModuleRuntime.latestStoredSetup`
   (pemindai mtime terbaru, tahan file korup) + uji unit wire/module_list.
+- **v1.34.0 — pass performa anti-lag/ANR + siklus mode pesawat rotasi IP + ikon impor/ekspor**:
+  1. **Form setup tidak lagi macet**: sheet setup tertutup seketika setelah
+  dikirim — eksekusi modul + resume agen jalan di latar belakang
+  (`submitModuleSetup(awaitRun: false)`); rebuild per-delta streaming dan
+  output modul (console/emit) di-coalesce 48ms.
+  2. **Kerja CPU berat keluar dari UI thread** (audit penuh fan of
+  subagents): zip (deflate) + unzip (inflate/AES) di `Isolate.run`,
+  downscale/encode JPEG lampiran di isolate, encode JSON backup utuh di
+  dalam worker isolate (mengikuti kripto yang sudah off-isolate), decode/
+  encode transkrip penuh di `ChatStore` (openChat/rename/saveModules/
+  loadWaitingForSetup) lewat seam `offloadIsolate`, ekspor/impor sesi
+  (pretty-print + decode) off-isolate, IO storage modul & scan prefill
+  kini async.
+  3. **`zagents.device.airplaneCycle({holdMs?, settleMs?})`** (root):
+  siklus terverifikasi ON→hold→OFF untuk **rotasi IP carrier** — selalu
+  berakhir OFF (online, IP baru); verifikasi read-back + retry sekali +
+  pemulihan OFF; bisa dibatalkan dengan aman; clamp holdMs 500–15000
+  (default 2500), settleMs 0–30000 (default 8000). Perintah modul
+  `/airplane cycle|ip|rotate` di sampel Airplane Mode v1.3 (manual guided
+  tanpa root); SDK + typings + docs EN/ID diperbarui.
+  4. **Ikon impor/ekspor sesi** di drawer: dua `IconButton` ringkas
+  (tooltip EN/ID, target sentuh 48×48) menggantikan dua ListTile teks.
+  5. `ValueKey` per pesan pada list chat + 12 test baru (siklus airplane,
+  awaitRun, module_list status, prefill); **657/657 test hijau**.
 - **v1.32.0 — mode pesawat tanpa root: mode manual terverifikasi + auto-retry sadar mode pesawat**:
   1. **Baca status TANPA root** (`zagents.device.airplane`): state mode
   pesawat kini terbaca dari setelan sistem yang world-readable — tanpa

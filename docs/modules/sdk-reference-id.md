@@ -305,6 +305,44 @@ if (p.available && p.on) {
 }
 ```
 
+### `zagents.device.airplaneCycle(options?)` — izin `device` (v1.34.0)
+Rotasi IP carrier dengan SATU perintah — seluruh siklus mode pesawat
+dalam satu panggilan terverifikasi:
+
+```js
+const r = await zagents.device.airplaneCycle({ holdMs: 2500, settleMs: 8000 });
+// r.wasOn — state mode pesawat terverifikasi sebelum siklus
+// r.finalOn — selalu false: siklus SELALU berakhir OFF (online lagi)
+// r.heldMs, r.settleMs — durasi tunggu yang diterapkan
+// r.verified — true bila state OFF akhir dibaca ulang dari perangkat
+```
+
+Fisikanya: IP data ponsel berubah saat radio MENDAFTAR ULANG — yaitu
+saat mode pesawat kembali OFF. Karena itu host menjalankan, berurutan:
+
+1. baca state saat ini secara terverifikasi (`settings get`, fallback
+   probe world-readable) — jangan pernah siklus secara buta;
+2. pastikan mode pesawat ON — `settings put global airplane_mode_on 1` +
+   broadcast legacy `AIRPLANE_MODE` (satu perintah gabungan), diverifikasi
+   dengan membaca ulang; satu kali retry bila tak cocok;
+3. TAHAN ON (`holdMs`, bawaan 2500 ms, dijepit 500–15000) — radio
+   melepas registrasi;
+4. mode pesawat OFF — put + broadcast, diverifikasi dengan membaca ulang
+   (satu retry) — radio mendaftar ulang dan carrier memberi IP BARU;
+5. settle (`settleMs`, bawaan 8000 ms, dijepit 0–30000).
+
+* Siklus SELALU berakhir dengan mode pesawat OFF (online kembali).
+  Verifikasi yang tetap gagal memicu pemulihan best-effort ke OFF —
+  ponsel tak pernah dibiarkan diam-diam dalam mode pesawat.
+* Gerbangnya persis seperti `device.shell`: izin `device`, sakelar utama
+  **"Perintah perangkat (root)" di Setelan → Modul** dan ponsel root
+  (perintah shell sungguhan). Tanpa root panggilan gagal dengan pesan
+  actionable — pakai mode manual terpandu.
+* Run yang dibatalkan di tengah siklus tetap memulihkan mode pesawat ke
+  OFF, lalu selesai dengan `verified: false`.
+* Lihat [`samples/airplane-mode/`](../../samples/airplane-mode/) —
+  `/airplane cycle` (alias: `ip`, `rotate`).
+
 ## 4. Model isolasi (jendela privat per chat)
 
 * **Proses** — setiap eksekusi memulai konteks JS baru; tidak ada yang
@@ -318,10 +356,11 @@ if (p.available && p.on) {
 * **Agen** — butuh `agent`; generasi lewat LLM chat sendiri plus gerbang
   composer di sisi host, sehingga output modul selalu di dalam kontrak
   yang diatur.
-* **Perangkat** — butuh `device`; `device.shell` tambahan butuh sakelar
-  utama Setelan (mati bawaan) dan memang untuk ponsel root;
-  `device.airplane` adalah probe baca-saja world-readable (tanpa sakelar
-  utama, tanpa root). Setiap panggilan dicek ulang di host.
+* **Perangkat** — butuh `device`; `device.shell` dan `device.airplaneCycle`
+  tambahan butuh sakelar utama Setelan (mati bawaan) dan memang untuk
+  ponsel root (siklusnya adalah rotasi IP ON → tahan → OFF yang
+  terverifikasi); `device.airplane` adalah probe baca-saja world-readable
+  (tanpa sakelar utama, tanpa root). Setiap panggilan dicek ulang di host.
 * **Sumber daya** — timeout, batas output, batas storage.
 * **Penghentian** — menonaktifkan modul atau menghentikan chat membatalkan
   run yang berjalan dengan aman: pengiriman berhenti, state tersimpan.
@@ -338,7 +377,7 @@ Contoh yang sama, siap dipasang, ada di [`samples/counter/`](../../samples/count
 | [`samples/file-notes/`](../../samples/file-notes/) | `files` — catatan tersandbox di `state/` |
 | [`samples/chat-streamer/`](../../samples/chat-streamer/) | `chat` — output bertahap `chat.emit` |
 | [`samples/onhomeroom-daily/`](../../samples/onhomeroom-daily/) | `agent` — bot harian dunia nyata yang setiap kalimatnya disusun agen chat; formulir setup per chat untuk akunnya |
-| [`samples/airplane-mode/`](../../samples/airplane-mode/) | `device` — pengalih mode pesawat: AUTO (root) + mode MANUAL terverifikasi tanpa root, perintah slash `/airplane on \| off \| status` (v1.32.0) |
+| [`samples/airplane-mode/`](../../samples/airplane-mode/) | `device` — pengalih mode pesawat + rotasi IP carrier satu perintah: AUTO (root) + mode MANUAL terverifikasi tanpa root, perintah slash `/airplane cycle \| on \| off \| status` (v1.32.0, siklus v1.34.0) |
 
 `module.json`
 
