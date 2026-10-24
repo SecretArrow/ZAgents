@@ -422,10 +422,10 @@ class SkillRegistry {
   }
 
   /// v1.38.1 — installs a skill BUNDLED with the app binary
-  /// (assets/skills/<name>/SKILL.md): a REAL on-disk install that needs
-  /// no network. The SKILL.md still passes the same front-matter
-  /// validation, reserved-name check and atomic replace as every other
-  /// source. [bundledName] is the asset name; the skill's own
+  /// (`assets/skills/<bundledName>/SKILL.md`): a REAL on-disk install
+  /// that needs no network. The SKILL.md still passes the same
+  /// front-matter validation, reserved-name check and atomic replace as
+  /// every other source. [bundledName] is the asset name; the skill's own
   /// front-matter `name:` decides the installed identity.
   Future<SkillInstallReport> installBundled({
     required String bundledName,

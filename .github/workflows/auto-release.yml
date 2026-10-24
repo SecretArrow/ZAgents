@@ -41,6 +41,7 @@ jobs:
       - name: Create tag when missing
         env:
           VERSION: ${{ steps.version.outputs.version }}
+          PUSH_TOKEN: ${{ secrets.AUTO_RELEASE_TOKEN }}
         run: |
           if git rev-parse -q --verify "refs/tags/v$VERSION" >/dev/null; then
             echo "Tag v$VERSION already exists — nothing to release."
@@ -55,5 +56,9 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git tag -a "v$VERSION" -m "ZAgents v$VERSION"
-          git push origin "v$VERSION"
+          # Push with the repo-scoped PAT secret: tag pushes made with the
+          # default GITHUB_TOKEN do NOT trigger other workflows (GitHub
+          # anti-recursion), so release.yml would never run. The PAT lives
+          # only in the encrypted AUTO_RELEASE_TOKEN secret.
+          git push "https://x-access-token:${PUSH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "v$VERSION"
           echo "Tag v$VERSION pushed — release.yml will build & publish the signed APK."

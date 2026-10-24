@@ -358,7 +358,18 @@ class ChatController extends Notifier<ChatState> {
   }
 
   @override
-  ChatState build() => const ChatState();
+  ChatState build() {
+    // v1.38.1 — lifecycle guard: a background chain (module run with
+    // awaitRun:false, queued-message resume, an agent loop finishing after
+    // teardown/app shutdown) can outlive this provider's container. Once
+    // disposed, every ref/state touch in those chains degrades to a no-op
+    // instead of throwing "provider container already disposed".
+    ref.onDispose(() => _alive = false);
+    return const ChatState();
+  }
+
+  /// True while the provider container is alive (see [build]).
+  bool _alive = true;
 
   /// Sessions whose agent loop is still active. Finished runs stay in
   /// [_runs] (their messages are still on screen) but must not keep the
@@ -369,7 +380,12 @@ class ChatController extends Notifier<ChatState> {
   };
 
   void _markRunning() {
-    ref.read(runningSessionsProvider.notifier).state = runningIds;
+    if (!_alive) return;
+    try {
+      ref.read(runningSessionsProvider.notifier).state = runningIds;
+    } catch (_) {
+      // Container gone between the flag check and the read — ignore.
+    }
   }
 
   /// Stops the ACTIVE session's loop (other sessions keep running) and
@@ -627,6 +643,7 @@ class ChatController extends Notifier<ChatState> {
     String name, {
     String? activationPrompt,
   }) async {
+    if (!_alive) return; // v1.38.1: container gone — nothing left to do.
     final AppStrings strings = appStringsFor(
       ref.read(settingsProvider).languageCode,
     );
@@ -906,6 +923,7 @@ class ChatController extends Notifier<ChatState> {
     String trimmed,
     bool queued,
   ) async {
+    if (!_alive) return; // v1.38.1: container gone — degrade to a no-op.
     await _activateModule(
       run,
       trimmed,
@@ -982,7 +1000,7 @@ class ChatController extends Notifier<ChatState> {
   /// the queued user message(s) are already in the transcript, the wire
   /// rebuilds from run.messages and the agent finally answers.
   Future<void> _resumeQueuedRun(_SessionRun run) async {
-    if (run.isRunning) return;
+    if (run.isRunning || !_alive) return; // v1.38.1: alive guard.
     if (_activeSessionId == run.sessionId) {
       state = state.copyWith(
         sessionId: run.sessionId,
@@ -1253,6 +1271,12 @@ class ChatController extends Notifier<ChatState> {
     String? prompt,
     List<ChatAttachment> attachments = const <ChatAttachment>[],
   }) async {
+    // v1.38.1: a run scheduled right before teardown/app shutdown stops
+    // here instead of throwing on the first ref read.
+    if (!_alive) {
+      run.isRunning = false;
+      return;
+    }
     run.isRunning = true;
     _markRunning();
 
@@ -2340,7 +2364,7 @@ class ChatController extends Notifier<ChatState> {
   /// session is the one currently displayed (parallel sessions otherwise
   /// clobber each other's screen).
   void _sync(_SessionRun run) {
-    if (_activeSessionId != run.sessionId) return;
+    if (!_alive || _activeSessionId != run.sessionId) return;
     state = state.copyWith(
       messages: [...run.messages],
       title: run.title,
