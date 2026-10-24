@@ -421,6 +421,82 @@ class SkillRegistry {
     );
   }
 
+  /// v1.38.1 — installs a skill BUNDLED with the app binary
+  /// (assets/skills/<name>/SKILL.md): a REAL on-disk install that needs
+  /// no network. The SKILL.md still passes the same front-matter
+  /// validation, reserved-name check and atomic replace as every other
+  /// source. [bundledName] is the asset name; the skill's own
+  /// front-matter `name:` decides the installed identity.
+  Future<SkillInstallReport> installBundled({
+    required String bundledName,
+    required String skillMd,
+  }) async {
+    final Directory staging = await _makeStagingDir();
+    try {
+      final File file = File(
+        '${staging.path}${Platform.pathSeparator}SKILL.md',
+      );
+      await file.writeAsString(skillMd, flush: true);
+      final _SkillManifest manifest = _parseSkillManifest(skillMd);
+      if (manifest.name.isEmpty) {
+        throw const SkillRegistryException(
+          'Bundled SKILL.md front-matter has no "name:" field.',
+        );
+      }
+      final String name = sanitizeSkillName(manifest.name);
+      if (reservedNames.contains(name)) {
+        throw SkillRegistryException('"$name" is a reserved app name.');
+      }
+      final Directory root = await skillsDir();
+      final Directory finalDir = Directory(
+        '${root.path}${Platform.pathSeparator}$name',
+      );
+      final Directory backup = Directory(
+        '${root.path}${Platform.pathSeparator}.$name.bak',
+      );
+      if (backup.existsSync()) backup.deleteSync(recursive: true);
+      if (finalDir.existsSync()) finalDir.renameSync(backup.path);
+      try {
+        final InstalledSkill skill = InstalledSkill(
+          name: name,
+          version: manifest.version,
+          title: manifest.title,
+          description: manifest.description,
+          source: 'builtin:$bundledName',
+          permissions: manifest.permissions,
+          configFields: manifest.configFields,
+          dirPath: finalDir.path,
+          installedAt: DateTime.now(),
+        );
+        await _upsertRegistryEntry(skill);
+        staging.renameSync(finalDir.path);
+        if (backup.existsSync()) backup.deleteSync(recursive: true);
+        await ensureCacheLoaded();
+        return SkillInstallReport(
+          skill: skill,
+          notes: <String>[
+            'This skill ships with ZAgents — no download happened. '
+                'Read the full instructions with skill_info("$name") '
+                'before first use and follow them exactly.',
+          ],
+        );
+      } catch (_) {
+        if (backup.existsSync() && !finalDir.existsSync()) {
+          backup.renameSync(finalDir.path);
+        }
+        rethrow;
+      }
+    } finally {
+      if (staging.existsSync()) {
+        try {
+          staging.deleteSync(recursive: true);
+        } catch (_) {
+          // Best effort.
+        }
+      }
+    }
+  }
+
   Future<void> remove(String name) async {
     final InstalledSkill? skill = await get(name);
     if (skill == null) {

@@ -57,6 +57,7 @@ class ToolExecutor {
     this.subagents,
     this.skills,
     this.deviceStatus,
+    this.bundledSkills,
   });
 
   final BrowserAutomation browser;
@@ -111,6 +112,12 @@ class ToolExecutor {
   /// so its outcome is cached for the process lifetime — root status
   /// never changes while the app runs.
   final DeviceShellService? Function()? deviceStatus;
+
+  /// v1.38.1 — bundled-skill loader behind `skill_install builtin:<name>`:
+  /// returns the SKILL.md contents carried in the app binary (di wires
+  /// rootBundle; tests inject a plain map). Nullable for legacy tests —
+  /// the builtin path then reports "loader unavailable".
+  final Future<Map<String, String>> Function()? bundledSkills;
 
   /// Cached root-availability outcome (null = not probed yet).
   bool? _rootAvailable;
@@ -763,6 +770,7 @@ class ToolExecutor {
 
   String? _classifySkillSource(String source) {
     final String t = source.trim();
+    if (t.toLowerCase().startsWith('builtin:')) return 'builtin';
     if (t.startsWith('http://') || t.startsWith('https://')) return 'url';
     final String lower = t.toLowerCase();
     if (lower.endsWith('.zip') ||
@@ -771,6 +779,14 @@ class ToolExecutor {
       return 'file';
     }
     return 'github';
+  }
+
+  /// v1.38.1 — case-insensitive lookup of a bundled skill by asset name.
+  String? _lookupBundledSkill(Map<String, String> bundled, String name) {
+    for (final MapEntry<String, String> e in bundled.entries) {
+      if (e.key.toLowerCase() == name.toLowerCase()) return e.value;
+    }
+    return null;
   }
 
   Future<ToolResult> _skillInstall(
@@ -794,6 +810,28 @@ class ToolExecutor {
     final SkillInstallReport report;
     try {
       switch (_classifySkillSource(source)) {
+        case 'builtin':
+          // v1.38.1 — app-bundled skill (assets/skills/*): a REAL install
+          // from the binary, no network. The loader is injected (di.dart
+          // wires rootBundle; tests inject a plain map).
+          final Map<String, String>? bundled = await bundledSkills?.call();
+          final String bundledName = source.trim().substring(8).trim();
+          final String? skillMd = bundled == null
+              ? null
+              : _lookupBundledSkill(bundled, bundledName);
+          if (skillMd == null) {
+            return ToolResult(
+              ok: false,
+              llmOutput:
+                  'No bundled skill named "$bundledName". Bundled skills: '
+                  '${bundled == null ? '(loader unavailable)' : bundled.keys.join(', ')}.',
+              displayText: 'install failed',
+            );
+          }
+          report = await registry.installBundled(
+            bundledName: bundledName,
+            skillMd: skillMd,
+          );
         case 'url':
           report = await registry.install(source);
         case 'file':

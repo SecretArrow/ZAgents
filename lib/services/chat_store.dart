@@ -4,6 +4,25 @@ import 'dart:isolate';
 
 import '../models/models.dart';
 
+/// One-shot snapshot of everything stored for a session (v1.38.1):
+/// decoding the transcript JSON ONCE yields the messages, the active
+/// module list, the setup-wait flag and the latest plan together —
+/// openChat/_materializeSession used to decode the same file up to four
+/// times (load + loadModules + loadWaitingForSetup + loadTodos).
+class SessionBundle {
+  const SessionBundle({
+    required this.messages,
+    this.modules = const <String>[],
+    this.waitingForSetup = false,
+    this.todos = const <TodoItem>[],
+  });
+
+  final List<ChatMessage> messages;
+  final List<String> modules;
+  final bool waitingForSetup;
+  final List<TodoItem> todos;
+}
+
 /// Persists chat sessions as JSON files under `<documents>/chats/`.
 ///
 /// ANR hardening (v1.28.0): every JSON decode/encode of chat payloads runs
@@ -117,6 +136,42 @@ class ChatStore {
         for (final raw in rawMessages)
           if (raw is Map<String, dynamic>) ChatMessage.fromJson(raw),
       ];
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// v1.38.1 — loads the WHOLE stored session state in ONE file read and
+  /// ONE decode: messages + active modules + setup-wait flag + latest
+  /// plan. Null when the session has no stored file. The narrow getters
+  /// above remain for compatibility.
+  Future<SessionBundle?> loadBundle(String id) async {
+    final dir = await _chatsDir();
+    final file = File('${dir.path}${Platform.pathSeparator}$id.json');
+    if (!await file.exists()) return null;
+    try {
+      final String raw = await file.readAsString();
+      final Map<String, dynamic>? data = await _offload(() {
+        final Object? decoded = jsonDecode(raw);
+        return decoded is Map<String, dynamic> ? decoded : null;
+      });
+      if (data == null) return null;
+      final rawMessages = data['messages'];
+      return SessionBundle(
+        messages: <ChatMessage>[
+          if (rawMessages is List)
+            for (final raw in rawMessages)
+              if (raw is Map<String, dynamic>) ChatMessage.fromJson(raw),
+        ],
+        modules: <String>[
+          if (data['modules'] is List)
+            for (final Object? name in (data['modules'] as List<dynamic>))
+              if (name != null && name.toString().trim().isNotEmpty)
+                name.toString().trim(),
+        ],
+        waitingForSetup: data['waitingForSetup'] == true,
+        todos: parseTodoList(data['todos']),
+      );
     } catch (_) {
       return null;
     }

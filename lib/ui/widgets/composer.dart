@@ -27,6 +27,39 @@ class _ComposerState extends ConsumerState<Composer> {
   final FocusNode _focusNode = FocusNode();
   bool _picking = false;
 
+  /// v1.38.1 — the chat this text field is currently bound to (null =
+  /// fresh draft). Typed text is stored per chat in the controller, so
+  /// switching chats swaps the draft and one chat's text never appears
+  /// in another.
+  String? _boundSession;
+
+  @override
+  void initState() {
+    super.initState();
+    _boundSession = ref.read(chatControllerProvider).sessionId;
+    _controller.text = ref
+        .read(chatControllerProvider.notifier)
+        .draftTextFor(_boundSession);
+    _controller.addListener(() {
+      ref
+          .read(chatControllerProvider.notifier)
+          .setDraftText(_boundSession, _controller.text);
+    });
+  }
+
+  /// Re-binds the field to another chat: the old text is already saved by
+  /// the listener; load the target chat's own draft (never another's).
+  void _rebind(String? session) {
+    if (_boundSession == session) return;
+    _boundSession = session;
+    final String draft = ref
+        .read(chatControllerProvider.notifier)
+        .draftTextFor(session);
+    if (_controller.text == draft) return;
+    _controller.text = draft;
+    _controller.selection = TextSelection.collapsed(offset: draft.length);
+  }
+
   @override
   void dispose() {
     _controller.dispose();
@@ -505,6 +538,11 @@ class _ComposerState extends ConsumerState<Composer> {
     final AppStrings strings = stringsOf(context);
     final bool isRunning = ref.watch(
       chatControllerProvider.select((s) => s.isRunning),
+    );
+    // v1.38.1: swap the draft text when the displayed chat changes.
+    ref.listen<String?>(
+      chatControllerProvider.select((s) => s.sessionId),
+      (String? previous, String? current) => _rebind(current),
     );
     final List<ChatAttachment> pending = ref.watch(pendingAttachmentsProvider);
     return Padding(

@@ -12,6 +12,7 @@ import '../l10n/app_strings.dart';
 import '../models/models.dart';
 import '../tools/tool_defs.dart';
 import 'background_service.dart';
+import 'chat_store.dart' show SessionBundle;
 import 'device_shell.dart';
 import 'image_downscale.dart';
 import 'llm_client.dart';
@@ -314,6 +315,47 @@ class ChatController extends Notifier<ChatState> {
   /// The session currently rendered by the UI (null = fresh draft).
   String? _activeSessionId;
 
+  /// v1.38.1 — staged composer attachments per chat (key: session id,
+  /// null = fresh draft). [pendingAttachmentsProvider] stays the VIEW of
+  /// the displayed chat; this map is the STORE — switching away and back
+  /// now PRESERVES each chat's own staged files (v1.38.0 cleared them,
+  /// which fixed the leak but lost the user's picks). Files still never
+  /// travel between chats.
+  final Map<String?, List<ChatAttachment>> _stagedAttachments =
+      <String?, List<ChatAttachment>>{};
+
+  /// v1.38.1 — composer draft text per chat (key: session id, null =
+  /// fresh draft). Typed text travels with its own chat; one chat's
+  /// draft never appears in another.
+  final Map<String?, String> _draftTexts = <String?, String>{};
+
+  /// Stashes the currently displayed staged-attachment list into the
+  /// store (call BEFORE changing [_activeSessionId]).
+  void _stashStagedAttachments() {
+    _stagedAttachments[_activeSessionId] = List<ChatAttachment>.unmodifiable(
+      ref.read(pendingAttachmentsProvider),
+    );
+  }
+
+  /// Swaps the provider view to [sessionId]'s own staged list.
+  void _restoreStagedAttachments(String? sessionId) {
+    ref.read(pendingAttachmentsProvider.notifier).state =
+        List<ChatAttachment>.unmodifiable(
+      _stagedAttachments[sessionId] ?? const <ChatAttachment>[],
+    );
+  }
+
+  /// v1.38.1 — composer draft text of the DISPLAYED chat.
+  String draftTextFor(String? sessionId) => _draftTexts[sessionId] ?? '';
+
+  void setDraftText(String? sessionId, String text) {
+    if (text.isEmpty) {
+      _draftTexts.remove(sessionId);
+    } else {
+      _draftTexts[sessionId] = text;
+    }
+  }
+
   @override
   ChatState build() => const ChatState();
 
@@ -454,6 +496,10 @@ class ChatController extends Notifier<ChatState> {
       }
     }
 
+    // v1.38.1: the staged files went out with THIS message — the store
+    // must not keep them (the provider view was already cleared by the
+    // composer; the store would otherwise resurrect them on chat switch).
+    _stagedAttachments.remove(run.sessionId);
     await _executeRun(run, settings, prompt: trimmed, attachments: attachments);
   }
 
@@ -1361,40 +1407,33 @@ class ChatController extends Notifier<ChatState> {
       running: false,
     );
     try {
-      // Modules are a per-chat scope: restore THIS chat's active list.
-      run.activeModules.addAll(
-        await ref.read(chatStoreProvider).loadModules(sessionId),
-      );
-    } catch (_) {
-      // Module bookkeeping failure must never block a chat.
-    }
-    try {
-      final List<ChatMessage>? history = await ref
+      // v1.38.1: ONE read/decode for the whole stored state (messages,
+      // modules, wait flag, plan) instead of four.
+      final SessionBundle? bundle = await ref
           .read(chatStoreProvider)
-          .load(sessionId);
-      if (history != null && history.isNotEmpty) {
-        run.messages.addAll(history);
-        // Re-read attachment payloads so replayed attachments reach the
-        // model again (images need their data URLs, text files their
-        // bodies). Missing files are skipped by [_prepareAttachments].
-        final List<ChatAttachment> atts = <ChatAttachment>[
-          for (final ChatMessage m in history) ...m.attachments,
-        ];
-        await _prepareAttachments(run, atts);
+          .loadBundle(sessionId);
+      if (bundle != null) {
+        run.activeModules.addAll(bundle.modules);
+        if (bundle.messages.isNotEmpty) {
+          run.messages.addAll(bundle.messages);
+          // Re-read attachment payloads so replayed attachments reach the
+          // model again (images need their data URLs, text files their
+          // bodies). Missing files are skipped by [_prepareAttachments].
+          final List<ChatAttachment> atts = <ChatAttachment>[
+            for (final ChatMessage m in bundle.messages) ...m.attachments,
+          ];
+          await _prepareAttachments(run, atts);
+        }
+        // v1.35.0 crash recovery: the persisted plan feeds run.latestTodos
+        // so continuing a crash-interrupted session keeps the plan panel
+        // alive — and the plan-first nudge / resume logic can pick the
+        // task back up. edit/regenerate still clear it explicitly (a
+        // rewritten transcript invalidates the old plan).
+        run.latestTodos = bundle.todos;
       }
     } catch (_) {
       // Storage failure: continue with whatever is on screen (possibly
       // empty) rather than blocking the user's request.
-    }
-    // v1.35.0 crash recovery: the persisted plan feeds run.latestTodos so
-    // continuing a crash-interrupted session keeps the plan panel alive —
-    // and the plan-first nudge / resume logic can pick the task back up.
-    // edit/regenerate still clear it explicitly (a rewritten transcript
-    // invalidates the old plan).
-    try {
-      run.latestTodos = await ref.read(chatStoreProvider).loadTodos(sessionId);
-    } catch (_) {
-      // Plan restore is best-effort.
     }
     return run;
   }
@@ -2552,17 +2591,16 @@ class ChatController extends Notifier<ChatState> {
   }
 
   /// Starts a fresh draft. Any in-flight session keeps running in the
-  /// background and can be reopened from history.
+  /// background and can be reopened from history. v1.38.1: the draft slot
+  /// gets back its own staged files — staged files belong to the chat the
+  /// user staged them in, not to whichever chat happens to be open.
   Future<void> newChat() async {
     if (_activeSessionId != null) {
       _cancelConfirmationsForSession(_activeSessionId!);
     }
+    _stashStagedAttachments();
     _activeSessionId = null;
-    // v1.38.0: composer draft attachments are per-chat context — staged
-    // files belong to the chat the user staged them in, not to whichever
-    // chat happens to be open at send time.
-    ref.read(pendingAttachmentsProvider.notifier).state =
-        const <ChatAttachment>[];
+    _restoreStagedAttachments(null);
     state = const ChatState();
   }
 
@@ -2594,11 +2632,12 @@ class ChatController extends Notifier<ChatState> {
     if (_activeSessionId != null && _activeSessionId != summary.id) {
       _cancelConfirmationsForSession(_activeSessionId!);
     }
+    // v1.38.1: stash the displayed chat's staged list before switching...
+    _stashStagedAttachments();
     _activeSessionId = summary.id;
-    // v1.38.0: composer draft attachments are per-chat context (see
-    // newChat) — switching chats must not carry A's staged files into B.
-    ref.read(pendingAttachmentsProvider.notifier).state =
-        const <ChatAttachment>[];
+    // ...and restore THIS chat's own staged list (preserve, not clear —
+    // files still never travel between chats).
+    _restoreStagedAttachments(summary.id);
     final _SessionRun? run = _runs[summary.id];
     if (run != null) {
       // Live session (still running or just finished): adopt its state.
@@ -2619,49 +2658,36 @@ class ChatController extends Notifier<ChatState> {
       return;
     }
     try {
-      final messages = await ref.read(chatStoreProvider).load(summary.id);
+      // v1.38.1: ONE file read/decode for messages + modules + wait flag
+      // + plan (was four separate decodes of the same megabyte-scale file).
+      final SessionBundle? bundle = await ref
+          .read(chatStoreProvider)
+          .loadBundle(summary.id);
       // The user may have switched again while loading — only commit when
       // this session is still the active one.
       if (_activeSessionId != summary.id) return;
-      List<String> modules = const <String>[];
-      try {
-        modules = await ref.read(chatStoreProvider).loadModules(summary.id);
-      } catch (_) {
-        // Module bookkeeping failure must never block opening a chat.
-      }
-      if (_activeSessionId != summary.id) return;
+      final List<ChatMessage> messages =
+          bundle?.messages ?? const <ChatMessage>[];
+      final List<String> modules = bundle?.modules ?? const <String>[];
       // A module left unconfigured in this chat resurfaces its per-chat
       // setup form right on reopen — before any failed re-run can happen.
       final ModuleSetupRequest? setupRequest = await _findSetupRequest(
         summary.id,
         modules,
       );
+      if (_activeSessionId != summary.id) return;
       // v1.29.0: the persisted wait flag tells whether a QUEUED user
       // message is blocked behind that form (the agent must not run).
-      bool waitingForSetup = false;
-      try {
-        waitingForSetup = await ref
-            .read(chatStoreProvider)
-            .loadWaitingForSetup(summary.id);
-      } catch (_) {
-        // Storage hiccup: the banner still resurfaces via setupRequest.
-      }
-      if (_activeSessionId != summary.id) return;
-      // v1.35.0 crash recovery: the latest plan comes back from disk so
-      // reopening a chat after a crash still shows what the agent was
-      // doing (and continuing the task picks the plan back up).
-      List<TodoItem> todos = const <TodoItem>[];
-      try {
-        todos = await ref.read(chatStoreProvider).loadTodos(summary.id);
-      } catch (_) {
-        // Plan restore is best-effort — never blocks opening a chat.
-      }
+      final bool waitingForSetup = bundle?.waitingForSetup ?? false;
       if (_activeSessionId != summary.id) return;
       state = ChatState(
         sessionId: summary.id,
         title: summary.title,
-        messages: messages ?? const <ChatMessage>[],
-        todos: todos,
+        messages: messages,
+        // v1.35.0 crash recovery: the latest plan comes back from disk so
+        // reopening a chat after a crash still shows what the agent was
+        // doing (and continuing the task picks the plan back up).
+        todos: bundle?.todos ?? const <TodoItem>[],
         activeModules: modules,
         setupRequest: setupRequest,
         waitingForSetup: waitingForSetup,
@@ -2703,6 +2729,9 @@ class ChatController extends Notifier<ChatState> {
 
   Future<void> deleteChat(String id) async {
     _cancelConfirmationsForSession(id);
+    // v1.38.1: the deleted chat's staged files and draft text die with it.
+    _stagedAttachments.remove(id);
+    _draftTexts.remove(id);
     // If this session is running, stop it and drop its results; a live
     // module execution for the session is terminated safely too.
     _runs[id]?.stopRequested = true;

@@ -425,9 +425,34 @@ final toolExecutorProvider = Provider<ToolExecutor>((ref) {
     // root availability, so the agent can confirm what the user claims
     // instead of trusting a blind "yes".
     deviceStatus: () => ref.read(deviceShellServiceProvider),
+    // v1.38.1 — SKILL.md files bundled with the app binary behind
+    // `skill_install builtin:<name>` (no network needed).
+    bundledSkills: bundledSkills,
   );
   return executor;
 });
+
+/// SKILL.md contents bundled with the app binary (assets/skills/*),
+/// loaded lazily and cached. A missing asset simply does not appear.
+final Map<String, String> bundledSkillCache = <String, String>{};
+
+Future<Map<String, String>> bundledSkills() async {
+  if (bundledSkillCache.isNotEmpty) return bundledSkillCache;
+  const List<String> names = <String>[
+    'web3-wallet-basics',
+    'binance-agentic-wallet',
+  ];
+  for (final String name in names) {
+    try {
+      bundledSkillCache[name] = await rootBundle.loadString(
+        'assets/skills/$name/SKILL.md',
+      );
+    } catch (_) {
+      // A missing bundled asset simply does not appear in the list.
+    }
+  }
+  return bundledSkillCache;
+}
 
 final chatControllerProvider = NotifierProvider<ChatController, ChatState>(
   ChatController.new,
