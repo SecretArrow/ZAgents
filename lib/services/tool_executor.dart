@@ -211,6 +211,8 @@ class ToolExecutor {
           return await _skillConfig(args);
         case 'skill_remove':
           return await _skillRemove(args);
+        case 'skill_update':
+          return await _skillUpdate(args);
         case 'skill_run':
           return await _skillRun(args, sessionId);
         case 'device_status':
@@ -1046,23 +1048,56 @@ class ToolExecutor {
             'string config entries.',
       );
     }
+    // v1.41.0: keys are validated against the skill's declared config
+    // fields — a typo used to be stored SILENTLY and the skill stayed
+    // "needs config" with no hint why. A null value unsets a stored key.
+    final Set<String> declared = skill.configFields
+        .map((SkillConfigField f) => f.name)
+        .where((String n) => n.isNotEmpty)
+        .toSet();
+    final Map<String, String?> values = <String, String?>{};
+    final List<String> unknown = <String>[];
+    for (final MapEntry<Object?, Object?> e in rawValues.entries) {
+      final String key = e.key.toString();
+      if (declared.isNotEmpty && !declared.contains(key)) {
+        unknown.add(key);
+        continue;
+      }
+      values[key] = e.value?.toString();
+    }
+    if (unknown.isNotEmpty) {
+      return ToolResult(
+        ok: false,
+        llmOutput:
+            'Unknown config key(s) for "${skill.name}": '
+            '${unknown.join(', ')}. Declared fields: '
+            '${declared.isEmpty ? "(none — this skill takes no config)" : declared.join(", ")}.',
+      );
+    }
+    if (values.isEmpty) {
+      return ToolResult(
+        ok: false,
+        llmOutput:
+            'No valid config keys were provided. Declared fields for '
+            '"${skill.name}": ${declared.join(', ')}.',
+      );
+    }
     // Secrets never travel back: the result lists KEYS only.
-    final Map<String, String> values = <String, String>{
-      for (final MapEntry<Object?, Object?> e in rawValues.entries)
-        e.key.toString(): e.value?.toString() ?? '',
-    };
     await registry.writeConfig(skill, values);
     final Map<String, String> stored = await registry.readConfig(skill);
     final Set<String> missing = registry
         .missingRequiredConfig(skill)
         .where((String f) => !stored.containsKey(f) || stored[f]!.isEmpty)
         .toSet();
+    final String unsetNote = values.values.any((String? v) => v == null)
+        ? ' Null values removed the matching stored keys.'
+        : '';
     return ToolResult(
       ok: true,
       llmOutput:
           'Config saved for "${skill.name}" '
           '(keys: ${values.keys.join(', ')}; values are stored locally '
-          'and never displayed).\n'
+          'and never displayed).$unsetNote\n'
           '${missing.isEmpty ? 'All required config is set — the skill is ready.' : 'Still missing required config: ${missing.join(', ')}'}',
       displayText: 'config saved',
     );
@@ -1086,6 +1121,62 @@ class ToolExecutor {
       );
     } on SkillRegistryException catch (e) {
       return ToolResult(ok: false, llmOutput: e.message);
+    }
+  }
+
+  /// v1.41.0 `skill_update`: re-downloads the skill's declared source and
+  /// installs it when the remote version differs. Reports honestly when
+  /// nothing changed or when the source kind cannot be updated.
+  Future<ToolResult> _skillUpdate(Map<String, dynamic> args) async {
+    final SkillRegistry? registry = skills;
+    if (registry == null) {
+      return const ToolResult(
+        ok: false,
+        llmOutput: 'Skills are not available in this build.',
+      );
+    }
+    final String name = args['name']?.toString() ?? '';
+    try {
+      final SkillUpdateReport outcome = await registry.update(name);
+      if (outcome.upToDate) {
+        return ToolResult(
+          ok: true,
+          llmOutput:
+              'Skill "$name" is already up to date '
+              '(v${outcome.skill.version}).',
+          displayText: '$name up to date',
+        );
+      }
+      final InstalledSkill skill = outcome.skill;
+      final StringBuffer out = StringBuffer()
+        ..writeln(
+          'Updated skill "$name": v${outcome.previousVersion} → '
+          'v${skill.version}.',
+        )
+        ..writeln('Source: ${skill.source}')
+        ..writeln(
+          'Config: ${registry.describeConfig(skill, await registry.readConfig(skill))}',
+        );
+      for (final String note in outcome.report?.notes ?? const <String>[]) {
+        out.writeln('- $note');
+      }
+      return ToolResult(
+        ok: true,
+        llmOutput: out.toString(),
+        displayText: 'updated $name',
+      );
+    } on SkillRegistryException catch (e) {
+      return ToolResult(
+        ok: false,
+        llmOutput: 'skill_update failed: ${e.message}',
+        displayText: 'update failed',
+      );
+    } catch (e) {
+      return ToolResult(
+        ok: false,
+        llmOutput: 'skill_update failed: $e',
+        displayText: 'update failed',
+      );
     }
   }
 
@@ -1117,9 +1208,16 @@ class ToolExecutor {
         llmOutput: 'Parameter script is empty.',
       );
     }
-    if (script.startsWith('/') ||
-        script.contains('..') ||
-        script.contains('\\')) {
+    // v1.41.0: segment-based traversal check. The old substring test
+    // (script.contains('..')) also rejected legitimate names containing
+    // consecutive dots (e.g. scripts/v1..2.js); only whole path segments
+    // are dangerous.
+    final String normalizedScript = script.replaceAll('\\', '/');
+    if (normalizedScript.startsWith('/') ||
+        normalizedScript.contains(':') ||
+        normalizedScript
+            .split('/')
+            .any((String seg) => seg == '..' || seg == '.')) {
       return const ToolResult(
         ok: false,
         llmOutput: 'Script path must be relative to the skill folder.',
@@ -1178,9 +1276,23 @@ class ToolExecutor {
       );
     }
     final Object? rawTimeout = args['timeout_seconds'];
-    final int timeoutSeconds = rawTimeout is int && rawTimeout >= 10
-        ? (rawTimeout > 300 ? 300 : rawTimeout)
-        : 90;
+    int timeoutSeconds = 90;
+    String? timeoutNote;
+    if (rawTimeout is int && rawTimeout >= 10) {
+      if (rawTimeout > 300) {
+        timeoutSeconds = 300;
+        // v1.41.0: the coercion used to be silent — the model had no way
+        // to know its requested timeout was not honored.
+        timeoutNote =
+            'Note: requested timeout ${rawTimeout}s was capped to 300s.';
+      } else {
+        timeoutSeconds = rawTimeout;
+      }
+    } else if (rawTimeout != null) {
+      timeoutNote =
+          'Note: requested timeout ($rawTimeout) is invalid — using the '
+          'default 90s (min 10, max 300).';
+    }
     final Directory workspace = await _safeBaseDir(sessionId);
     final Directory global = await _safeBaseDir(null);
     final String npmRoot =
@@ -1222,6 +1334,9 @@ class ToolExecutor {
       if (output.isNotEmpty) output,
       if (result.result != null && result.result != 'undefined')
         '=> ${result.result}',
+      // v1.41.0: surface timeout coercion so the model never believes an
+      // un-honored timeout was applied.
+      if (timeoutNote != null) timeoutNote,
     ];
     return ToolResult(
       ok: true,

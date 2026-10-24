@@ -24,6 +24,168 @@ class SessionBundle {
   final List<TodoItem> todos;
 }
 
+// v1.41.0 — isolate job factories (TOP-LEVEL, must stay out of the class).
+//
+// Every closure handed to `Isolate.run` serializes its whole LEXICAL scope
+// chain. A closure written inline inside an instance method carries that
+// method's context, which includes `this` (the ChatStore) — and while any
+// save is in flight `_writeChains` holds `_Future` values, which are NOT
+// sendable. The offload then throws "object is unsendable" (Random
+// save/load/list failures whenever two chat operations overlapped: backup
+// runs, delete-behind-save, multi-session chats). Building each job closure
+// in a top-level scope guarantees the captured context contains ONLY the
+// explicit arguments — strings, maps of primitives — so the send can never
+// fail and copies far less data.
+
+/// Serializes a fully built payload map off the UI isolate (save path).
+String Function() chatEncodeJob(Map<String, dynamic> payload) =>
+    () => jsonEncode(payload);
+
+/// Decodes a raw transcript string into a JSON map (or null) off the UI
+/// isolate (load / loadBundle path).
+Map<String, dynamic>? Function() chatDecodeMapJob(String raw) => () {
+  final Object? decoded = jsonDecode(raw);
+  return decoded is Map<String, dynamic> ? decoded : null;
+};
+
+/// Decodes just the stored title ('' when absent/malformed).
+String Function() chatDecodeTitleJob(String raw) => () {
+  final Object? decoded = jsonDecode(raw);
+  return decoded is Map ? (decoded['title']?.toString() ?? '') : '';
+};
+
+/// Decodes just the stored module list.
+List<String>? Function() chatDecodeModulesJob(String raw) => () {
+  final Object? decoded = jsonDecode(raw);
+  if (decoded is! Map) return null;
+  final Object? rawModules = decoded['modules'];
+  if (rawModules is! List) return const <String>[];
+  return <String>[
+    for (final Object? name in rawModules)
+      if (name != null && name.toString().trim().isNotEmpty)
+        name.toString().trim(),
+  ];
+};
+
+/// Decodes just the "waiting for module setup" flag.
+bool Function() chatDecodeWaitFlagJob(String raw) => () {
+  final Object? decoded = jsonDecode(raw);
+  return decoded is Map && decoded['waitingForSetup'] == true;
+};
+
+/// Decodes just the persisted plan (loose-map tolerant, malformed-safe).
+List<TodoItem> Function() chatDecodeTodosJob(String raw) => () {
+  final Object? decoded = jsonDecode(raw);
+  if (decoded is! Map) return const <TodoItem>[];
+  return parseTodoList(decoded['todos']);
+};
+
+/// Read-modify-write job used by saveModules/rename: re-encodes the stored
+/// transcript with [key] replaced by [value]. Null when the file is not a
+/// JSON object (caller keeps the old bytes).
+String? Function() chatPatchFieldJob(String raw, String key, Object? value) =>
+    () {
+      final Object? decoded = jsonDecode(raw);
+      if (decoded is! Map<String, dynamic>) return null;
+      decoded[key] = value;
+      return jsonEncode(decoded);
+    };
+
+/// Summarizes every stored conversation for the drawer list.
+List<ChatSummary> Function() chatSummariesJob(List<String> raws) => () {
+  final List<ChatSummary> summaries = <ChatSummary>[];
+  for (final String raw in raws) {
+    try {
+      final Object? decoded = jsonDecode(raw);
+      if (decoded is! Map<String, dynamic>) continue;
+      summaries.add(
+        ChatSummary(
+          id: decoded['id'] as String,
+          title: (decoded['title'] as String?) ?? 'Untitled',
+          updatedAt:
+              DateTime.tryParse(decoded['updatedAt'] as String? ?? '') ??
+              DateTime.fromMillisecondsSinceEpoch(0),
+        ),
+      );
+    } catch (_) {
+      // Skip corrupted files.
+    }
+  }
+  summaries.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+  return summaries;
+};
+
+/// Full-corpus search job: decode + match every session off the main
+/// isolate; returns plain records — all isolate-sendable.
+List<(ChatSearchHit, bool)> Function() chatSearchJob(
+  List<String> raws,
+  String q,
+) => () {
+  final List<(ChatSearchHit, bool)> hits = <(ChatSearchHit, bool)>[];
+  for (final String raw in raws) {
+    try {
+      final Object? decoded = jsonDecode(raw);
+      if (decoded is! Map<String, dynamic>) continue;
+      final String id = decoded['id'] as String? ?? '';
+      if (id.isEmpty) continue;
+      final String title = (decoded['title'] as String?) ?? 'Untitled';
+      final DateTime updatedAt =
+          DateTime.tryParse(decoded['updatedAt'] as String? ?? '') ??
+          DateTime.fromMillisecondsSinceEpoch(0);
+      final bool titleMatch = title.toLowerCase().contains(q);
+      if (titleMatch) {
+        hits.add((
+          ChatSearchHit(
+            sessionId: id,
+            title: title,
+            snippet: ChatStore._previewOf(decoded['messages'], fallback: title),
+            role: null,
+            createdAt: updatedAt,
+          ),
+          true,
+        ));
+      }
+      // First matching message of the session (one hit per conversation
+      // keeps the result list diverse).
+      final Object? rawMessages = decoded['messages'];
+      if (rawMessages is List) {
+        for (final raw in rawMessages) {
+          if (raw is! Map<String, dynamic>) continue;
+          final String content = raw['content']?.toString() ?? '';
+          if (!content.toLowerCase().contains(q)) continue;
+          Role? role;
+          for (final Role r in Role.values) {
+            if (r.name == raw['role']) {
+              role = r;
+              break;
+            }
+          }
+          hits.add((
+            ChatSearchHit(
+              sessionId: id,
+              title: title,
+              snippet: ChatStore._snippetFor(content, q),
+              role: role,
+              createdAt:
+                  DateTime.tryParse(raw['createdAt']?.toString() ?? '') ??
+                  updatedAt,
+            ),
+            false,
+          ));
+          break;
+        }
+      }
+    } catch (_) {
+      // Skip corrupted files.
+    }
+  }
+  hits.sort((a, b) {
+    if (a.$2 != b.$2) return a.$2 ? -1 : 1; // title matches first
+    return b.$1.createdAt.compareTo(a.$1.createdAt); // then newest
+  });
+  return hits;
+};
+
 /// Persists chat sessions as JSON files under `<documents>/chats/`.
 ///
 /// ANR hardening (v1.28.0): every JSON decode/encode of chat payloads runs
@@ -60,32 +222,12 @@ class ChatStore {
       await for (final entity in dir.list())
         if (entity is File && entity.path.endsWith('.json')) entity,
     ];
-    // Read (async IO) on the main isolate, decode+extract off it.
+    // Read (async IO) on the main isolate, decode+extract off it. The job
+    // closure comes from a top-level factory — see the note above.
     final List<String> raws = <String>[
       for (final File file in files) await file.readAsString(),
     ];
-    final List<ChatSummary> out = await _offload(() {
-      final List<ChatSummary> summaries = <ChatSummary>[];
-      for (final String raw in raws) {
-        try {
-          final Object? decoded = jsonDecode(raw);
-          if (decoded is! Map<String, dynamic>) continue;
-          summaries.add(
-            ChatSummary(
-              id: decoded['id'] as String,
-              title: (decoded['title'] as String?) ?? 'Untitled',
-              updatedAt:
-                  DateTime.tryParse(decoded['updatedAt'] as String? ?? '') ??
-                  DateTime.fromMillisecondsSinceEpoch(0),
-            ),
-          );
-        } catch (_) {
-          // Skip corrupted files.
-        }
-      }
-      summaries.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
-      return summaries;
-    });
+    final List<ChatSummary> out = await _offload(chatSummariesJob(raws));
     return out;
   }
 
@@ -108,8 +250,11 @@ class ChatStore {
     return _withLock<void>(id, () async {
       final dir = await _chatsDir();
       final file = File('${dir.path}${Platform.pathSeparator}$id.json');
-      // toJson maps stay on the main isolate (cheap, one pass over the list);
-      // the megabyte-scale jsonEncode itself runs off the UI thread.
+      // toJson maps stay on the main isolate (cheap, one pass over the
+      // list); the megabyte-scale jsonEncode itself runs off the UI
+      // thread. The job closure MUST come from the top-level factory: an
+      // inline closure here would capture `this`, and a concurrent save's
+      // entry in `_writeChains` makes that unsendable (v1.41.0 fix).
       final Map<String, dynamic> payload = <String, dynamic>{
         'id': id,
         'title': title,
@@ -122,50 +267,8 @@ class ChatStore {
         'waitingForSetup': waitingForSetup,
         'todos': todos.map((t) => t.toJson()).toList(),
       };
-      // Capture-clean handoff: the isolate work lives in a STATIC helper —
-      // a closure created inside this instance-method closure would carry
-      // the enclosing context, and ChatStore (`_writeChains` holds Futures)
-      // is unsendable across isolates.
-      final String encoded = await _encodePayloadOffloaded(
-        payload,
-        offloadIsolate,
-      );
+      final String encoded = await _offload(chatEncodeJob(payload));
       await _atomicWrite(file, encoded);
-    });
-  }
-
-  /// v1.40.1 — STATIC so the `Isolate.run` closure is created in a scope
-  /// whose context holds ONLY the payload (a closure created inside an
-  /// instance-method closure would chain to `this`, and ChatStore's
-  /// `_writeChains` map of Futures is unsendable across isolates).
-  static Future<String> _encodePayloadOffloaded(
-    Map<String, dynamic> payload,
-    bool offload,
-  ) {
-    if (!offload) return Future<String>.value(jsonEncode(payload));
-    return Isolate.run(() => jsonEncode(payload));
-  }
-
-  /// v1.40.1 — static decode → set [key] = [value] → encode (see
-  /// [_encodePayloadOffloaded] for why this must be static). Null when the
-  /// stored payload is not a JSON object.
-  static Future<String?> _jsonSetFieldOffloaded(
-    String raw,
-    String key,
-    Object? value,
-    bool offload,
-  ) {
-    if (!offload) {
-      final Object? decoded = jsonDecode(raw);
-      if (decoded is! Map<String, dynamic>) return Future<String?>.value(null);
-      decoded[key] = value;
-      return Future<String?>.value(jsonEncode(decoded));
-    }
-    return Isolate.run(() {
-      final Object? decoded = jsonDecode(raw);
-      if (decoded is! Map<String, dynamic>) return null;
-      decoded[key] = value;
-      return jsonEncode(decoded);
     });
   }
 
@@ -212,10 +315,7 @@ class ChatStore {
     if (!await file.exists()) return null;
     try {
       final String raw = await file.readAsString();
-      final Map<String, dynamic>? data = await _offload(() {
-        final Object? decoded = jsonDecode(raw);
-        return decoded is Map<String, dynamic> ? decoded : null;
-      });
+      final Map<String, dynamic>? data = await _offload(chatDecodeMapJob(raw));
       if (data == null) return null;
       final rawMessages = data['messages'];
       if (rawMessages is! List) return null;
@@ -238,10 +338,7 @@ class ChatStore {
     if (!await file.exists()) return null;
     try {
       final String raw = await file.readAsString();
-      final Map<String, dynamic>? data = await _offload(() {
-        final Object? decoded = jsonDecode(raw);
-        return decoded is Map<String, dynamic> ? decoded : null;
-      });
+      final Map<String, dynamic>? data = await _offload(chatDecodeMapJob(raw));
       if (data == null) return null;
       final rawMessages = data['messages'];
       return SessionBundle(
@@ -273,10 +370,7 @@ class ChatStore {
     if (!await file.exists()) return '';
     try {
       final String raw = await file.readAsString();
-      return await _offload(() {
-        final Object? decoded = jsonDecode(raw);
-        return decoded is Map ? (decoded['title']?.toString() ?? '') : '';
-      });
+      return await _offload(chatDecodeTitleJob(raw));
     } catch (_) {
       return '';
     }
@@ -292,17 +386,7 @@ class ChatStore {
       // v1.34.0: full-transcript decode off the UI isolate (openChat used
       // to decode the whole file on main a second/third time here).
       final String raw = await file.readAsString();
-      final List<String>? modules = await _offload(() {
-        final Object? decoded = jsonDecode(raw);
-        if (decoded is! Map) return null;
-        final Object? rawModules = decoded['modules'];
-        if (rawModules is! List) return const <String>[];
-        return <String>[
-          for (final Object? name in rawModules)
-            if (name != null && name.toString().trim().isNotEmpty)
-              name.toString().trim(),
-        ];
-      });
+      final List<String>? modules = await _offload(chatDecodeModulesJob(raw));
       return modules ?? const <String>[];
     } catch (_) {
       return const <String>[];
@@ -318,10 +402,7 @@ class ChatStore {
     if (!await file.exists()) return false;
     try {
       final String raw = await file.readAsString();
-      return await _offload(() {
-        final Object? decoded = jsonDecode(raw);
-        return decoded is Map && decoded['waitingForSetup'] == true;
-      });
+      return await _offload(chatDecodeWaitFlagJob(raw));
     } catch (_) {
       return false;
     }
@@ -337,13 +418,10 @@ class ChatStore {
     if (!await file.exists()) return const <TodoItem>[];
     try {
       final String raw = await file.readAsString();
-      return await _offload(() {
-        final Object? decoded = jsonDecode(raw);
-        if (decoded is! Map) return const <TodoItem>[];
-        // parseTodoList accepts loose maps and skips malformed entries —
-        // the same defensive path the todo_write tool call uses.
-        return parseTodoList(decoded['todos']);
-      });
+      // parseTodoList inside the factory accepts loose maps and skips
+      // malformed entries — the same defensive path the todo_write tool
+      // call uses.
+      return await _offload(chatDecodeTodosJob(raw));
     } catch (_) {
       return const <TodoItem>[];
     }
@@ -360,12 +438,8 @@ class ChatStore {
         // v1.34.0: decode + re-encode of the full transcript off the UI
         // isolate — only the resulting JSON string crosses back.
         final String raw = await file.readAsString();
-        // Capture-clean handoff (see save).
-        final String? updated = await _jsonSetFieldOffloaded(
-          raw,
-          'modules',
-          modules,
-          offloadIsolate,
+        final String? updated = await _offload(
+          chatPatchFieldJob(raw, 'modules', modules),
         );
         if (updated != null) await _atomicWrite(file, updated);
       } catch (_) {
@@ -394,12 +468,8 @@ class ChatStore {
         // v1.34.0: decode + re-encode of the full transcript off the UI
         // isolate.
         final String raw = await file.readAsString();
-        // Capture-clean handoff (see save).
-        final String? updated = await _jsonSetFieldOffloaded(
-          raw,
-          'title',
-          title,
-          offloadIsolate,
+        final String? updated = await _offload(
+          chatPatchFieldJob(raw, 'title', title),
         );
         if (updated != null) await _atomicWrite(file, updated);
       } catch (_) {
@@ -424,73 +494,12 @@ class ChatStore {
     final List<String> raws = <String>[
       for (final File file in files) await file.readAsString(),
     ];
-    // Decode + match every session off the main isolate; the closure works
-    // on strings only and returns plain records — all isolate-sendable.
-    final List<(ChatSearchHit, bool)> ranked = await _offload(() {
-      final List<(ChatSearchHit, bool)> hits = <(ChatSearchHit, bool)>[];
-      for (final String raw in raws) {
-        try {
-          final Object? decoded = jsonDecode(raw);
-          if (decoded is! Map<String, dynamic>) continue;
-          final String id = decoded['id'] as String? ?? '';
-          if (id.isEmpty) continue;
-          final String title = (decoded['title'] as String?) ?? 'Untitled';
-          final DateTime updatedAt =
-              DateTime.tryParse(decoded['updatedAt'] as String? ?? '') ??
-              DateTime.fromMillisecondsSinceEpoch(0);
-          final bool titleMatch = title.toLowerCase().contains(q);
-          if (titleMatch) {
-            hits.add((
-              ChatSearchHit(
-                sessionId: id,
-                title: title,
-                snippet: _previewOf(decoded['messages'], fallback: title),
-                role: null,
-                createdAt: updatedAt,
-              ),
-              true,
-            ));
-          }
-          // First matching message of the session (one hit per conversation
-          // keeps the result list diverse).
-          final Object? rawMessages = decoded['messages'];
-          if (rawMessages is List) {
-            for (final raw in rawMessages) {
-              if (raw is! Map<String, dynamic>) continue;
-              final String content = raw['content']?.toString() ?? '';
-              if (!content.toLowerCase().contains(q)) continue;
-              Role? role;
-              for (final Role r in Role.values) {
-                if (r.name == raw['role']) {
-                  role = r;
-                  break;
-                }
-              }
-              hits.add((
-                ChatSearchHit(
-                  sessionId: id,
-                  title: title,
-                  snippet: _snippetFor(content, q),
-                  role: role,
-                  createdAt:
-                      DateTime.tryParse(raw['createdAt']?.toString() ?? '') ??
-                      updatedAt,
-                ),
-                false,
-              ));
-              break;
-            }
-          }
-        } catch (_) {
-          // Skip corrupted files.
-        }
-      }
-      hits.sort((a, b) {
-        if (a.$2 != b.$2) return a.$2 ? -1 : 1; // title matches first
-        return b.$1.createdAt.compareTo(a.$1.createdAt); // then newest
-      });
-      return hits;
-    });
+    // Decode + match every session off the main isolate; the job factory
+    // keeps the closure free of `this` (send-safe) and works on strings
+    // only, returning plain records — all isolate-sendable.
+    final List<(ChatSearchHit, bool)> ranked = await _offload(
+      chatSearchJob(raws, q),
+    );
     return <ChatSearchHit>[
       for (final (ChatSearchHit, bool) entry in ranked.take(limit)) entry.$1,
     ];

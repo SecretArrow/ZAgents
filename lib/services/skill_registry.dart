@@ -206,6 +206,34 @@ class SkillInstallReport {
   final List<String> notes;
 }
 
+/// v1.41.0 — outcome of [SkillRegistry.update]: either the install was
+/// already at the remote version ([upToDate]) or the atomic replace ran
+/// ([report] carries the install notes).
+class SkillUpdateReport {
+  const SkillUpdateReport({
+    required this.upToDate,
+    required this.previousVersion,
+    required this.remoteVersion,
+    required this.skill,
+    this.report,
+  });
+
+  /// True when the remote version matched — nothing was replaced.
+  final bool upToDate;
+
+  /// Version installed BEFORE the update attempt (always the installed one).
+  final String previousVersion;
+
+  /// Version parsed from the remote SKILL.md (null when unreadable).
+  final String? remoteVersion;
+
+  /// The skill AFTER the update (or the unchanged install when up to date).
+  final InstalledSkill skill;
+
+  /// Install notes when a replacement actually happened.
+  final SkillInstallReport? report;
+}
+
 /// Thrown on invalid sources/skills — the message is agent-readable.
 class SkillRegistryException implements Exception {
   const SkillRegistryException(this.message);
@@ -377,6 +405,19 @@ class SkillRegistry {
       work =
           '${tree.group(1)}/${tree.group(2)}/${tree.group(4)}'
           '@${tree.group(3)}';
+    } else {
+      // v1.41.0: branch ROOT (no subpath) — the regex above required a
+      // trailing path, so this spelling fell through, produced the
+      // nonsense subPath "tree/<branch>" and failed with "Nothing to
+      // install". Normalize it to `owner/repo@<branch>`.
+      final RegExpMatch? treeRoot = RegExp(
+        r'^https?://github\.com/([^/]+)/([^/]+)/tree/([^/]+)$',
+      ).firstMatch(work);
+      if (treeRoot != null) {
+        work =
+            '${treeRoot.group(1)}/${treeRoot.group(2)}'
+            '@${treeRoot.group(3)}';
+      }
     }
     return work.trim();
   }
@@ -652,27 +693,61 @@ class SkillRegistry {
           description: manifest.description,
           source: 'builtin:$bundledName',
           permissions: manifest.permissions,
+          requiresBins: manifest.requiresBins,
           wallet: manifest.wallet,
           configFields: manifest.configFields,
           dirPath: finalDir.path,
           installedAt: DateTime.now(),
         );
-        await _upsertRegistryEntry(skill);
+        // v1.41.0: a bundled reinstall must not throw away the user's
+        // stored secrets — same policy as installFromArchiveBytes. The
+        // carry-over runs BEFORE the staged tree replaces the old one.
+        bool configCarried = false;
+        if (backup.existsSync()) {
+          final File oldConfig = File(
+            '${backup.path}${Platform.pathSeparator}$configFileName',
+          );
+          final File stagedConfig = File(
+            '${staging.path}${Platform.pathSeparator}$configFileName',
+          );
+          if (oldConfig.existsSync() && !stagedConfig.existsSync()) {
+            oldConfig.copySync(stagedConfig.path);
+            configCarried = true;
+          }
+        }
+        // v1.41.0: registry entry AFTER the files are in place. The old
+        // order left registry.json describing an install that a failed
+        // rename rolled back (and the catch below never repaired it).
         staging.renameSync(finalDir.path);
+        await _upsertRegistryEntry(skill);
         if (backup.existsSync()) backup.deleteSync(recursive: true);
         await ensureCacheLoaded();
         return SkillInstallReport(
           skill: skill,
           notes: <String>[
+            if (configCarried)
+              'The previous install\'s stored config was kept (secrets are '
+                  'never re-created or echoed).',
+            if (manifest.requiresBins.isNotEmpty)
+              'This skill declares a NATIVE dependency: '
+                  '${manifest.requiresBins.join(', ')} — its commands '
+                  'CANNOT run in the embedded runtime.',
             'This skill ships with ZAgents — no download happened. '
                 'Read the full instructions with skill_info("$name") '
                 'before first use and follow them exactly.',
           ],
         );
       } catch (_) {
-        if (backup.existsSync() && !finalDir.existsSync()) {
-          backup.renameSync(finalDir.path);
+        // Roll the previous install back, whether the failure happened
+        // before or after the staged directory was moved into place.
+        if (finalDir.existsSync()) {
+          try {
+            finalDir.deleteSync(recursive: true);
+          } catch (_) {
+            // Best effort.
+          }
         }
+        if (backup.existsSync()) backup.renameSync(finalDir.path);
         rethrow;
       }
     } finally {
@@ -696,6 +771,89 @@ class SkillRegistry {
     await _deleteRegistryEntry(name);
   }
 
+  /// v1.41.0 — re-downloads the skill's declared REMOTE source and replaces
+  /// the install when the remote SKILL.md version differs from the installed
+  /// one. The replace goes through the same atomic pipeline as a fresh
+  /// install, so the user's stored config/secrets are carried over. Bundled
+  /// (`builtin:`) and local-file (`file:`) installs are reported honestly
+  /// instead of pretending an update happened.
+  Future<SkillUpdateReport> update(String name) async {
+    final InstalledSkill? current = await get(name);
+    if (current == null) {
+      throw SkillRegistryException('Skill "$name" is not installed.');
+    }
+    final String source = current.source;
+    if (source.startsWith('builtin:')) {
+      throw SkillRegistryException(
+        '"$name" is bundled with the app ($source). Its updates ship with '
+        'ZAgents updates — there is nothing to update from here.',
+      );
+    }
+    if (source.startsWith('file:')) {
+      throw SkillRegistryException(
+        '"$name" was installed from a local archive ($source). To refresh '
+        'it, download a new archive into the chat workspace and run '
+        'skill_install with that path.',
+      );
+    }
+    final List<int> bytes;
+    final String? subPath;
+    if (source.startsWith('github:')) {
+      final GitHubSkillRef ref = parseGitHubSource(source.substring(7));
+      bytes = await _downloadGitHubTarball(ref);
+      subPath = ref.subPath.isEmpty ? null : ref.subPath;
+    } else {
+      bytes = await _downloadUrl(source);
+      subPath = null;
+    }
+    final String? remoteVersion = _peekManifestVersion(bytes, subPath);
+    if (remoteVersion != null && remoteVersion == current.version) {
+      return SkillUpdateReport(
+        upToDate: true,
+        previousVersion: current.version,
+        remoteVersion: remoteVersion,
+        skill: current,
+      );
+    }
+    final SkillInstallReport report = await installFromArchiveBytes(
+      bytes,
+      source: source,
+      subPath: subPath,
+    );
+    return SkillUpdateReport(
+      upToDate: false,
+      previousVersion: current.version,
+      remoteVersion: remoteVersion,
+      skill: report.skill,
+      report: report,
+    );
+  }
+
+  /// Reads the SKILL.md version out of a downloaded archive WITHOUT
+  /// installing anything. Null when the archive has no readable SKILL.md at
+  /// [subPath] (the install pipeline then reports the real problem).
+  String? _peekManifestVersion(List<int> bytes, String? subPath) {
+    try {
+      final Map<String, List<int>> files = _decodeArchive(bytes);
+      String? skillMdPath;
+      for (final String path in files.keys) {
+        String rel = path;
+        if (subPath != null && subPath.isNotEmpty) {
+          if (!rel.startsWith('$subPath/')) continue;
+          rel = rel.substring(subPath.length + 1);
+        }
+        if (rel == 'SKILL.md') {
+          skillMdPath = path;
+          break;
+        }
+      }
+      if (skillMdPath == null) return null;
+      return _parseSkillManifest(utf8.decode(files[skillMdPath]!)).version;
+    } catch (_) {
+      return null;
+    }
+  }
+
   // -- Config (secrets) ---------------------------------------------------
 
   File _configFile(String dirPath) =>
@@ -717,16 +875,29 @@ class SkillRegistry {
     return const <String, String>{};
   }
 
+  /// Persists config values for [skill]. A `null` value REMOVES the key
+  /// (v1.41.0 unset support — previously a stored key could only be blanked
+  /// by reinstalling the skill). When nothing remains the file is deleted.
   Future<void> writeConfig(
     InstalledSkill skill,
-    Map<String, String> values,
+    Map<String, String?> values,
   ) async {
     if (values.isEmpty) return;
     final Map<String, String> existing = Map<String, String>.of(
       await readConfig(skill),
     );
-    existing.addAll(values);
+    for (final MapEntry<String, String?> entry in values.entries) {
+      if (entry.value == null) {
+        existing.remove(entry.key);
+      } else {
+        existing[entry.key] = entry.value!;
+      }
+    }
     final File file = _configFile(skill.dirPath);
+    if (existing.isEmpty) {
+      if (file.existsSync()) await file.delete();
+      return;
+    }
     await file.writeAsString(jsonEncode(existing), flush: true);
   }
 
@@ -951,12 +1122,24 @@ class SkillRegistry {
         headers: const <String, String>{'Accept': 'application/json'},
         timeout: const Duration(seconds: 30),
       );
-      final Object? decoded = jsonDecode(utf8.decode(metaBytes));
+      final Object? decoded;
+      try {
+        decoded = jsonDecode(utf8.decode(metaBytes));
+      } catch (_) {
+        // A 200 with an HTML/error body: rate-limit pages and outages do
+        // this. The old code surfaced a raw FormatException with no hint.
+        throw const SkillRegistryException(
+          'GitHub metadata returned a non-JSON response (rate limit or '
+          'outage). Try again later, or install from a full archive URL.',
+        );
+      }
       if (decoded is! Map ||
           decoded['default_branch'] is! String ||
           (decoded['default_branch'] as String).isEmpty) {
-        throw const SkillRegistryException(
-          'GitHub metadata has no default_branch.',
+        throw SkillRegistryException(
+          'GitHub metadata has no default_branch — "${ref.owner}/${ref.repo}" '
+          'may not exist or may be private. Check the owner/repo spelling '
+          '(anonymous API access is rate-limited to 60 requests/hour).',
         );
       }
       branch = decoded['default_branch'] as String;

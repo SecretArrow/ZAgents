@@ -348,6 +348,40 @@ OpenAI-compatible: **OpenRouter, InferHub, Z.AI, OpenAI, DeepSeek, Groq, dan lai
   wajib — isolasi per-chat tidak berubah).
   4. `SessionSandbox.sessionsRoot()` + `ModuleRuntime.latestStoredSetup`
   (pemindai mtime terbaru, tahan file korup) + uji unit wire/module_list.
+- **v1.41.0 — perbaikan stabilitas storage isolate, sistem skill lebih lengkap (`skill_update`, config unset), dan perbaikan pipeline rilis**:
+  1. **Storage chat anti-"unsendable"**: semua job JSON berat (save/load/
+     list/bundle/search) kini dibuat lewat pabrik closure TOP-LEVEL — chain
+     context yang dikirim ke `Isolate.run` tidak pernah lagi membawa `this`
+     (beserta `_writeChains` berisi `_Future` yang tidak bisa dikirim).
+     Dulu, dua operasi storage yang beririsan (mis. backup berjalan saat
+     chat menyimpan, atau load saat save masih mengantre) melempar
+     "object is unsendable" dan data tampak hilang; sekarang deterministik
+     aman dan salinan yang dikirim jauh lebih kecil.
+  2. **`skill_update` (tool baru)**: agen bisa menyegarkan skill dari
+     sumber asalnya — unduh ulang, bandingkan versi SKILL.md, ganti atomik
+     dengan config/secret tetap dipertahankan; laporan "already up to
+     date" saat versi sama; skill `builtin:`/`file:` ditolak dengan
+     penjelasan jujur (tidak ada update palsu).
+  3. **`skill_config` lebih ketat**: kunci tidak dikenal DITOLAK beserta
+     daftar field yang valid (dulu typo tersimpan diam-diam dan skill
+     tetap "needs config" tanpa petunjuk); nilai `null` menghapus kunci
+     tersimpan (unset), dan menghapus kunci terakhir membersihkan file
+     config.
+  4. **Instalasi skill lebih akurat**: URL `github.com/o/r/tree/<branch>`
+     (root branch, tanpa subpath) kini terparse benar (dulu gagal dengan
+     "Nothing to install"); error metadata GitHub menjelaskan 404/private/
+     rate-limit; `installBundled` (skill bawaan app) kini mempertahankan
+     config tersimpan saat reinstall dan menulis registry SETELAH file
+     benar-benar pindah (rollback tidak lagi meninggalkan registry maya).
+  5. **`skill_run` lebih transparan**: timeout yang dipaksa ke batas
+     (mis. 999 → 300) atau tidak valid dilaporkan ke model; pemeriksaan
+     path berbasis segmen (nama file bertitik ganda sah, tetap blokir
+     `..`).
+  6. **CI/CD**: workflow Release/Auto-Release/CI diperketat setelah
+     v1.39–v1.40 gagal quality gate (compile error Riverpod + formatter) —
+     semua permintaan fitur v1.38–v1.40 (isolasi chat, panel Plan tetap
+     terbuka & real-time, performa streaming) tetap terjaga penuh oleh
+     test.
 - **v1.40.0 — keamanan unduhan (SSRF/zip-bomb), persistensi atomik, dan CI rilis bertanda tangan**:
   1. **`RemoteGuard`** (baru): SEMUA unduhan skill/npm lewat satu gerbang —
      hanya `https` ke host publik (loopback, LAN, link-local, CGNAT,

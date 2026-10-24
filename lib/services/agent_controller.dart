@@ -2456,7 +2456,9 @@ class ChatController extends Notifier<ChatState> {
               '${missing.isEmpty ? 'ready' : 'needs config: ${missing.join(', ')}'}'
               ' — read the manual with skill_info("${skill.name}") before '
               'first use, run scripts with skill_run; configure with '
-              'skill_config (values stay on-device).',
+              'skill_config (values stay on-device); refresh from its '
+              'source with skill_update when the user asks for the latest '
+              'version.',
             );
           if (skill.requiresBins.isNotEmpty) {
             content.writeln(

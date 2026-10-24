@@ -500,7 +500,7 @@ List<Map<String, dynamic>> buildAgentTools({
   ),
   _fn(
     'skill_config',
-    'Store configuration values for an installed skill (e.g. API keys, wallet settings). Values are persisted on-device in the skill\'s private config and are NEVER echoed back into the conversation — the result only confirms which keys were set. Never ask the user for a seed phrase or private key here; if a skill requires one, refuse and explain the security policy.',
+    'Store configuration values for an installed skill (e.g. API keys, wallet settings). Values are persisted on-device in the skill\'s private config and are NEVER echoed back into the conversation — the result only confirms which keys were set. Keys must match the skill\'s declared config fields; unknown keys are rejected. Pass null as a value to REMOVE a stored key. Never ask the user for a seed phrase or private key here; if a skill requires one, refuse and explain the security policy.',
     <String, dynamic>{
       'name': <String, dynamic>{
         'type': 'string',
@@ -508,11 +508,27 @@ List<Map<String, dynamic>> buildAgentTools({
       },
       'values': <String, dynamic>{
         'type': 'object',
-        'description': 'Config entries to set, e.g. {\'API_KEY\': \'...\'} — keys must match the skill\'s declared config fields',
-        'additionalProperties': <String, dynamic>{'type': 'string'},
+        'description':
+            'Config entries to set, e.g. {\'API_KEY\': \'...\'} — keys must '
+            'match the skill\'s declared config fields; a null value unsets '
+            'that key',
+        'additionalProperties': <String, dynamic>{
+          'type': <String>['string', 'null'],
+        },
       },
     },
     <String>['name', 'values'],
+  ),
+  _fn(
+    'skill_update',
+    'Check an installed skill\'s REMOTE source for a newer version and install it when one exists. Re-downloads the source the skill was installed from, compares the SKILL.md version, and atomically replaces the install — the user\'s stored config/secrets are kept. Reports "already up to date" when the versions match. Bundled (builtin:) and local-file installed skills cannot be updated this way — report that honestly instead of pretending an update happened.',
+    <String, dynamic>{
+      'name': <String, dynamic>{
+        'type': 'string',
+        'description': 'Skill name from skill_list',
+      },
+    },
+    <String>['name'],
   ),
   _fn(
     'skill_remove',
