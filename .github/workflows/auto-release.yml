@@ -55,10 +55,31 @@ jobs:
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git tag -a "v$VERSION" -m "ZAgents v$VERSION"
-          # Push with the repo-scoped PAT secret: tag pushes made with the
-          # default GITHUB_TOKEN do NOT trigger other workflows (GitHub
-          # anti-recursion), so release.yml would never run. The PAT lives
-          # only in the encrypted AUTO_RELEASE_TOKEN secret.
-          git push "https://x-access-token:${PUSH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "v$VERSION"
-          echo "Tag v$VERSION pushed — release.yml will build & publish the signed APK."
+          # Create the tag via the REST API with the PAT secret. Two reasons
+          # git push is not used here:
+          #  1. actions/checkout installs a GITHUB_TOKEN extraheader that
+          #     wins over URL-embedded credentials — the push would be
+          #     attributed to GITHUB_TOKEN and GitHub suppresses workflow
+          #     triggers for its events (release.yml would never run).
+          #  2. REST API calls with a real PAT always fire push events.
+          TAG_SHA="${GITHUB_SHA}"
+          TAGOBJ=$(curl -sf -X POST \
+            -H "Authorization: Bearer ${PUSH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/git/tags" \
+            -d "{\"tag\":\"v$VERSION\",\"message\":\"ZAgents v$VERSION\",\"object\":\"$TAG_SHA\",\"type\":\"commit\"}")
+          if [ -z "$TAGOBJ" ]; then
+            echo "::error::Failed to create tag object v$VERSION"
+            exit 1
+          fi
+          TAGOBJ_SHA=$(echo "$TAGOBJ" | sed -n 's/.*"sha": *"\([0-9a-f]*\)".*/\1/p' | head -1)
+          HTTP=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
+            -H "Authorization: Bearer ${PUSH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/git/refs" \
+            -d "{\"ref\":\"refs/tags/v$VERSION\",\"sha\":\"$TAGOBJ_SHA\"}")
+          case "$HTTP" in
+            201) echo "Tag v$VERSION created — release.yml will build & publish the signed APK." ;;
+            422) echo "Tag v$VERSION already exists — nothing to release." ;;
+            *) echo "::error::Failed to create ref v$VERSION (HTTP $HTTP)"; exit 1 ;;
+          esac
