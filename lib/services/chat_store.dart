@@ -122,8 +122,50 @@ class ChatStore {
         'waitingForSetup': waitingForSetup,
         'todos': todos.map((t) => t.toJson()).toList(),
       };
-      final String encoded = await _offload(() => jsonEncode(payload));
+      // Capture-clean handoff: the isolate work lives in a STATIC helper —
+      // a closure created inside this instance-method closure would carry
+      // the enclosing context, and ChatStore (`_writeChains` holds Futures)
+      // is unsendable across isolates.
+      final String encoded = await _encodePayloadOffloaded(
+        payload,
+        offloadIsolate,
+      );
       await _atomicWrite(file, encoded);
+    });
+  }
+
+  /// v1.40.1 — STATIC so the `Isolate.run` closure is created in a scope
+  /// whose context holds ONLY the payload (a closure created inside an
+  /// instance-method closure would chain to `this`, and ChatStore's
+  /// `_writeChains` map of Futures is unsendable across isolates).
+  static Future<String> _encodePayloadOffloaded(
+    Map<String, dynamic> payload,
+    bool offload,
+  ) {
+    if (!offload) return Future<String>.value(jsonEncode(payload));
+    return Isolate.run(() => jsonEncode(payload));
+  }
+
+  /// v1.40.1 — static decode → set [key] = [value] → encode (see
+  /// [_encodePayloadOffloaded] for why this must be static). Null when the
+  /// stored payload is not a JSON object.
+  static Future<String?> _jsonSetFieldOffloaded(
+    String raw,
+    String key,
+    Object? value,
+    bool offload,
+  ) {
+    if (!offload) {
+      final Object? decoded = jsonDecode(raw);
+      if (decoded is! Map<String, dynamic>) return Future<String?>.value(null);
+      decoded[key] = value;
+      return Future<String?>.value(jsonEncode(decoded));
+    }
+    return Isolate.run(() {
+      final Object? decoded = jsonDecode(raw);
+      if (decoded is! Map<String, dynamic>) return null;
+      decoded[key] = value;
+      return jsonEncode(decoded);
     });
   }
 
@@ -318,12 +360,13 @@ class ChatStore {
         // v1.34.0: decode + re-encode of the full transcript off the UI
         // isolate — only the resulting JSON string crosses back.
         final String raw = await file.readAsString();
-        final String? updated = await _offload(() {
-          final Object? decoded = jsonDecode(raw);
-          if (decoded is! Map<String, dynamic>) return null;
-          decoded['modules'] = modules;
-          return jsonEncode(decoded);
-        });
+        // Capture-clean handoff (see save).
+        final String? updated = await _jsonSetFieldOffloaded(
+          raw,
+          'modules',
+          modules,
+          offloadIsolate,
+        );
         if (updated != null) await _atomicWrite(file, updated);
       } catch (_) {
         // Corrupted file: module bookkeeping must never crash the caller.
@@ -351,12 +394,13 @@ class ChatStore {
         // v1.34.0: decode + re-encode of the full transcript off the UI
         // isolate.
         final String raw = await file.readAsString();
-        final String? updated = await _offload(() {
-          final Object? decoded = jsonDecode(raw);
-          if (decoded is! Map<String, dynamic>) return null;
-          decoded['title'] = title;
-          return jsonEncode(decoded);
-        });
+        // Capture-clean handoff (see save).
+        final String? updated = await _jsonSetFieldOffloaded(
+          raw,
+          'title',
+          title,
+          offloadIsolate,
+        );
         if (updated != null) await _atomicWrite(file, updated);
       } catch (_) {
         // Corrupted file: renaming must never crash the caller.

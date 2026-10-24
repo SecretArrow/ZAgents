@@ -145,7 +145,15 @@ class ScriptFetchProxy {
       } catch (e) {
         return <String, dynamic>{'ok': false, 'error': 'fetch failed: $e'};
       }
-      if (!response.isRedirect) break;
+      // NOTE: StreamedResponse.isRedirect is a constructor FIELD (default
+      // false), not a status-code getter — hand-built responses and
+      // several client wrappers never set it. Detect redirects from the
+      // status code (the SSRF hop checks below must also run for those).
+      if (!const <int>{301, 302, 303, 307, 308}.contains(
+        response.statusCode,
+      )) {
+        break;
+      }
       final String? location = response.headers['location'];
       await response.stream.drain<void>();
       if (location == null || location.trim().isEmpty) {
