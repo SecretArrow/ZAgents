@@ -236,30 +236,29 @@ void main() {
         'a/b/c',
       ]) {
         final NpmInstallResult result = await service.install(name);
-        expect(
-          result.ok,
-          isFalse,
-          reason: '"$name" must be rejected',
-        );
+        expect(result.ok, isFalse, reason: '"$name" must be rejected');
         expect(result.message, contains('Invalid package name'));
       }
       await expectLater(service.remove('..'), throwsA(isA<String>()));
     });
 
-    test('a hostile metadata payload is a readable error, not a crash', () async {
-      final MockClient client = MockClient(
-        (http.Request request) async => jsonRes(<String, dynamic>{
-          'dist-tags': <String, dynamic>{'latest': '1.0.0'},
-          'versions': <String, dynamic>{'1.0.0': 'not-a-map'},
-        }),
-      );
-      final NpmService broken = NpmService(
-        resolveBaseDir: () async => tempDir,
-        client: client,
-      );
-      final NpmInstallResult result = await broken.install('weird');
-      expect(result.ok, isFalse);
-      expect(result.message, contains('no tarball'));
-    });
+    test(
+      'a hostile metadata payload is a readable error, not a crash',
+      () async {
+        final MockClient client = MockClient(
+          (http.Request request) async => jsonRes(<String, dynamic>{
+            'dist-tags': <String, dynamic>{'latest': '1.0.0'},
+            'versions': <String, dynamic>{'1.0.0': 'not-a-map'},
+          }),
+        );
+        final NpmService broken = NpmService(
+          resolveBaseDir: () async => tempDir,
+          client: client,
+        );
+        final NpmInstallResult result = await broken.install('weird');
+        expect(result.ok, isFalse);
+        expect(result.message, contains('no tarball'));
+      },
+    );
   });
 }

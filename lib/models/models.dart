@@ -65,7 +65,8 @@ class ToolCall {
         return path.isEmpty ? skill : '$skill/$path';
       case 'skill_run':
         return '${arguments['name'] ?? ''} · '
-            '${arguments['script'] ?? ''}'.trim();
+                '${arguments['script'] ?? ''}'
+            .trim();
       case 'skill_config':
         // SECRETS: the values object is never shown, persisted or sent
         // back to the provider — only the skill name is.

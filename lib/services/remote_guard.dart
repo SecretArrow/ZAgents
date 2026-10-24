@@ -24,8 +24,9 @@ class RemoteGuardException implements Exception {
 class RemoteGuard {
   const RemoteGuard._();
 
-  static final RegExp _dottedQuad =
-      RegExp(r'^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$');
+  static final RegExp _dottedQuad = RegExp(
+    r'^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$',
+  );
 
   /// True only for public `https` endpoints.
   static bool isAllowedUrl(String url) {
@@ -56,7 +57,8 @@ class RemoteGuard {
       // judged by the IPv4 rules. NOTE: Dart canonicalises the mapped form
       // to hex (`::ffff:7f00:1`), so this cannot be a prefix match on the
       // dotted text.
-      final bool zeroPrefix = hextets[0] == 0 &&
+      final bool zeroPrefix =
+          hextets[0] == 0 &&
           hextets[1] == 0 &&
           hextets[2] == 0 &&
           hextets[3] == 0 &&
@@ -122,14 +124,14 @@ class RemoteGuard {
     if (text.contains('.')) {
       final int lastColon = text.lastIndexOf(':');
       if (lastColon < 0) return null;
-      final Match? quad =
-          _dottedQuad.firstMatch(text.substring(lastColon + 1));
+      final Match? quad = _dottedQuad.firstMatch(text.substring(lastColon + 1));
       if (quad == null) return null;
       final List<int> octets = <int>[
         for (int i = 1; i <= 4; i++) int.parse(quad.group(i)!),
       ];
       if (octets.any((int o) => o > 255)) return null;
-      text = '${text.substring(0, lastColon + 1)}'
+      text =
+          '${text.substring(0, lastColon + 1)}'
           '${((octets[0] << 8) | octets[1]).toRadixString(16)}:'
           '${((octets[2] << 8) | octets[3]).toRadixString(16)}';
     }
@@ -139,16 +141,14 @@ class RemoteGuard {
     final String right = gap < 0 ? '' : text.substring(gap + 2);
     final List<int> head = <int>[];
     final List<int> tail = <int>[];
-    for (final String part in left.isEmpty
-        ? const <String>[]
-        : left.split(':')) {
+    for (final String part
+        in left.isEmpty ? const <String>[] : left.split(':')) {
       final int? value = int.tryParse(part, radix: 16);
       if (value == null || value < 0 || value > 0xffff) return null;
       head.add(value);
     }
-    for (final String part in right.isEmpty
-        ? const <String>[]
-        : right.split(':')) {
+    for (final String part
+        in right.isEmpty ? const <String>[] : right.split(':')) {
       final int? value = int.tryParse(part, radix: 16);
       if (value == null || value < 0 || value > 0xffff) return null;
       tail.add(value);

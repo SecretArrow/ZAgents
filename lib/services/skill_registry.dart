@@ -309,8 +309,7 @@ class SkillRegistry {
     // already understands both spellings, and its subPath is now actually
     // passed to the extractor (a repo whose skill lives in a subdirectory
     // used to fail with "No SKILL.md found").
-    if (!trimmed.startsWith('http://') &&
-        !trimmed.startsWith('https://')) {
+    if (!trimmed.startsWith('http://') && !trimmed.startsWith('https://')) {
       final GitHubSkillRef ref = parseGitHubSource(trimmed);
       resolvedSource = 'github:$trimmed';
       bytes = await _downloadGitHubTarball(ref);
@@ -322,7 +321,8 @@ class SkillRegistry {
     }
     if (trimmed.startsWith('https://github.com/')) {
       final GitHubSkillRef ref = parseGitHubSource(trimmed);
-      resolvedSource = 'github:${ref.owner}/${ref.repo}'
+      resolvedSource =
+          'github:${ref.owner}/${ref.repo}'
           '${ref.subPath.isEmpty ? '' : '/${ref.subPath}'}';
       bytes = await _downloadGitHubTarball(ref);
       return installFromArchiveBytes(
@@ -772,7 +772,9 @@ class SkillRegistry {
   /// had already been allocated. The central directory declares each entry's
   /// uncompressed size, which is enough to refuse the archive up front.
   static void _checkZipBudget(List<int> bytes) {
-    final Uint8List data = bytes is Uint8List ? bytes : Uint8List.fromList(bytes);
+    final Uint8List data = bytes is Uint8List
+        ? bytes
+        : Uint8List.fromList(bytes);
     final ByteData view = ByteData.sublistView(data);
     int eocd = -1;
     final int stop = data.length - 22;

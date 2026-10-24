@@ -21,7 +21,8 @@ class TodoPlanCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final AppStrings strings = stringsOf(context);
-    final List<TodoItem> items = todos ?? parseTodoList(call.arguments['todos']);
+    final List<TodoItem> items =
+        todos ?? parseTodoList(call.arguments['todos']);
     final int total = items.length;
     final int done = items
         .where((TodoItem t) => t.status == TodoStatus.completed)

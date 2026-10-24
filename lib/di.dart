@@ -344,7 +344,8 @@ final appInForegroundProvider = StateProvider<bool>((ref) => true);
 /// on every ~48 ms streaming emission for a value that only changes on a
 /// chat switch.
 final activeSessionIdProvider = Provider<String?>(
-  (ref) => ref.watch(chatControllerProvider.select((ChatState s) => s.sessionId)),
+  (ref) =>
+      ref.watch(chatControllerProvider.select((ChatState s) => s.sessionId)),
 );
 
 final chatStoreProvider = Provider<ChatStore>(

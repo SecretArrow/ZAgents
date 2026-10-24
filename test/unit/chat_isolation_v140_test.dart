@@ -124,7 +124,9 @@ void main() {
       gateSummaries: gate,
     );
     final ProviderContainer container = await containerWith(
-      ScriptedLlmClient(<AssistantTurn>[AssistantTurn(content: 'draft answer')]),
+      ScriptedLlmClient(<AssistantTurn>[
+        AssistantTurn(content: 'draft answer'),
+      ]),
       store: slow,
     );
     final ChatController notifier = container.read(
@@ -186,7 +188,8 @@ void main() {
     expect(
       container.read(pendingAttachmentsProvider),
       <ChatAttachment>[staged],
-      reason: 're-opening the current chat must not silently drop the files '
+      reason:
+          're-opening the current chat must not silently drop the files '
           'the user staged in its composer',
     );
 
@@ -210,7 +213,9 @@ void main() {
     );
 
     await notifier.openChat(summary('a', 'Chat A'));
-    container.read(pendingAttachmentsProvider.notifier).state = <ChatAttachment>[
+    container
+        .read(pendingAttachmentsProvider.notifier)
+        .state = <ChatAttachment>[
       const ChatAttachment(
         name: 'notes.txt',
         path: 'uploads/notes.txt',

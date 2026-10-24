@@ -3,8 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../di.dart';
 import '../../models/models.dart';
-import '../../services/agent_controller.dart'
-    show ChatController, ChatState;
+import '../../services/agent_controller.dart' show ChatController, ChatState;
 import 'empty_state.dart';
 import 'message_bubble.dart';
 import 'plan_panel.dart';
@@ -55,9 +54,7 @@ class ChatBody extends ConsumerWidget {
         state.messages
             .take(lastAssistantIndex)
             .any((ChatMessage m) => m.role == Role.user);
-    final ChatController controller = ref.read(
-      chatControllerProvider.notifier,
-    );
+    final ChatController controller = ref.read(chatControllerProvider.notifier);
     final int count = state.messages.length;
 
     // v1.38.0: the live Plan panel is PINNED above the list and driven by

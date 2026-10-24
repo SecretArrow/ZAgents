@@ -656,8 +656,9 @@ class _ComposerState extends ConsumerState<Composer> {
                   onPressed: isLoading
                       ? null
                       : (isRunning
-                            ? () =>
-                                  ref.read(chatControllerProvider.notifier).stop()
+                            ? () => ref
+                                  .read(chatControllerProvider.notifier)
+                                  .stop()
                             : _submit),
                   icon: isLoading
                       ? const SizedBox(

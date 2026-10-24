@@ -101,46 +101,49 @@ void main() {
       },
     );
 
-    test('reinstall keeps the secrets stored by the previous install', () async {
-      const String config = 'config:\n  - name: API_KEY\n'
-          '    secret: true\n    required: true\n';
-      final SkillInstallReport first = await registry.installFromArchiveBytes(
-        zipSkill(extraFrontMatter: config),
-        source: 'a',
-      );
-      await registry.writeConfig(first.skill, <String, String>{
-        'API_KEY': 'S3CR3T',
-      });
+    test(
+      'reinstall keeps the secrets stored by the previous install',
+      () async {
+        const String config =
+            'config:\n  - name: API_KEY\n'
+            '    secret: true\n    required: true\n';
+        final SkillInstallReport first = await registry.installFromArchiveBytes(
+          zipSkill(extraFrontMatter: config),
+          source: 'a',
+        );
+        await registry.writeConfig(first.skill, <String, String>{
+          'API_KEY': 'S3CR3T',
+        });
 
-      final SkillInstallReport again = await registry.installFromArchiveBytes(
-        zipSkill(description: 'Updated', extraFrontMatter: config),
-        source: 'b',
-      );
+        final SkillInstallReport again = await registry.installFromArchiveBytes(
+          zipSkill(description: 'Updated', extraFrontMatter: config),
+          source: 'b',
+        );
 
-      expect(
-        await registry.readConfig(again.skill),
-        <String, String>{'API_KEY': 'S3CR3T'},
-        reason: 'the user must not have to re-enter secrets after an update',
-      );
-      expect(again.notes.join('\n'), contains('config was kept'));
-      expect(
-        again.notes.join('\n'),
-        isNot(contains('S3CR3T')),
-        reason: 'secret values are never echoed into reports',
-      );
-    });
+        expect(
+          await registry.readConfig(again.skill),
+          <String, String>{'API_KEY': 'S3CR3T'},
+          reason: 'the user must not have to re-enter secrets after an update',
+        );
+        expect(again.notes.join('\n'), contains('config was kept'));
+        expect(
+          again.notes.join('\n'),
+          isNot(contains('S3CR3T')),
+          reason: 'secret values are never echoed into reports',
+        );
+      },
+    );
 
     test('a gzip archive declaring an absurd unpacked size is refused '
         'before decoding', () async {
       final List<int> gz = ar.GZipEncoder().encode(
         ar.TarEncoder().encode(
-          ar.Archive()
-            ..addFile(
-              file(
-                'skill-main/demo-skill/SKILL.md',
-                utf8.encode('---\nname: demo-skill\ndescription: d\n---\n'),
-              ),
+          ar.Archive()..addFile(
+            file(
+              'skill-main/demo-skill/SKILL.md',
+              utf8.encode('---\nname: demo-skill\ndescription: d\n---\n'),
             ),
+          ),
         ),
       );
       final List<int> bomb = List<int>.from(gz);

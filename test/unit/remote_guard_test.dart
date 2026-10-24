@@ -86,8 +86,14 @@ void main() {
       }
       // A malformed literal is refused, not guessed at.
       expect(RemoteGuard.isAllowedUrl('https://[not:an:ip]/x'), isFalse);
-      expect(RemoteGuard.isAllowedUrl('https://[1:2:3:4:5:6:7:8:9]/x'), isFalse);
-      expect(RemoteGuard.isAllowedUrl('https://[2001:4860:4860::8888]/x'), isTrue);
+      expect(
+        RemoteGuard.isAllowedUrl('https://[1:2:3:4:5:6:7:8:9]/x'),
+        isFalse,
+      );
+      expect(
+        RemoteGuard.isAllowedUrl('https://[2001:4860:4860::8888]/x'),
+        isTrue,
+      );
       // NAT64 wrapping a PUBLIC address is allowed.
       expect(RemoteGuard.isAllowedUrl('https://[64:ff9b::808:808]/x'), isTrue);
     });
@@ -171,10 +177,8 @@ void main() {
 
     test('rejects a body larger than the declared cap', () async {
       final MockClient client = MockClient(
-        (http.Request request) async => http.Response.bytes(
-          List<int>.filled(4096, 65),
-          200,
-        ),
+        (http.Request request) async =>
+            http.Response.bytes(List<int>.filled(4096, 65), 200),
       );
       await expectLater(
         RemoteGuard.download(

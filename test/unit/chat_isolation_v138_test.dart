@@ -361,7 +361,8 @@ void main() {
       expect(
         call.status,
         ToolStatus.error,
-        reason: 'the user refused the action; the transcript must not show '
+        reason:
+            'the user refused the action; the transcript must not show '
             'a success check for it',
       );
       expect(call.resultText, contains('DENIED'));
@@ -444,7 +445,8 @@ void main() {
       expect(
         pending.details.join('\n'),
         contains('binance/binance-skills-hub'),
-        reason: 'the user must see the source before third-party code is '
+        reason:
+            'the user must see the source before third-party code is '
             'downloaded',
       );
       expect(
@@ -519,10 +521,7 @@ void main() {
 class _RecordingExecutor extends ToolExecutor {
   _RecordingExecutor(Directory dir)
     : super(
-        browser: ScriptedBrowserAutomation(
-          dir.path,
-          writeScreenshot: false,
-        ),
+        browser: ScriptedBrowserAutomation(dir.path, writeScreenshot: false),
         resolveBaseDir: (String? _) async => dir,
         isAutomationEnabled: () => false,
       );

@@ -367,7 +367,10 @@ void main() {
       await local.save(
         id: 's1',
         title: 'A',
-        messages: <ChatMessage>[ChatMessage.user('one'), ChatMessage.user('two')],
+        messages: <ChatMessage>[
+          ChatMessage.user('one'),
+          ChatMessage.user('two'),
+        ],
       );
       final List<String> files = Directory('${tempDir.path}/chats')
           .listSync()
@@ -381,36 +384,39 @@ void main() {
       expect((await local.load('s1'))!.length, 2);
     });
 
-    test('a rename queued behind a save cannot revert the transcript', () async {
-      await local.save(
-        id: 's1',
-        title: 'old title',
-        messages: <ChatMessage>[ChatMessage.user('one')],
-      );
+    test(
+      'a rename queued behind a save cannot revert the transcript',
+      () async {
+        await local.save(
+          id: 's1',
+          title: 'old title',
+          messages: <ChatMessage>[ChatMessage.user('one')],
+        );
 
-      // Both touch the same JSON file: rename is a read-modify-write and
-      // used to decode the file BEFORE the save landed, then write the old
-      // transcript back over it.
-      final Future<void> saving = local.save(
-        id: 's1',
-        title: 'old title',
-        messages: <ChatMessage>[
-          ChatMessage.user('one'),
-          ChatMessage.user('two'),
-          ChatMessage.user('three'),
-        ],
-      );
-      final Future<void> renaming = local.rename('s1', 'new title');
-      await Future.wait<void>(<Future<void>>[saving, renaming]);
+        // Both touch the same JSON file: rename is a read-modify-write and
+        // used to decode the file BEFORE the save landed, then write the old
+        // transcript back over it.
+        final Future<void> saving = local.save(
+          id: 's1',
+          title: 'old title',
+          messages: <ChatMessage>[
+            ChatMessage.user('one'),
+            ChatMessage.user('two'),
+            ChatMessage.user('three'),
+          ],
+        );
+        final Future<void> renaming = local.rename('s1', 'new title');
+        await Future.wait<void>(<Future<void>>[saving, renaming]);
 
-      final List<ChatMessage>? loaded = await local.load('s1');
-      expect(
-        loaded!.map((ChatMessage m) => m.content),
-        <String>['one', 'two', 'three'],
-        reason: 'the save must not be undone by the interleaved rename',
-      );
-      expect(await local.loadTitle('s1'), 'new title');
-    });
+        final List<ChatMessage>? loaded = await local.load('s1');
+        expect(loaded!.map((ChatMessage m) => m.content), <String>[
+          'one',
+          'two',
+          'three',
+        ], reason: 'the save must not be undone by the interleaved rename');
+        expect(await local.loadTitle('s1'), 'new title');
+      },
+    );
 
     test('concurrent saves for one chat apply in call order', () async {
       final List<Future<void>> saves = <Future<void>>[
@@ -426,11 +432,13 @@ void main() {
       await Future.wait<void>(saves);
 
       final List<ChatMessage>? loaded = await local.load('s1');
-      expect(
-        loaded!.map((ChatMessage m) => m.content),
-        <String>['msg0', 'msg1', 'msg2', 'msg3', 'msg4'],
-        reason: 'the last queued save owns the final file contents',
-      );
+      expect(loaded!.map((ChatMessage m) => m.content), <String>[
+        'msg0',
+        'msg1',
+        'msg2',
+        'msg3',
+        'msg4',
+      ], reason: 'the last queued save owns the final file contents');
       expect(await local.loadTitle('s1'), 'v4');
     });
 
@@ -448,7 +456,9 @@ void main() {
           ChatMessage.user('two'),
         ],
       );
-      final Future<void> modules = local.saveModules('s1', <String>['plugin-a']);
+      final Future<void> modules = local.saveModules('s1', <String>[
+        'plugin-a',
+      ]);
       await Future.wait<void>(<Future<void>>[saving, modules]);
 
       final List<ChatMessage>? loaded = await local.load('s1');
@@ -465,7 +475,10 @@ void main() {
       final Future<void> saving = local.save(
         id: 's1',
         title: 't',
-        messages: <ChatMessage>[ChatMessage.user('one'), ChatMessage.user('two')],
+        messages: <ChatMessage>[
+          ChatMessage.user('one'),
+          ChatMessage.user('two'),
+        ],
       );
       final Future<void> deleting = local.delete('s1');
       await Future.wait<void>(<Future<void>>[saving, deleting]);
