@@ -343,6 +343,54 @@ void main() {
       expect(res!['ok'], isFalse);
       expect(res['error'], contains('http'));
     });
+
+    test('blocks loopback and LAN URLs before any request', () async {
+      int calls = 0;
+      final ScriptFetchProxy proxy = ScriptFetchProxy(
+        client: MockClient((http.Request request) async {
+          calls++;
+          return http.Response('ok', 200);
+        }),
+      );
+      for (final String url in <String>[
+        'http://127.0.0.1:8545/',
+        'http://localhost/',
+        'http://192.168.1.1/',
+        'http://10.1.2.3/',
+        'http://[::1]/',
+      ]) {
+        final Map<String, dynamic>? res = await proxy.call(url, 'GET', null);
+        expect(res!['ok'], isFalse, reason: url);
+        expect(res['error'], contains('Blocked URL'), reason: url);
+      }
+      expect(
+        calls,
+        0,
+        reason: 'third-party skill code must not reach the user\'s LAN',
+      );
+    });
+
+    test('a redirect to a private host is blocked', () async {
+      final List<String> hits = <String>[];
+      final ScriptFetchProxy proxy = ScriptFetchProxy(
+        client: MockClient((http.Request request) async {
+          hits.add(request.url.toString());
+          return http.Response(
+            '',
+            302,
+            headers: <String, String>{'location': 'http://169.254.169.254/'},
+          );
+        }),
+      );
+      final Map<String, dynamic>? res = await proxy.call(
+        'https://example.com/rpc',
+        'POST',
+        '{}',
+      );
+      expect(res!['ok'], isFalse);
+      expect(res['error'], contains('Blocked URL'));
+      expect(hits, <String>['https://example.com/rpc']);
+    });
   });
 
   group('skills in the system prompt (discovery without reinstalling)', () {

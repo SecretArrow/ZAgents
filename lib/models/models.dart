@@ -39,7 +39,11 @@ class ToolCall {
       case 'browser_click':
         return (arguments['text'] ?? arguments['selector'])?.toString() ?? '';
       case 'browser_type':
-        return arguments['text']?.toString() ?? '';
+        // SECRETS (v1.41.0): a typed value may be a password, an OTP or a
+        // seed phrase entered into a form. The transcript is persisted and
+        // exported, so the content is never rendered — only its length.
+        final String typed = arguments['text']?.toString() ?? '';
+        return typed.isEmpty ? '' : '•••• (${typed.length} chars)';
       case 'browser_scroll':
         return '${arguments['direction'] ?? 'down'} ${arguments['amount'] ?? ''}'
             .trim();
@@ -74,11 +78,71 @@ class ToolCall {
       case 'request_confirmation':
         return arguments['title']?.toString() ?? '';
       default:
-        final entries = arguments.entries
-            .take(3)
-            .map((e) => '${e.key}: ${e.value}');
-        return entries.join(', ');
+        final List<String> parts = <String>[];
+        for (final MapEntry<String, dynamic> entry in arguments.entries) {
+          if (parts.length == 3) break;
+          final bool secret = _isSecretKey(entry.key);
+          parts.add('${entry.key}: ${secret ? '<redacted>' : entry.value}');
+        }
+        return parts.join(', ');
     }
+  }
+
+  /// Argument keys whose VALUE is a credential. Compared lower-case with
+  /// every non-alphanumeric character stripped, so `api_key`, `apiKey`
+  /// and `API-KEY` all match.
+  static const Set<String> _secretKeys = <String>{
+    'token',
+    'accesstoken',
+    'refreshtoken',
+    'idtoken',
+    'password',
+    'passwd',
+    'passphrase',
+    'pin',
+    'secret',
+    'clientsecret',
+    'apikey',
+    'privatekey',
+    'seed',
+    'seedphrase',
+    'mnemonic',
+    'authorization',
+    'cookie',
+    'credentials',
+  };
+
+  static bool _isSecretKey(String key) {
+    final String normalized = key
+        .toLowerCase()
+        .replaceAll(RegExp(r'[^a-z0-9]'), '');
+    return _secretKeys.contains(normalized) ||
+        normalized.endsWith('token') ||
+        normalized.endsWith('password') ||
+        normalized.endsWith('secret') ||
+        normalized.endsWith('apikey') ||
+        normalized.endsWith('privatekey');
+  }
+
+  /// Deep copy of [value] with credential values replaced by
+  /// `<redacted>`. Depth-bounded: arguments are model-authored JSON and a
+  /// pathological nesting must not blow the stack.
+  static Object? _redactedValue(Object? value, [int depth = 0]) {
+    if (depth > 8) return '<redacted>';
+    if (value is Map) {
+      return <String, dynamic>{
+        for (final MapEntry<Object?, Object?> entry in value.entries)
+          entry.key.toString(): _isSecretKey(entry.key.toString())
+              ? '<redacted>'
+              : _redactedValue(entry.value, depth + 1),
+      };
+    }
+    if (value is List) {
+      return <Object?>[
+        for (final Object? item in value) _redactedValue(item, depth + 1),
+      ];
+    }
+    return value;
   }
 
   /// Arguments that are safe to persist and to replay to the model.
@@ -86,19 +150,34 @@ class ToolCall {
   /// `skill_config` carries user secrets (API keys, wallet settings). They
   /// are written to the on-device skill config and MUST NOT be echoed into
   /// the transcript, the session export or the provider request — so only
-  /// the skill name and the KEY names survive.
+  /// the skill name and the KEY names survive. Every other tool goes
+  /// through the same redaction for credential-looking keys
+  /// (`token`, `password`, `api_key`, `private_key`, …), because a tool
+  /// argument is persisted verbatim in the chat file and the export.
   Map<String, dynamic> get safeArguments {
-    if (name != 'skill_config') return arguments;
-    final Object? rawValues = arguments['values'];
-    final Iterable<Object?> keys = rawValues is Map
-        ? rawValues.keys
-        : const <Object?>[];
-    return <String, dynamic>{
-      'name': arguments['name'],
-      'values': <String, dynamic>{
-        for (final Object? key in keys) key.toString(): '<redacted>',
-      },
-    };
+    if (name == 'skill_config') {
+      final Object? rawValues = arguments['values'];
+      final Iterable<Object?> keys = rawValues is Map
+          ? rawValues.keys
+          : const <Object?>[];
+      return <String, dynamic>{
+        'name': arguments['name'],
+        'values': <String, dynamic>{
+          for (final Object? key in keys) key.toString(): '<redacted>',
+        },
+      };
+    }
+    final Object? redacted = _redactedValue(arguments);
+    final Map<String, dynamic> safe = redacted is Map<String, dynamic>
+        ? redacted
+        : <String, dynamic>{'value': redacted};
+    // `browser_type`'s payload key is a generic `text`, but the value can
+    // be a password or seed phrase typed into a form.
+    if (name == 'browser_type' &&
+        (arguments['text']?.toString().isNotEmpty ?? false)) {
+      safe['text'] = '<redacted>';
+    }
+    return safe;
   }
 
   Map<String, dynamic> toJson() => <String, dynamic>{

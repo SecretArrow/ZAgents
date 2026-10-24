@@ -28,16 +28,30 @@ class RemoteGuard {
     r'^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$',
   );
 
-  /// True only for public `https` endpoints.
-  static bool isAllowedUrl(String url) {
+  /// True only for public endpoints.
+  ///
+  /// [requireHttps] is the default policy for downloaded code and
+  /// archives. Callers that fetch user-visible pages (`web_fetch`, skill
+  /// script `fetch`) pass `false`: plain `http` is allowed there, but the
+  /// SSRF rules (no loopback, LAN, CGNAT, link-local, multicast or
+  /// single-label host) still apply — a skill script must not be able to
+  /// probe the user's router.
+  static bool isAllowedUrl(String url, {bool requireHttps = true}) {
     final Uri? uri = Uri.tryParse(url);
-    if (uri == null || uri.scheme != 'https') return false;
+    if (uri == null) return false;
+    final bool schemeOk = requireHttps
+        ? uri.scheme == 'https'
+        : (uri.scheme == 'http' || uri.scheme == 'https');
+    if (!schemeOk) return false;
     String host = uri.host.toLowerCase();
     if (host.startsWith('[') && host.endsWith(']')) {
       host = host.substring(1, host.length - 1);
     }
     if (host.isEmpty) return false;
     if (host == 'localhost' || host.endsWith('.localhost')) return false;
+    // A single-label host (`http://router/`, `http://metadata/`) resolves
+    // on the local network only — there is no public site to fetch.
+    if (!host.contains('.') && !host.contains(':')) return false;
     final Match? match = _dottedQuad.firstMatch(host);
     if (match != null) {
       final List<int> parts = <int>[

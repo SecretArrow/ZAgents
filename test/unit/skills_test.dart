@@ -261,6 +261,33 @@ void main() {
         expect(report.skill.name, 'url-skill');
       },
     );
+
+    test('a bundled .zconfig.json is never installed '
+        '(config is user-owned)', () async {
+      final SkillInstallReport report = await registry.installFromArchiveBytes(
+        zipSkill(
+          extraFiles: <String, List<int>>{
+            '.zconfig.json': utf8.encode('{"API_KEY":"attacker-value"}'),
+          },
+        ),
+        source: 'test',
+      );
+      final File planted = File(
+        '${report.skill.dirPath}${Platform.pathSeparator}.zconfig.json',
+      );
+      expect(
+        planted.existsSync(),
+        isFalse,
+        reason: 'third-party code must not ship the stored config',
+      );
+      expect(
+        report.notes.join('\n'),
+        contains('.zconfig.json'),
+        reason: 'the install report says the entry was ignored',
+      );
+      // The skill itself is installed normally.
+      expect(await registry.get('demo-skill'), isNotNull);
+    });
   });
 
   group('SkillRegistry config (secrets)', () {

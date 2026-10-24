@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zagents/models/models.dart';
 
@@ -382,6 +384,84 @@ void main() {
       final AppSettings off = AppSettings(deviceCommandsEnabled: true)
           .copyWith(deviceCommandsEnabled: false);
       expect(AppSettings.fromJson(off.toJson()).deviceCommandsEnabled, isFalse);
+    });
+  });
+
+  group('ToolCall argument redaction (v1.41.0)', () {
+    test('credential-looking keys never reach the transcript', () {
+      final ToolCall call = ToolCall(
+        id: 't1',
+        name: 'http_request',
+        arguments: <String, dynamic>{
+          'url': 'https://api.example.com/v1/orders',
+          'api_key': 'sk-live-SECRET',
+          'headers': <String, dynamic>{
+            'Authorization': 'Bearer SECRET',
+            'Accept': 'application/json',
+          },
+          'items': <dynamic>[
+            <String, dynamic>{'token': 'SECRET', 'sku': 'A1'},
+          ],
+        },
+      );
+      final Map<String, dynamic> safe = call.safeArguments;
+      expect(safe['url'], 'https://api.example.com/v1/orders');
+      expect(safe['api_key'], '<redacted>');
+      final Map<String, dynamic> headers =
+          safe['headers'] as Map<String, dynamic>;
+      expect(headers['Authorization'], '<redacted>');
+      expect(headers['Accept'], 'application/json');
+      final List<dynamic> items = safe['items'] as List<dynamic>;
+      expect((items.single as Map<String, dynamic>)['token'], '<redacted>');
+      expect((items.single as Map<String, dynamic>)['sku'], 'A1');
+      // The persisted JSON is redacted too — the chat file is the leak.
+      expect(jsonEncode(call.toJson()), isNot(contains('SECRET')));
+      // The live call keeps its arguments: the tool still has to run.
+      expect(call.arguments['api_key'], 'sk-live-SECRET');
+    });
+
+    test('browser_type never renders or persists typed text', () {
+      final ToolCall call = ToolCall(
+        id: 't2',
+        name: 'browser_type',
+        arguments: <String, dynamic>{
+          'text': 'correct horse battery staple',
+          'selector': '#passphrase',
+        },
+      );
+      expect(call.argsSummary, '•••• (28 chars)');
+      expect(call.safeArguments['text'], '<redacted>');
+      expect(jsonEncode(call.toJson()), isNot(contains('battery')));
+    });
+
+    test('unknown tools redact secret keys in the UI summary', () {
+      final ToolCall call = ToolCall(
+        id: 't3',
+        name: 'some_future_tool',
+        arguments: <String, dynamic>{
+          'password': 'hunter2',
+          'account': 'alice',
+        },
+      );
+      expect(call.argsSummary, 'password: <redacted>, account: alice');
+    });
+
+    test('skill_config keeps only key names', () {
+      final ToolCall call = ToolCall(
+        id: 't4',
+        name: 'skill_config',
+        arguments: <String, dynamic>{
+          'name': 'wallet',
+          'values': <String, dynamic>{'API_KEY': 'SECRET', 'NETWORK': 'bsc'},
+        },
+      );
+      final Map<String, dynamic> safe = call.safeArguments;
+      expect(safe['name'], 'wallet');
+      expect(
+        (safe['values'] as Map<String, dynamic>).keys,
+        containsAll(<String>['API_KEY', 'NETWORK']),
+      );
+      expect(jsonEncode(safe), isNot(contains('SECRET')));
     });
   });
 }

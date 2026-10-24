@@ -514,6 +514,56 @@ void main() {
       );
     });
 
+    test('Stop between approval and execution prevents the action', () async {
+      final _RecordingExecutor executor = _RecordingExecutor(tempDir);
+      final ProviderContainer container = await containerWith(
+        ScriptedLlmClient(<AssistantTurn>[
+          AssistantTurn(
+            content: '',
+            toolCalls: <ToolCallRequest>[
+              ToolCallRequest(
+                id: 'c11',
+                name: 'skill_install',
+                argumentsJson: jsonEncode(<String, dynamic>{
+                  'source': 'owner/repo',
+                }),
+              ),
+            ],
+          ),
+          AssistantTurn(content: 'stopped'),
+        ]),
+        extra: <Override>[toolExecutorProvider.overrideWithValue(executor)],
+      );
+      final Future<void> run = container
+          .read(chatControllerProvider.notifier)
+          .send('install it');
+      await Future<void>.delayed(Duration.zero);
+
+      final ChatController notifier = container.read(
+        chatControllerProvider.notifier,
+      );
+      // Approve, then Stop in the SAME synchronous block: the loop resumes
+      // on a later microtask, so this is exactly the window in which the
+      // action used to run anyway.
+      notifier.resolveConfirmation('install:c11', true);
+      notifier.stop();
+      await run;
+
+      expect(
+        executor.executed,
+        isEmpty,
+        reason: 'a stopped chat must never install/execute after approval',
+      );
+      final ToolCall call = container
+          .read(chatControllerProvider)
+          .messages
+          .firstWhere((ChatMessage m) => m.toolCalls.isNotEmpty)
+          .toolCalls
+          .single;
+      expect(call.status, ToolStatus.error);
+      expect(call.resultText, contains('NOT performed'));
+    });
+
     test('skill_run on a wallet skill is gated: a denial never reaches the '
         'executor and the call is reported as failed', () async {
       final SkillRegistry registry = SkillRegistry(

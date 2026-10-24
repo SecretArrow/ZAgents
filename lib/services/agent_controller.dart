@@ -1972,12 +1972,28 @@ class ChatController extends Notifier<ChatState> {
           // One place that hands a call to the executor, so every approval
           // branch below runs the tool the same way (and Stop still reaches
           // LONG-RUNNING tools through `shouldAbort`).
-          Future<ToolResult> runTool() => executor.execute(
-            call.name,
-            call.arguments,
-            sessionId: run.sessionId,
-            shouldAbort: () => run.stopRequested,
-          );
+          Future<ToolResult> runTool() async {
+            // v1.41.0: Stop can land WHILE an approval dialog is open —
+            // between the user's "approve" and this line. The action must
+            // then NOT run: a stopped chat that still sends a transaction
+            // is the worst possible race. `shouldAbort` only covers tools
+            // that are already running.
+            if (run.stopRequested) {
+              return ToolResult(
+                ok: false,
+                llmOutput:
+                    'Stopped by the user before this action ran — it was '
+                    'NOT performed.',
+                displayText: 'stopped',
+              );
+            }
+            return executor.execute(
+              call.name,
+              call.arguments,
+              sessionId: run.sessionId,
+              shouldAbort: () => run.stopRequested,
+            );
+          }
 
           final ToolResult result;
           if (call.name == 'request_confirmation') {

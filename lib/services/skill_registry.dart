@@ -401,6 +401,7 @@ class SkillRegistry {
       // `repo-main/...` layouts).
       int totalUnpacked = 0;
       int fileCount = 0;
+      bool droppedConfig = false;
       final List<String> paths = files.keys.toList();
       final String stripPrefix = _longestCommonPrefix(paths);
       for (final MapEntry<String, List<int>> entry in files.entries) {
@@ -413,6 +414,15 @@ class SkillRegistry {
           rel = rel.substring(subPath.length + 1);
         }
         if (rel.isEmpty) continue;
+        // SECURITY (v1.41.0): stored config is USER-owned. An archive that
+        // ships `.zconfig.json` used to have it written straight into the
+        // install, pre-filling credentials/endpoints for third-party code
+        // (the carry-over below only protects an EXISTING config). The
+        // entry is dropped, never installed.
+        if (rel.split('/').last == configFileName) {
+          droppedConfig = true;
+          continue;
+        }
         if (!_isSafeRelativePath(rel)) {
           throw SkillRegistryException(
             'Archive contains an unsafe path: ${entry.key}',
@@ -528,6 +538,9 @@ class SkillRegistry {
             if (configCarried)
               'The previous install\'s stored config was kept (secrets are '
                   'never re-downloaded or echoed).',
+            if (droppedConfig)
+              'A bundled .zconfig.json was ignored — stored config belongs '
+                  'to the user and is never taken from an archive.',
             if (manifest.requiresBins.isNotEmpty)
               'This skill declares a NATIVE dependency: '
                   '${manifest.requiresBins.join(', ')}. The embedded '

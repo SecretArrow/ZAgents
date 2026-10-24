@@ -352,9 +352,31 @@ class FileSystemService {
           throw const FileSystemException('Corrupted archive');
       }
     }
-    final Map<String, List<int>> files = (result['files'] as Map)
+    final Map<String, List<int>> rawFiles = (result['files'] as Map)
         .cast<String, List<int>>();
-    final List<String> dirs = (result['dirs'] as List).cast<String>();
+    final List<String> rawDirs = (result['dirs'] as List).cast<String>();
+    // SECURITY (v1.41.0): entry names are attacker-controlled. They used
+    // to be concatenated straight onto the destination folder, so a name
+    // like `../../databases/app.db` wrote OUTSIDE it (zip-slip) — for a
+    // file the user merely attached that is an arbitrary write in the app
+    // sandbox. The whole listing is validated BEFORE anything is created,
+    // so a hostile archive extracts nothing at all.
+    final Map<String, List<int>> files = <String, List<int>>{};
+    for (final MapEntry<String, List<int>> entry in rawFiles.entries) {
+      final String? safe = _safeArchiveEntry(entry.key);
+      if (safe == null) {
+        throw const FileSystemException('Archive contains an unsafe path');
+      }
+      if (safe.isNotEmpty) files[safe] = entry.value;
+    }
+    final List<String> dirs = <String>[];
+    for (final String name in rawDirs) {
+      final String? safe = _safeArchiveEntry(name);
+      if (safe == null) {
+        throw const FileSystemException('Archive contains an unsafe path');
+      }
+      if (safe.isNotEmpty) dirs.add(safe);
+    }
     final String zipName = zipPath.split(Platform.pathSeparator).last;
     final String parentDir = zipPath.substring(
       0,
@@ -393,6 +415,27 @@ class FileSystemService {
     return dest.path.startsWith(root)
         ? dest.path.substring(root.length + 1)
         : dest.path;
+  }
+
+  /// Normalises one archive entry name, or returns null when it must be
+  /// refused (v1.41.0, zip-slip defence).
+  ///
+  /// Accepted: `a/b.txt`, `./a/b.txt`, `a//b.txt`, backslash separators.
+  /// Refused: absolute paths, any `..` segment, drive letters / `:` and
+  /// NUL bytes. Returns '' for a name that normalises to nothing (a bare
+  /// `./` or `/` entry).
+  static String? _safeArchiveEntry(String name) {
+    if (name.contains('\u0000')) return null;
+    final String cleaned = name.replaceAll('\\', '/');
+    if (cleaned.startsWith('/')) return null;
+    final List<String> parts = <String>[];
+    for (final String part in cleaned.split('/')) {
+      if (part.isEmpty || part == '.') continue;
+      if (part == '..') return null;
+      if (part.contains(':')) return null;
+      parts.add(part);
+    }
+    return parts.join('/');
   }
 
   /// Reads a text preview (max [maxChars]) of a file.

@@ -3,6 +3,8 @@ import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
 
+import 'remote_guard.dart';
+
 /// Result of one proxied script `fetch()` — crosses the JS bridge as a
 /// plain JSON-serializable map.
 ///
@@ -78,53 +80,96 @@ class ScriptFetchProxy {
     Map<String, String> headers = const <String, String>{},
     bool bodyIsBase64 = false,
   }) async {
-    final Uri? uri = Uri.tryParse(url.trim());
-    if (uri == null ||
-        !uri.hasScheme ||
-        (uri.scheme != 'http' && uri.scheme != 'https')) {
+    final Uri? parsed = Uri.tryParse(url.trim());
+    if (parsed == null ||
+        !parsed.hasScheme ||
+        (parsed.scheme != 'http' && parsed.scheme != 'https')) {
       return const <String, dynamic>{
         'ok': false,
         'error': 'Only http(s) URLs are supported',
       };
     }
 
-    final http.Request request = http.Request(method.toUpperCase(), uri);
-    final String? ua = resolveUserAgent?.call();
-    if (ua != null && ua.isNotEmpty) {
-      request.headers['User-Agent'] = ua;
-    }
-    request.headers['Accept'] = '*/*';
-    for (final MapEntry<String, String> e in headers.entries) {
-      final String name = e.key.trim();
-      if (name.isEmpty ||
-          name.toLowerCase() == 'user-agent' ||
-          name.toLowerCase() == 'host' ||
-          name.toLowerCase() == 'content-length') {
-        continue;
+    // SECURITY (v1.41.0): the URL comes from third-party skill code. A
+    // script could otherwise probe loopback/LAN services and read the
+    // responses back (SSRF). Every redirect HOP is checked as well: the
+    // client used to follow a public URL straight into `http://192.168.x.x`.
+    Uri current = parsed;
+    String currentMethod = method.toUpperCase();
+    String? currentBody = body;
+    http.StreamedResponse response;
+    for (int hop = 0; ; hop++) {
+      if (!RemoteGuard.isAllowedUrl(current.toString(), requireHttps: false)) {
+        return <String, dynamic>{
+          'ok': false,
+          'error':
+              'Blocked URL (only public http(s) hosts are allowed): $current',
+        };
       }
-      request.headers[name] = e.value;
-    }
-    if (body != null &&
-        method.toUpperCase() != 'GET' &&
-        method.toUpperCase() != 'HEAD') {
-      if (bodyIsBase64) {
-        try {
-          request.bodyBytes = base64Decode(body);
-        } catch (_) {
-          return const <String, dynamic>{
-            'ok': false,
-            'error': 'Request body is not valid base64',
-          };
+      final http.Request request = http.Request(currentMethod, current)
+        ..followRedirects = false;
+      final String? ua = resolveUserAgent?.call();
+      if (ua != null && ua.isNotEmpty) {
+        request.headers['User-Agent'] = ua;
+      }
+      request.headers['Accept'] = '*/*';
+      for (final MapEntry<String, String> e in headers.entries) {
+        final String name = e.key.trim();
+        if (name.isEmpty ||
+            name.toLowerCase() == 'user-agent' ||
+            name.toLowerCase() == 'host' ||
+            name.toLowerCase() == 'content-length') {
+          continue;
         }
-      } else {
-        request.bodyBytes = utf8.encode(body);
+        request.headers[name] = e.value;
+      }
+      final String? requestBody = currentBody;
+      if (requestBody != null &&
+          currentMethod != 'GET' &&
+          currentMethod != 'HEAD') {
+        if (bodyIsBase64) {
+          try {
+            request.bodyBytes = base64Decode(requestBody);
+          } catch (_) {
+            return const <String, dynamic>{
+              'ok': false,
+              'error': 'Request body is not valid base64',
+            };
+          }
+        } else {
+          request.bodyBytes = utf8.encode(requestBody);
+        }
+      }
+      try {
+        response = await _client.send(request).timeout(timeout);
+      } catch (e) {
+        return <String, dynamic>{'ok': false, 'error': 'fetch failed: $e'};
+      }
+      if (!response.isRedirect) break;
+      final String? location = response.headers['location'];
+      await response.stream.drain<void>();
+      if (location == null || location.trim().isEmpty) {
+        return <String, dynamic>{
+          'ok': false,
+          'error': 'Redirect without a Location header from $current',
+        };
+      }
+      if (hop >= 4) {
+        return <String, dynamic>{
+          'ok': false,
+          'error': 'Too many redirects for $url',
+        };
+      }
+      current = current.resolve(location.trim());
+      final int status = response.statusCode;
+      if (status == 301 || status == 302 || status == 303) {
+        // Browser semantics: these redirects turn the request into a GET.
+        currentMethod = 'GET';
+        currentBody = null;
       }
     }
 
     try {
-      final http.StreamedResponse response = await _client
-          .send(request)
-          .timeout(timeout);
       final List<int> bytes = await response.stream.fold(<int>[], (
         List<int> acc,
         List<int> chunk,

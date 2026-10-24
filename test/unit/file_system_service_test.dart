@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:archive/archive.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zagents/services/file_system_service.dart';
 
@@ -119,6 +120,46 @@ void main() {
   test('path traversal is rejected everywhere', () async {
     expect(await fs.resolve('../outside'), isNull);
     expect(await fs.list('../outside'), isEmpty);
+  });
+
+  test('unzip refuses entries that escape the destination '
+      '(zip-slip)', () async {
+    // A hand-built archive whose entry name climbs out of the folder the
+    // extractor creates. Attaching a file like this used to write
+    // anywhere in the app sandbox.
+    final Archive evil = Archive()
+      ..addFile(ArchiveFile('../escaped.txt', 4, <int>[101, 118, 105, 108]))
+      ..addFile(ArchiveFile('ok.txt', 2, <int>[111, 107]));
+    await File(
+      '${tempDir.path}/evil.zip',
+    ).writeAsBytes(ZipEncoder().encode(evil));
+
+    await expectLater(
+      fs.unzip('evil.zip'),
+      throwsA(isA<FileSystemException>()),
+    );
+    expect(
+      await File('${tempDir.path}/escaped.txt').exists(),
+      isFalse,
+      reason: 'nothing may be written outside the destination',
+    );
+    expect(
+      await Directory('${tempDir.path}/evil_extracted').exists(),
+      isFalse,
+      reason: 'a hostile archive must extract nothing at all',
+    );
+  });
+
+  test('unzip normalises harmless entry names', () async {
+    final Archive ok = Archive()
+      ..addFile(ArchiveFile('./sub//note.txt', 2, <int>[104, 105]));
+    await File('${tempDir.path}/ok.zip').writeAsBytes(ZipEncoder().encode(ok));
+
+    final String dir = await fs.unzip('ok.zip');
+    expect(
+      await File('${tempDir.path}/$dir/sub/note.txt').readAsString(),
+      'hi',
+    );
   });
 
   test('readText truncates long files', () async {

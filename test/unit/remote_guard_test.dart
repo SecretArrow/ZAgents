@@ -33,6 +33,53 @@ void main() {
       expect(RemoteGuard.isAllowedUrl('not a url'), isFalse);
     });
 
+    test('requireHttps: false allows public http, still blocks '
+        'local targets', () {
+      // web_fetch and skill-script fetch() fetch user-visible pages over
+      // plain http too — the SSRF rules must survive that relaxation.
+      expect(
+        RemoteGuard.isAllowedUrl(
+          'http://example.com/page',
+          requireHttps: false,
+        ),
+        isTrue,
+      );
+      expect(
+        RemoteGuard.isAllowedUrl(
+          'http://127.0.0.1:8080/',
+          requireHttps: false,
+        ),
+        isFalse,
+      );
+      expect(
+        RemoteGuard.isAllowedUrl('http://192.168.1.1/', requireHttps: false),
+        isFalse,
+      );
+      expect(
+        RemoteGuard.isAllowedUrl('http://router/', requireHttps: false),
+        isFalse,
+      );
+      expect(
+        RemoteGuard.isAllowedUrl('ftp://example.com/', requireHttps: false),
+        isFalse,
+      );
+    });
+
+    test('rejects single-label (LAN-only) hostnames', () {
+      for (final String host in <String>[
+        'router',
+        'nas',
+        'metadata',
+        'intranet',
+      ]) {
+        expect(
+          RemoteGuard.isAllowedUrl('https://$host/x'),
+          isFalse,
+          reason: host,
+        );
+      }
+    });
+
     test('rejects loopback and private IPv4 literals', () {
       for (final String host in <String>[
         'localhost',

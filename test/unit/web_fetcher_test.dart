@@ -99,4 +99,48 @@ void main() {
     expect(ftp.ok, isFalse);
     expect(ftp.output, contains('http(s)'));
   });
+
+  test('SSRF: loopback, private and single-label hosts '
+      'are refused', () async {
+    int calls = 0;
+    final WebFetcher fetcher = WebFetcher(
+      client: MockClient((http.Request request) async {
+        calls++;
+        return http.Response('secret', 200);
+      }),
+    );
+    for (final String url in <String>[
+      'http://127.0.0.1:8080/admin',
+      'http://localhost/',
+      'http://192.168.1.1/',
+      'http://10.0.0.5/',
+      'http://169.254.169.254/latest/meta-data/',
+      'http://router/',
+      'http://[::1]/',
+    ]) {
+      final WebFetchResult result = await fetcher.fetch(url);
+      expect(result.ok, isFalse, reason: url);
+      expect(result.output, contains('Refusing to fetch'), reason: url);
+    }
+    expect(calls, 0, reason: 'no request may leave the device');
+  });
+
+  test('SSRF: a public URL redirecting to a private host '
+      'is refused', () async {
+    final List<String> hits = <String>[];
+    final WebFetcher fetcher = WebFetcher(
+      client: MockClient((http.Request request) async {
+        hits.add(request.url.toString());
+        return http.Response(
+          '',
+          302,
+          headers: <String, String>{'location': 'http://192.168.1.1/admin'},
+        );
+      }),
+    );
+    final WebFetchResult result = await fetcher.fetch('https://x.test/go');
+    expect(result.ok, isFalse);
+    expect(result.output, contains('Refusing to fetch'));
+    expect(hits, <String>['https://x.test/go']);
+  });
 }

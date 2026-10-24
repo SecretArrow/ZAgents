@@ -4,6 +4,8 @@ import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
 
+import 'remote_guard.dart';
+
 /// Outcome of a [WebFetcher.fetch] call.
 class WebFetchResult {
   const WebFetchResult({required this.ok, required this.output});
@@ -42,6 +44,11 @@ class WebFetcher {
       'Mozilla/5.0 (Linux; Android 15; Pixel 9) AppleWebKit/537.36 '
       '(KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36';
 
+  /// Message for a URL that [RemoteGuard] refused (SSRF policy).
+  static String _blockedMessage(Uri uri) =>
+      'Refusing to fetch $uri — only public http(s) hosts are allowed '
+      '(loopback, private/LAN and single-label hosts are blocked).';
+
   Future<WebFetchResult> fetch(
     String url, {
     int maxLength = defaultMaxLength,
@@ -49,32 +56,59 @@ class WebFetcher {
     final int limit = maxLength < 1
         ? defaultMaxLength
         : (maxLength > maxMaxLength ? maxMaxLength : maxLength);
-    final Uri? uri = Uri.tryParse(url.trim());
-    if (uri == null ||
-        !uri.hasScheme ||
-        (uri.scheme != 'http' && uri.scheme != 'https')) {
+    final Uri? parsed = Uri.tryParse(url.trim());
+    if (parsed == null ||
+        !parsed.hasScheme ||
+        (parsed.scheme != 'http' && parsed.scheme != 'https')) {
       return const WebFetchResult(
         ok: false,
         output: 'Only http(s) URLs are supported.',
       );
     }
-    final http.Request request = http.Request('GET', uri);
-    request.headers['Accept'] =
-        'text/html,application/json;q=0.9,text/plain;q=0.8,*/*;q=0.5';
-    request.headers['User-Agent'] =
-        resolveUserAgent?.call() ?? defaultUserAgent;
 
+    // SECURITY (v1.41.0): the URL is model-authored. Without a policy the
+    // agent could make the device fetch its own loopback services or the
+    // user's LAN (routers, NAS, admin panels) — classic SSRF. Redirects
+    // are followed manually so every HOP is checked too: the http client
+    // used to follow a public URL straight into `http://192.168.x.x`.
+    Uri current = parsed;
     http.StreamedResponse response;
-    try {
-      response = await _client.send(request).timeout(requestTimeout);
-    } on TimeoutException {
-      return WebFetchResult(
-        ok: false,
-        output: 'Request timed out after ${requestTimeout.inSeconds}s: $url',
-      );
-    } catch (e) {
-      return WebFetchResult(ok: false, output: 'Request failed: $e');
+    for (int hop = 0; ; hop++) {
+      if (!RemoteGuard.isAllowedUrl(current.toString(), requireHttps: false)) {
+        return WebFetchResult(ok: false, output: _blockedMessage(current));
+      }
+      final http.Request request = http.Request('GET', current)
+        ..followRedirects = false;
+      request.headers['Accept'] =
+          'text/html,application/json;q=0.9,text/plain;q=0.8,*/*;q=0.5';
+      request.headers['User-Agent'] =
+          resolveUserAgent?.call() ?? defaultUserAgent;
+      try {
+        response = await _client.send(request).timeout(requestTimeout);
+      } on TimeoutException {
+        return WebFetchResult(
+          ok: false,
+          output: 'Request timed out after ${requestTimeout.inSeconds}s: '
+              '$current',
+        );
+      } catch (e) {
+        return WebFetchResult(ok: false, output: 'Request failed: $e');
+      }
+      if (!response.isRedirect) break;
+      final String? location = response.headers['location'];
+      await response.stream.drain<void>();
+      if (location == null || location.trim().isEmpty) {
+        return WebFetchResult(
+          ok: false,
+          output: 'Redirect without a Location header from $current',
+        );
+      }
+      if (hop >= 4) {
+        return WebFetchResult(ok: false, output: 'Too many redirects for $url');
+      }
+      current = current.resolve(location.trim());
     }
+    final Uri uri = current;
 
     // Read the body with a hard cap so oversized responses never blow up
     // memory (the loop stops pulling once the cap is reached).
@@ -100,7 +134,7 @@ class WebFetcher {
           : text;
       return WebFetchResult(
         ok: false,
-        output: 'HTTP $status for $url. Body: $preview',
+        output: 'HTTP $status for $uri. Body: $preview',
       );
     }
 
@@ -121,7 +155,7 @@ class WebFetcher {
     } else {
       return WebFetchResult(
         ok: false,
-        output: 'unsupported content-type: $mime (url: $url)',
+        output: 'unsupported content-type: $mime (url: $uri)',
       );
     }
     return WebFetchResult(ok: true, output: truncate(converted, limit));
