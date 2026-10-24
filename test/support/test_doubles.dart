@@ -183,6 +183,10 @@ class ScriptedBrowserAutomation implements BrowserAutomation {
   }
 
   @override
+  @override
+  BrowserAutomation withContext(String contextId) => this;
+
+  @override
   Future<void> resetSession() async {}
 
   @override
@@ -300,6 +304,10 @@ class ThrowingBrowserAutomation implements BrowserAutomation {
   @override
   Future<String> reconcileOriginStorage(String payloadJson) async =>
       throw const SocketException('browser exploded');
+
+  @override
+  @override
+  BrowserAutomation withContext(String contextId) => this;
 
   @override
   Future<void> resetSession() async {}

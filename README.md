@@ -348,6 +348,25 @@ OpenAI-compatible: **OpenRouter, InferHub, Z.AI, OpenAI, DeepSeek, Groq, dan lai
   wajib — isolasi per-chat tidak berubah).
   4. `SessionSandbox.sessionsRoot()` + `ModuleRuntime.latestStoredSetup`
   (pemindai mtime terbaru, tahan file korup) + uji unit wire/module_list.
+- **v1.37.0 — Browser Context paralel (fan of subagents tanpa antre) + drawer ikon**:
+  1. **Browser Context per pekerja**: engine browser baru
+     (`ContextualBrowserAutomation`) memberi SETIAP sesi chat dan SETIAP
+     subagent paralel WebView headless + lock + state cookie/storage-nya
+     sendiri — pekerjaan browser paralel berjalan berdampingan, tidak lagi
+     antre di belakang satu mutex global.
+  2. **Subagent boleh pakai browser**: `spawn_subagents` kini menyertakan
+     tool browser (`browser_navigate` s.d. `run_js`) untuk setiap tugas,
+     masing-masing ter-pin ke context id unik (`subagent-<stamp>-<i>`);
+     state subagent bersifat ephemeral (tidak ditulis ke disk, cookie
+     dilepas dari jar saat selesai).
+  3. **Higiene cookie jar bersama**:Android CookieManager global ditangani
+     dengan klaim origin bedah (hapus nama cookie context lain yang IDLE
+     saat kunjungan pertama, jangan sentuh yang sedang mid-op), purge
+     sekali di awal proses, dan pelepasan cookie saat slot diusir (LRU,
+     cap 4 engine).
+  4. **Drawer**: aksi "Ekspor chat (Markdown)" dan "Token stats" menjadi
+     tombol ikon saja tanpa label, menyatu dengan ikon import/export
+     (v1.34.0 style).
 - **v1.36.0 — database User-Agent 500 → 1500 identitas valid**:
   1. **+1000 User-Agent baru** dibangkitkan & divalidasi dari perangkat dan
      browser yang SAMA dengan database lama (tanpa vendor palsu) — total

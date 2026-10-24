@@ -30,16 +30,19 @@ class SubagentOutcome {
   final int toolCalls;
 }
 
-/// Fan-of-subagents runner (v1.28.0): executes several INDEPENDENT agent
-/// loops in parallel, each with the chat's own model + connection settings
-/// and a workspace-only toolset, and returns their final answers together.
+/// Fan-of-subagents runner (v1.28.0, browser contexts in v1.37.0):
+/// executes several INDEPENDENT agent loops in parallel, each with the
+/// chat's own model + connection settings and a workspace+browser toolset,
+/// and returns their final answers together.
 ///
 /// Design constraints:
-/// * NO browser/automation tools and NO nested `spawn_subagents` — parallel
-///   subagents share one embedded browser runtime and one serialized JS
-///   runtime, and unbounded recursion is a run-away risk. The workspace
-///   toolset (files, archives, node, web_fetch, local git) is safe to use
-///   concurrently because every call is already sandboxed per session.
+/// * NO nested `spawn_subagents` — unbounded recursion is a run-away risk.
+///   The workspace toolset (files, archives, node, web_fetch, local git)
+///   is safe to use concurrently because every call is already sandboxed
+///   per session, and since v1.37.0 the browser tools are safe too: every
+///   subagent browses in its OWN browser context (private headless WebView
+///   + per-context cookie/storage identity) instead of queueing behind the
+///   chat's single engine.
 /// * Each subagent loop is step-capped well below the main loop's limit:
 ///   subagents do focused work (research, summarize, transform, write a
 ///   file), not open-ended sessions.
@@ -61,11 +64,14 @@ class SubagentRunner {
   /// Tool execution callback — always the CALLING session's executor, so
   /// subagents work inside the same per-chat sandbox as the main agent
   /// ([sessionId] scopes file/zip/git calls to that session's workspace).
+  /// The optional [browserContext] pins a subagent's browser tools to its
+  /// own parallel browser context (v1.37.0).
   final Future<ToolResult> Function(
     String name,
     Map<String, dynamic> args,
-    String? sessionId,
-  )
+    String? sessionId, {
+    String? browserContext,
+  })
   executeTool;
 
   final int maxTasks;
@@ -73,8 +79,9 @@ class SubagentRunner {
   final int maxParallel;
   final int maxAnswerChars;
 
-  /// Toolset a subagent may use: workspace + web fetch + local git. The
-  /// list is the SINGLE source of truth for the recursion guard —
+  /// Toolset a subagent may use: workspace + web fetch + local git + the
+  /// browser tools (each subagent in its own browser context, v1.37.0).
+  /// The list is the SINGLE source of truth for the recursion guard —
   /// `spawn_subagents` is deliberately absent.
   static const Set<String> allowedTools = <String>{
     'read_file',
@@ -89,6 +96,13 @@ class SubagentRunner {
     'git_status',
     'git_commit',
     'git_log',
+    'browser_navigate',
+    'browser_click',
+    'browser_type',
+    'browser_scroll',
+    'browser_screenshot',
+    'browser_extract_text',
+    'run_js',
   };
 
   static const String systemPrompt =
@@ -96,8 +110,10 @@ class SubagentRunner {
       'task you are given fully and autonomously: use your tools when they '
       'help, verify results, and then write a clear, self-contained final '
       'answer with the outcome (facts, data, file paths of anything you '
-      'created). You cannot ask the parent questions. Keep the final answer '
-      'concise but complete.';
+      'created). You cannot ask the parent questions. You have your own '
+      'isolated browser context (pages, logins and storage are private to '
+      'you) plus the workspace tools. Keep the final answer concise but '
+      'complete.';
 
   /// Tool schemas for the subagent loop, filtered from the full agent set.
   List<Map<String, dynamic>> buildTools() {
@@ -138,12 +154,16 @@ class SubagentRunner {
     return (specs, null);
   }
 
-  /// Runs every task (bounded concurrency, stable result order).
+  /// Runs every task (bounded concurrency, stable result order). Each task
+  /// gets its own browser context id (v1.37.0) so parallel subagents never
+  /// queue behind one another in the embedded browser.
   Future<List<SubagentOutcome>> run(
     List<SubagentTaskSpec> tasks, {
     String? sessionId,
     bool Function()? shouldAbort,
   }) async {
+    final String runStamp = DateTime.now().microsecondsSinceEpoch.toString();
+    String contextFor(int index) => 'subagent-$runStamp-$index';
     final List<SubagentOutcome?> results = List<SubagentOutcome?>.filled(
       tasks.length,
       null,
@@ -156,6 +176,7 @@ class SubagentRunner {
         results[index] = await _runOne(
           tasks[index],
           sessionId: sessionId,
+          browserContext: contextFor(index),
           shouldAbort: shouldAbort,
         );
       }
@@ -178,6 +199,7 @@ class SubagentRunner {
   Future<SubagentOutcome> _runOne(
     SubagentTaskSpec task, {
     String? sessionId,
+    String? browserContext,
     bool Function()? shouldAbort,
   }) async {
     final LlmConfig config = resolveConfig();
@@ -237,8 +259,8 @@ class SubagentRunner {
               'tool_call_id': tc.id,
               'content':
                   'Tool "${tc.name}" is not available to subagents '
-                  '(browser automation, page scripts and nested subagents '
-                  'are excluded). Use the workspace tools instead.',
+                  '(nested subagents are excluded). Use the workspace, '
+                  'web_fetch or browser tools instead.',
             });
             continue;
           }
@@ -246,6 +268,7 @@ class SubagentRunner {
             tc.name,
             tc.args,
             sessionId,
+            browserContext: browserContext,
           );
           wire.add(<String, dynamic>{
             'role': 'tool',

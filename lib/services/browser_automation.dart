@@ -79,6 +79,15 @@ abstract class BrowserAutomation {
   /// outgoing session is unreachable for the incoming one.
   Future<void> purgeSiteData();
 
+  /// Returns a view of this automation scoped to ONE named browser context
+  /// (v1.37.0). Parallel workers — most notably the fan of subagents — use
+  /// distinct context ids so their browsing (pages, cookies, storage)
+  /// proceeds independently instead of queueing behind a shared WebView.
+  ///
+  /// Single-engine implementations return `this` (context ignored); the
+  /// multi-context engine overrides it (see ContextualBrowserAutomation).
+  BrowserAutomation withContext(String contextId);
+
   /// Async storage reconciliation at the CURRENT origin (must be called
   /// with the origin's page loaded): clears web storage, deletes every
   /// IndexedDB database, unregisters this origin's service workers, then
@@ -543,6 +552,9 @@ for (var k in l) { try { localStorage.setItem(k, l[k]); } catch (e) {} }
 for (var m in s) { try { sessionStorage.setItem(m, s[m]); } catch (e) {} }
 return "reconciled";
 ''';
+
+  @override
+  BrowserAutomation withContext(String contextId) => this;
 
   @override
   void dispose() {

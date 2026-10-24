@@ -1136,7 +1136,7 @@ class AppStringsEn implements AppStrings {
   String get aboutSection => 'About';
   @override
   String get aboutBody =>
-      'ZAgents v1.36.0 — an Android clone of the chat.z.ai agent mode UI, '
+      'ZAgents v1.37.0 — an Android clone of the chat.z.ai agent mode UI, '
       'with custom OpenAI-compatible providers (OpenRouter, InferHub, '
       'Z.AI, OpenAI, DeepSeek, Groq, and more), per-provider API keys, '
       'light/dark themes, parallel multi-session chat with background '
@@ -1206,6 +1206,12 @@ class AppStringsEn implements AppStrings {
       'paired with every browser, so rotating or randomizing your '
       'identity in Settings draws from a far larger pool of '
       'realistic fingerprints. New in '
+      'v1.37.0: parallel Browser Contexts — every chat session and '
+      'every subagent of a fan of subagents browses in its OWN '
+      'isolated engine (private WebView, cookies and storage), so '
+      'parallel work runs side by side instead of waiting one by '
+      'one, and the drawer\'s export chat and token stats actions '
+      'became icon-only like import/export. New in '
       'v1.35.0: the agent\'s plan (todos) is now crash-proof — the '
       'transcript is saved after every working step and the current plan '
       'state travels with it, so an app crash, ANR kill or dead battery '
@@ -2125,7 +2131,7 @@ class AppStringsId implements AppStrings {
   String get aboutSection => 'Tentang';
   @override
   String get aboutBody =>
-      'ZAgents v1.36.0 — klon UI agent mode chat.z.ai untuk Android, '
+      'ZAgents v1.37.0 — klon UI agent mode chat.z.ai untuk Android, '
       'dengan custom provider OpenAI-compatible (OpenRouter, InferHub, '
       'Z.AI, OpenAI, DeepSeek, Groq, dan lainnya), API key per-provider, '
       'tema terang/gelap, multi-sesi paralel dengan proses latar '
@@ -2196,6 +2202,12 @@ class AppStringsId implements AppStrings {
       'bawaan dipadukan dengan setiap browser, sehingga memutar atau '
       'mengacak identitas di Pengaturan memakai kolam sidik jari '
       'realistis yang jauh lebih besar. Baru di '
+      'v1.37.0: Browser Context paralel — setiap sesi chat dan setiap '
+      'subagent dalam fan of subagents menjelajah dengan engine '
+      'isolasinya sendiri (WebView, cookie, dan storage pribadi), '
+      'sehingga pekerjaan paralel berjalan berdampingan tanpa antre '
+      'satu per satu, dan aksi ekspor chat serta statistik token di '
+      'drawer menjadi ikon saja seperti import/export. Baru di '
       'v1.35.0: rencana agent (todos) kini tahan crash — transkrip '
       'tersimpan setelah setiap langkah kerja dan status rencana terkini '
       'ikut tersimpan, sehingga aplikasi crash, dibunuh ANR, atau baterai '

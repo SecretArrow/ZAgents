@@ -123,26 +123,35 @@ class ToolExecutor {
     String name,
     Map<String, dynamic> args, {
     String? sessionId,
+    String? browserContext,
     bool Function()? shouldAbort,
   }) async {
+    // v1.37.0 — parallel browser contexts: when the caller pins a named
+    // context (a fan-of-subagents worker), browser tools run in THAT
+    // context's own engine instead of the chat's default one. File tools
+    // stay scoped to the session workspace regardless.
+    final BrowserAutomation browserApi =
+        (browserContext == null || browserContext.isEmpty)
+        ? browser
+        : browser.withContext(browserContext);
     try {
       switch (name) {
         case 'todo_write':
           return _todoWrite(args);
         case 'browser_navigate':
-          return await _navigate(args, sessionId);
+          return await _navigate(args, sessionId, browserApi);
         case 'browser_click':
-          return await _click(args, sessionId);
+          return await _click(args, sessionId, browserApi);
         case 'browser_type':
-          return await _type(args, sessionId);
+          return await _type(args, sessionId, browserApi);
         case 'browser_scroll':
-          return await _scroll(args, sessionId);
+          return await _scroll(args, sessionId, browserApi);
         case 'browser_screenshot':
-          return await _screenshot(sessionId);
+          return await _screenshot(sessionId, browserApi);
         case 'browser_extract_text':
-          return await _extract(args, sessionId);
+          return await _extract(args, sessionId, browserApi);
         case 'run_js':
-          return await _runJs(args, sessionId);
+          return await _runJs(args, sessionId, browserApi);
         case 'read_file':
           return await _readFile(args, sessionId);
         case 'write_file':
@@ -291,11 +300,12 @@ class ToolExecutor {
   Future<ToolResult> _navigate(
     Map<String, dynamic> args,
     String? sessionId,
+    BrowserAutomation browserApi,
   ) async {
     final guard = _automationGuard('browser_navigate');
     if (guard != null) return guard;
     final url = args['url']?.toString() ?? '';
-    final info = await browser.navigate(url, sessionId: sessionId);
+    final info = await browserApi.navigate(url, sessionId: sessionId);
     return ToolResult(
       ok: info.error == null,
       llmOutput: jsonEncode(info.toJson()),
@@ -306,10 +316,11 @@ class ToolExecutor {
   Future<ToolResult> _click(
     Map<String, dynamic> args,
     String? sessionId,
+    BrowserAutomation browserApi,
   ) async {
     final guard = _automationGuard('browser_click');
     if (guard != null) return guard;
-    final result = await browser.click(
+    final result = await browserApi.click(
       selector: args['selector']?.toString(),
       text: args['text']?.toString(),
       sessionId: sessionId,
@@ -322,10 +333,14 @@ class ToolExecutor {
     );
   }
 
-  Future<ToolResult> _type(Map<String, dynamic> args, String? sessionId) async {
+  Future<ToolResult> _type(
+    Map<String, dynamic> args,
+    String? sessionId,
+    BrowserAutomation browserApi,
+  ) async {
     final guard = _automationGuard('browser_type');
     if (guard != null) return guard;
-    final result = await browser.type(
+    final result = await browserApi.type(
       args['text']?.toString() ?? '',
       selector: args['selector']?.toString(),
       clear: args['clear'] is bool ? args['clear'] as bool : true,
@@ -337,10 +352,11 @@ class ToolExecutor {
   Future<ToolResult> _scroll(
     Map<String, dynamic> args,
     String? sessionId,
+    BrowserAutomation browserApi,
   ) async {
     final guard = _automationGuard('browser_scroll');
     if (guard != null) return guard;
-    final result = await browser.scroll(
+    final result = await browserApi.scroll(
       direction: args['direction']?.toString() ?? 'down',
       amount: args['amount'] is int ? args['amount'] as int : 800,
       sessionId: sessionId,
@@ -348,12 +364,15 @@ class ToolExecutor {
     return ToolResult(ok: result['ok'] == true, llmOutput: jsonEncode(result));
   }
 
-  Future<ToolResult> _screenshot(String? sessionId) async {
+  Future<ToolResult> _screenshot(
+    String? sessionId,
+    BrowserAutomation browserApi,
+  ) async {
     final guard = _automationGuard('browser_screenshot');
     if (guard != null) return guard;
     final base = await resolveBaseDir(sessionId);
     final shotsDir = '${base.path}${Platform.pathSeparator}browser_shots';
-    final path = await browser.screenshot(
+    final path = await browserApi.screenshot(
       saveDir: shotsDir,
       sessionId: sessionId,
     );
@@ -374,13 +393,14 @@ class ToolExecutor {
   Future<ToolResult> _extract(
     Map<String, dynamic> args,
     String? sessionId,
+    BrowserAutomation browserApi,
   ) async {
     final guard = _automationGuard('browser_extract_text');
     if (guard != null) return guard;
     final maxLength = args['maxLength'] is int
         ? args['maxLength'] as int
         : 8000;
-    final text = await browser.extractText(
+    final text = await browserApi.extractText(
       maxLength: maxLength,
       sessionId: sessionId,
     );
@@ -393,6 +413,7 @@ class ToolExecutor {
   Future<ToolResult> _runJs(
     Map<String, dynamic> args,
     String? sessionId,
+    BrowserAutomation browserApi,
   ) async {
     final guard = _automationGuard('run_js');
     if (guard != null) return guard;
@@ -400,7 +421,7 @@ class ToolExecutor {
     if (code.trim().isEmpty) {
       return const ToolResult(ok: false, llmOutput: 'Parameter code is empty.');
     }
-    final result = await browser.runJs(code, sessionId: sessionId);
+    final result = await browserApi.runJs(code, sessionId: sessionId);
     return ToolResult(ok: true, llmOutput: result);
   }
 

@@ -368,4 +368,52 @@ void main() {
     expect(find.text('Random User-Agent'), findsNothing);
     expect(find.byType(Drawer), findsNothing);
   });
+
+  testWidgets('drawer: export chat + token stats are icon-only actions', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: <Override>[
+          ...testOverrides(
+            dir: tempDir,
+            settings: AppSettings(apiKey: 'test-key'),
+            writeScreenshots: false,
+          ),
+          chatListProvider.overrideWith((Ref ref) async => <ChatSummary>[]),
+        ],
+        child: const ZAgentsApp(),
+      ),
+    );
+    await tester.pump();
+
+    await tester.tap(find.byIcon(Icons.menu_rounded));
+    await tester.pumpAndSettle(
+      const Duration(milliseconds: 100),
+      EnginePhase.sendSemanticsUpdate,
+      const Duration(seconds: 15),
+    );
+
+    // All four actions live in the icon-only row (v1.34.0 + v1.37.0).
+    expect(
+      inDrawer(find.byKey(const Key('drawer-import-sessions'))),
+      findsOneWidget,
+    );
+    expect(
+      inDrawer(find.byKey(const Key('drawer-export-sessions'))),
+      findsOneWidget,
+    );
+    expect(
+      inDrawer(find.byKey(const Key('drawer-export-chat'))),
+      findsOneWidget,
+    );
+    expect(
+      inDrawer(find.byKey(const Key('drawer-token-stats'))),
+      findsOneWidget,
+    );
+
+    // No text labels for the export chat / token stats actions anymore.
+    expect(inDrawer(find.text('Export chat (Markdown)')), findsNothing);
+    expect(inDrawer(find.text('Token stats')), findsNothing);
+  });
 }

@@ -28,6 +28,23 @@ class _ScriptedCookies implements CookieGateway {
     final bucket = jar.putIfAbsent(url, () => <String, String>{});
     bucket.addAll(cookies);
   }
+
+  final List<String> deletions = <String>[];
+
+  @override
+  Future<void> deleteForUrl(String url, {Set<String>? names}) async {
+    final String tag = names == null
+        ? 'all'
+        : (names.toList()..sort()).join(',');
+    deletions.add('$url -$tag');
+    final bucket = jar[url];
+    if (bucket == null) return;
+    if (names == null) {
+      jar.remove(url);
+    } else {
+      bucket.removeWhere((name, _) => names.contains(name));
+    }
+  }
 }
 
 /// Inner automation test double: records calls, answers the snapshot JS with a
@@ -178,6 +195,9 @@ class _ScriptedInner implements BrowserAutomation {
 
   @override
   Future<void> resetSession() async {}
+
+  @override
+  BrowserAutomation withContext(String contextId) => this;
 
   @override
   void dispose() {}

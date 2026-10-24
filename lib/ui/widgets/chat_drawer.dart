@@ -419,7 +419,8 @@ class ChatDrawer extends ConsumerWidget {
               ),
             ),
             const Divider(height: 1),
-            // Session import/export as icon-only actions (v1.34.0).
+            // Session import/export + export chat + token stats as
+            // icon-only actions (v1.34.0, extended in v1.37.0).
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 8),
               child: Row(
@@ -453,34 +454,40 @@ class ChatDrawer extends ConsumerWidget {
                       await _exportSessions(context, ref);
                     },
                   ),
+                  IconButton(
+                    key: const Key('drawer-export-chat'),
+                    tooltip: strings.exportChatMarkdown,
+                    visualDensity: VisualDensity.compact,
+                    constraints: const BoxConstraints(
+                      minWidth: 48,
+                      minHeight: 48,
+                    ),
+                    icon: const Icon(Icons.article_outlined, size: 20),
+                    onPressed: () async {
+                      Navigator.of(context).pop();
+                      await _exportActiveMarkdown(context, ref);
+                    },
+                  ),
+                  IconButton(
+                    key: const Key('drawer-token-stats'),
+                    tooltip: strings.tokenStatsMenuItem,
+                    visualDensity: VisualDensity.compact,
+                    constraints: const BoxConstraints(
+                      minWidth: 48,
+                      minHeight: 48,
+                    ),
+                    icon: const Icon(Icons.bar_chart_rounded, size: 20),
+                    onPressed: () {
+                      Navigator.of(context).pop();
+                      Navigator.of(context).push(
+                        MaterialPageRoute<void>(
+                          builder: (_) => const StatsScreen(),
+                        ),
+                      );
+                    },
+                  ),
                 ],
               ),
-            ),
-            ListTile(
-              dense: true,
-              leading: const Icon(Icons.article_outlined, size: 20),
-              title: Text(
-                strings.exportChatMarkdown,
-                style: const TextStyle(fontSize: 13),
-              ),
-              onTap: () async {
-                Navigator.of(context).pop();
-                await _exportActiveMarkdown(context, ref);
-              },
-            ),
-            ListTile(
-              dense: true,
-              leading: const Icon(Icons.bar_chart_rounded, size: 20),
-              title: Text(
-                strings.tokenStatsMenuItem,
-                style: const TextStyle(fontSize: 13),
-              ),
-              onTap: () {
-                Navigator.of(context).pop();
-                Navigator.of(context).push(
-                  MaterialPageRoute<void>(builder: (_) => const StatsScreen()),
-                );
-              },
             ),
             ListTile(
               leading: const Icon(Icons.settings_outlined),

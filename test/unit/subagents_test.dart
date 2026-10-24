@@ -89,8 +89,9 @@ void main() {
           executeTool: (
             String name,
             Map<String, dynamic> args,
-            String? sessionId,
-          ) async => const ToolResult(ok: true, llmOutput: 'ok'),
+            String? sessionId, {
+            String? browserContext,
+          }) async => const ToolResult(ok: true, llmOutput: 'ok'),
         );
     return ToolExecutor(
       browser: ScriptedBrowserAutomation('${tempDir.path}/shots'),
@@ -108,8 +109,12 @@ void main() {
         llm: _TaskKeyedLlm(<String, List<AssistantTurn>>{}),
         resolveConfig: () =>
             const LlmConfig(baseUrl: 'x', apiKey: 'k', model: 'm'),
-        executeTool: (String n, Map<String, dynamic> a, String? s) async =>
-            const ToolResult(ok: true, llmOutput: ''),
+        executeTool: (
+          String n,
+          Map<String, dynamic> a,
+          String? s, {
+          String? browserContext,
+        }) async => const ToolResult(ok: true, llmOutput: ''),
       );
     });
 
@@ -158,15 +163,19 @@ void main() {
   });
 
   test(
-    'buildTools exposes workspace tools only (no browser, no recursion)',
+    'buildTools exposes workspace + browser tools (no recursion, no todos)',
     () {
       final List<String> names = <String>[
         for (final Map<String, dynamic> tool in SubagentRunner(
           llm: _TaskKeyedLlm(<String, List<AssistantTurn>>{}),
           resolveConfig: () =>
               const LlmConfig(baseUrl: 'x', apiKey: 'k', model: 'm'),
-          executeTool: (String n, Map<String, dynamic> a, String? s) async =>
-              const ToolResult(ok: true, llmOutput: ''),
+          executeTool: (
+            String n,
+            Map<String, dynamic> a,
+            String? s, {
+            String? browserContext,
+          }) async => const ToolResult(ok: true, llmOutput: ''),
         ).buildTools())
           (tool['function'] as Map<String, dynamic>)['name'] as String,
       ];
@@ -174,8 +183,19 @@ void main() {
       expect(names, contains('write_file'));
       expect(names, contains('node_run'));
       expect(names, contains('web_fetch'));
-      expect(names, isNot(contains('browser_navigate')));
-      expect(names, isNot(contains('run_js')));
+      // v1.37.0: every subagent browses in its own browser context.
+      expect(
+        names,
+        containsAll(<String>[
+          'browser_navigate',
+          'browser_click',
+          'browser_type',
+          'browser_scroll',
+          'browser_screenshot',
+          'browser_extract_text',
+          'run_js',
+        ]),
+      );
       expect(names, isNot(contains('spawn_subagents')));
       expect(names, isNot(contains('todo_write')));
       // Every subagent tool exists in the full agent set too.
@@ -186,6 +206,90 @@ void main() {
       expect(mainNames.containsAll(names), isTrue);
     },
   );
+
+  test('every parallel task gets its OWN distinct browser context', () async {
+    // The executor records the browserContext each nested tool call was
+    // pinned to; a fan of three must produce three distinct contexts and
+    // every call of one task must reuse that task's context.
+    final Map<String, Set<String>> contextsByTask = <String, Set<String>>{};
+    final _TaskKeyedLlm llm = _TaskKeyedLlm(<String, List<AssistantTurn>>{
+      't-a': <AssistantTurn>[
+        AssistantTurn(
+          content: '',
+          toolCalls: <ToolCallRequest>[
+            ToolCallRequest(
+              id: 'a1',
+              name: 'browser_navigate',
+              argumentsJson: '{"url": "https://a.test"}',
+            ),
+          ],
+        ),
+        _final('done a'),
+      ],
+      't-b': <AssistantTurn>[
+        AssistantTurn(
+          content: '',
+          toolCalls: <ToolCallRequest>[
+            ToolCallRequest(
+              id: 'b1',
+              name: 'browser_navigate',
+              argumentsJson: '{"url": "https://b.test"}',
+            ),
+          ],
+        ),
+        _final('done b'),
+      ],
+      't-c': <AssistantTurn>[
+        AssistantTurn(
+          content: '',
+          toolCalls: <ToolCallRequest>[
+            ToolCallRequest(
+              id: 'c1',
+              name: 'browser_navigate',
+              argumentsJson: '{"url": "https://c.test"}',
+            ),
+          ],
+        ),
+        _final('done c'),
+      ],
+    });
+    final SubagentRunner runner = SubagentRunner(
+      llm: llm,
+      resolveConfig: () =>
+          const LlmConfig(baseUrl: 'x', apiKey: 'k', model: 'm'),
+      executeTool:
+          (
+            String name,
+            Map<String, dynamic> args,
+            String? sessionId, {
+            String? browserContext,
+          }) async {
+            final String key = browserContext ?? '';
+            contextsByTask.putIfAbsent(key, () => <String>{});
+            contextsByTask[key]!.add(args['url'].toString());
+            return const ToolResult(ok: true, llmOutput: 'page');
+          },
+    );
+    final List<SubagentOutcome> outcomes = await runner.run(<SubagentTaskSpec>[
+      const SubagentTaskSpec(label: 'A', prompt: 't-a'),
+      const SubagentTaskSpec(label: 'B', prompt: 't-b'),
+      const SubagentTaskSpec(label: 'C', prompt: 't-c'),
+    ], sessionId: 'sess-ctx');
+    expect(outcomes.every((SubagentOutcome o) => o.ok), isTrue);
+    // Three tasks -> three distinct context ids, each carrying exactly its
+    // own task's navigation.
+    expect(contextsByTask.keys, hasLength(3));
+    for (final Set<String> urls in contextsByTask.values) {
+      expect(urls, hasLength(1));
+    }
+    final Set<String> contextIds = contextsByTask.keys.toSet();
+    expect(contextIds.every((String id) => id.startsWith('subagent-')), isTrue);
+    expect(contextIds.map((String id) => id.split('-').last).toSet(), <String>{
+      '0',
+      '1',
+      '2',
+    });
+  });
 
   group('SubagentRunner.run', () {
     test(
@@ -200,8 +304,12 @@ void main() {
           llm: llm,
           resolveConfig: () =>
               const LlmConfig(baseUrl: 'x', apiKey: 'k', model: 'm'),
-          executeTool: (String n, Map<String, dynamic> a, String? s) async =>
-              const ToolResult(ok: true, llmOutput: ''),
+          executeTool: (
+            String n,
+            Map<String, dynamic> a,
+            String? s, {
+            String? browserContext,
+          }) async => const ToolResult(ok: true, llmOutput: ''),
         );
         final List<SubagentOutcome> outcomes = await runner.run(
           <SubagentTaskSpec>[
@@ -254,11 +362,18 @@ void main() {
           llm: llm,
           resolveConfig: () =>
               const LlmConfig(baseUrl: 'x', apiKey: 'k', model: 'm'),
-          executeTool: (
-            String name,
-            Map<String, dynamic> args,
-            String? sessionId,
-          ) => exec.execute(name, args, sessionId: sessionId),
+          executeTool:
+              (
+                String name,
+                Map<String, dynamic> args,
+                String? sessionId, {
+                String? browserContext,
+              }) => exec.execute(
+                name,
+                args,
+                sessionId: sessionId,
+                browserContext: browserContext,
+              ),
         ),
       );
       final SubagentRunner runner = exec.subagents!;
@@ -303,10 +418,19 @@ void main() {
           llm: llm,
           resolveConfig: () =>
               const LlmConfig(baseUrl: 'x', apiKey: 'k', model: 'm'),
-          executeTool: (String n, Map<String, dynamic> a, String? s) async {
-            spawnCalls++;
-            return const ToolResult(ok: true, llmOutput: 'should not happen');
-          },
+          executeTool:
+              (
+                String n,
+                Map<String, dynamic> a,
+                String? s, {
+                String? browserContext,
+              }) async {
+                spawnCalls++;
+                return const ToolResult(
+                  ok: true,
+                  llmOutput: 'should not happen',
+                );
+              },
         );
         final List<SubagentOutcome> outcomes = await runner.run(
           <SubagentTaskSpec>[
@@ -329,8 +453,12 @@ void main() {
           llm: _EndlessToolCallLlm(),
           resolveConfig: () =>
               const LlmConfig(baseUrl: 'x', apiKey: 'k', model: 'm'),
-          executeTool: (String n, Map<String, dynamic> a, String? s) async =>
-              const ToolResult(ok: true, llmOutput: 'ok'),
+          executeTool: (
+            String n,
+            Map<String, dynamic> a,
+            String? s, {
+            String? browserContext,
+          }) async => const ToolResult(ok: true, llmOutput: 'ok'),
           maxSteps: 3,
         );
         final List<SubagentOutcome> outcomes = await runner.run(
@@ -352,8 +480,12 @@ void main() {
         llm: _TaskKeyedLlm(<String, List<AssistantTurn>>{}),
         resolveConfig: () =>
             const LlmConfig(baseUrl: 'x', apiKey: 'k', model: 'm'),
-        executeTool: (String n, Map<String, dynamic> a, String? s) async =>
-            const ToolResult(ok: true, llmOutput: ''),
+        executeTool: (
+          String n,
+          Map<String, dynamic> a,
+          String? s, {
+          String? browserContext,
+        }) async => const ToolResult(ok: true, llmOutput: ''),
       );
       final List<SubagentOutcome> outcomes = await runner.run(
         <SubagentTaskSpec>[const SubagentTaskSpec(label: 'S', prompt: 'x')],
@@ -372,8 +504,12 @@ void main() {
         llm: _TaskKeyedLlm(<String, List<AssistantTurn>>{}),
         resolveConfig: () =>
             const LlmConfig(baseUrl: 'x', apiKey: 'k', model: 'm'),
-        executeTool: (String n, Map<String, dynamic> a, String? s) async =>
-            const ToolResult(ok: true, llmOutput: ''),
+        executeTool: (
+          String n,
+          Map<String, dynamic> a,
+          String? s, {
+          String? browserContext,
+        }) async => const ToolResult(ok: true, llmOutput: ''),
       );
       final String out = runner.formatOutcomes(<SubagentOutcome>[
         const SubagentOutcome(
@@ -400,8 +536,12 @@ void main() {
           }),
           resolveConfig: () =>
               const LlmConfig(baseUrl: 'x', apiKey: 'k', model: 'm'),
-          executeTool: (String n, Map<String, dynamic> a, String? s) async =>
-              const ToolResult(ok: true, llmOutput: ''),
+          executeTool: (
+            String n,
+            Map<String, dynamic> a,
+            String? s, {
+            String? browserContext,
+          }) async => const ToolResult(ok: true, llmOutput: ''),
         ),
       );
       final ToolResult result = await exec.execute(

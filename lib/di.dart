@@ -74,24 +74,28 @@ final modelCatalogProvider = Provider<ModelCatalogClient>(
 );
 
 final browserAutomationProvider = Provider<BrowserAutomation>((ref) {
-  final webview = WebViewAutomation(
-    pickUserAgent: () {
-      final AppSettings settings = ref.read(settingsProvider);
-      return ref.read(userAgentManagerProvider).resolve(settings.uaMode);
-    },
-  );
-  // Private-window guarantee (v1.19.0): cookies, web storage and login
-  // state are swapped per chat session under a lock and persisted inside
-  // each session's own sandbox — one chat never sees another chat's login.
-  final isolated = IsolatedBrowserAutomation(
-    inner: webview,
+  // Multi-context engine (v1.37.0): every chat session browses in its own
+  // headless WebView, and every parallel subagent (fan of subagents) gets
+  // ANOTHER one via withContext — browser work no longer queues behind a
+  // single shared engine. The private-window guarantee (v1.19.0) is kept:
+  // cookies, web storage and login state are captured per context and
+  // persisted inside each session's own sandbox — one chat never sees
+  // another chat's login.
+  final manager = ContextualBrowserAutomation(
+    makeInner: () => WebViewAutomation(
+      pickUserAgent: () {
+        final AppSettings settings = ref.read(settingsProvider);
+        return ref.read(userAgentManagerProvider).resolve(settings.uaMode);
+      },
+    ),
     store: BrowserStateStore(
       rootFor: ref.watch(sessionSandboxProvider).rootFor,
     ),
     cookies: const InAppCookieGateway(),
+    maxContexts: 4,
   );
-  ref.onDispose(webview.dispose);
-  return isolated;
+  ref.onDispose(manager.dispose);
+  return manager;
 });
 
 /// Resolves the User-Agent applied to embedded browser surfaces according
@@ -351,11 +355,18 @@ final toolExecutorProvider = Provider<ToolExecutor>((ref) {
           model: settings.model,
         );
       },
-      executeTool: (
-        String name,
-        Map<String, dynamic> args,
-        String? sessionId,
-      ) => executor.execute(name, args, sessionId: sessionId),
+      executeTool:
+          (
+            String name,
+            Map<String, dynamic> args,
+            String? sessionId, {
+            String? browserContext,
+          }) => executor.execute(
+            name,
+            args,
+            sessionId: sessionId,
+            browserContext: browserContext,
+          ),
     ),
     // Server-side fetcher behind the `web_fetch` tool; it carries the same
     // User-Agent identity the embedded browser uses.
