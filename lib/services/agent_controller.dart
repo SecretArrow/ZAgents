@@ -339,8 +339,9 @@ class ChatController extends Notifier<ChatState> {
 
   /// Swaps the provider view to [sessionId]'s own staged list.
   void _restoreStagedAttachments(String? sessionId) {
-    ref.read(pendingAttachmentsProvider.notifier).state =
-        List<ChatAttachment>.unmodifiable(
+    ref
+        .read(pendingAttachmentsProvider.notifier)
+        .state = List<ChatAttachment>.unmodifiable(
       _stagedAttachments[sessionId] ?? const <ChatAttachment>[],
     );
   }

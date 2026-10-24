@@ -55,9 +55,8 @@ void main() {
 
       // Stage a file on A (the composer writes into the provider view).
       final ChatAttachment attA = _attachment('a.txt');
-      container.read(pendingAttachmentsProvider.notifier).state = <ChatAttachment>[
-        attA,
-      ];
+      container.read(pendingAttachmentsProvider.notifier).state =
+          <ChatAttachment>[attA];
 
       // New chat: the draft slot starts with ITS OWN (empty) list.
       await controller.newChat();
@@ -65,18 +64,16 @@ void main() {
 
       // Draft stage + session B.
       final ChatAttachment attDraft = _attachment('draft.txt');
-      container.read(pendingAttachmentsProvider.notifier).state = <ChatAttachment>[
-        attDraft,
-      ];
+      container.read(pendingAttachmentsProvider.notifier).state =
+          <ChatAttachment>[attDraft];
       await controller.send('chat dua');
       final String? idB = container.read(chatControllerProvider).sessionId;
       expect(idB, isNot(idA));
 
       // Stage B's own file, then switch back to A.
       final ChatAttachment attB = _attachment('b.txt');
-      container.read(pendingAttachmentsProvider.notifier).state = <ChatAttachment>[
-        attB,
-      ];
+      container.read(pendingAttachmentsProvider.notifier).state =
+          <ChatAttachment>[attB];
       await controller.openChat(
         ChatSummary(id: idA!, title: 'A', updatedAt: DateTime.now()),
       );
@@ -127,9 +124,8 @@ void main() {
       );
       await controller.send('chat sementara');
       final String? id = container.read(chatControllerProvider).sessionId;
-      container.read(pendingAttachmentsProvider.notifier).state = <ChatAttachment>[
-        _attachment('x.txt'),
-      ];
+      container.read(pendingAttachmentsProvider.notifier).state =
+          <ChatAttachment>[_attachment('x.txt')];
       await controller.newChat();
       await controller.deleteChat(id!);
       await controller.openChat(

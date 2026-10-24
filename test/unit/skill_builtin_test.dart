@@ -33,7 +33,8 @@ void main() {
     if (await tempDir.exists()) await tempDir.delete(recursive: true);
   });
 
-  SkillRegistry registry() => SkillRegistry(resolveBaseDir: () async => tempDir);
+  SkillRegistry registry() =>
+      SkillRegistry(resolveBaseDir: () async => tempDir);
 
   ToolExecutor executor() => ToolExecutor(
     browser: ScriptedBrowserAutomation(
@@ -43,11 +44,10 @@ void main() {
     resolveBaseDir: (_) async => tempDir,
     isAutomationEnabled: () => false,
     skills: registry(),
-    bundledSkills:
-        () async => <String, String>{
-          'binance-agentic-wallet': _bundledSkillMd,
-          'web3-wallet-basics': _bundledSkillMd,
-        },
+    bundledSkills: () async => <String, String>{
+      'binance-agentic-wallet': _bundledSkillMd,
+      'web3-wallet-basics': _bundledSkillMd,
+    },
   );
 
   group('SkillRegistry.installBundled', () {
@@ -97,20 +97,26 @@ void main() {
   });
 
   group('skill_install builtin:<name>', () {
-    test('installs through the executor and reports success honestly',
-        () async {
-      final ToolExecutor ex = executor();
-      final ToolResult result = await ex.execute('skill_install', <String,
-          dynamic>{'source': 'builtin:binance-agentic-wallet'});
-      expect(result.ok, isTrue, reason: result.llmOutput);
-      expect(result.llmOutput, contains('Installed skill'));
-      expect(result.llmOutput, contains('binance-agentic-wallet'));
-      // Verify via skill_info: the instructions are really readable.
-      final ToolResult info = await ex.execute('skill_info', <String,
-          dynamic>{'name': 'binance-agentic-wallet'});
-      expect(info.ok, isTrue);
-      expect(info.llmOutput, contains('Official-flow only'));
-    });
+    test(
+      'installs through the executor and reports success honestly',
+      () async {
+        final ToolExecutor ex = executor();
+        final ToolResult result = await ex.execute(
+          'skill_install',
+          <String, dynamic>{'source': 'builtin:binance-agentic-wallet'},
+        );
+        expect(result.ok, isTrue, reason: result.llmOutput);
+        expect(result.llmOutput, contains('Installed skill'));
+        expect(result.llmOutput, contains('binance-agentic-wallet'));
+        // Verify via skill_info: the instructions are really readable.
+        final ToolResult info = await ex.execute(
+          'skill_info',
+          <String, dynamic>{'name': 'binance-agentic-wallet'},
+        );
+        expect(info.ok, isTrue);
+        expect(info.llmOutput, contains('Official-flow only'));
+      },
+    );
 
     test('unknown bundled name fails with the available names', () async {
       final ToolExecutor ex = executor();

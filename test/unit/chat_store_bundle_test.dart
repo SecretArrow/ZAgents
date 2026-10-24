@@ -64,19 +64,22 @@ void main() {
     expect(bundle, isNull);
   });
 
-  test('loadBundle of a session saved without extras yields defaults', () async {
-    final ChatStore st = store();
-    const String id = 'session-bundle-2';
-    await st.save(
-      id: id,
-      title: 'Minimal',
-      messages: <ChatMessage>[ChatMessage.user('ping')],
-    );
-    final SessionBundle? bundle = await st.loadBundle(id);
-    expect(bundle, isNotNull);
-    expect(bundle!.messages, hasLength(1));
-    expect(bundle.modules, isEmpty);
-    expect(bundle.waitingForSetup, isFalse);
-    expect(bundle.todos, isEmpty);
-  });
+  test(
+    'loadBundle of a session saved without extras yields defaults',
+    () async {
+      final ChatStore st = store();
+      const String id = 'session-bundle-2';
+      await st.save(
+        id: id,
+        title: 'Minimal',
+        messages: <ChatMessage>[ChatMessage.user('ping')],
+      );
+      final SessionBundle? bundle = await st.loadBundle(id);
+      expect(bundle, isNotNull);
+      expect(bundle!.messages, hasLength(1));
+      expect(bundle.modules, isEmpty);
+      expect(bundle.waitingForSetup, isFalse);
+      expect(bundle.todos, isEmpty);
+    },
+  );
 }
