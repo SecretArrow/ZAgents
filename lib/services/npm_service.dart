@@ -250,7 +250,7 @@ class NpmService {
     try {
       for (final ArchiveFile entry in entries) {
         final String rel = entry.name.replaceAll('\\', '/');
-        final Object? content = entry.content;
+        final Object content = entry.content;
         if (content is! List<int>) {
           throw 'unreadable entry in package tarball: ${entry.name}';
         }

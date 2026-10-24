@@ -1421,7 +1421,7 @@ class ChatController extends Notifier<ChatState> {
         }
       }
     }
-    final _RunResult outcome = result ?? const _RunResult();
+    final _RunResult outcome = result;
     if (run.runToken == token) {
       // Auto-title and the completion notification are slow, best-effort
       // extras. They run AFTER the session is released so the next message in
@@ -2663,13 +2663,25 @@ class ChatController extends Notifier<ChatState> {
     // `details` is model-authored: accept a list OR a bare string (a strict
     // `as List` cast used to throw on `"details": "send 1 BNB"`).
     final Object? rawDetails = call.arguments['details'];
-    final List<String> details = <String>[
-      if (rawDetails is List)
-        for (final Object? item in rawDetails)
-          if (item != null && item.toString().trim().isNotEmpty) item.toString()
-      else if (rawDetails != null && rawDetails.toString().trim().isNotEmpty)
-        rawDetails.toString(),
-    ];
+    final List<String> details = <String>[];
+    switch (rawDetails) {
+      case final List<Object?> list:
+        for (final Object? item in list) {
+          if (item != null && item.toString().trim().isNotEmpty) {
+            details.add(item.toString());
+          }
+        }
+        break;
+      case final String text:
+        if (text.trim().isNotEmpty) details.add(text);
+        break;
+      case null:
+        break;
+      default:
+        final String text = rawDetails.toString().trim();
+        if (text.isNotEmpty) details.add(text);
+        break;
+    }
     final bool approved = await _askApproval(
       run,
       id: call.id,

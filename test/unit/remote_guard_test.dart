@@ -63,10 +63,20 @@ void main() {
         '[::1]',
         '[::]',
         '[fe80::1]',
+        '[febf::1]', // last address of fe80::/10
         '[fd00::1]',
         '[fc00::1]',
+        '[ff02::1]', // multicast
+        // IPv4-mapped: dotted AND the canonical hex form Dart produces
+        // after parsing (`::ffff:7f00:1`). Both reach 127.0.0.1.
         '[::ffff:127.0.0.1]',
         '[::ffff:192.168.0.1]',
+        '[::ffff:7f00:1]',
+        '[::ffff:c0a8:1]',
+        '[::127.0.0.1]',
+        // NAT64 well-known prefix embedding a loopback / private address.
+        '[64:ff9b::7f00:1]',
+        '[64:ff9b::a00:1]',
       ]) {
         expect(
           RemoteGuard.isAllowedUrl('https://$host/x'),
@@ -74,7 +84,12 @@ void main() {
           reason: '$host must never be fetched',
         );
       }
+      // A malformed literal is refused, not guessed at.
+      expect(RemoteGuard.isAllowedUrl('https://[not:an:ip]/x'), isFalse);
+      expect(RemoteGuard.isAllowedUrl('https://[1:2:3:4:5:6:7:8:9]/x'), isFalse);
       expect(RemoteGuard.isAllowedUrl('https://[2001:4860:4860::8888]/x'), isTrue);
+      // NAT64 wrapping a PUBLIC address is allowed.
+      expect(RemoteGuard.isAllowedUrl('https://[64:ff9b::808:808]/x'), isTrue);
     });
   });
 

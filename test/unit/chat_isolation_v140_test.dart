@@ -232,10 +232,10 @@ void main() {
 /// action with a history load (the real disk reads are far too fast).
 class _GatedStore extends ChatStore {
   _GatedStore({
-    required Future<Directory> Function() resolveBaseDir,
+    required super.resolveBaseDir,
     this.gateTitle,
     this.gateSummaries,
-  }) : super(resolveBaseDir: resolveBaseDir, offloadIsolate: false);
+  }) : super(offloadIsolate: false);
 
   final Completer<void>? gateTitle;
   final Completer<void>? gateSummaries;
