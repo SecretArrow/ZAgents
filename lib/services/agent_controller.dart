@@ -3033,27 +3033,16 @@ class ChatController extends Notifier<ChatState> {
   /// it is still pending disposes that instance and the old future NEVER
   /// completes — `restoreLastChat` then hung forever, which is exactly what
   /// happens when the user sends a message while app-start history is still
-  /// loading. A manual listener re-fires on the replacement instance.
-  Future<List<ChatSummary>> _historyOnce() {
-    final Completer<List<ChatSummary>> done = Completer<List<ChatSummary>>();
-    late final ProviderSubscription<AsyncValue<List<ChatSummary>>> sub;
-    void settle(AsyncValue<List<ChatSummary>> value) {
-      if (done.isCompleted) return;
-      if (value.hasError) {
-        done.completeError(value.error!, value.stackTrace);
-      } else if (value.hasValue) {
-        done.complete(value.requireValue);
-      }
-    }
-
-    sub = ref.listenManual<AsyncValue<List<ChatSummary>>>(
-      chatListProvider,
-      (AsyncValue<List<ChatSummary>>? previous,
-          AsyncValue<List<ChatSummary>> next) => settle(next),
-      fireImmediately: true,
-    );
-    return done.future.whenComplete(sub.close);
-  }
+  /// loading.
+  ///
+  /// v1.40.1: read the STORE directly. The list is only used to pick the
+  /// most recent conversation — the drawer keeps watching chatListProvider
+  /// for the reactive UI, but this cold-start path has no invalidation race
+  /// against a plain store read. (A manual provider listener is also not an
+  /// option here: `Ref.listenManual` does not exist on
+  /// `NotifierProviderRef` in flutter_riverpod 2.6.)
+  Future<List<ChatSummary>> _historyOnce() =>
+      ref.read(chatStoreProvider).listSummaries();
 
   Future<void> openChat(ChatSummary summary) async {
     final String? previousId = _activeSessionId;
