@@ -113,9 +113,10 @@ class ToolCall {
   };
 
   static bool _isSecretKey(String key) {
-    final String normalized = key
-        .toLowerCase()
-        .replaceAll(RegExp(r'[^a-z0-9]'), '');
+    final String normalized = key.toLowerCase().replaceAll(
+      RegExp(r'[^a-z0-9]'),
+      '',
+    );
     return _secretKeys.contains(normalized) ||
         normalized.endsWith('token') ||
         normalized.endsWith('password') ||

@@ -45,10 +45,7 @@ void main() {
         isTrue,
       );
       expect(
-        RemoteGuard.isAllowedUrl(
-          'http://127.0.0.1:8080/',
-          requireHttps: false,
-        ),
+        RemoteGuard.isAllowedUrl('http://127.0.0.1:8080/', requireHttps: false),
         isFalse,
       );
       expect(

@@ -88,7 +88,8 @@ class WebFetcher {
       } on TimeoutException {
         return WebFetchResult(
           ok: false,
-          output: 'Request timed out after ${requestTimeout.inSeconds}s: '
+          output:
+              'Request timed out after ${requestTimeout.inSeconds}s: '
               '$current',
         );
       } catch (e) {

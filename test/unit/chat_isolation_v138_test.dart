@@ -632,48 +632,50 @@ void main() {
       expect(call.resultText, contains('DENIED'));
     });
 
-    test('skill_run on a non-wallet skill runs without an approval prompt',
-        () async {
-      final SkillRegistry registry = SkillRegistry(
-        resolveBaseDir: () async => tempDir,
-      );
-      await registry.installBundled(
-        bundledName: 'readonly-skill',
-        skillMd: _readonlySkillMd,
-      );
-      final _RecordingExecutor executor = _RecordingExecutor(tempDir);
-      final ProviderContainer container = await containerWith(
-        ScriptedLlmClient(<AssistantTurn>[
-          AssistantTurn(
-            content: '',
-            toolCalls: <ToolCallRequest>[
-              ToolCallRequest(
-                id: 'c10',
-                name: 'skill_run',
-                argumentsJson: jsonEncode(<String, dynamic>{
-                  'name': 'readonly-skill',
-                  'script': 'scripts/report.js',
-                }),
-              ),
-            ],
-          ),
-          AssistantTurn(content: 'done'),
-        ]),
-        extra: <Override>[
-          toolExecutorProvider.overrideWithValue(executor),
-          skillRegistryProvider.overrideWithValue(registry),
-        ],
-      );
+    test(
+      'skill_run on a non-wallet skill runs without an approval prompt',
+      () async {
+        final SkillRegistry registry = SkillRegistry(
+          resolveBaseDir: () async => tempDir,
+        );
+        await registry.installBundled(
+          bundledName: 'readonly-skill',
+          skillMd: _readonlySkillMd,
+        );
+        final _RecordingExecutor executor = _RecordingExecutor(tempDir);
+        final ProviderContainer container = await containerWith(
+          ScriptedLlmClient(<AssistantTurn>[
+            AssistantTurn(
+              content: '',
+              toolCalls: <ToolCallRequest>[
+                ToolCallRequest(
+                  id: 'c10',
+                  name: 'skill_run',
+                  argumentsJson: jsonEncode(<String, dynamic>{
+                    'name': 'readonly-skill',
+                    'script': 'scripts/report.js',
+                  }),
+                ),
+              ],
+            ),
+            AssistantTurn(content: 'done'),
+          ]),
+          extra: <Override>[
+            toolExecutorProvider.overrideWithValue(executor),
+            skillRegistryProvider.overrideWithValue(registry),
+          ],
+        );
 
-      await container.read(chatControllerProvider.notifier).send('report');
+        await container.read(chatControllerProvider.notifier).send('report');
 
-      expect(
-        container.read(chatControllerProvider).pendingConfirmation,
-        isNull,
-        reason: 'read-only skills must stay frictionless',
-      );
-      expect(executor.executed, <String>['skill_run']);
-    });
+        expect(
+          container.read(chatControllerProvider).pendingConfirmation,
+          isNull,
+          reason: 'read-only skills must stay frictionless',
+        );
+        expect(executor.executed, <String>['skill_run']);
+      },
+    );
   });
 }
 

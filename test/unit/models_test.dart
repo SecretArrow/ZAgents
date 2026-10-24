@@ -438,10 +438,7 @@ void main() {
       final ToolCall call = ToolCall(
         id: 't3',
         name: 'some_future_tool',
-        arguments: <String, dynamic>{
-          'password': 'hunter2',
-          'account': 'alice',
-        },
+        arguments: <String, dynamic>{'password': 'hunter2', 'account': 'alice'},
       );
       expect(call.argsSummary, 'password: <redacted>, account: alice');
     });

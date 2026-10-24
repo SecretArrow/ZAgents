@@ -130,9 +130,8 @@ void main() {
     final Archive evil = Archive()
       ..addFile(ArchiveFile('../escaped.txt', 4, <int>[101, 118, 105, 108]))
       ..addFile(ArchiveFile('ok.txt', 2, <int>[111, 107]));
-    await File(
-      '${tempDir.path}/evil.zip',
-    ).writeAsBytes(ZipEncoder().encode(evil));
+    await File('${tempDir.path}/evil.zip')
+        .writeAsBytes(ZipEncoder().encode(evil));
 
     await expectLater(
       fs.unzip('evil.zip'),
