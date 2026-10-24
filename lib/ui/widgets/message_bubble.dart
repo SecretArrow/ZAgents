@@ -46,6 +46,17 @@ class MessageBubble extends StatelessWidget {
   /// ASSISTANT bubble. Null hides the button entirely.
   final VoidCallback? onRegenerate;
 
+  /// Tool call → card. `todo_write` renders as a plan card when it carries
+  /// at least one todo; the parsed list is reused by the card instead of
+  /// being parsed a second time inside it.
+  Widget _toolCard(ToolCall call) {
+    if (call.name == 'todo_write') {
+      final List<TodoItem> todos = parseTodoList(call.arguments['todos']);
+      if (todos.isNotEmpty) return TodoPlanCard(call: call, todos: todos);
+    }
+    return ToolCallCard(call: call);
+  }
+
   @override
   Widget build(BuildContext context) {
     if (message.role == Role.user) {
@@ -180,11 +191,7 @@ class MessageBubble extends StatelessWidget {
                       ),
                     ),
                   for (final ToolCall call in message.toolCalls)
-                    if (call.name == 'todo_write' &&
-                        parseTodoList(call.arguments['todos']).isNotEmpty)
-                      TodoPlanCard(call: call)
-                    else
-                      ToolCallCard(call: call),
+                    _toolCard(call),
                   if (showContent)
                     _MemoMarkdown(
                       // v1.38.0: keyed on the streaming flag — the flip at
@@ -226,31 +233,38 @@ class _EditButton extends StatelessWidget {
     final TextEditingController controller = TextEditingController(
       text: initialText,
     );
-    final String? newText = await showDialog<String>(
-      context: context,
-      builder: (BuildContext dialogContext) => AlertDialog(
-        backgroundColor: context.zSurface,
-        title: Text(strings.editDialogTitle),
-        content: TextField(
-          key: const Key('edit-message-field'),
-          controller: controller,
-          autofocus: true,
-          maxLines: 5,
-          minLines: 2,
+    final String? newText;
+    try {
+      newText = await showDialog<String>(
+        context: context,
+        builder: (BuildContext dialogContext) => AlertDialog(
+          backgroundColor: context.zSurface,
+          title: Text(strings.editDialogTitle),
+          content: TextField(
+            key: const Key('edit-message-field'),
+            controller: controller,
+            autofocus: true,
+            maxLines: 5,
+            minLines: 2,
+          ),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: Text(strings.cancel),
+            ),
+            TextButton(
+              key: const Key('edit-message-save'),
+              onPressed: () => Navigator.of(dialogContext).pop(controller.text),
+              child: Text(strings.save),
+            ),
+          ],
         ),
-        actions: <Widget>[
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(),
-            child: Text(strings.cancel),
-          ),
-          TextButton(
-            key: const Key('edit-message-save'),
-            onPressed: () => Navigator.of(dialogContext).pop(controller.text),
-            child: Text(strings.save),
-          ),
-        ],
-      ),
-    );
+      );
+    } finally {
+      // The dialog is gone: release the controller instead of leaking one
+      // per opened edit form.
+      controller.dispose();
+    }
     if (newText != null && newText.trim().isNotEmpty) {
       onEdit(newText);
     }
@@ -490,34 +504,27 @@ class _AttachmentPreview extends StatelessWidget {
           .round();
       return ClipRRect(
         borderRadius: BorderRadius.circular(10),
-        child: file.existsSync()
-            ? Image.file(
-                file,
-                width: 120,
-                height: 120,
-                fit: BoxFit.cover,
-                cacheWidth: cacheWidth,
-                errorBuilder: (_, _, _) => Container(
-                  width: 120,
-                  height: 120,
-                  color: Colors.white24,
-                  alignment: Alignment.center,
-                  child: const Icon(
-                    Icons.broken_image_rounded,
-                    color: Colors.white70,
-                  ),
-                ),
-              )
-            : Container(
-                width: 120,
-                height: 120,
-                color: Colors.white24,
-                alignment: Alignment.center,
-                child: const Icon(
-                  Icons.broken_image_rounded,
-                  color: Colors.white70,
-                ),
-              ),
+        // v1.39.0: no `existsSync()` pre-check — that was a blocking
+        // syscall on the UI thread for every image of every visible bubble
+        // on every rebuild. `errorBuilder` already renders the placeholder
+        // when the file is gone.
+        child: Image.file(
+          file,
+          width: 120,
+          height: 120,
+          fit: BoxFit.cover,
+          cacheWidth: cacheWidth,
+          errorBuilder: (_, _, _) => Container(
+            width: 120,
+            height: 120,
+            color: Colors.white24,
+            alignment: Alignment.center,
+            child: const Icon(
+              Icons.broken_image_rounded,
+              color: Colors.white70,
+            ),
+          ),
+        ),
       );
     }
     return Container(

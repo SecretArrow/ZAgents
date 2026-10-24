@@ -36,12 +36,14 @@ android {
             // key-sign-apk.zip stored in this repository; the password lives in
             // the KEYSTORE_PASSWORD Actions secret and is never committed).
             val ksPath = System.getenv("KEYSTORE_PATH")
-            val ksPass = System.getenv("KEYSTORE_PASSWORD")
-            if (ksPath != null && ksPass != null) {
+            val storePass = System.getenv("KEYSTORE_STORE_PASSWORD")
+                ?: System.getenv("KEYSTORE_PASSWORD")
+            val keyPass = System.getenv("KEYSTORE_KEY_PASSWORD") ?: storePass
+            if (!ksPath.isNullOrBlank() && !storePass.isNullOrBlank()) {
                 storeFile = file(ksPath)
-                storePassword = ksPass
+                storePassword = storePass
                 keyAlias = System.getenv("KEYSTORE_ALIAS") ?: "zagents"
-                keyPassword = ksPass
+                keyPassword = keyPass
             }
         }
     }
@@ -49,7 +51,16 @@ android {
     buildTypes {
         release {
             val releaseSigningConfigured = !System.getenv("KEYSTORE_PATH").isNullOrBlank() &&
-                !System.getenv("KEYSTORE_PASSWORD").isNullOrBlank()
+                !(System.getenv("KEYSTORE_STORE_PASSWORD") ?: System.getenv("KEYSTORE_PASSWORD")).isNullOrBlank()
+            // The release workflow sets ZAGENTS_REQUIRE_SIGNING=true: publishing a
+            // debug-signed APK is worse than failing the build.
+            val requireSigning = System.getenv("ZAGENTS_REQUIRE_SIGNING") == "true"
+            if (requireSigning && !releaseSigningConfigured) {
+                throw GradleException(
+                    "Release signing is required (ZAGENTS_REQUIRE_SIGNING=true) but " +
+                        "KEYSTORE_PATH / KEYSTORE_STORE_PASSWORD are missing.",
+                )
+            }
             signingConfig = if (releaseSigningConfigured) {
                 signingConfigs.getByName("release")
             } else {

@@ -8,6 +8,7 @@ import 'package:zagents/di.dart';
 import 'package:zagents/models/models.dart';
 import 'package:zagents/services/agent_controller.dart';
 import 'package:zagents/services/llm_client.dart';
+import 'package:zagents/services/tool_executor.dart';
 
 import '../support/test_doubles.dart';
 
@@ -28,13 +29,17 @@ void main() {
   Future<ProviderContainer> containerWith(
     LlmClient llm, {
     AppSettings? settings,
+    List<Override> extra = const <Override>[],
   }) async {
     final ProviderContainer container = ProviderContainer(
-      overrides: testOverrides(
-        llm: llm,
-        dir: tempDir,
-        settings: settings ?? AppSettings(apiKey: 'k', autoTitle: false),
-      ),
+      overrides: <Override>[
+        ...testOverrides(
+          llm: llm,
+          dir: tempDir,
+          settings: settings ?? AppSettings(apiKey: 'k', autoTitle: false),
+        ),
+        ...extra,
+      ],
     );
     addTearDown(container.dispose);
     return container;
@@ -327,7 +332,214 @@ void main() {
       );
       expect(aToolTurn.toolCalls.single.resultText, contains('not on screen'));
     });
+
+    test('a denial is a FAILED tool call, not a green check', () async {
+      final ProviderContainer container = await containerWith(
+        ScriptedLlmClient(<AssistantTurn>[
+          AssistantTurn(
+            content: '',
+            toolCalls: <ToolCallRequest>[confirmCall('c5')],
+          ),
+          AssistantTurn(content: 'understood'),
+        ]),
+      );
+      final Future<void> run = container
+          .read(chatControllerProvider.notifier)
+          .send('send it');
+      await Future<void>.delayed(Duration.zero);
+      container
+          .read(chatControllerProvider.notifier)
+          .resolveConfirmation('c5', false);
+      await run;
+
+      final ToolCall call = container
+          .read(chatControllerProvider)
+          .messages
+          .firstWhere((ChatMessage m) => m.toolCalls.isNotEmpty)
+          .toolCalls
+          .single;
+      expect(
+        call.status,
+        ToolStatus.error,
+        reason: 'the user refused the action; the transcript must not show '
+            'a success check for it',
+      );
+      expect(call.resultText, contains('DENIED'));
+    });
+
+    test('details accepts a bare string from the model', () async {
+      final ProviderContainer container = await containerWith(
+        ScriptedLlmClient(<AssistantTurn>[
+          AssistantTurn(
+            content: '',
+            toolCalls: <ToolCallRequest>[
+              ToolCallRequest(
+                id: 'c6',
+                name: 'request_confirmation',
+                argumentsJson: jsonEncode(<String, dynamic>{
+                  'title': 'Send 1 BNB',
+                  'details': 'network: bsc, to: 0xabc, amount: 1 BNB',
+                }),
+              ),
+            ],
+          ),
+          AssistantTurn(content: 'done'),
+        ]),
+      );
+      final Future<void> run = container
+          .read(chatControllerProvider.notifier)
+          .send('go');
+      await Future<void>.delayed(Duration.zero);
+
+      final ConfirmationRequest pending = container
+          .read(chatControllerProvider)
+          .pendingConfirmation!;
+      expect(pending.details, <String>[
+        'network: bsc, to: 0xabc, amount: 1 BNB',
+      ]);
+      expect(pending.danger, isTrue, reason: 'danger defaults to true');
+
+      container
+          .read(chatControllerProvider.notifier)
+          .resolveConfirmation('c6', true);
+      await run;
+      expect(
+        container.read(chatControllerProvider).messages.last.content,
+        'done',
+      );
+    });
+
+    test('skill_install is gated on approval and a denial never reaches '
+        'the executor', () async {
+      final _RecordingExecutor executor = _RecordingExecutor(tempDir);
+      final ProviderContainer container = await containerWith(
+        ScriptedLlmClient(<AssistantTurn>[
+          AssistantTurn(
+            content: '',
+            toolCalls: <ToolCallRequest>[
+              ToolCallRequest(
+                id: 'c7',
+                name: 'skill_install',
+                argumentsJson: jsonEncode(<String, dynamic>{
+                  'source':
+                      'binance/binance-skills-hub/skills/'
+                      'binance-web3/binance-agentic-wallet',
+                }),
+              ),
+            ],
+          ),
+          AssistantTurn(content: 'install declined, not retrying'),
+        ]),
+        extra: <Override>[toolExecutorProvider.overrideWithValue(executor)],
+      );
+      final Future<void> run = container
+          .read(chatControllerProvider.notifier)
+          .send('install the binance wallet skill');
+      await Future<void>.delayed(Duration.zero);
+
+      final ConfirmationRequest pending = container
+          .read(chatControllerProvider)
+          .pendingConfirmation!;
+      expect(pending.title, contains('Install'));
+      expect(
+        pending.details.join('\n'),
+        contains('binance/binance-skills-hub'),
+        reason: 'the user must see the source before third-party code is '
+            'downloaded',
+      );
+      expect(
+        executor.executed,
+        isEmpty,
+        reason: 'nothing may be downloaded before the user approves',
+      );
+
+      container
+          .read(chatControllerProvider.notifier)
+          .resolveConfirmation('install:c7', false);
+      await run;
+
+      expect(executor.executed, isEmpty);
+      final ToolCall call = container
+          .read(chatControllerProvider)
+          .messages
+          .firstWhere((ChatMessage m) => m.toolCalls.isNotEmpty)
+          .toolCalls
+          .single;
+      expect(call.status, ToolStatus.error);
+      expect(call.resultText, contains('declined'));
+    });
+
+    test('an approved skill_install reaches the executor', () async {
+      final _RecordingExecutor executor = _RecordingExecutor(tempDir);
+      final ProviderContainer container = await containerWith(
+        ScriptedLlmClient(<AssistantTurn>[
+          AssistantTurn(
+            content: '',
+            toolCalls: <ToolCallRequest>[
+              ToolCallRequest(
+                id: 'c8',
+                name: 'skill_install',
+                argumentsJson: jsonEncode(<String, dynamic>{
+                  'source': 'owner/repo',
+                }),
+              ),
+            ],
+          ),
+          AssistantTurn(content: 'installed'),
+        ]),
+        extra: <Override>[toolExecutorProvider.overrideWithValue(executor)],
+      );
+      final Future<void> run = container
+          .read(chatControllerProvider.notifier)
+          .send('install it');
+      await Future<void>.delayed(Duration.zero);
+      container
+          .read(chatControllerProvider.notifier)
+          .resolveConfirmation('install:c8', true);
+      await run;
+
+      expect(executor.executed, <String>['skill_install']);
+      expect(
+        container
+            .read(chatControllerProvider)
+            .messages
+            .firstWhere((ChatMessage m) => m.toolCalls.isNotEmpty)
+            .toolCalls
+            .single
+            .status,
+        ToolStatus.success,
+      );
+    });
   });
+}
+
+/// ToolExecutor double: records the tool names the controller hands to the
+/// executor so approval gates can be asserted without touching the network
+/// or the filesystem.
+class _RecordingExecutor extends ToolExecutor {
+  _RecordingExecutor(Directory dir)
+    : super(
+        browser: ScriptedBrowserAutomation(
+          dir.path,
+          writeScreenshot: false,
+        ),
+        resolveBaseDir: (String? _) async => dir,
+        isAutomationEnabled: () => false,
+      );
+
+  final List<String> executed = <String>[];
+
+  @override
+  Future<ToolResult> execute(
+    String name,
+    Map<String, dynamic> args, {
+    String? sessionId,
+    String? browserContext,
+    bool Function()? shouldAbort,
+  }) async {
+    executed.add(name);
+    return ToolResult(ok: true, llmOutput: 'EXECUTED $name');
+  }
 }
 
 /// Gated LLM client (local copy so suites stay independent): turn N

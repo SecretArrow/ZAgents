@@ -2,8 +2,9 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:archive/archive.dart';
-import 'package:archive/archive_io.dart' show extractArchiveToDisk;
 import 'package:http/http.dart' as http;
+
+import 'remote_guard.dart';
 
 /// A module installed in the app's `node_modules` folder.
 class InstalledModule {
@@ -54,6 +55,13 @@ class NpmService {
   final String registryHost;
 
   static const int _maxDepth = 6;
+
+  /// Registry metadata is small; a package tarball can legitimately be tens of
+  /// megabytes, but never unbounded.
+  static const int _maxMetadataBytes = 8 * 1024 * 1024;
+  static const int _maxTarballBytes = 64 * 1024 * 1024;
+  static const int _maxUnpackedBytes = 128 * 1024 * 1024;
+  static const int _maxFiles = 4000;
 
   Directory? _modulesDirCache;
 
@@ -130,6 +138,12 @@ class NpmService {
     if (pkg.isEmpty) {
       return const NpmInstallResult(ok: false, message: 'Package name empty');
     }
+    if (!isValidPackageName(pkg)) {
+      return NpmInstallResult(
+        ok: false,
+        message: 'Invalid package name: "$pkg"',
+      );
+    }
     try {
       final List<String> installed = <String>[];
       await _installWithDeps(pkg, version, installed, 0);
@@ -160,14 +174,19 @@ class NpmService {
     final String metaPath = version == null || version.trim().isEmpty
         ? '/$name'
         : '/$name/$version';
-    final http.Response metaRes = await _client.get(
-      Uri.https(registryHost, metaPath),
-      headers: const <String, String>{'Accept': 'application/json'},
-    );
-    if (metaRes.statusCode != 200) {
-      throw 'registry lookup for "$name" returned HTTP ${metaRes.statusCode}';
+    final List<int> metaBytes;
+    try {
+      metaBytes = await RemoteGuard.download(
+        _client,
+        Uri.https(registryHost, metaPath),
+        headers: const <String, String>{'Accept': 'application/json'},
+        maxBytes: _maxMetadataBytes,
+        timeout: const Duration(seconds: 30),
+      );
+    } on RemoteGuardException catch (e) {
+      throw 'registry lookup for "$name" failed: ${e.message}';
     }
-    final Object? decodedMeta = jsonDecode(metaRes.body);
+    final Object? decodedMeta = jsonDecode(utf8.decode(metaBytes));
     if (decodedMeta is! Map) throw 'unexpected registry payload for "$name"';
 
     // Dist-tags resolve through the full metadata document.
@@ -190,21 +209,59 @@ class NpmService {
     }
 
     // 2. Download + unpack into a temp dir, then move into node_modules.
-    final http.Response tarRes = await _client.get(Uri.parse(tarballUrl));
-    if (tarRes.statusCode != 200) {
-      throw 'tarball download for "$name" returned HTTP ${tarRes.statusCode}';
+    final List<int> tarBytes;
+    try {
+      tarBytes = await RemoteGuard.download(
+        _client,
+        Uri.parse(tarballUrl),
+        maxBytes: _maxTarballBytes,
+      );
+    } on RemoteGuardException catch (e) {
+      throw 'tarball download for "$name" failed: ${e.message}';
     }
     final Archive archive = TarDecoder().decodeBytes(
-      GZipDecoder().decodeBytes(tarRes.bodyBytes),
+      GZipDecoder().decodeBytes(tarBytes),
     );
+    // Every entry is validated BEFORE anything is written: a hostile tarball
+    // could otherwise use `../` names to escape node_modules (the old
+    // `extractArchiveToDisk` wrote whatever path the archive declared).
+    final List<ArchiveFile> entries = <ArchiveFile>[];
+    int unpacked = 0;
+    for (final ArchiveFile entry in archive.files) {
+      if (!entry.isFile) continue;
+      final String rel = entry.name.replaceAll('\\', '/');
+      if (!_isSafeEntryPath(rel)) {
+        throw 'unsafe path in package tarball: ${entry.name}';
+      }
+      unpacked += entry.size;
+      if (unpacked > _maxUnpackedBytes) {
+        throw 'package "$name" unpacks to more than 128 MB';
+      }
+      if (entries.length >= _maxFiles) {
+        throw 'package "$name" contains more than $_maxFiles files';
+      }
+      entries.add(entry);
+    }
     final Directory temp = await modulesDir().then(
       (Directory d) => Directory(
         '${d.parent.path}${Platform.pathSeparator}.npm_tmp_${DateTime.now().millisecondsSinceEpoch}',
       ).create(recursive: true),
     );
     try {
+      for (final ArchiveFile entry in entries) {
+        final String rel = entry.name.replaceAll('\\', '/');
+        final Object? content = entry.content;
+        if (content is! List<int>) {
+          throw 'unreadable entry in package tarball: ${entry.name}';
+        }
+        final File destFile = File(
+          '${temp.path}${Platform.pathSeparator}'
+          '${rel.replaceAll('/', Platform.pathSeparator)}',
+        );
+        await destFile.parent.create(recursive: true);
+        await destFile.writeAsBytes(content, flush: true);
+      }
       // npm tarballs wrap everything in a "package/" root.
-      extractArchiveToDisk(archive, temp.path);
       final Directory unpackedRoot = Directory(
         '${temp.path}${Platform.pathSeparator}package',
       );
@@ -264,12 +321,53 @@ class NpmService {
     }
   }
 
+  /// True when a tarball entry stays inside the extraction root: no absolute
+  /// paths, no `..` segments, no Windows drive/UNC prefixes.
+  static bool _isSafeEntryPath(String rel) {
+    if (rel.isEmpty || rel.startsWith('/') || rel.startsWith('\\')) {
+      return false;
+    }
+    if (rel.contains(':') || rel.contains('\u0000')) return false;
+    for (final String segment in rel.split('/')) {
+      if (segment == '..') return false;
+    }
+    return true;
+  }
+
+  /// True when [name] is a well-formed npm package name that cannot escape
+  /// the node_modules directory. `../../skills/x` used to be accepted and
+  /// deleted arbitrary app folders.
+  static bool isValidPackageName(String name) {
+    final String trimmed = name.trim();
+    if (trimmed.isEmpty || trimmed.length > 214) return false;
+    if (trimmed.contains('\\') || trimmed.contains(':')) return false;
+    if (trimmed.contains('..')) return false;
+    final String body = trimmed.startsWith('@')
+        ? trimmed.substring(1)
+        : trimmed;
+    final List<String> segments = body.split('/');
+    if (segments.length > 2) return false;
+    for (final String segment in segments) {
+      if (segment.isEmpty || segment == '.' || segment == '..') return false;
+    }
+    return true;
+  }
+
   /// Removes a package from node_modules. Returns true when it existed.
   Future<bool> remove(String name) async {
+    if (!isValidPackageName(name)) {
+      throw 'invalid package name: "$name"';
+    }
     final Directory modules = await modulesDir();
     final Directory target = Directory(
       '${modules.path}${Platform.pathSeparator}$name',
     );
+    // Defence in depth: the resolved path must stay under node_modules.
+    final String modulesPath = modules.absolute.path;
+    final String targetPath = target.absolute.path;
+    if (!targetPath.startsWith('$modulesPath${Platform.pathSeparator}')) {
+      throw 'invalid package name: "$name"';
+    }
     if (!target.existsSync()) return false;
     await target.delete(recursive: true);
     return true;

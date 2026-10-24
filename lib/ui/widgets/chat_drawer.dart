@@ -65,29 +65,36 @@ class ChatDrawer extends ConsumerWidget {
     final TextEditingController controller = TextEditingController(
       text: item.title,
     );
-    final String? newName = await showDialog<String>(
-      context: context,
-      builder: (BuildContext dialogContext) => AlertDialog(
-        backgroundColor: context.zSurface,
-        title: Text(strings.renameChatTitle),
-        content: TextField(
-          autofocus: true,
-          controller: controller,
-          decoration: InputDecoration(labelText: strings.nameHint),
-          onSubmitted: (String value) => Navigator.of(dialogContext).pop(value),
+    final String? newName;
+    try {
+      newName = await showDialog<String>(
+        context: context,
+        builder: (BuildContext dialogContext) => AlertDialog(
+          backgroundColor: context.zSurface,
+          title: Text(strings.renameChatTitle),
+          content: TextField(
+            autofocus: true,
+            controller: controller,
+            decoration: InputDecoration(labelText: strings.nameHint),
+            onSubmitted: (String value) =>
+                Navigator.of(dialogContext).pop(value),
+          ),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: Text(strings.cancel),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(controller.text),
+              child: Text(strings.save),
+            ),
+          ],
         ),
-        actions: <Widget>[
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(),
-            child: Text(strings.cancel),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(controller.text),
-            child: Text(strings.save),
-          ),
-        ],
-      ),
-    );
+      );
+    } finally {
+      // One controller per opened rename dialog — release it with the dialog.
+      controller.dispose();
+    }
     if (newName == null || newName.trim().isEmpty) return;
     await ref
         .read(chatControllerProvider.notifier)

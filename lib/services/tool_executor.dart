@@ -756,7 +756,20 @@ class ToolExecutor {
         llmOutput: 'Parameter package is empty.',
       );
     }
-    final bool removed = await service.remove(pkg);
+    if (!NpmService.isValidPackageName(pkg)) {
+      return const ToolResult(
+        ok: false,
+        llmOutput:
+            'Invalid package name. Only plain npm names or @scope/name are '
+            'accepted.',
+      );
+    }
+    final bool removed;
+    try {
+      removed = await service.remove(pkg);
+    } catch (e) {
+      return ToolResult(ok: false, llmOutput: 'Remove failed: $e');
+    }
     return ToolResult(
       ok: removed,
       llmOutput: removed
@@ -946,16 +959,56 @@ class ToolExecutor {
             'Use skill_list to see installed skills.',
       );
     }
+    final List<String> files = skill.listFiles();
+    // Optional `path`: read ONE file of the skill (references/*.md, a
+    // helper script, …). Multi-file skills are unusable without this —
+    // their SKILL.md tells the agent to read the reference docs first.
+    final String requested = args['path']?.toString().trim() ?? '';
+    if (requested.isNotEmpty) {
+      final String? body = skill.readFile(requested);
+      if (body == null) {
+        return ToolResult(
+          ok: false,
+          llmOutput:
+              'File "$requested" not found in skill "${skill.name}". '
+              'Available files: '
+              '${files.isEmpty ? '(none)' : files.join(', ')}',
+        );
+      }
+      const int maxChars = 120000;
+      final String text = body.length > maxChars
+          ? '${body.substring(0, maxChars)}\n… (truncated)'
+          : body;
+      return ToolResult(
+        ok: true,
+        llmOutput: '--- ${skill.name}/$requested ---\n$text',
+        displayText: '${skill.name}/$requested',
+      );
+    }
     final Map<String, String> config = await registry.readConfig(skill);
+    final StringBuffer out = StringBuffer()
+      ..writeln(
+        '=== ${skill.name} v${skill.version} '
+        '[${(await registry.statusOf(skill)).name}] ===',
+      )
+      ..writeln('Source: ${skill.source}')
+      ..writeln('Config: ${registry.describeConfig(skill, config)}');
+    if (skill.requiresBins.isNotEmpty) {
+      out.writeln(
+        'UNSUPPORTED HERE: requires native executable(s) '
+        '${skill.requiresBins.join(', ')} — this runtime cannot start '
+        'external processes.',
+      );
+    }
+    if (files.isNotEmpty) {
+      out.writeln('Files (read with skill_info path="…"): ${files.join(', ')}');
+    }
+    out
+      ..writeln('--- SKILL.md ---')
+      ..write(skill.readInstructions());
     return ToolResult(
       ok: true,
-      llmOutput:
-          '=== ${skill.name} v${skill.version} '
-          '[${(await registry.statusOf(skill)).name}] ===\n'
-          'Source: ${skill.source}\n'
-          'Config: ${registry.describeConfig(skill, config)}\n'
-          '--- SKILL.md ---\n'
-          '${skill.readInstructions()}',
+      llmOutput: out.toString(),
       displayText: skill.name,
     );
   }
@@ -1072,6 +1125,21 @@ class ToolExecutor {
             'Only JavaScript (.js) skill scripts can run in the '
             'embedded runtime. Native binaries, shells and other runtimes '
             'are unsupported — report this limitation honestly.',
+      );
+    }
+    // v1.39.0: a skill that declares a native executable cannot run here.
+    // Saying so up front (and refusing) is the honest behaviour — the
+    // agent used to "run" the JS and report a success that never happened.
+    if (skill.requiresBins.isNotEmpty) {
+      return ToolResult(
+        ok: false,
+        llmOutput:
+            'Skill "${skill.name}" requires the native executable(s) '
+            '${skill.requiresBins.join(', ')}. This runtime has no shell and '
+            'cannot start external processes, so the skill\'s commands '
+            'cannot be executed on this device. Do not claim it worked. Tell '
+            'the user this limitation; you may still read its instructions '
+            'with skill_info and help with tasks that only need HTTP.',
       );
     }
     final File scriptFile = File(

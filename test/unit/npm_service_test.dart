@@ -169,4 +169,97 @@ void main() {
     expect(hits, hasLength(1));
     expect(hits.first['name'], 'left-pad');
   });
+
+  group('tarball & name safety (v1.40.0)', () {
+    NpmService serviceFor(List<int> tarball) {
+      final MockClient client = MockClient((http.Request request) async {
+        if (request.url.path.endsWith('/evil-pkg')) {
+          return jsonRes(<String, dynamic>{
+            'dist-tags': <String, dynamic>{'latest': '1.0.0'},
+            'versions': <String, dynamic>{
+              '1.0.0': <String, dynamic>{
+                'dist': <String, dynamic>{
+                  'tarball': 'https://registry.npmjs.org/evil-pkg/-/evil.tgz',
+                },
+              },
+            },
+          });
+        }
+        return http.Response.bytes(tarball, 200);
+      });
+      return NpmService(resolveBaseDir: () async => tempDir, client: client);
+    }
+
+    test('a tarball entry that escapes node_modules is rejected', () async {
+      final NpmService evil = serviceFor(
+        tarGz(<String, String>{
+          'package/package.json': jsonEncode(<String, dynamic>{
+            'name': 'evil-pkg',
+            'version': '1.0.0',
+          }),
+          'package/../../skills/pwned/SKILL.md': '# pwned',
+        }),
+      );
+      final NpmInstallResult result = await evil.install('evil-pkg');
+      expect(result.ok, isFalse);
+      expect(result.message, contains('unsafe path'));
+      expect(
+        Directory('${tempDir.path}/skills').existsSync(),
+        isFalse,
+        reason: 'nothing may be written outside node_modules',
+      );
+      expect(
+        Directory('${tempDir.path}/node_modules/evil-pkg').existsSync(),
+        isFalse,
+        reason: 'a rejected archive must not be half-installed',
+      );
+    });
+
+    test('an absolute entry path is rejected', () async {
+      final NpmService evil = serviceFor(
+        tarGz(<String, String>{
+          'package/package.json': '{"name":"evil-pkg","version":"1.0.0"}',
+          '/etc/passwd': 'root:x:0:0',
+        }),
+      );
+      final NpmInstallResult result = await evil.install('evil-pkg');
+      expect(result.ok, isFalse);
+      expect(result.message, contains('unsafe path'));
+    });
+
+    test('package names cannot escape the modules directory', () async {
+      for (final String name in <String>[
+        '../../skills/x',
+        '..',
+        '@scope/../../x',
+        r'C:\windows',
+        'a/b/c',
+      ]) {
+        final NpmInstallResult result = await service.install(name);
+        expect(
+          result.ok,
+          isFalse,
+          reason: '"$name" must be rejected',
+        );
+        expect(result.message, contains('Invalid package name'));
+      }
+      await expectLater(service.remove('..'), throwsA(isA<String>()));
+    });
+
+    test('a hostile metadata payload is a readable error, not a crash', () async {
+      final MockClient client = MockClient(
+        (http.Request request) async => jsonRes(<String, dynamic>{
+          'dist-tags': <String, dynamic>{'latest': '1.0.0'},
+          'versions': <String, dynamic>{'1.0.0': 'not-a-map'},
+        }),
+      );
+      final NpmService broken = NpmService(
+        resolveBaseDir: () async => tempDir,
+        client: client,
+      );
+      final NpmInstallResult result = await broken.install('weird');
+      expect(result.ok, isFalse);
+      expect(result.message, contains('no tarball'));
+    });
+  });
 }

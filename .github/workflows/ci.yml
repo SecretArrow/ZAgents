@@ -6,63 +6,115 @@ on:
   pull_request:
   workflow_dispatch:
 
+# Least privilege by default: only the auto-fix job may write.
+permissions:
+  contents: read
+
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
+
+env:
+  FLUTTER_VERSION: 3.47.7
+  JAVA_VERSION: '17'
 
 jobs:
   analyze:
     name: Format & analyze
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    outputs:
-      failed: ${{ steps.analyze.outcome == 'failure' || steps.format.outcome == 'failure' }}
     steps:
       - uses: actions/checkout@v4
 
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
-          flutter-version: 3.47.7
+          flutter-version: ${{ env.FLUTTER_VERSION }}
           cache: true
+          pub-cache: true
 
       - name: Install dependencies
         run: flutter pub get
 
       - name: Check formatting
-        id: format
         run: dart format --output=none --set-exit-if-changed .
 
       - name: Analyze
-        id: analyze
-        if: always()
         run: flutter analyze
 
   unit-tests:
-    name: Unit & widget tests
+    name: Tests (shard ${{ matrix.shard }}/${{ matrix.total }})
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1]
+        total: [2]
     steps:
       - uses: actions/checkout@v4
 
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
-          flutter-version: 3.47.7
+          flutter-version: ${{ env.FLUTTER_VERSION }}
           cache: true
+          pub-cache: true
 
       - name: Install dependencies
         run: flutter pub get
 
-      - name: Run tests
-        run: flutter test --coverage
+      - name: Run tests (shard ${{ matrix.shard }})
+        run: >
+          flutter test --coverage
+          --total-shards ${{ matrix.total }}
+          --shard-index ${{ matrix.shard }}
 
       - name: Upload coverage artifact
         uses: actions/upload-artifact@v4
         with:
-          name: coverage
+          name: coverage-${{ matrix.shard }}
           path: coverage/lcov.info
           if-no-files-found: ignore
+
+  build-android:
+    name: Build APK (debug)
+    # Compile check for Android/Gradle/plugin changes — PRs used to merge
+    # without ever building the Android target.
+    if: >-
+      github.event_name == 'pull_request' ||
+      github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+          pub-cache: true
+
+      - name: Gradle cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties', 'pubspec.lock') }}
+          restore-keys: gradle-${{ runner.os }}-
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Build debug APK
+        run: flutter build apk --debug
 
   e2e:
     name: E2E (Android emulator)
@@ -76,13 +128,14 @@ jobs:
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '17'
+          java-version: ${{ env.JAVA_VERSION }}
 
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
-          flutter-version: 3.47.7
+          flutter-version: ${{ env.FLUTTER_VERSION }}
           cache: true
+          pub-cache: true
 
       - name: Gradle cache
         uses: actions/cache@v4
@@ -112,14 +165,18 @@ jobs:
           profile: pixel_5
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           disable-animations: true
-          script: flutter test integration_test --timeout 300s
+          # -d pins the emulator: without it `flutter test` refuses to pick
+          # a device when more than one is visible.
+          script: flutter test integration_test -d emulator-5554 --timeout 600s
 
   autofix:
     name: Auto-fix (dart fix + format)
     needs: [analyze]
+    # Built-in job result instead of a custom step output (outputs from a
+    # failed job are not guaranteed to be populated).
     if: >-
       always() &&
-      needs.analyze.outputs.failed == 'true' &&
+      needs.analyze.result == 'failure' &&
       github.event_name == 'push' &&
       github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
@@ -130,30 +187,48 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: main
+          fetch-depth: 0
 
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
-          flutter-version: 3.47.7
+          flutter-version: ${{ env.FLUTTER_VERSION }}
           cache: true
+          pub-cache: true
 
       - name: Install dependencies
         run: flutter pub get
 
       - name: Apply fixes
         run: |
-          dart fix --apply || true
+          dart fix --apply
           dart format .
 
+      - name: Verify the tree is clean now
+        id: verify
+        continue-on-error: true
+        run: |
+          dart format --output=none --set-exit-if-changed .
+          flutter analyze
+
       - name: Commit and push fixes
+        if: steps.verify.outcome == 'success'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           if [[ -n "$(git status --porcelain)" ]]; then
-            git add -A
+            # Only tracked Dart sources: never stage generated or env files.
+            git add -u -- '*.dart'
             git commit -m "chore(auto-fix): dart fix + dart format [skip ci]"
+            git pull --rebase origin main
             git push
             echo "Auto-fix pushed."
           else
             echo "No fixes to apply."
           fi
+
+      - name: Fail when fixes were not enough
+        if: steps.verify.outcome != 'success'
+        run: |
+          echo "::error::dart fix/format did not make the tree clean; see the verify step."
+          exit 1

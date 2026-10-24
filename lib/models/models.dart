@@ -57,6 +57,21 @@ class ToolCall {
       case 'node_install':
       case 'node_remove':
         return arguments['package']?.toString() ?? '';
+      case 'skill_install':
+        return arguments['source']?.toString() ?? '';
+      case 'skill_info':
+        final String path = arguments['path']?.toString() ?? '';
+        final String skill = arguments['name']?.toString() ?? '';
+        return path.isEmpty ? skill : '$skill/$path';
+      case 'skill_run':
+        return '${arguments['name'] ?? ''} · '
+            '${arguments['script'] ?? ''}'.trim();
+      case 'skill_config':
+        // SECRETS: the values object is never shown, persisted or sent
+        // back to the provider — only the skill name is.
+        return arguments['name']?.toString() ?? '';
+      case 'request_confirmation':
+        return arguments['title']?.toString() ?? '';
       default:
         final entries = arguments.entries
             .take(3)
@@ -65,10 +80,30 @@ class ToolCall {
     }
   }
 
+  /// Arguments that are safe to persist and to replay to the model.
+  ///
+  /// `skill_config` carries user secrets (API keys, wallet settings). They
+  /// are written to the on-device skill config and MUST NOT be echoed into
+  /// the transcript, the session export or the provider request — so only
+  /// the skill name and the KEY names survive.
+  Map<String, dynamic> get safeArguments {
+    if (name != 'skill_config') return arguments;
+    final Object? rawValues = arguments['values'];
+    final Iterable<Object?> keys = rawValues is Map
+        ? rawValues.keys
+        : const <Object?>[];
+    return <String, dynamic>{
+      'name': arguments['name'],
+      'values': <String, dynamic>{
+        for (final Object? key in keys) key.toString(): '<redacted>',
+      },
+    };
+  }
+
   Map<String, dynamic> toJson() => <String, dynamic>{
     'id': id,
     'name': name,
-    'arguments': arguments,
+    'arguments': safeArguments,
     'status': status.name,
     'resultText': resultText,
     'screenshotPath': screenshotPath,

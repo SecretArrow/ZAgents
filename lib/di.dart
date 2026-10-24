@@ -338,8 +338,13 @@ final appLockServiceProvider = Provider<AppLockService>((ref) {
 final appInForegroundProvider = StateProvider<bool>((ref) => true);
 
 /// Id of the chat session currently open in the UI (null = none yet).
+///
+/// v1.39.0: `select` instead of watching the whole state — the old
+/// version recomputed (and rebuilt its watchers, e.g. the Files screen)
+/// on every ~48 ms streaming emission for a value that only changes on a
+/// chat switch.
 final activeSessionIdProvider = Provider<String?>(
-  (ref) => ref.watch(chatControllerProvider).sessionId,
+  (ref) => ref.watch(chatControllerProvider.select((ChatState s) => s.sessionId)),
 );
 
 final chatStoreProvider = Provider<ChatStore>(

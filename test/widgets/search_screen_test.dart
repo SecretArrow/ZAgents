@@ -51,6 +51,9 @@ class ScriptedChatStore implements ChatStore {
   Future<List<String>> loadModules(String id) async => const <String>[];
 
   @override
+  Future<String> loadTitle(String id) async => '';
+
+  @override
   Future<void> saveModules(String id, List<String> modules) async {}
 
   @override

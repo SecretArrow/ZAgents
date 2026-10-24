@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:archive/archive.dart' as ar;
 import 'package:flutter_test/flutter_test.dart';
@@ -99,6 +100,69 @@ void main() {
         expect(list.first.source, 'b');
       },
     );
+
+    test('reinstall keeps the secrets stored by the previous install', () async {
+      const String config = 'config:\n  - name: API_KEY\n'
+          '    secret: true\n    required: true\n';
+      final SkillInstallReport first = await registry.installFromArchiveBytes(
+        zipSkill(extraFrontMatter: config),
+        source: 'a',
+      );
+      await registry.writeConfig(first.skill, <String, String>{
+        'API_KEY': 'S3CR3T',
+      });
+
+      final SkillInstallReport again = await registry.installFromArchiveBytes(
+        zipSkill(description: 'Updated', extraFrontMatter: config),
+        source: 'b',
+      );
+
+      expect(
+        await registry.readConfig(again.skill),
+        <String, String>{'API_KEY': 'S3CR3T'},
+        reason: 'the user must not have to re-enter secrets after an update',
+      );
+      expect(again.notes.join('\n'), contains('config was kept'));
+      expect(
+        again.notes.join('\n'),
+        isNot(contains('S3CR3T')),
+        reason: 'secret values are never echoed into reports',
+      );
+    });
+
+    test('a gzip archive declaring an absurd unpacked size is refused '
+        'before decoding', () async {
+      final List<int> gz = ar.GZipEncoder().encode(
+        ar.TarEncoder().encode(
+          ar.Archive()
+            ..addFile(
+              file(
+                'skill-main/demo-skill/SKILL.md',
+                utf8.encode('---\nname: demo-skill\ndescription: d\n---\n'),
+              ),
+            ),
+        ),
+      );
+      final List<int> bomb = List<int>.from(gz);
+      // The ISIZE trailer (last 4 bytes, little endian) is the declared
+      // uncompressed size: patch it to 200 MB.
+      ByteData.sublistView(
+        Uint8List.fromList(bomb),
+        bomb.length - 4,
+        4,
+      ).setUint32(0, 200 * 1024 * 1024, Endian.little);
+
+      await expectLater(
+        registry.installFromArchiveBytes(bomb, source: 'test'),
+        throwsA(
+          isA<SkillRegistryException>().having(
+            (SkillRegistryException e) => e.message,
+            'message',
+            contains('32 MB'),
+          ),
+        ),
+      );
+    });
 
     test('rejects archives without SKILL.md', () async {
       final ar.Archive archive = ar.Archive()

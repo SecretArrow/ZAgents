@@ -348,6 +348,33 @@ OpenAI-compatible: **OpenRouter, InferHub, Z.AI, OpenAI, DeepSeek, Groq, dan lai
   wajib — isolasi per-chat tidak berubah).
   4. `SessionSandbox.sessionsRoot()` + `ModuleRuntime.latestStoredSetup`
   (pemindai mtime terbaru, tahan file korup) + uji unit wire/module_list.
+- **v1.40.0 — keamanan unduhan (SSRF/zip-bomb), persistensi atomik, dan CI rilis bertanda tangan**:
+  1. **`RemoteGuard`** (baru): SEMUA unduhan skill/npm lewat satu gerbang —
+     hanya `https` ke host publik (loopback, LAN, link-local, CGNAT,
+     multicast, dan IPv6 ULA ditolak), redirect diikuti manual per-hop
+     dengan validasi ulang, dan body dibatasi sambil di-stream (endpoint
+     yang berbohong soal `Content-Length` tidak bisa menghabiskan memori).
+  2. **Anti zip/gzip bomb**: ukuran deklarasi central directory (zip) dan
+     ISIZE (gzip) diperiksa SEBELUM dekompresi; batas total/entry/jumlah
+     file tetap berlaku sesudahnya. Entry tarball npm divalidasi satu per
+     satu (`..`, path absolut, drive/UNC) sebelum ada byte yang ditulis.
+  3. **Persistensi chat tahan race**: tulis atomik (temp + rename) dan
+     antrean per-chat — `rename`/`saveModules` yang menimpa `save` tidak
+     lagi bisa mengembalikan transkrip ke versi lama. `loadTitle` membaca
+     judul milik sesi itu sendiri (bukan judul chat yang kebetulan tampil).
+  4. **Isolasi antar-chat**: pesan yang dikirim saat riwayat masih dimuat
+     TIDAK dibuang ketika pengguna pindah chat (run lanjut di latar),
+     `restoreLastChat` tidak mengganti draft yang sudah dimulai, lampiran
+     composer hanya dibersihkan saat benar-benar pindah chat, dan
+     `runToken` mencegah finalisasi run lama mematikan run baru.
+  5. **Persetujuan instalasi skill**: `skill_install` kini memakai kartu
+     konfirmasi (sumber terlihat, kode pihak ketiga tidak diunduh sebelum
+     disetujui); penolakan dilaporkan sebagai tool gagal, bukan sukses.
+     Reinstall mempertahankan secret `.zconfig.json` yang sudah tersimpan.
+  6. **CI/CD**: rilis WAJIB bertanda tangan (gagal keras tanpa keystore),
+     alias diverifikasi `keytool`, fingerprint sertifikat bisa dipin,
+     APK diverifikasi `apksigner` (menolak debug signing), dan tag harus
+     sama dengan versi `pubspec.yaml`.
 - **v1.38.0 — Skills system nyata, isolasi antar-chat, panel Plan live, dan pass performa**:
   1. **Skills system (v1.38.0)**: 6 tool baru (`skill_install/list/info/
      config/remove/run`) — pasang skill eksternal (paket SKILL.md, mis.
@@ -617,21 +644,40 @@ Semua build dilakukan di CI — tidak perlu build lokal.
 
 | Workflow | Trigger | Isi |
 |---|---|---|
-| **CI** (`ci.yml`) | push `main`, PR | `dart format` check, `flutter analyze`, unit + widget tests, **E2E di emulator Android** (push main), dan job **auto-fix** (`dart fix --apply` + `dart format`, commit otomatis) bila analyze gagal |
-| **Release** (`release.yml`) | tag `v*` / manual | quality gate → `flutter build apk --release` → **GitHub Release otomatis** dengan APK + release notes |
+| **CI** (`ci.yml`) | push `main`, PR | `dart format` check, `flutter analyze`, unit + widget tests (2 shard paralel + artefak coverage), build APK debug di PR, **E2E di emulator Android** (push main), dan job **auto-fix** (`dart fix --apply` + `dart format`, commit otomatis `[skip ci]`) bila analyze gagal |
+| **Release** (`release.yml`) | tag `v*` / manual | validasi tag = versi pubspec → restore keystore terenkripsi → `flutter build apk --release` bertanda tangan → verifikasi `apksigner` → **GitHub Release otomatis** dengan APK + release notes |
 
 Optimasi kecepatan: cache pub + Flutter SDK (`flutter-action cache`), cache
-Gradle, `concurrency` cancel-in-progress, e2e emulator hanya di `main`,
-APK hanya di-build saat rilis.
+Gradle, `concurrency` cancel-in-progress, unit test di-shard, e2e emulator
+hanya di `main`, APK hanya di-build saat rilis/PR.
+
+### Secrets untuk rilis bertanda tangan
+
+| Secret | Wajib | Isi |
+|---|---|---|
+| `KEYSTORE_PASSWORD` | ya | password untuk membuka `key-sign-apk.zip` (sekaligus fallback password keystore/key) |
+| `KEYSTORE_STORE_PASSWORD` | tidak | password keystore (default: `KEYSTORE_PASSWORD`) |
+| `KEYSTORE_KEY_PASSWORD` | tidak | password key (default: store password) |
+| `KEYSTORE_ALIAS` | tidak | alias key (default: dideteksi dari `keytool -list`) |
+| `KEYSTORE_SHA256` | tidak | pin fingerprint sertifikat (SHA-256) |
+
+Keystore terenkripsi `key-sign-apk.zip` di-unzip di runner, bukan di mesin
+lokal. Tanpa password/keystore yang valid, job **gagal** — tidak ada
+fallback debug signing.
+Secret tidak pernah ditulis ke `$GITHUB_ENV`; hanya diteruskan sebagai env
+langsung ke langkah build, dan keystore yang sudah di-unzip dihapus di akhir
+job (`if: always()`).
 
 ### Membuat rilis baru
 
 ```bash
-# bump version di pubspec.yaml (mis. 1.0.0+2), lalu:
-git tag v1.0.1
-git push origin v1.0.1
-# → workflow Release terbitkan APK ke GitHub Releases otomatis
+# bump version di pubspec.yaml (mis. 1.40.0+48), lalu:
+git tag v1.40.0
+git push origin v1.40.0
+# → workflow Release terbitkan APK bertanda tangan ke GitHub Releases
 ```
+
+Tag dengan sufiks (mis. `v1.41.0-beta.1`) diterbitkan sebagai prerelease.
 
 ### Menjalankan dari source
 
@@ -647,12 +693,15 @@ flutter test integration_test   # e2e (butuh emulator)
 - Jangan pernah commit API key atau token GitHub ke repo ini.
 - Jika token GitHub pernah dibagikan di tempat publik, **rotasi/ revoke**
   token tersebut di *Settings → Developer settings*.
-- Build release saat ini memakai debug signing; konfigurasi keystore rilis
-  sendiri via secrets (`KEYSTORE_BASE64`, dll) sebelum distribusi publik.
+- Rilis wajib memakai keystore dari secrets (lihat tabel di atas); build
+  tanpa keystore **gagal** dan tidak pernah jatuh ke debug signing.
+- Seed phrase / private key tidak pernah diminta atau disimpan: secret
+  skill disimpan lokal di `.zconfig.json` dan tidak pernah di-echo ke chat
+  atau log.
 
 ## 🗺️ Rencana lanjutan
 
-- [ ] Signing config rilis via GitHub Secrets
+- [x] Signing config rilis via GitHub Secrets
 - [ ] Ekspor/impor riwayat chat
 - [ ] Mode multi-image / attachment
 - [ ] Preview "browser inspector" layar penuh secara real-time

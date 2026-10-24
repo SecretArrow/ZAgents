@@ -483,11 +483,17 @@ List<Map<String, dynamic>> buildAgentTools({
   ),
   _fn(
     'skill_info',
-    'Read one installed skill\'s full SKILL.md instructions plus its config requirements. ALWAYS call this before running a skill for the first time and follow the instructions exactly.',
+    'Read one installed skill\'s full SKILL.md instructions plus its config requirements and the list of files it ships (references, docs, scripts). ALWAYS call this before running a skill for the first time and follow the instructions exactly. Pass `path` to read one of the listed files (e.g. "references/cli.md") — multi-file skills require reading their references first.',
     <String, dynamic>{
       'name': <String, dynamic>{
         'type': 'string',
         'description': 'Skill name from skill_list',
+      },
+      'path': <String, dynamic>{
+        'type': 'string',
+        'description':
+            'Optional relative path of a file inside the skill folder '
+            '(from the Files list in skill_info). Omit to read SKILL.md.',
       },
     },
     <String>['name'],

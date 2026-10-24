@@ -32,6 +32,10 @@ class _HomeShellState extends ConsumerState<HomeShell> {
   /// exactly ONCE per request, not on every rebuild after a dismissal.
   ModuleSetupRequest? _autoOpenedSetup;
 
+  /// Guards against two overlapping emissions pushing a second sheet
+  /// while the first one is still on screen.
+  bool _setupSheetOpen = false;
+
   @override
   void initState() {
     super.initState();
@@ -46,14 +50,18 @@ class _HomeShellState extends ConsumerState<HomeShell> {
   }
 
   Future<void> _openSetupSheet(ModuleSetupRequest request) async {
+    if (_setupSheetOpen) return;
+    _setupSheetOpen = true;
+    // Kept AFTER dismissal on purpose: the guard above compares by
+    // identity, so resetting it here made the very next state emission
+    // (every ~48 ms during a run) reopen the sheet the user just closed.
+    // Re-entry stays available through the persistent banner.
     _autoOpenedSetup = request;
-    final Map<String, dynamic>? values = await showModuleSetupSheet(
-      context,
-      request,
-    );
-    // Dismissal keeps the banner; submission re-runs the module inside
-    // submitModuleSetup — nothing left to do here.
-    if (values == null) _autoOpenedSetup = null;
+    try {
+      await showModuleSetupSheet(context, request);
+    } finally {
+      _setupSheetOpen = false;
+    }
   }
 
   @override
@@ -65,24 +73,28 @@ class _HomeShellState extends ConsumerState<HomeShell> {
     final double width = MediaQuery.sizeOf(context).width;
     final bool showBrand = width >= 340;
     final bool showLanguageMenu = width >= 360;
-    ref.listen<ChatState>(chatControllerProvider, (
-      ChatState? prev,
-      ChatState next,
-    ) {
-      final String? error = next.error;
-      if (error != null && error != prev?.error) {
+    // Two NARROW listeners instead of one on the whole ChatState: the old
+    // listener ran on every streaming emission (~20/s) even though it only
+    // ever reads `error` and `setupRequest`.
+    ref.listen<String?>(
+      chatControllerProvider.select((ChatState s) => s.error),
+      (String? prev, String? next) {
+        if (next == null || next == prev) return;
         ScaffoldMessenger.of(context)
           ..hideCurrentSnackBar()
-          ..showSnackBar(SnackBar(content: Text(error)));
-      }
-      // A module waiting for its per-chat setup form: open the sheet once
-      // per request object (the gate fires mid-run, so the identity guard
-      // alone decides); afterwards the persistent banner drives re-entry.
-      final ModuleSetupRequest? setup = next.setupRequest;
-      if (setup != null && !identical(setup, _autoOpenedSetup)) {
-        _openSetupSheet(setup);
-      }
-    });
+          ..showSnackBar(SnackBar(content: Text(next)));
+      },
+    );
+    // A module waiting for its per-chat setup form: open the sheet once
+    // per request object (the gate fires mid-run, so the identity guard
+    // alone decides); afterwards the persistent banner drives re-entry.
+    ref.listen<ModuleSetupRequest?>(
+      chatControllerProvider.select((ChatState s) => s.setupRequest),
+      (ModuleSetupRequest? prev, ModuleSetupRequest? next) {
+        if (next == null || identical(next, _autoOpenedSetup)) return;
+        _openSetupSheet(next);
+      },
+    );
 
     return PopScope<bool>(
       // The shell is the root route: Android back must confirm before the

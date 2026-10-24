@@ -55,6 +55,7 @@ class ChatState {
     this.title = '',
     this.messages = const <ChatMessage>[],
     this.isRunning = false,
+    this.isLoading = false,
     this.error,
     this.todos = const <TodoItem>[],
     this.pendingModule,
@@ -69,6 +70,13 @@ class ChatState {
   final String title;
   final List<ChatMessage> messages;
   final bool isRunning;
+
+  /// True while a stored session is being read from disk after a chat
+  /// switch. The screen must show the TARGET chat (empty transcript +
+  /// spinner), never the previous chat's messages, todos or running
+  /// state — that was the visible cross-chat leak during async loads.
+  final bool isLoading;
+
   final String? error;
 
   /// Latest plan written via `todo_write` in the running session — drives
@@ -112,6 +120,7 @@ class ChatState {
     String? title,
     List<ChatMessage>? messages,
     bool? isRunning,
+    bool? isLoading,
     Object? error = _unset,
     List<TodoItem>? todos,
     Object? pendingModule = _unset,
@@ -125,6 +134,7 @@ class ChatState {
     title: title ?? this.title,
     messages: messages ?? this.messages,
     isRunning: isRunning ?? this.isRunning,
+    isLoading: isLoading ?? this.isLoading,
     error: error == _unset ? this.error : error as String?,
     todos: todos ?? this.todos,
     pendingModule: pendingModule == _unset
@@ -221,6 +231,15 @@ class ConfirmationRequest {
   final bool danger;
 }
 
+/// One parked approval prompt: which session raised it and the completer
+/// the agent loop is waiting on. Keyed by tool-call id.
+class _ConfirmationWaiter {
+  _ConfirmationWaiter({required this.sessionId, required this.completer});
+
+  final String sessionId;
+  final Completer<bool> completer;
+}
+
 /// Internal state of one running (or recently run) session. Sessions run
 /// in parallel: each keeps its own message list so switching to another
 /// chat never interrupts the loop.
@@ -235,6 +254,33 @@ class _SessionRun {
   String title;
   final List<ChatMessage> messages = <ChatMessage>[];
   bool isRunning = true;
+
+  /// True after the loop finished but while the final persistence /
+  /// auto-title / notification work is still in flight. A new send must
+  /// NOT reuse this run object during that window (it would race the old
+  /// finalizer over `isRunning` and `_runs`).
+  bool finalizing = false;
+
+  /// Completed once [_executeRun] has released this run (finished,
+  /// failed or was stopped) and the session is out of `_runs`. A send
+  /// that arrives while `finalizing` waits here instead of racing the
+  /// finalizer over `isRunning` / `_runs`. Replaced (not reused) when a
+  /// new run starts on the same object, so a waiter can never be woken by
+  /// a different run's release.
+  Completer<void> finalized = Completer<void>();
+
+  /// Incremented by every [_executeRun] invocation. The release path of an
+  /// older invocation must not clear flags or evict `_runs` when a newer
+  /// run already took over this same object.
+  int runToken = 0;
+
+  /// Buffer of the assistant turn currently streaming, when one is in
+  /// flight. Background runs do NOT materialize it into a [ChatMessage]
+  /// on every delta (nobody is rendering them); the buffer is materialized
+  /// once when the user switches back to the chat (see [openChat]) and
+  /// authoritatively at turn end.
+  StringBuffer? streamingBuffer;
+
   bool stopRequested = false;
 
   /// True while the session title still came from the automatic
@@ -308,9 +354,11 @@ class ChatController extends Notifier<ChatState> {
   /// `_requestConfirmation` parks the agent loop here until the user
   /// answers the dialog (`resolveConfirmation`) or the 10-minute timeout
   /// fires (counts as a denial; nothing irreversible may proceed on
-  /// silence).
-  final Map<String, Completer<bool>> _confirmationWaiters =
-      <String, Completer<bool>>{};
+  /// silence). Each waiter records its OWN session so cancelling one
+  /// chat's prompt (switch/Stop/delete) can never deny another chat's
+  /// pending action.
+  final Map<String, _ConfirmationWaiter> _confirmationWaiters =
+      <String, _ConfirmationWaiter>{};
 
   /// The session currently rendered by the UI (null = fresh draft).
   String? _activeSessionId;
@@ -357,6 +405,21 @@ class ChatController extends Notifier<ChatState> {
     }
   }
 
+  /// Monotonic token for async history loads. Every openChat/newChat/send
+  /// bumps it; a load whose token no longer matches must NOT commit its
+  /// (now stale) snapshot over the newer screen. Without this, a slow
+  /// openChat(B) could land after the user already sent a message in B
+  /// and overwrite the live transcript with the pre-send file.
+  int _chatLoadGeneration = 0;
+
+  /// Sessions whose history is currently being materialized, with the
+  /// in-flight future so a second caller SHARES the load instead of
+  /// starting a parallel one. Without this a double-tap (or send racing
+  /// activateModule) could adopt the same session twice and start two
+  /// parallel runs for one chat.
+  final Map<String, Future<_SessionRun?>> _materializing =
+      <String, Future<_SessionRun?>>{};
+
   @override
   ChatState build() {
     // v1.38.1 — lifecycle guard: a background chain (module run with
@@ -381,8 +444,18 @@ class ChatController extends Notifier<ChatState> {
 
   void _markRunning() {
     if (!_alive) return;
+    final Set<String> next = runningIds;
     try {
-      ref.read(runningSessionsProvider.notifier).state = runningIds;
+      final StateController<Set<String>> notifier = ref.read(
+        runningSessionsProvider.notifier,
+      );
+      final Set<String> current = notifier.state;
+      // v1.39.0: assign only on a real change. Every assignment notifies
+      // the drawer (which rebuilds its whole history list), and the old
+      // code assigned a fresh Set on every call — including two identical
+      // ones at run end.
+      if (next.length == current.length && next.containsAll(current)) return;
+      notifier.state = next;
     } catch (_) {
       // Container gone between the flag check and the read — ignore.
     }
@@ -411,11 +484,25 @@ class ChatController extends Notifier<ChatState> {
     List<ChatAttachment> attachments = const <ChatAttachment>[],
   }) async {
     final String trimmed = text.trim();
-    if (trimmed.isEmpty || state.isRunning) return;
-    _SessionRun? run = _activeSessionId != null
-        ? _runs[_activeSessionId!]
-        : null;
+    // A chat still being read from disk has no transcript yet: sending
+    // now would fork a fresh run over a session whose history is about to
+    // arrive (and duplicate the first message). The composer disables
+    // send in this state; this guard makes it safe regardless.
+    if (trimmed.isEmpty || state.isRunning || state.isLoading) return;
+    final String? targetAtStart = _activeSessionId;
+    _SessionRun? run = targetAtStart != null ? _runs[targetAtStart] : null;
+    // The previous run finished its loop but is still persisting / titling.
+    // Wait for it to release the session instead of starting a second loop
+    // over the same object (which used to race `isRunning` and `_runs`).
+    if (run != null && run.finalizing) {
+      await run.finalized.future;
+      if (_activeSessionId != targetAtStart) return;
+      run = targetAtStart != null ? _runs[targetAtStart] : null;
+    }
     if (run != null && run.isRunning) return; // active session busy
+    // A message is being appended to this chat: any history load still in
+    // flight for it is now stale and must not commit over the live state.
+    _chatLoadGeneration++;
 
     final settings = ref.read(settingsProvider);
     final AppStrings strings = appStringsFor(settings.languageCode);
@@ -442,20 +529,23 @@ class ChatController extends Notifier<ChatState> {
       final String? openId = _activeSessionId;
       if (openId != null) {
         run = await _adoptSession(openId, trimmed);
-        // The user may have switched away while the history was loading.
-        if (_activeSessionId != openId) return;
         _runs[openId] = run;
-        _activeSessionId = openId;
-        state = ChatState(
-          sessionId: openId,
-          title: run.title,
-          messages: [...run.messages],
-          // v1.35.0: the plan restored from disk stays visible while the
-          // continuation run takes over (a crash-interrupted task keeps
-          // its plan instead of starting from a blank panel).
-          todos: [...run.latestTodos],
-          isRunning: true,
-        );
+        // The user may have switched chats while the history was loading. The
+        // message still belongs to `openId`, so the run continues in the
+        // BACKGROUND — dropping it would silently lose what the user sent,
+        // and stealing focus back would yank them out of the chat they opened.
+        if (_activeSessionId == openId) {
+          state = ChatState(
+            sessionId: openId,
+            title: run.title,
+            messages: [...run.messages],
+            // v1.35.0: the plan restored from disk stays visible while the
+            // continuation run takes over (a crash-interrupted task keeps
+            // its plan instead of starting from a blank panel).
+            todos: [...run.latestTodos],
+            isRunning: true,
+          );
+        }
       } else {
         final String sessionId = newId();
         run = _SessionRun(sessionId: sessionId, title: _titleFor(trimmed));
@@ -469,7 +559,7 @@ class ChatController extends Notifier<ChatState> {
           isRunning: true,
         );
       }
-    } else {
+    } else if (_activeSessionId == run.sessionId) {
       state = state.copyWith(isRunning: true, error: null);
     }
 
@@ -477,7 +567,9 @@ class ChatController extends Notifier<ChatState> {
     // session — inside _executeRun, right after the user message lands, so
     // the transcript reads: user → module output → agent reply.
     run.pendingModule ??= stagedModule;
-    state = state.copyWith(pendingModule: null);
+    if (_activeSessionId == run.sessionId) {
+      state = state.copyWith(pendingModule: null);
+    }
 
     // v1.29.0 — setup-input gate: when a selected module (staged on the
     // draft, or already active in this chat) still requires its per-chat
@@ -718,6 +810,10 @@ class ChatController extends Notifier<ChatState> {
     // same 48ms streaming gap; a forced final refresh lands the complete
     // output when the run finishes.
     int lastModuleSync = 0;
+    // One scheduled refresh at a time: a chatty module used to enqueue a
+    // `Timer.run` PER EMITTED LINE, flooding the event queue even though the
+    // refresh itself was throttled.
+    bool emitScheduled = false;
     void refresh({bool force = false}) {
       final int index = run.messages.indexOf(moduleMessage);
       if (index == -1) return;
@@ -743,11 +839,16 @@ class ChatController extends Notifier<ChatState> {
             granted: module.manifest.permissions,
             activationPrompt: activationPrompt,
             onChatEmit: (String text) {
+              // The buffer write is cheap and must stay in order; only the
+              // UI sync is deferred. One pending timer covers any burst.
+              body.writeln(text);
+              if (emitScheduled) return;
+              emitScheduled = true;
               // Schedule the UI update OUTSIDE the platform-message turn:
               // updating Riverpod state synchronously inside the handler
               // was observed to swallow the next queued frame.
               Timer.run(() {
-                body.writeln(text);
+                emitScheduled = false;
                 refresh();
               });
             },
@@ -1080,6 +1181,10 @@ class ChatController extends Notifier<ChatState> {
   /// ever validated it. Posts a module message with the outcome, clears
   /// the card and refreshes the module lists. Returns true on success.
   Future<bool> installStagedModule() async {
+    // The chat that staged the card owns the outcome: capture it BEFORE
+    // the install await, otherwise a switch during the (potentially slow)
+    // unzip would post the result into whichever chat is on screen.
+    final String? sessionId = _activeSessionId;
     final ModuleInstallRequest? pending = _pendingInstallForActiveSession();
     if (pending == null) return false;
     final AppStrings strings = appStringsFor(
@@ -1090,7 +1195,6 @@ class ChatController extends Notifier<ChatState> {
         .read(moduleRegistryProvider)
         .installFromZip(pending.zipPath);
     ref.invalidate(moduleListProvider);
-    final String? sessionId = _activeSessionId;
     final _SessionRun? run = sessionId == null ? null : _runs[sessionId];
     final String installedText = result.ok
         ? (pending.isNew
@@ -1106,7 +1210,7 @@ class ChatController extends Notifier<ChatState> {
       );
       _sync(run);
       await _persist(run);
-    } else if (_activeSessionId != null) {
+    } else if (sessionId != null && _activeSessionId == sessionId) {
       state = state.copyWith(
         messages: [
           ...state.messages,
@@ -1258,6 +1362,11 @@ class ChatController extends Notifier<ChatState> {
       messages: [...run.messages],
       isRunning: true,
       error: null,
+      // Edit/regenerate truncate the transcript and drop the old plan: the
+      // panel must show the plan of THIS attempt, not the abandoned one.
+      todos: run.latestTodos,
+      setupRequest: run.setupRequest,
+      waitingForSetup: run.waitingForSetup,
     );
   }
 
@@ -1278,8 +1387,62 @@ class ChatController extends Notifier<ChatState> {
       return;
     }
     run.isRunning = true;
+    run.finalizing = false;
+    // A fresh release signal per invocation: a waiter parked on the previous
+    // run must never be woken by this one (and vice versa).
+    if (run.finalized.isCompleted) run.finalized = Completer<void>();
+    final int token = ++run.runToken;
     _markRunning();
+    _RunResult? result;
+    // v1.39.0: the release of a run (flag reset, `_runs` eviction, running
+    // badge, waiter wake-up) lives in a `finally`, so an exception ANYWHERE
+    // in the loop can no longer leave the session marked running forever
+    // with its map entry behind — the failure used to freeze the chat.
+    try {
+      result = await _runSession(run, settings, prompt, attachments);
+    } catch (e) {
+      // Never let a throw escape as an unhandled error, and never leave the
+      // composer showing Stop for a loop that no longer exists.
+      result = _RunResult(error: '$e');
+    } finally {
+      // Token-checked: a newer run for the same chat (started while this one
+      // was finalizing) must never be reset or evicted by its predecessor.
+      if (run.runToken == token) {
+        run.isRunning = false;
+        run.finalizing = false;
+        if (!run.finalized.isCompleted) run.finalized.complete();
+        if (identical(_runs[run.sessionId], run)) {
+          _runs.remove(run.sessionId);
+        }
+        _lastStreamSync.remove(run.sessionId);
+        _markRunning();
+        if (_activeSessionId == run.sessionId && state.isRunning) {
+          state = state.copyWith(isRunning: false, error: result?.error);
+        }
+      }
+    }
+    final _RunResult outcome = result ?? const _RunResult();
+    if (run.runToken == token) {
+      // Auto-title and the completion notification are slow, best-effort
+      // extras. They run AFTER the session is released so the next message in
+      // this chat never stalls on a title LLM call.
+      if (outcome.error == null && !run.stopRequested) {
+        await _maybeAutoTitle(run, settings);
+      }
+      await _maybeNotifyDone(run, settings, outcome.error);
+    }
+    ref.invalidate(chatListProvider);
+  }
 
+  /// The body of one run: setup → agent loop → auto-retry → final persist.
+  /// Always called through [_executeRun], which owns the lifecycle flags and
+  /// the post-run extras (auto-title, notification).
+  Future<_RunResult> _runSession(
+    _SessionRun run,
+    AppSettings settings,
+    String? prompt,
+    List<ChatAttachment> attachments,
+  ) async {
     // Preload attachment contents (text bodies + image data URLs) and the
     // documents root (for relative path hints on binary attachments).
     run.docsPath ??= (await ref.read(documentsDirProvider)()).path;
@@ -1353,6 +1516,11 @@ class ChatController extends Notifier<ChatState> {
     _finalizeDanglingStream(run);
 
     run.isRunning = false;
+    // The loop is over but persistence is still in flight: a send arriving
+    // now must wait for the release rather than start a second loop over
+    // this same run object. Auto-title runs after the release (see
+    // [_executeRun]) so it never stalls the next message.
+    run.finalizing = true;
     _markRunning();
     if (!run.deleted) {
       if (_activeSessionId == run.sessionId) {
@@ -1363,15 +1531,8 @@ class ChatController extends Notifier<ChatState> {
         );
       }
       await _persist(run);
-      if (result.error == null && !run.stopRequested) {
-        await _maybeAutoTitle(run, settings);
-      }
-      await _maybeNotifyDone(run, settings, result.error);
     }
-    _runs.remove(run.sessionId);
-    _lastStreamSync.remove(run.sessionId);
-    ref.invalidate(chatListProvider);
-    _markRunning();
+    return result;
   }
 
   /// Posts a local "task finished" notification when a run completes while
@@ -1410,9 +1571,11 @@ class ChatController extends Notifier<ChatState> {
     final _SessionRun run =
         await _materializeSession(sessionId) ??
         _SessionRun(sessionId: sessionId, title: '');
-    // When the screen had no title the run was titled from the prompt —
-    // exactly the automatic-title path, so the model may rename it later.
-    if (state.title.isEmpty) {
+    // Only a session that still has no title (fresh, or its stored title is
+    // empty) is titled from the prompt — exactly the automatic-title path, so
+    // the model may rename it later. `run.title` comes from the SESSION's own
+    // stored file, never from whatever chat happens to be on screen.
+    if (run.title.trim().isEmpty) {
       run.title = _titleFor(prompt);
       run.autoTitlePending = true;
     }
@@ -1423,12 +1586,40 @@ class ChatController extends Notifier<ChatState> {
   /// edit/regenerate work on freshly opened sessions too (and _adoptSession
   /// can share the logic). Returns null when the run could not be built —
   /// storage failures degrade to an empty transcript, never an exception.
-  Future<_SessionRun?> _materializeSession(String sessionId) async {
+  ///
+  /// Concurrent callers for the same session share ONE load: two runs over
+  /// the same chat would each own a separate message list and the second
+  /// persist would silently drop the first one's messages.
+  Future<_SessionRun?> _materializeSession(String sessionId) {
+    final Future<_SessionRun?>? inFlight = _materializing[sessionId];
+    if (inFlight != null) return inFlight;
+    final Future<_SessionRun?> load = _materializeSessionNow(sessionId);
+    _materializing[sessionId] = load;
+    return load.whenComplete(() => _materializing.remove(sessionId));
+  }
+
+  /// Stored title of [sessionId], or '' when the file is missing/unreadable.
+  Future<String> _storedTitle(String sessionId) async {
+    try {
+      return await ref.read(chatStoreProvider).loadTitle(sessionId);
+    } catch (_) {
+      return '';
+    }
+  }
+
+  Future<_SessionRun?> _materializeSessionNow(String sessionId) async {
     // Materialized history is NOT running — edit/regenerate check this
     // flag before reshaping the transcript.
+    // The title comes from THIS session: `state.title` is only used when it
+    // is the chat on screen, otherwise the stored title is read. Taking the
+    // on-screen title used to give a background session another chat's name
+    // (and then persist it over the real one).
+    final String title = _activeSessionId == sessionId && state.title.isNotEmpty
+        ? state.title
+        : await _storedTitle(sessionId);
     final _SessionRun run = _SessionRun(
       sessionId: sessionId,
-      title: state.title.isNotEmpty ? state.title : '',
+      title: title,
       running: false,
     );
     try {
@@ -1694,10 +1885,11 @@ class ChatController extends Notifier<ChatState> {
         if (run.stopRequested) break;
 
         // 1. Stream one assistant turn.
+        final buffer = StringBuffer();
+        run.streamingBuffer = buffer;
         run.messages.add(ChatMessage.assistant('', isStreaming: true));
         _sync(run);
 
-        final buffer = StringBuffer();
         final AssistantTurn turn;
         try {
           turn = await _completeWithRetry(
@@ -1713,6 +1905,8 @@ class ChatController extends Notifier<ChatState> {
           // marks it as stopped. No wire entry is added, so the next
           // message continues from a clean history.
           break;
+        } finally {
+          run.streamingBuffer = null;
         }
         if (run.stopRequested) break;
 
@@ -1785,6 +1979,35 @@ class ChatController extends Notifier<ChatState> {
             // user decision is the authorization boundary for
             // money-moving actions.
             result = await _requestConfirmation(run, call);
+          } else if (call.name == 'skill_install') {
+            // v1.40.0: installing a skill downloads THIRD-PARTY CODE that
+            // then runs with network/file access on this device. The agent
+            // must never do that silently: the user approves the source
+            // first (the install itself is not otherwise reversible from
+            // the chat).
+            final bool approved = await _askApproval(
+              run,
+              id: 'install:${call.id}',
+              title: strings.skillInstallConfirmTitle,
+              details: <String>[
+                strings.skillInstallConfirmSource(
+                  call.arguments['source']?.toString() ?? '',
+                ),
+                strings.skillInstallConfirmBody,
+              ],
+            );
+            result = approved
+                ? await executor.execute(
+                    call.name,
+                    call.arguments,
+                    sessionId: run.sessionId,
+                    shouldAbort: () => run.stopRequested,
+                  )
+                : ToolResult(
+                    ok: false,
+                    llmOutput: strings.skillInstallDeclined,
+                    displayText: 'install declined',
+                  );
           } else {
             result = await executor.execute(
               call.name,
@@ -1934,6 +2157,12 @@ class ChatController extends Notifier<ChatState> {
               tools: tools,
               onDelta: (delta) {
                 buffer.write(delta);
+                // v1.39.0: a BACKGROUND session renders nothing, so skip
+                // the O(n) buffer→string→ChatMessage materialization and
+                // the state emission entirely. openChat materializes the
+                // buffer once if the user comes back mid-turn; the turn
+                // consumer writes the authoritative message at the end.
+                if (_activeSessionId != run.sessionId) return;
                 // v1.34.0 jank fix: the O(n) transcript copy (buffer →
                 // ChatMessage) used to run on EVERY delta — hundreds of
                 // copies per answer on fast providers. Gate it behind the
@@ -2172,7 +2401,10 @@ class ChatController extends Notifier<ChatState> {
           );
           final Set<String> missing = skillRegistry
               .missingRequiredConfig(skill)
-              .where((String f) => !config.containsKey(f))
+              .where(
+                (String f) =>
+                    !config.containsKey(f) || (config[f] ?? '').isEmpty,
+              )
               .toSet();
           content
             ..writeln(
@@ -2186,6 +2418,14 @@ class ChatController extends Notifier<ChatState> {
               'first use, run scripts with skill_run; configure with '
               'skill_config (values stay on-device).',
             );
+          if (skill.requiresBins.isNotEmpty) {
+            content.writeln(
+              '  UNSUPPORTED HERE: requires native executable(s) '
+              '${skill.requiresBins.join(', ')} — the embedded runtime '
+              'cannot start external processes. Say so instead of '
+              'pretending it works.',
+            );
+          }
         }
         content.write(
           'Use skills when the user\'s task matches one. Follow each '
@@ -2335,7 +2575,9 @@ class ChatController extends Notifier<ChatState> {
                     'type': 'function',
                     'function': <String, dynamic>{
                       'name': call.name,
-                      'arguments': jsonEncode(call.arguments),
+                      // Secrets (skill_config values) never travel back to
+                      // the provider — see ToolCall.safeArguments.
+                      'arguments': jsonEncode(call.safeArguments),
                     },
                   },
               ],
@@ -2365,10 +2607,15 @@ class ChatController extends Notifier<ChatState> {
   /// clobber each other's screen).
   void _sync(_SessionRun run) {
     if (!_alive || _activeSessionId != run.sessionId) return;
+    // Live state beats anything still being read from disk: a slow
+    // openChat for this same chat must not land afterwards and overwrite
+    // the transcript with the pre-run file contents.
+    _chatLoadGeneration++;
     state = state.copyWith(
       messages: [...run.messages],
       title: run.title,
       sessionId: run.sessionId,
+      isLoading: false,
       todos: run.latestTodos,
       setupRequest: run.setupRequest,
       waitingForSetup: run.waitingForSetup,
@@ -2413,20 +2660,58 @@ class ChatController extends Notifier<ChatState> {
     if (_activeSessionId != run.sessionId) {
       return ToolResult(ok: false, llmOutput: strings.confirmUnavailable);
     }
+    // `details` is model-authored: accept a list OR a bare string (a strict
+    // `as List` cast used to throw on `"details": "send 1 BNB"`).
+    final Object? rawDetails = call.arguments['details'];
     final List<String> details = <String>[
-      for (final Object? item
-          in (call.arguments['details'] as List<dynamic>? ?? const <dynamic>[]))
-        if (item != null && item.toString().trim().isNotEmpty) item.toString(),
+      if (rawDetails is List)
+        for (final Object? item in rawDetails)
+          if (item != null && item.toString().trim().isNotEmpty) item.toString()
+      else if (rawDetails != null && rawDetails.toString().trim().isNotEmpty)
+        rawDetails.toString(),
     ];
-    final ConfirmationRequest request = ConfirmationRequest(
+    final bool approved = await _askApproval(
+      run,
       id: call.id,
       title: call.arguments['title']?.toString() ?? 'Confirmation',
       details: details,
       danger: call.arguments['danger'] != false,
     );
+    return ToolResult(
+      // A denial (or a timeout) is a FAILED tool call, not a successful one:
+      // reporting ok here made the transcript show a green check next to an
+      // action the user refused.
+      ok: approved,
+      llmOutput: approved ? strings.confirmApproved : strings.confirmDenied,
+      displayText: approved ? 'approved' : 'denied',
+    );
+  }
+
+  /// Parks an approval prompt on the chat and waits for the user's decision.
+  /// Fails closed: a run that is not on screen cannot ask (background runs
+  /// must never silently wait or auto-approve), and silence times out into a
+  /// denial.
+  Future<bool> _askApproval(
+    _SessionRun run, {
+    required String id,
+    required String title,
+    required List<String> details,
+    bool danger = true,
+  }) async {
+    if (_activeSessionId != run.sessionId) return false;
     final Completer<bool> waiter = Completer<bool>();
-    _confirmationWaiters[call.id] = waiter;
-    state = state.copyWith(pendingConfirmation: request);
+    _confirmationWaiters[id] = _ConfirmationWaiter(
+      sessionId: run.sessionId,
+      completer: waiter,
+    );
+    state = state.copyWith(
+      pendingConfirmation: ConfirmationRequest(
+        id: id,
+        title: title,
+        details: details,
+        danger: danger,
+      ),
+    );
     late final bool approved;
     try {
       approved = await waiter.future.timeout(
@@ -2434,32 +2719,41 @@ class ChatController extends Notifier<ChatState> {
         onTimeout: () => false,
       );
     } finally {
-      _confirmationWaiters.remove(call.id);
+      _confirmationWaiters.remove(id);
       if (_activeSessionId == run.sessionId) {
         state = state.copyWith(pendingConfirmation: null);
       }
     }
-    return ToolResult(
-      ok: true,
-      llmOutput: approved ? strings.confirmApproved : strings.confirmDenied,
-      displayText: approved ? 'approved' : 'denied',
-    );
+    return approved;
   }
 
   /// The user tapped Approve (true) or Deny (false) on the dialog for
   /// [id]. Unknown/stale ids are ignored (the run may have been stopped).
   void resolveConfirmation(String id, bool approved) {
-    _confirmationWaiters[id]?.complete(approved);
+    final _ConfirmationWaiter? waiter = _confirmationWaiters[id];
+    if (waiter == null || waiter.completer.isCompleted) return;
+    waiter.completer.complete(approved);
   }
 
   /// Any open confirmation prompts must fail closed when the user stops
   /// the run, deletes the chat or switches away mid-prompt.
+  ///
+  /// v1.39.0: scoped to ONE session. The map is shared by every parallel
+  /// run, and the previous implementation completed every waiter in it —
+  /// so stopping chat A silently denied a prompt that belonged to chat B.
   void _cancelConfirmationsForSession(String sessionId) {
-    for (final Completer<bool> waiter in _confirmationWaiters.values) {
-      if (!waiter.isCompleted) waiter.complete(false);
+    final List<String> owned = <String>[
+      for (final MapEntry<String, _ConfirmationWaiter> entry
+          in _confirmationWaiters.entries)
+        if (entry.value.sessionId == sessionId) entry.key,
+    ];
+    for (final String id in owned) {
+      final _ConfirmationWaiter? waiter = _confirmationWaiters.remove(id);
+      if (waiter != null && !waiter.completer.isCompleted) {
+        waiter.completer.complete(false);
+      }
     }
-    _confirmationWaiters.clear();
-    if (state.pendingConfirmation != null) {
+    if (sessionId == _activeSessionId && state.pendingConfirmation != null) {
       state = state.copyWith(pendingConfirmation: null);
     }
   }
@@ -2624,6 +2918,9 @@ class ChatController extends Notifier<ChatState> {
       _cancelConfirmationsForSession(_activeSessionId!);
     }
     _stashStagedAttachments();
+    // Invalidate any in-flight openChat: a draft must never be replaced by
+    // a chat the user already navigated away from.
+    _chatLoadGeneration++;
     _activeSessionId = null;
     _restoreStagedAttachments(null);
     state = const ChatState();
@@ -2639,14 +2936,20 @@ class ChatController extends Notifier<ChatState> {
         state.isRunning) {
       return;
     }
+    // A draft the user explicitly started (New chat, staged module, staged
+    // attachment) must never be replaced by the last chat just because the
+    // history list finished loading a moment later.
+    final int generation = _chatLoadGeneration;
+    bool draftTouched() =>
+        _activeSessionId != null ||
+        state.messages.isNotEmpty ||
+        state.isRunning ||
+        state.pendingModule != null ||
+        ref.read(pendingAttachmentsProvider).isNotEmpty;
     try {
       final List<ChatSummary> items = await ref.read(chatListProvider.future);
       if (items.isEmpty) return;
-      if (_activeSessionId != null ||
-          state.messages.isNotEmpty ||
-          state.isRunning) {
-        return;
-      }
+      if (generation != _chatLoadGeneration || draftTouched()) return;
       await openChat(items.first);
     } catch (_) {
       // History unavailable: stay on the fresh draft.
@@ -2654,17 +2957,33 @@ class ChatController extends Notifier<ChatState> {
   }
 
   Future<void> openChat(ChatSummary summary) async {
-    if (_activeSessionId != null && _activeSessionId != summary.id) {
-      _cancelConfirmationsForSession(_activeSessionId!);
+    final String? previousId = _activeSessionId;
+    if (previousId != null && previousId != summary.id) {
+      _cancelConfirmationsForSession(previousId);
     }
     // v1.38.1: stash the displayed chat's staged list before switching...
     _stashStagedAttachments();
+    // v1.39.0: invalidate every load still in flight for a previous chat.
+    // The old code only compared `_activeSessionId`, which a fast
+    // A → B → A switch defeats: A's first (slow) load would commit after
+    // the user already came back, overwriting the newer state.
+    final int generation = ++_chatLoadGeneration;
     _activeSessionId = summary.id;
     // ...and restore THIS chat's own staged list (preserve, not clear —
     // files still never travel between chats).
     _restoreStagedAttachments(summary.id);
     final _SessionRun? run = _runs[summary.id];
     if (run != null) {
+      // A background run mid-stream did not materialize its deltas (nobody
+      // was rendering it). Flush the buffer ONCE so the reopened chat shows
+      // the answer produced so far instead of an empty bubble.
+      final StringBuffer? streaming = run.streamingBuffer;
+      if (streaming != null && run.messages.isNotEmpty) {
+        run.messages[run.messages.length - 1] = _preserveLastId(
+          run,
+          ChatMessage.assistant(streaming.toString(), isStreaming: true),
+        );
+      }
       // Live session (still running or just finished): adopt its state.
       state = ChatState(
         sessionId: run.sessionId,
@@ -2679,9 +2998,23 @@ class ChatController extends Notifier<ChatState> {
         activeModules: [...run.activeModules],
         setupRequest: run.setupRequest,
         waitingForSetup: run.waitingForSetup,
+        // A module build/repair awaiting the user's install decision belongs
+        // to the run, not to the screen: reopening the chat mid-run must not
+        // hide the install card until the next sync.
+        pendingModuleInstall: run.pendingInstall,
       );
       return;
     }
+    // v1.39.0: show the TARGET chat immediately — an empty transcript
+    // behind a spinner — instead of leaving the previous chat's messages,
+    // plan and running state on screen for the whole disk read. This was
+    // the visible cross-chat leak: opening a chat showed another chat's
+    // content until the load finished.
+    state = ChatState(
+      sessionId: summary.id,
+      title: summary.title,
+      isLoading: true,
+    );
     try {
       // v1.38.1: ONE file read/decode for messages + modules + wait flag
       // + plan (was four separate decodes of the same megabyte-scale file).
@@ -2689,22 +3022,25 @@ class ChatController extends Notifier<ChatState> {
           .read(chatStoreProvider)
           .loadBundle(summary.id);
       // The user may have switched again while loading — only commit when
-      // this session is still the active one.
-      if (_activeSessionId != summary.id) return;
+      // this load is still the current one. The generation token also
+      // catches a fast A → B → A switch, where `_activeSessionId` alone
+      // would let A's first (slow) load overwrite the newer state.
+      if (!_isCurrentLoad(generation, summary.id)) return;
       final List<ChatMessage> messages =
           bundle?.messages ?? const <ChatMessage>[];
       final List<String> modules = bundle?.modules ?? const <String>[];
+      if (!_isCurrentLoad(generation, summary.id)) return;
       // A module left unconfigured in this chat resurfaces its per-chat
       // setup form right on reopen — before any failed re-run can happen.
       final ModuleSetupRequest? setupRequest = await _findSetupRequest(
         summary.id,
         modules,
       );
-      if (_activeSessionId != summary.id) return;
+      if (!_isCurrentLoad(generation, summary.id)) return;
       // v1.29.0: the persisted wait flag tells whether a QUEUED user
       // message is blocked behind that form (the agent must not run).
       final bool waitingForSetup = bundle?.waitingForSetup ?? false;
-      if (_activeSessionId != summary.id) return;
+      if (!_isCurrentLoad(generation, summary.id)) return;
       state = ChatState(
         sessionId: summary.id,
         title: summary.title,
@@ -2720,7 +3056,7 @@ class ChatController extends Notifier<ChatState> {
     } catch (_) {
       // A corrupted history entry must never crash the app: open an empty
       // session and tell the user what happened.
-      if (_activeSessionId != summary.id) return;
+      if (!_isCurrentLoad(generation, summary.id)) return;
       state = ChatState(
         sessionId: summary.id,
         error: appStringsFor(ref.read(settingsProvider).languageCode)
@@ -2728,6 +3064,11 @@ class ChatController extends Notifier<ChatState> {
       );
     }
   }
+
+  /// True when the chat load started with [generation] is still the one
+  /// the screen is waiting for.
+  bool _isCurrentLoad(int generation, String sessionId) =>
+      generation == _chatLoadGeneration && _activeSessionId == sessionId;
 
   Future<void> renameChat(String id, String title) async {
     final String trimmed = title.trim();
@@ -2785,6 +3126,13 @@ class ChatController extends Notifier<ChatState> {
     }
     if (_activeSessionId == id) {
       _activeSessionId = null;
+      // The composer's staged files belonged to the deleted chat: their
+      // uploads folder is gone, so leaving the chips would send dangling
+      // paths with the next message.
+      ref.read(pendingAttachmentsProvider.notifier).state =
+          const <ChatAttachment>[];
+      // Invalidate any history load still in flight for the deleted chat.
+      _chatLoadGeneration++;
       state = const ChatState();
     }
     ref.invalidate(chatListProvider);

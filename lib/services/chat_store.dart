@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:isolate';
@@ -116,7 +117,44 @@ class ChatStore {
       'todos': todos.map((t) => t.toJson()).toList(),
     };
     final String encoded = await _offload(() => jsonEncode(payload));
-    await file.writeAsString(encoded);
+    await _withLock(id, () => _atomicWrite(file, encoded));
+  }
+
+  /// Per-chat write serialization. `save` / `saveModules` / `rename` /
+  /// `delete` all touch the same JSON file, and the two read-modify-write
+  /// ones decode the whole transcript first: without this, a rename landing
+  /// between a save's read and its write silently reverted the transcript to
+  /// the pre-save contents.
+  final Map<String, Future<void>> _writeChains = <String, Future<void>>{};
+
+  Future<T> _withLock<T>(String id, Future<T> Function() action) {
+    final Future<void> previous = _writeChains[id] ?? Future<void>.value();
+    final Completer<void> release = Completer<void>();
+    final Future<void> chain = release.future;
+    _writeChains[id] = chain;
+    return previous.then((_) => action()).whenComplete(() {
+      if (identical(_writeChains[id], chain)) _writeChains.remove(id);
+      if (!release.isCompleted) release.complete();
+    });
+  }
+
+  /// Writes [contents] to [file] through a temp file + rename, so a process
+  /// kill mid-write can never leave a truncated transcript behind (the old
+  /// `writeAsString` truncated the target before writing the new bytes).
+  Future<void> _atomicWrite(File file, String contents) async {
+    final File tmp = File('${file.path}.tmp');
+    await tmp.writeAsString(contents, flush: true);
+    try {
+      await tmp.rename(file.path);
+    } on FileSystemException {
+      // Platforms that refuse to rename over an existing file.
+      await file.writeAsString(contents, flush: true);
+      try {
+        if (await tmp.exists()) await tmp.delete();
+      } catch (_) {
+        // Leftover temp file: harmless, overwritten by the next save.
+      }
+    }
   }
 
   Future<List<ChatMessage>?> load(String id) async {
@@ -174,6 +212,24 @@ class ChatStore {
       );
     } catch (_) {
       return null;
+    }
+  }
+
+  /// Loads the stored title of [sessionId] ('' when unknown). Used when a
+  /// session is materialized in the background: the on-screen title belongs
+  /// to another chat.
+  Future<String> loadTitle(String id) async {
+    final dir = await _chatsDir();
+    final file = File('${dir.path}${Platform.pathSeparator}$id.json');
+    if (!await file.exists()) return '';
+    try {
+      final String raw = await file.readAsString();
+      return await _offload(() {
+        final Object? decoded = jsonDecode(raw);
+        return decoded is Map ? (decoded['title']?.toString() ?? '') : '';
+      });
+    } catch (_) {
+      return '';
     }
   }
 
@@ -249,26 +305,30 @@ class ChatStore {
     final dir = await _chatsDir();
     final file = File('${dir.path}${Platform.pathSeparator}$id.json');
     if (!await file.exists()) return;
-    try {
-      // v1.34.0: decode + re-encode of the full transcript off the UI
-      // isolate — only the resulting JSON string crosses back.
-      final String raw = await file.readAsString();
-      final String? updated = await _offload(() {
-        final Object? decoded = jsonDecode(raw);
-        if (decoded is! Map<String, dynamic>) return null;
-        decoded['modules'] = modules;
-        return jsonEncode(decoded);
-      });
-      if (updated != null) await file.writeAsString(updated);
-    } catch (_) {
-      // Corrupted file: module bookkeeping must never crash the caller.
-    }
+    await _withLock(id, () async {
+      try {
+        // v1.34.0: decode + re-encode of the full transcript off the UI
+        // isolate — only the resulting JSON string crosses back.
+        final String raw = await file.readAsString();
+        final String? updated = await _offload(() {
+          final Object? decoded = jsonDecode(raw);
+          if (decoded is! Map<String, dynamic>) return null;
+          decoded['modules'] = modules;
+          return jsonEncode(decoded);
+        });
+        if (updated != null) await _atomicWrite(file, updated);
+      } catch (_) {
+        // Corrupted file: module bookkeeping must never crash the caller.
+      }
+    });
   }
 
   Future<void> delete(String id) async {
     final dir = await _chatsDir();
     final file = File('${dir.path}${Platform.pathSeparator}$id.json');
-    if (await file.exists()) await file.delete();
+    await _withLock(id, () async {
+      if (await file.exists()) await file.delete();
+    });
   }
 
   /// Updates the stored title of a session (keeps messages untouched).
@@ -276,20 +336,22 @@ class ChatStore {
     final dir = await _chatsDir();
     final file = File('${dir.path}${Platform.pathSeparator}$id.json');
     if (!await file.exists()) return;
-    try {
-      // v1.34.0: decode + re-encode of the full transcript off the UI
-      // isolate.
-      final String raw = await file.readAsString();
-      final String? updated = await _offload(() {
-        final Object? decoded = jsonDecode(raw);
-        if (decoded is! Map<String, dynamic>) return null;
-        decoded['title'] = title;
-        return jsonEncode(decoded);
-      });
-      if (updated != null) await file.writeAsString(updated);
-    } catch (_) {
-      // Corrupted file: renaming must never crash the caller.
-    }
+    await _withLock(id, () async {
+      try {
+        // v1.34.0: decode + re-encode of the full transcript off the UI
+        // isolate.
+        final String raw = await file.readAsString();
+        final String? updated = await _offload(() {
+          final Object? decoded = jsonDecode(raw);
+          if (decoded is! Map<String, dynamic>) return null;
+          decoded['title'] = title;
+          return jsonEncode(decoded);
+        });
+        if (updated != null) await _atomicWrite(file, updated);
+      } catch (_) {
+        // Corrupted file: renaming must never crash the caller.
+      }
+    });
   }
 
   /// Global search across every stored conversation. A session matches

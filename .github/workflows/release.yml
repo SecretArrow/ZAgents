@@ -12,6 +12,10 @@ concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
 
+env:
+  FLUTTER_VERSION: '3.47.7'
+  JAVA_VERSION: '17'
+
 jobs:
   build-release:
     name: Build & publish APK
@@ -25,13 +29,14 @@ jobs:
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '17'
+          java-version: ${{ env.JAVA_VERSION }}
 
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
-          flutter-version: 3.47.7
+          flutter-version: ${{ env.FLUTTER_VERSION }}
           cache: true
+          pub-cache: true
 
       - name: Gradle cache
         uses: actions/cache@v4
@@ -50,43 +55,133 @@ jobs:
           flutter analyze
           flutter test
 
-      - name: Restore signing keystore (unzip encrypted bundle)
-        env:
-          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+      - name: Resolve version and check it matches the tag
+        id: version
         run: |
-          if [ -z "$KEYSTORE_PASSWORD" ]; then
-            echo "::warning::Secret KEYSTORE_PASSWORD is not set - the release APK will be debug-signed (fallback)."
-            exit 0
+          VERSION=$(grep -m1 '^version:' pubspec.yaml | sed 's/version: *//; s/+.*//')
+          if [ -z "$VERSION" ]; then
+            echo "::error::could not read version from pubspec.yaml"
+            exit 1
+          fi
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            TAG_VERSION="${GITHUB_REF_NAME#v}"
+            if [ "$TAG_VERSION" != "$VERSION" ]; then
+              echo "::error::tag $GITHUB_REF_NAME does not match pubspec version $VERSION"
+              exit 1
+            fi
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Releasing version $VERSION"
+
+      - name: Restore signing keystore
+        id: keystore
+        # Secrets are read here only to unzip and to validate the alias; they are
+        # NOT exported to $GITHUB_ENV. The build step receives them directly.
+        env:
+          ZIP_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          STORE_PASSWORD: ${{ secrets.KEYSTORE_STORE_PASSWORD || secrets.KEYSTORE_PASSWORD }}
+          KEY_PASSWORD: ${{ secrets.KEYSTORE_KEY_PASSWORD || secrets.KEYSTORE_STORE_PASSWORD || secrets.KEYSTORE_PASSWORD }}
+          ALIAS_HINT: ${{ secrets.KEYSTORE_ALIAS }}
+          EXPECTED_SHA256: ${{ secrets.KEYSTORE_SHA256 }}
+        run: |
+          set -euo pipefail
+          if [ -z "${ZIP_PASSWORD:-}" ]; then
+            echo "::error::Secret KEYSTORE_PASSWORD is not set. Refusing to publish an unsigned (debug-signed) release APK."
+            exit 1
+          fi
+          if [ ! -f key-sign-apk.zip ]; then
+            echo "::error::key-sign-apk.zip is missing from the repository root."
+            exit 1
           fi
           if ! command -v 7z >/dev/null 2>&1; then
             sudo apt-get update -qq
             sudo apt-get install -y -qq p7zip-full
           fi
+          rm -rf android/keystore
           mkdir -p android/keystore
-          7z x -y -p"$KEYSTORE_PASSWORD" -oandroid/keystore key-sign-apk.zip
-          echo "KEYSTORE_PATH=$GITHUB_WORKSPACE/android/keystore/zagents-release.keystore" >> "$GITHUB_ENV"
-          echo "KEYSTORE_ALIAS=zagents" >> "$GITHUB_ENV"
-          echo "KEYSTORE_PASSWORD=$KEYSTORE_PASSWORD" >> "$GITHUB_ENV"
-          echo "SIGNED_BUILD=true" >> "$GITHUB_ENV"
+          if ! 7z x -y -p"$ZIP_PASSWORD" -oandroid/keystore key-sign-apk.zip >/dev/null; then
+            echo "::error::Failed to unzip key-sign-apk.zip (wrong KEYSTORE_PASSWORD?)"
+            exit 1
+          fi
+          KS=$(find android/keystore -type f \( -name '*.keystore' -o -name '*.jks' -o -name '*.p12' \) | head -n1)
+          if [ -z "$KS" ]; then
+            echo "::error::No keystore file found inside key-sign-apk.zip."
+            exit 1
+          fi
+          # Fixed path so the build step can reference it without $GITHUB_ENV.
+          cp "$KS" android/keystore/signing.keystore
+
+          echo "Keystore entries:"
+          keytool -list -keystore android/keystore/signing.keystore -storepass "$STORE_PASSWORD" | sed -n '1,40p'
+
+          if [ -n "${ALIAS_HINT:-}" ]; then
+            ALIAS="$ALIAS_HINT"
+            if ! keytool -list -keystore android/keystore/signing.keystore \
+                -storepass "$STORE_PASSWORD" -alias "$ALIAS" >/dev/null 2>&1; then
+              echo "::error::Alias '$ALIAS' (secret KEYSTORE_ALIAS) not found in the keystore."
+              exit 1
+            fi
+          else
+            ALIAS=$(keytool -list -keystore android/keystore/signing.keystore \
+              -storepass "$STORE_PASSWORD" 2>/dev/null \
+              | awk -F, '/PrivateKeyEntry/ {gsub(/ /,"",$1); print $1; exit}')
+            if [ -z "$ALIAS" ]; then
+              echo "::error::No PrivateKeyEntry found in the keystore."
+              exit 1
+            fi
+          fi
+          echo "alias=$ALIAS" >> "$GITHUB_OUTPUT"
+
+          # Optional: pin the expected certificate. If the secret is set, a
+          # mismatched keystore fails the release instead of shipping a build
+          # signed by the wrong key.
+          FINGERPRINT=$(keytool -list -v -keystore android/keystore/signing.keystore \
+            -storepass "$STORE_PASSWORD" -alias "$ALIAS" 2>/dev/null \
+            | awk -F': ' '/SHA256:/ {print $2; exit}' | tr -d ' ')
+          if [ -n "${EXPECTED_SHA256:-}" ]; then
+            EXPECTED=$(printf '%s' "$EXPECTED_SHA256" | tr -d ' :' | tr 'A-F' 'a-f')
+            ACTUAL=$(printf '%s' "$FINGERPRINT" | tr -d ' :' | tr 'A-F' 'a-f')
+            if [ "$EXPECTED" != "$ACTUAL" ]; then
+              echo "::error::Keystore fingerprint mismatch (expected $EXPECTED, got $ACTUAL)."
+              exit 1
+            fi
+            echo "Keystore fingerprint matches the pinned KEYSTORE_SHA256."
+          else
+            echo "Signing certificate SHA-256: ${FINGERPRINT:-<unknown>}"
+            echo "::notice::Set the KEYSTORE_SHA256 secret to pin this fingerprint and fail releases signed by a different key."
+          fi
 
       - name: Build release APK
+        env:
+          # Passed straight from secrets: never written to $GITHUB_ENV.
+          KEYSTORE_PATH: ${{ github.workspace }}/android/keystore/signing.keystore
+          KEYSTORE_STORE_PASSWORD: ${{ secrets.KEYSTORE_STORE_PASSWORD || secrets.KEYSTORE_PASSWORD }}
+          KEYSTORE_KEY_PASSWORD: ${{ secrets.KEYSTORE_KEY_PASSWORD || secrets.KEYSTORE_STORE_PASSWORD || secrets.KEYSTORE_PASSWORD }}
+          KEYSTORE_ALIAS: ${{ steps.keystore.outputs.alias }}
+          ZAGENTS_REQUIRE_SIGNING: 'true'
         run: flutter build apk --release
 
       - name: Verify APK signature
-        if: env.SIGNED_BUILD == 'true'
         run: |
+          set -euo pipefail
           if ! command -v apksigner >/dev/null 2>&1; then
             sudo apt-get install -y -qq apksigner
           fi
-          apksigner verify --print-certs build/app/outputs/flutter-apk/app-release.apk
+          apksigner verify --verbose --print-certs build/app/outputs/flutter-apk/app-release.apk
+          if apksigner verify --print-certs build/app/outputs/flutter-apk/app-release.apk | grep -qi 'CN=Android Debug'; then
+            echo "::error::Release APK is debug-signed."
+            exit 1
+          fi
 
       - name: Delete unzipped keystore (always, even on failure)
         if: always()
         run: rm -rf android/keystore
 
       - name: Organize artifacts
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
-          VERSION=$(grep -m1 '^version:' pubspec.yaml | sed 's/version: *//; s/+.*//')
+          set -euo pipefail
           mkdir -p build-outputs
           cp build/app/outputs/flutter-apk/app-release.apk \
              "build-outputs/ZAgents-${VERSION}-${GITHUB_REF_NAME}.apk"
@@ -105,4 +200,7 @@ jobs:
         with:
           files: build-outputs/*.apk
           generate_release_notes: true
-          make_latest: true
+          # Tags like v1.30.0-beta.1 publish as pre-releases and are not
+          # promoted to "latest".
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          make_latest: ${{ !contains(github.ref_name, '-') }}

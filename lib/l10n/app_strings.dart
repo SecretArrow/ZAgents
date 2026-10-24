@@ -284,6 +284,10 @@ abstract class AppStrings {
   String get confirmApproved;
   String get confirmTimeout;
   String get confirmUnavailable;
+  String get skillInstallConfirmTitle;
+  String skillInstallConfirmSource(String source);
+  String get skillInstallConfirmBody;
+  String get skillInstallDeclined;
   String get copyMessage;
   String get copied;
   String get activateProviderTitle;
@@ -969,6 +973,18 @@ class AppStringsEn implements AppStrings {
   String get confirmUnavailable =>
       'This chat is not on screen, so the user cannot see the approval '
       'prompt. Bring this chat to the foreground and ask again.';
+  @override
+  String get skillInstallConfirmTitle => 'Install external skill?';
+  @override
+  String skillInstallConfirmSource(String source) => 'Source: $source';
+  @override
+  String get skillInstallConfirmBody =>
+      'This downloads third-party code that will run on this device with '
+      'network and file access. Continue only if you trust the source.';
+  @override
+  String get skillInstallDeclined =>
+      'The user declined to install this skill. Do not install it and do '
+      'not retry it in this conversation.';
   @override
   String get copyMessage => 'Copy';
   @override
@@ -2008,6 +2024,19 @@ class AppStringsId implements AppStrings {
   String get confirmUnavailable =>
       'Chat ini tidak berada di layar sehingga pengguna tidak dapat '
       'melihat permintaan persetujuan. Buka chat ini lalu minta lagi.';
+  @override
+  String get skillInstallConfirmTitle => 'Pasang skill eksternal?';
+  @override
+  String skillInstallConfirmSource(String source) => 'Sumber: $source';
+  @override
+  String get skillInstallConfirmBody =>
+      'Ini mengunduh kode pihak ketiga yang akan berjalan di perangkat ini '
+      'dengan akses jaringan dan file. Lanjutkan hanya jika Anda percaya '
+      'sumbernya.';
+  @override
+  String get skillInstallDeclined =>
+      'Pengguna menolak memasang skill ini. Jangan pasang dan jangan coba '
+      'lagi di percakapan ini.';
   @override
   String get copyMessage => 'Salin';
   @override

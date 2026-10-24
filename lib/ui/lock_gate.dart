@@ -119,6 +119,12 @@ class _LockScreenState extends ConsumerState<LockScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) => _tryBiometric());
   }
 
+  @override
+  void dispose() {
+    _pin.dispose();
+    super.dispose();
+  }
+
   Future<void> _tryBiometric({bool force = false}) async {
     if (_busy || (!force && _biometricTried)) return;
     _biometricTried = true;

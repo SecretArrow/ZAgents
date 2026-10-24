@@ -336,4 +336,141 @@ void main() {
       expect(await store.loadTodos('broken'), isEmpty);
     });
   });
+
+  group('atomic writes & per-chat serialization (v1.40.0)', () {
+    // No isolate offload: these tests exercise the write LOCK, and isolate
+    // scheduling would make the call order nondeterministic.
+    late ChatStore local;
+    setUp(() {
+      local = ChatStore(
+        resolveBaseDir: () async => tempDir,
+        offloadIsolate: false,
+      );
+    });
+
+    test('loadTitle reads the stored title', () async {
+      await local.save(
+        id: 's1',
+        title: 'Resep kue',
+        messages: <ChatMessage>[ChatMessage.user('halo')],
+      );
+      expect(await local.loadTitle('s1'), 'Resep kue');
+      expect(await local.loadTitle('missing'), '');
+    });
+
+    test('save leaves no temp file behind', () async {
+      await local.save(
+        id: 's1',
+        title: 'A',
+        messages: <ChatMessage>[ChatMessage.user('one')],
+      );
+      await local.save(
+        id: 's1',
+        title: 'A',
+        messages: <ChatMessage>[ChatMessage.user('one'), ChatMessage.user('two')],
+      );
+      final List<String> files = Directory('${tempDir.path}/chats')
+          .listSync()
+          .map((FileSystemEntity e) => e.path)
+          .toList();
+      expect(
+        files.where((String p) => p.endsWith('.tmp')),
+        isEmpty,
+        reason: 'the temp file must be renamed onto the session file',
+      );
+      expect((await local.load('s1'))!.length, 2);
+    });
+
+    test('a rename queued behind a save cannot revert the transcript', () async {
+      await local.save(
+        id: 's1',
+        title: 'old title',
+        messages: <ChatMessage>[ChatMessage.user('one')],
+      );
+
+      // Both touch the same JSON file: rename is a read-modify-write and
+      // used to decode the file BEFORE the save landed, then write the old
+      // transcript back over it.
+      final Future<void> saving = local.save(
+        id: 's1',
+        title: 'old title',
+        messages: <ChatMessage>[
+          ChatMessage.user('one'),
+          ChatMessage.user('two'),
+          ChatMessage.user('three'),
+        ],
+      );
+      final Future<void> renaming = local.rename('s1', 'new title');
+      await Future.wait<void>(<Future<void>>[saving, renaming]);
+
+      final List<ChatMessage>? loaded = await local.load('s1');
+      expect(
+        loaded!.map((ChatMessage m) => m.content),
+        <String>['one', 'two', 'three'],
+        reason: 'the save must not be undone by the interleaved rename',
+      );
+      expect(await local.loadTitle('s1'), 'new title');
+    });
+
+    test('concurrent saves for one chat apply in call order', () async {
+      final List<Future<void>> saves = <Future<void>>[
+        for (int i = 0; i < 5; i++)
+          local.save(
+            id: 's1',
+            title: 'v$i',
+            messages: <ChatMessage>[
+              for (int m = 0; m <= i; m++) ChatMessage.user('msg$m'),
+            ],
+          ),
+      ];
+      await Future.wait<void>(saves);
+
+      final List<ChatMessage>? loaded = await local.load('s1');
+      expect(
+        loaded!.map((ChatMessage m) => m.content),
+        <String>['msg0', 'msg1', 'msg2', 'msg3', 'msg4'],
+        reason: 'the last queued save owns the final file contents',
+      );
+      expect(await local.loadTitle('s1'), 'v4');
+    });
+
+    test('saveModules cannot clobber a concurrent transcript save', () async {
+      await local.save(
+        id: 's1',
+        title: 't',
+        messages: <ChatMessage>[ChatMessage.user('one')],
+      );
+      final Future<void> saving = local.save(
+        id: 's1',
+        title: 't',
+        messages: <ChatMessage>[
+          ChatMessage.user('one'),
+          ChatMessage.user('two'),
+        ],
+      );
+      final Future<void> modules = local.saveModules('s1', <String>['plugin-a']);
+      await Future.wait<void>(<Future<void>>[saving, modules]);
+
+      final List<ChatMessage>? loaded = await local.load('s1');
+      expect(loaded!.length, 2);
+      expect(await local.loadModules('s1'), <String>['plugin-a']);
+    });
+
+    test('delete queued behind a save removes the file', () async {
+      await local.save(
+        id: 's1',
+        title: 't',
+        messages: <ChatMessage>[ChatMessage.user('one')],
+      );
+      final Future<void> saving = local.save(
+        id: 's1',
+        title: 't',
+        messages: <ChatMessage>[ChatMessage.user('one'), ChatMessage.user('two')],
+      );
+      final Future<void> deleting = local.delete('s1');
+      await Future.wait<void>(<Future<void>>[saving, deleting]);
+
+      expect(await local.load('s1'), isNull);
+    });
+  });
 }

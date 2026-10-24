@@ -9,16 +9,21 @@ import '../theme.dart';
 /// one row per todo with its status icon. The state shown is the one the
 /// model wrote in THIS call, so the cards read as a timeline of the plan.
 class TodoPlanCard extends StatelessWidget {
-  const TodoPlanCard({super.key, required this.call});
+  const TodoPlanCard({super.key, required this.call, this.todos});
 
   final ToolCall call;
+
+  /// Already-parsed plan. [MessageBubble] parses the call arguments once to
+  /// decide whether a plan card is warranted; passing the result here
+  /// avoids walking up to 50 entries a second time on every rebuild.
+  final List<TodoItem>? todos;
 
   @override
   Widget build(BuildContext context) {
     final AppStrings strings = stringsOf(context);
-    final List<TodoItem> todos = parseTodoList(call.arguments['todos']);
-    final int total = todos.length;
-    final int done = todos
+    final List<TodoItem> items = todos ?? parseTodoList(call.arguments['todos']);
+    final int total = items.length;
+    final int done = items
         .where((TodoItem t) => t.status == TodoStatus.completed)
         .length;
     final ZPalette palette = context.palette;
@@ -72,7 +77,7 @@ class TodoPlanCard extends StatelessWidget {
               ),
             ),
           ),
-          if (todos.isEmpty)
+          if (items.isEmpty)
             Padding(
               padding: const EdgeInsets.only(top: 4),
               child: Text(
@@ -81,7 +86,7 @@ class TodoPlanCard extends StatelessWidget {
               ),
             )
           else ...<Widget>[
-            for (final TodoItem todo in todos)
+            for (final TodoItem todo in items)
               Padding(
                 padding: const EdgeInsets.only(top: 5),
                 child: Row(

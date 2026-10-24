@@ -354,14 +354,20 @@ class _ComposerState extends ConsumerState<Composer> {
   Future<void> _pickFile() async {
     if (_picking) return;
     setState(() => _picking = true);
+    // The picker is a system dialog: the user can switch chats while it is
+    // open. Files belong to the chat they were picked FROM, so the session is
+    // captured before the await and the result is discarded if the user moved
+    // on — otherwise chat A's file silently appeared in chat B's composer.
+    final String? sessionId = ref.read(activeSessionIdProvider);
     try {
       final XFile? picked = await openFile();
       if (picked == null) return;
+      if (ref.read(activeSessionIdProvider) != sessionId) return;
       // Uploads live in the ACTIVE session's own workspace — files never
       // mix between chats (private-window isolation).
       final Directory root = await ref
           .read(sessionSandboxProvider)
-          .rootFor(ref.read(activeSessionIdProvider));
+          .rootFor(sessionId);
       final Directory uploads = Directory(
         '${root.path}${Platform.pathSeparator}uploads',
       );
@@ -372,6 +378,14 @@ class _ComposerState extends ConsumerState<Composer> {
         '${uploads.path}${Platform.pathSeparator}${stamp}_$safeName',
       );
       await File(picked.path).copy(dest.path);
+      if (ref.read(activeSessionIdProvider) != sessionId) {
+        // The user switched while the copy ran: don't leave an orphan file
+        // (and don't stage it into the wrong chat).
+        try {
+          if (dest.existsSync()) dest.deleteSync();
+        } catch (_) {}
+        return;
+      }
       final ChatAttachment attachment = ChatAttachment(
         name: safeName,
         path: dest.path,
@@ -544,6 +558,12 @@ class _ComposerState extends ConsumerState<Composer> {
       chatControllerProvider.select((s) => s.sessionId),
       (String? previous, String? current) => _rebind(current),
     );
+    // A chat whose history is still being read has no runnable transcript
+    // yet — sending now would fork a duplicate session (see ChatController
+    // .send), so the send control is disabled until the load lands.
+    final bool isLoading = ref.watch(
+      chatControllerProvider.select((s) => s.isLoading),
+    );
     final List<ChatAttachment> pending = ref.watch(pendingAttachmentsProvider);
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 4, 12, 12),
@@ -623,21 +643,34 @@ class _ComposerState extends ConsumerState<Composer> {
               const SizedBox(width: 8),
               Container(
                 decoration: BoxDecoration(
-                  gradient: isRunning ? null : kBrandGradient,
+                  gradient: isRunning || isLoading ? null : kBrandGradient,
                   // v1.30.0: the Stop button is clearly red — it must read
                   // as an interrupt control, not a disabled send button.
-                  color: isRunning ? const Color(0xFFE5484D) : null,
+                  color: isRunning
+                      ? const Color(0xFFE5484D)
+                      : (isLoading ? context.zSurfaceAlt : null),
                   shape: BoxShape.circle,
                 ),
                 child: IconButton(
                   key: Key(isRunning ? 'stop-button' : 'send-button'),
-                  onPressed: isRunning
-                      ? () => ref.read(chatControllerProvider.notifier).stop()
-                      : _submit,
-                  icon: Icon(
-                    isRunning ? Icons.stop_rounded : Icons.arrow_upward_rounded,
-                    color: Colors.white,
-                  ),
+                  onPressed: isLoading
+                      ? null
+                      : (isRunning
+                            ? () =>
+                                  ref.read(chatControllerProvider.notifier).stop()
+                            : _submit),
+                  icon: isLoading
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : Icon(
+                          isRunning
+                              ? Icons.stop_rounded
+                              : Icons.arrow_upward_rounded,
+                          color: Colors.white,
+                        ),
                   tooltip: isRunning ? strings.stop : strings.send,
                 ),
               ),

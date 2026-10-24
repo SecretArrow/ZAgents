@@ -1,9 +1,12 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:archive/archive.dart' as ar;
 import 'package:http/http.dart' as http;
+
+import 'remote_guard.dart';
 
 /// One declared configuration input of a skill (SKILL.md `config:` block).
 /// Secret values live in the skill's local config file and are injected
@@ -55,6 +58,7 @@ class InstalledSkill {
     required this.configFields,
     required this.dirPath,
     required this.installedAt,
+    this.requiresBins = const <String>[],
   });
 
   final String name;
@@ -67,6 +71,12 @@ class InstalledSkill {
   final String dirPath;
   final DateTime installedAt;
 
+  /// Native executables the skill declares (`requires.bins`). The embedded
+  /// JS runtime provides NO shell and NO child processes, so a skill that
+  /// needs one of these cannot be executed here — that is reported to the
+  /// model and the user instead of faking a successful run.
+  final List<String> requiresBins;
+
   Map<String, dynamic> toJson() => <String, dynamic>{
     'name': name,
     'version': version,
@@ -74,6 +84,7 @@ class InstalledSkill {
     'description': description,
     'source': source,
     'permissions': permissions,
+    'requiresBins': requiresBins,
     'config': configFields.map((SkillConfigField f) => f.toJson()).toList(),
     'installedAt': installedAt.toIso8601String(),
   };
@@ -87,6 +98,10 @@ class InstalledSkill {
         source: json['source']?.toString() ?? '',
         permissions:
             ((json['permissions'] as List<dynamic>?) ?? const <dynamic>[])
+                .map((Object? e) => e.toString())
+                .toList(),
+        requiresBins:
+            ((json['requiresBins'] as List<dynamic>?) ?? const <dynamic>[])
                 .map((Object? e) => e.toString())
                 .toList(),
         configFields: ((json['config'] as List<dynamic>?) ?? const <dynamic>[])
@@ -119,6 +134,54 @@ class InstalledSkill {
           .readAsStringSync();
     } catch (_) {
       return '';
+    }
+  }
+
+  /// Relative paths of the files shipped with the skill (docs, references,
+  /// helper scripts). Many real skills require reading `references/*.md`
+  /// before every command, so the agent must be able to SEE them.
+  List<String> listFiles({int max = 200}) {
+    final Directory dir = Directory(dirPath);
+    if (!dir.existsSync()) return const <String>[];
+    final String sep = Platform.pathSeparator;
+    final String prefix = dirPath.endsWith(sep) ? dirPath : '$dirPath$sep';
+    final String nodeModules = '${sep}node_modules$sep';
+    final List<String> out = <String>[];
+    try {
+      for (final FileSystemEntity entity in dir.listSync(recursive: true)) {
+        if (entity is! File) continue;
+        final String path = entity.path;
+        if (!path.startsWith(prefix)) continue;
+        final String rel = path.substring(prefix.length);
+        if (rel == 'SKILL.md' || rel == '.zconfig.json') continue;
+        if (rel.contains(nodeModules)) continue;
+        out.add(rel);
+        if (out.length >= max) break;
+      }
+    } catch (_) {
+      // Unreadable directory: report what was collected so far.
+    }
+    out.sort();
+    return out;
+  }
+
+  /// Reads one file INSIDE the skill directory. Returns null when the path
+  /// is absolute, escapes the directory, or cannot be read — the caller
+  /// reports that instead of silently returning the instructions.
+  String? readFile(String relative) {
+    final String cleaned = relative.trim().replaceAll('\\', '/');
+    if (cleaned.isEmpty || cleaned.startsWith('/')) return null;
+    for (final String segment in cleaned.split('/')) {
+      if (segment == '..' || segment == '.') return null;
+    }
+    if (cleaned == '.zconfig.json') return null;
+    final String sep = Platform.pathSeparator;
+    final File file = File('$dirPath$sep${cleaned.replaceAll('/', sep)}');
+    if (!file.existsSync()) return null;
+    try {
+      return file.readAsStringSync();
+    } catch (_) {
+      return null;
     }
   }
 }
@@ -228,22 +291,85 @@ class SkillRegistry {
   // -- Installation -------------------------------------------------------
 
   /// Installs a skill from a GitHub shorthand or https archive URL.
+  ///
+  /// Accepted forms (v1.39.0):
+  ///   * `owner/repo/path/to/skill[@branch]`
+  ///   * `https://github.com/owner/repo[/tree/<branch>/<path>]`
+  ///   * `npx skills add owner/repo/path` (the CLI form the UI suggests)
+  ///   * any https archive URL (zip / tar.gz)
   Future<SkillInstallReport> install(String source) async {
-    final String trimmed = source.trim();
+    final String trimmed = _normalizeSkillSource(source);
     if (trimmed.isEmpty) {
       throw const SkillRegistryException('Skill source is empty.');
     }
     final List<int> bytes;
     final String resolvedSource;
-    if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
-      resolvedSource = trimmed;
-      bytes = await _downloadUrl(trimmed);
-    } else {
+    // v1.39.0: GitHub URLs must go through the GitHub path — they used to
+    // be treated as a raw archive URL and 404'd. The shorthand parser
+    // already understands both spellings, and its subPath is now actually
+    // passed to the extractor (a repo whose skill lives in a subdirectory
+    // used to fail with "No SKILL.md found").
+    if (!trimmed.startsWith('http://') &&
+        !trimmed.startsWith('https://')) {
       final GitHubSkillRef ref = parseGitHubSource(trimmed);
       resolvedSource = 'github:$trimmed';
       bytes = await _downloadGitHubTarball(ref);
+      return installFromArchiveBytes(
+        bytes,
+        source: resolvedSource,
+        subPath: ref.subPath.isEmpty ? null : ref.subPath,
+      );
     }
+    if (trimmed.startsWith('https://github.com/')) {
+      final GitHubSkillRef ref = parseGitHubSource(trimmed);
+      resolvedSource = 'github:${ref.owner}/${ref.repo}'
+          '${ref.subPath.isEmpty ? '' : '/${ref.subPath}'}';
+      bytes = await _downloadGitHubTarball(ref);
+      return installFromArchiveBytes(
+        bytes,
+        source: resolvedSource,
+        subPath: ref.subPath.isEmpty ? null : ref.subPath,
+      );
+    }
+    resolvedSource = trimmed;
+    bytes = await _downloadUrl(trimmed);
     return installFromArchiveBytes(bytes, source: resolvedSource);
+  }
+
+  /// Normalizes the human/CLI spellings of a skill source into one of the
+  /// forms [install] understands.
+  ///
+  /// The agent prompt tells users they can paste
+  /// `npx skills add owner/repo/path`; without this the owner would be
+  /// parsed as `npx skills add owner` and the install 404s.
+  static String _normalizeSkillSource(String raw) {
+    String work = raw.trim();
+    if (work.length >= 2) {
+      final String first = work[0];
+      final String last = work[work.length - 1];
+      if ((first == '"' && last == '"') || (first == "'" && last == "'")) {
+        work = work.substring(1, work.length - 1).trim();
+      }
+    }
+    // `npx skills add X`, `npx -y skills add X`, `skills add X`.
+    work = work.replaceFirst(
+      RegExp(
+        r'^(?:npx\s+(?:-\S+\s+)*)?skills\s+(?:add|install)\s+',
+        caseSensitive: false,
+      ),
+      '',
+    );
+    // `https://github.com/owner/repo/tree/<branch>/<path>` →
+    // `owner/repo/<path>@<branch>`.
+    final RegExpMatch? tree = RegExp(
+      r'^https?://github\.com/([^/]+)/([^/]+)/tree/([^/]+)/(.+)$',
+    ).firstMatch(work);
+    if (tree != null) {
+      work =
+          '${tree.group(1)}/${tree.group(2)}/${tree.group(4)}'
+          '@${tree.group(3)}';
+    }
+    return work.trim();
   }
 
   /// Installs a skill from archive bytes (URL path above, or a local
@@ -357,17 +483,49 @@ class SkillRegistry {
           description: manifest.description,
           source: source,
           permissions: manifest.permissions,
+          requiresBins: manifest.requiresBins,
           configFields: manifest.configFields,
           dirPath: finalDir.path,
           installedAt: DateTime.now(),
         );
-        await _upsertRegistryEntry(skill);
+        // v1.40.0: a reinstall must not throw away the user's stored secrets.
+        // `.zconfig.json` never comes from the archive (it is blocked from
+        // listing/reading), so the previous install's config is carried over
+        // before the staged tree replaces it.
+        bool configCarried = false;
+        if (backup.existsSync()) {
+          final File oldConfig = File(
+            '${backup.path}${Platform.pathSeparator}$configFileName',
+          );
+          final File stagedConfig = File(
+            '${staging.path}${Platform.pathSeparator}$configFileName',
+          );
+          if (oldConfig.existsSync() && !stagedConfig.existsSync()) {
+            oldConfig.copySync(stagedConfig.path);
+            configCarried = true;
+          }
+        }
+        // v1.39.0: registry entry AFTER the files are in place. The old
+        // order left registry.json describing an install that a failed
+        // rename rolled back.
         staging.renameSync(finalDir.path);
+        await _upsertRegistryEntry(skill);
         if (backup.existsSync()) backup.deleteSync(recursive: true);
         await ensureCacheLoaded();
         return SkillInstallReport(
           skill: skill,
           notes: <String>[
+            if (configCarried)
+              'The previous install\'s stored config was kept (secrets are '
+                  'never re-downloaded or echoed).',
+            if (manifest.requiresBins.isNotEmpty)
+              'This skill declares a NATIVE dependency: '
+                  '${manifest.requiresBins.join(', ')}. The embedded '
+                  'JavaScript runtime cannot start external executables, so '
+                  'its commands CANNOT be run here. Tell the user this '
+                  'limitation plainly instead of claiming the skill works; '
+                  'you can still read its instructions and help with '
+                  'anything that only needs HTTP.',
             if (manifest.configFields.isNotEmpty)
               'This skill declares ${manifest.configFields.length} config '
                   'field(s): ${manifest.configFields.map((SkillConfigField f) => f.name).join(', ')}. '
@@ -379,9 +537,16 @@ class SkillRegistry {
           ],
         );
       } catch (_) {
-        if (backup.existsSync() && !finalDir.existsSync()) {
-          backup.renameSync(finalDir.path);
+        // Roll the previous install back, whether the failure happened
+        // before or after the staged directory was moved into place.
+        if (finalDir.existsSync()) {
+          try {
+            finalDir.deleteSync(recursive: true);
+          } catch (_) {
+            // Best effort.
+          }
         }
+        if (backup.existsSync()) backup.renameSync(finalDir.path);
         rethrow;
       }
     } finally {
@@ -582,6 +747,7 @@ class SkillRegistry {
   /// `{path: bytes}` for FILES only (directories implied by paths).
   Map<String, List<int>> _decodeArchive(List<int> bytes) {
     if (bytes.length >= 2 && bytes[0] == 0x1f && bytes[1] == 0x8b) {
+      _checkGzipBudget(bytes);
       final ar.Archive archive = ar.TarDecoder().decodeBytes(
         ar.GZipDecoder().decodeBytes(bytes),
       );
@@ -592,6 +758,7 @@ class SkillRegistry {
         bytes[1] == 0x4b &&
         bytes[2] == 0x03 &&
         bytes[3] == 0x04) {
+      _checkZipBudget(bytes);
       final ar.Archive archive = ar.ZipDecoder().decodeBytes(bytes);
       return _archiveToFiles(archive);
     }
@@ -600,46 +767,165 @@ class SkillRegistry {
     );
   }
 
+  /// Rejects a zip bomb BEFORE decoding: `ZipDecoder` inflates every entry
+  /// eagerly, so the post-extraction caps used to run only after gigabytes
+  /// had already been allocated. The central directory declares each entry's
+  /// uncompressed size, which is enough to refuse the archive up front.
+  static void _checkZipBudget(List<int> bytes) {
+    final Uint8List data = bytes is Uint8List ? bytes : Uint8List.fromList(bytes);
+    final ByteData view = ByteData.sublistView(data);
+    int eocd = -1;
+    final int stop = data.length - 22;
+    final int floor = stop - 65535 > 0 ? stop - 65535 : 0;
+    for (int i = stop; i >= floor; i--) {
+      if (data[i] == 0x50 &&
+          data[i + 1] == 0x4b &&
+          data[i + 2] == 0x05 &&
+          data[i + 3] == 0x06) {
+        eocd = i;
+        break;
+      }
+    }
+    if (eocd < 0) {
+      throw const SkillRegistryException(
+        'Corrupt zip: no end-of-central-directory record.',
+      );
+    }
+    final int entries = view.getUint16(eocd + 10, Endian.little);
+    final int cdSize = view.getUint32(eocd + 12, Endian.little);
+    final int cdOffset = view.getUint32(eocd + 16, Endian.little);
+    // ZIP64 markers: refuse instead of guessing (a 4 GB+ skill is not a
+    // legitimate use case here, and the archive package's handling of the
+    // extended records is not something this app depends on).
+    if (entries == 0xffff || cdSize == 0xffffffff || cdOffset == 0xffffffff) {
+      throw const SkillRegistryException(
+        'ZIP64 skill archives are not supported.',
+      );
+    }
+    if (cdOffset + cdSize > data.length) {
+      throw const SkillRegistryException('Corrupt zip: bad central directory.');
+    }
+    if (entries > maxFileCount) {
+      throw SkillRegistryException(
+        'Skill archive contains more than $maxFileCount files.',
+      );
+    }
+    int total = 0;
+    int p = cdOffset;
+    for (int i = 0; i < entries; i++) {
+      if (p + 46 > data.length ||
+          !(data[p] == 0x50 &&
+              data[p + 1] == 0x4b &&
+              data[p + 2] == 0x01 &&
+              data[p + 3] == 0x02)) {
+        throw const SkillRegistryException(
+          'Corrupt zip: bad central directory entry.',
+        );
+      }
+      total += view.getUint32(p + 24, Endian.little);
+      if (total > maxUnpackedBytes) {
+        throw const SkillRegistryException(
+          'Skill unpacked size exceeds the 32 MB limit.',
+        );
+      }
+      final int nameLen = view.getUint16(p + 28, Endian.little);
+      final int extraLen = view.getUint16(p + 30, Endian.little);
+      final int commentLen = view.getUint16(p + 32, Endian.little);
+      p += 46 + nameLen + extraLen + commentLen;
+    }
+  }
+
+  /// gzip's footer stores the uncompressed size (mod 2^32). It is a hint, not
+  /// a guarantee, but it catches the ordinary bomb before inflating; the
+  /// post-extraction cap still runs afterwards as the authoritative check.
+  static void _checkGzipBudget(List<int> bytes) {
+    if (bytes.length < 18) {
+      throw const SkillRegistryException('Corrupt gzip archive.');
+    }
+    final ByteData view = ByteData.sublistView(
+      bytes is Uint8List ? bytes : Uint8List.fromList(bytes),
+    );
+    final int isize = view.getUint32(bytes.length - 4, Endian.little);
+    // A tar wraps the same payload with a 512-byte header + padding per
+    // entry, so the hint gets a small allowance above the content cap.
+    if (isize > maxUnpackedBytes + 2 * 1024 * 1024) {
+      throw const SkillRegistryException(
+        'Skill unpacked size exceeds the 32 MB limit.',
+      );
+    }
+  }
+
   Map<String, List<int>> _archiveToFiles(ar.Archive archive) {
     final Map<String, List<int>> out = <String, List<int>>{};
+    int total = 0;
     for (final ar.ArchiveFile f in archive.files) {
-      if (f.isFile) {
-        out[f.name.replaceAll('\\', '/')] = f.content as List<int>;
+      if (!f.isFile) continue;
+      final List<int> content = f.content as List<int>;
+      total += content.length;
+      if (total > maxUnpackedBytes) {
+        throw const SkillRegistryException(
+          'Skill unpacked size exceeds the 32 MB limit.',
+        );
       }
+      if (content.length > maxSingleFileBytes) {
+        throw const SkillRegistryException(
+          'A single file in the skill archive exceeds the 8 MB limit.',
+        );
+      }
+      if (out.length >= maxFileCount) {
+        throw SkillRegistryException(
+          'Skill archive contains more than $maxFileCount files.',
+        );
+      }
+      out[f.name.replaceAll('\\', '/')] = content;
     }
     return out;
   }
 
   // -- GitHub ---------------------------------------------------------------
 
-  Future<List<int>> _downloadUrl(String url) async {
-    final http.Response res = await _client
-        .get(Uri.parse(url))
-        .timeout(const Duration(seconds: 90));
-    if (res.statusCode != 200) {
-      throw SkillRegistryException(
-        'Download failed: HTTP ${res.statusCode} for $url',
+  /// True only for public `https` endpoints (see [RemoteGuard]): plain `http`
+  /// is tamperable in transit, and a loopback / link-local / private-range
+  /// host would let a hostile source reach the device or the user's LAN.
+  static bool isAllowedRemoteUrl(String url) => RemoteGuard.isAllowedUrl(url);
+
+  /// Downloads [uri] through [RemoteGuard]: per-hop URL validation, manual
+  /// redirect handling and a streaming byte cap.
+  Future<List<int>> _safeDownload(
+    Uri uri, {
+    Map<String, String>? headers,
+    Duration timeout = const Duration(seconds: 90),
+  }) async {
+    try {
+      return await RemoteGuard.download(
+        _client,
+        uri,
+        headers: headers,
+        maxBytes: maxArchiveBytes,
+        timeout: timeout,
       );
+    } on RemoteGuardException catch (e) {
+      throw SkillRegistryException(e.message);
     }
-    return res.bodyBytes;
+  }
+
+  Future<List<int>> _downloadUrl(String url) async {
+    final Uri? uri = Uri.tryParse(url);
+    if (uri == null) {
+      throw SkillRegistryException('Invalid URL: $url');
+    }
+    return _safeDownload(uri);
   }
 
   Future<List<int>> _downloadGitHubTarball(GitHubSkillRef ref) async {
     String branch = ref.branch;
     if (branch.isEmpty) {
-      final http.Response meta = await _client
-          .get(
-            Uri.parse('https://api.github.com/repos/${ref.owner}/${ref.repo}'),
-            headers: const <String, String>{'Accept': 'application/json'},
-          )
-          .timeout(const Duration(seconds: 30));
-      if (meta.statusCode != 200) {
-        throw SkillRegistryException(
-          'GitHub repository lookup failed: HTTP ${meta.statusCode} '
-          'for ${ref.owner}/${ref.repo}',
-        );
-      }
-      final Object? decoded = jsonDecode(meta.body);
+      final List<int> metaBytes = await _safeDownload(
+        Uri.parse('https://api.github.com/repos/${ref.owner}/${ref.repo}'),
+        headers: const <String, String>{'Accept': 'application/json'},
+        timeout: const Duration(seconds: 30),
+      );
+      final Object? decoded = jsonDecode(utf8.decode(metaBytes));
       if (decoded is! Map ||
           decoded['default_branch'] is! String ||
           (decoded['default_branch'] as String).isEmpty) {
@@ -725,15 +1011,50 @@ class SkillRegistry {
     index++; // past '---'
     String? currentListKey;
     Map<String, String>? currentConfigItem;
+    // Block scalar (`description: |` / `>`) accumulator: the ecosystem's
+    // SKILL.md files use multi-line descriptions, and the old parser
+    // stored the literal "|" as the description.
+    String? blockKey;
+    StringBuffer? blockBuffer;
+    void flushBlock() {
+      final String? key = blockKey;
+      final StringBuffer? buf = blockBuffer;
+      blockKey = null;
+      blockBuffer = null;
+      if (key == null || buf == null) return;
+      final String text = buf.toString().trim();
+      if (text.isEmpty) return;
+      if (key == 'description') {
+        manifest.description = text;
+      } else if (key == 'title') {
+        manifest.title = text;
+      }
+    }
+
     for (; index < lines.length; index++) {
       final String line = lines[index];
       final String trimmed = line.trim();
+      if (blockKey != null) {
+        // Blank lines and indented lines belong to the block scalar; the
+        // first non-indented, non-blank line closes it.
+        if (trimmed.isEmpty) {
+          blockBuffer!.writeln();
+          continue;
+        }
+        if (line.startsWith(' ') || line.startsWith('\t')) {
+          blockBuffer!.writeln(trimmed);
+          continue;
+        }
+        flushBlock();
+      }
       if (trimmed == '---' || trimmed == '...') break;
       if (trimmed.isEmpty) continue;
       if (trimmed.startsWith('- ') || trimmed == '-') {
         final String item = trimmed == '-' ? '' : trimmed.substring(2).trim();
         if (currentListKey == 'permissions') {
           if (item.isNotEmpty) manifest.permissions.add(item);
+        } else if (currentListKey == 'bins') {
+          if (item.isNotEmpty) manifest.requiresBins.add(_unquote(item));
         } else if (currentListKey == 'config') {
           if (item.contains(':')) {
             final int split = item.indexOf(':');
@@ -764,23 +1085,49 @@ class SkillRegistry {
       if (colon == -1) continue;
       final String key = trimmed.substring(0, colon).trim();
       final String value = trimmed.substring(colon + 1).trim();
+      // Nested keys (e.g. `metadata.version`) must not clobber the
+      // top-level manifest fields.
+      final bool nested = line.startsWith(' ') || line.startsWith('\t');
       currentConfigItem = null;
+      if (value == '|' || value == '>') {
+        blockKey = key;
+        blockBuffer = StringBuffer();
+        currentListKey = null;
+        continue;
+      }
+      if (value.startsWith('[') && value.endsWith(']')) {
+        final List<String> items = value
+            .substring(1, value.length - 1)
+            .split(',')
+            .map((String s) => _unquote(s.trim()))
+            .where((String s) => s.isNotEmpty)
+            .toList();
+        if (key == 'bins') {
+          manifest.requiresBins.addAll(items);
+        } else if (key == 'permissions') {
+          manifest.permissions.addAll(items);
+        }
+        currentListKey = null;
+        continue;
+      }
       switch (key) {
         case 'name':
-          manifest.name = value;
+          if (!nested) manifest.name = _unquote(value);
         case 'description':
-          manifest.description = value;
+          if (!nested) manifest.description = _unquote(value);
         case 'version':
-          manifest.version = value;
+          if (!nested) manifest.version = _unquote(value);
         case 'title':
-          manifest.title = value;
+          if (!nested) manifest.title = _unquote(value);
         case 'permissions':
         case 'config':
+        case 'bins':
           currentListKey = key;
         default:
           currentListKey = null;
       }
     }
+    flushBlock();
     for (final Map<String, String> item in manifest.configItems) {
       manifest.configFields.add(
         SkillConfigField(
@@ -797,6 +1144,19 @@ class SkillRegistry {
 
   static bool _truthy(String? raw) =>
       raw != null && <String>['true', 'yes', '1'].contains(raw.toLowerCase());
+
+  /// Strips matching single/double quotes from a YAML scalar.
+  static String _unquote(String raw) {
+    String value = raw.trim();
+    if (value.length >= 2) {
+      final String first = value[0];
+      final String last = value[value.length - 1];
+      if ((first == '"' && last == '"') || (first == "'" && last == "'")) {
+        value = value.substring(1, value.length - 1).trim();
+      }
+    }
+    return value;
+  }
 
   String _firstParagraph(String markdown) {
     for (final String block in markdown.split('\n\n')) {
@@ -955,6 +1315,12 @@ class _SkillManifest {
   String title = '';
   String description = '';
   final List<String> permissions = <String>[];
+
+  /// Native executables the skill declares it needs (`requires.bins` /
+  /// `openclaw.requires.bins`). The embedded JS runtime cannot provide
+  /// these — reporting them honestly is what keeps the agent from
+  /// pretending a CLI-only skill works.
+  final List<String> requiresBins = <String>[];
   final List<SkillConfigField> configFields = <SkillConfigField>[];
   final List<Map<String, String>> configItems = <Map<String, String>>[];
 }
