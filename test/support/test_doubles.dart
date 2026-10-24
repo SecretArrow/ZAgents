@@ -229,6 +229,10 @@ class ThrowingChatStore implements ChatStore {
       throw const FileSystemException('disk exploded');
 
   @override
+  Future<SessionBundle?> loadBundle(String id) async =>
+      throw const FileSystemException('disk exploded');
+
+  @override
   Future<List<String>> loadModules(String id) async => const <String>[];
 
   @override

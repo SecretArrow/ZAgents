@@ -63,6 +63,13 @@ class ScriptedChatStore implements ChatStore {
   Future<List<ChatMessage>?> load(String id) async => sessions[id];
 
   @override
+  Future<SessionBundle?> loadBundle(String id) async {
+    final List<ChatMessage>? messages = sessions[id];
+    if (messages == null) return null;
+    return SessionBundle(messages: messages);
+  }
+
+  @override
   Future<void> delete(String id) async {}
 
   @override
