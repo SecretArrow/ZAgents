@@ -252,9 +252,16 @@ class ModuleRuntime implements ModuleBridge {
   static const int maxOutputBytes = 32 * 1024;
   static const int maxOutputLines = 400;
 
-  /// Runs are serialized through the shared [JsRuntime], so exactly one
-  /// context is live at a time.
-  _RunContext? _context;
+  /// In-flight module executions keyed by correlation token (v1.38.0).
+  /// Two chats may queue module runs concurrently (the JS runtime still
+  /// executes them one at a time, but `run()` overlaps queueing with
+  /// execution), so a single live-context slot let chat B overwrite chat
+  /// A's context — chat.emit, storage and stop all misrouted. Every
+  /// bridge request now carries its run's token (`__zctx`) and resolves
+  /// exactly one context.
+  final Map<String, _RunContext> _contexts = <String, _RunContext>{};
+
+  int _ctxSeq = 0;
 
   /// Absolute path of the (chat, module) instance directory:
   /// `<session-sandbox>/modules/<name>/`. Created on demand. Holds
@@ -283,6 +290,20 @@ class ModuleRuntime implements ModuleBridge {
     void Function(String text)? onChatEmit,
     String? activationPrompt,
   }) async {
+    // Register the security context BEFORE any await (v1.38.0): the user
+    // must be able to stop a run even while it is still resolving module
+    // paths/setup, and the correlation token must exist for every bridge
+    // call from the first moment.
+    final String token =
+        'mctx-${DateTime.now().microsecondsSinceEpoch}-${_ctxSeq++}';
+    final _RunContext context = _RunContext(
+      sessionId: sessionId,
+      moduleName: module.name,
+      permissions: granted.map((ModulePermission p) => p.name).toSet(),
+      allowedHosts: module.manifest.allowedHosts,
+    )..onChatEmit = onChatEmit;
+    _contexts[token] = context;
+
     // Resolve FIRST so an uninstalled/removed module degrades into a
     // clean error instead of a raw file-not-found exception.
     final String? moduleDir = await resolveModulePath(module.name);
@@ -317,14 +338,6 @@ class ModuleRuntime implements ModuleBridge {
       module.name,
     );
 
-    final _RunContext context = _RunContext(
-      sessionId: sessionId,
-      moduleName: module.name,
-      permissions: granted.map((ModulePermission p) => p.name).toSet(),
-      allowedHosts: module.manifest.allowedHosts,
-    )..onChatEmit = onChatEmit;
-    _context = context;
-
     String output = '';
     String? error;
     String? result;
@@ -355,6 +368,7 @@ class ModuleRuntime implements ModuleBridge {
           bridge: this,
           sdkSource: await resolveSdkSource(),
           timeout: module.manifest.timeout,
+          contextToken: token,
         ),
       );
       // Console lines captured through the bridge + whatever the runtime
@@ -367,7 +381,7 @@ class ModuleRuntime implements ModuleBridge {
       error = run.error;
       result = run.result;
     } finally {
-      _context = null;
+      _contexts.remove(token);
     }
 
     if (context.cancelled) {
@@ -384,23 +398,28 @@ class ModuleRuntime implements ModuleBridge {
   /// `zagents.chat.emit` delivery and the final output are discarded,
   /// persisted storage stays intact. Returns true when a run was active.
   bool terminate(String sessionId, String moduleName) {
-    final _RunContext? context = _context;
-    if (context == null ||
-        context.sessionId != sessionId ||
-        context.moduleName != moduleName) {
-      return false;
+    bool any = false;
+    for (final _RunContext context in _contexts.values) {
+      if (context.sessionId != sessionId || context.moduleName != moduleName) {
+        continue;
+      }
+      context.cancelled = true;
+      any = true;
     }
-    context.cancelled = true;
-    return true;
+    return any;
   }
 
-  /// Terminates the module currently running for [sessionId] (used when a
-  /// session is stopped or deleted). Returns the terminated module name.
-  String? terminateSession(String sessionId) {
-    final _RunContext? context = _context;
-    if (context == null || context.sessionId != sessionId) return null;
-    context.cancelled = true;
-    return context.moduleName;
+  /// Terminates every module currently running for [sessionId] (used when
+  /// a session is stopped or deleted). Returns the terminated module
+  /// names (one per in-flight run — normally one).
+  List<String> terminateSession(String sessionId) {
+    final List<String> terminated = <String>[];
+    for (final _RunContext context in _contexts.values) {
+      if (context.sessionId != sessionId) continue;
+      context.cancelled = true;
+      terminated.add(context.moduleName);
+    }
+    return terminated;
   }
 
   /// Caps one shell output stream (`device.shell` stdout/stderr) so a
@@ -431,7 +450,17 @@ class ModuleRuntime implements ModuleBridge {
 
   @override
   Future<Map<String, dynamic>?> handleOp(Map<String, dynamic> request) async {
-    final _RunContext? context = _context;
+    // v1.38.0: resolve the context by the run's correlation token, so
+    // ops from queued/overlapping runs land on the right (chat, module).
+    // Legacy fallback: requests without a token (direct test calls) may
+    // address the single live context when exactly one exists.
+    final Object? rawToken = request['__zctx'];
+    _RunContext? context;
+    if (rawToken != null) {
+      context = _contexts[rawToken.toString()];
+    } else if (_contexts.length == 1) {
+      context = _contexts.values.first;
+    }
     if (context == null) {
       return const <String, dynamic>{
         'ok': false,

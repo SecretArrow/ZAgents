@@ -348,6 +348,36 @@ OpenAI-compatible: **OpenRouter, InferHub, Z.AI, OpenAI, DeepSeek, Groq, dan lai
   wajib — isolasi per-chat tidak berubah).
   4. `SessionSandbox.sessionsRoot()` + `ModuleRuntime.latestStoredSetup`
   (pemindai mtime terbaru, tahan file korup) + uji unit wire/module_list.
+- **v1.38.0 — Skills system nyata, isolasi antar-chat, panel Plan live, dan pass performa**:
+  1. **Skills system (v1.38.0)**: 6 tool baru (`skill_install/list/info/
+     config/remove/run`) — pasang skill eksternal (paket SKILL.md, mis.
+     `binance/binance-skills-hub/.../binance-agentic-wallet`) langsung dari
+     GitHub/URL/zip (validasi nyata: zip-slip guard, size cap, staging
+     atomik), konfigurasi secret tersimpan di perangkat (tidak pernah
+     di-echo ke chat), manual dibaca via `skill_info`, skrip berjalan di
+     sandbox tersemat dengan env injeksi (`process.env`) — tersedia di
+     semua chat (global `<docs>/skills`).
+  2. **`request_confirmation`**: kartu persetujuan eksplisit untuk aksi
+     tak-terbalikkan (transaksi Web3, approval token) — loop agen BERHENTI
+     sampai pengguna menyetujui ringkasan lengkap; penolakan final, prompt
+     di latar belakang gagal-tertutup, seed phrase/private key tidak pernah
+     diminta.
+  3. **Isolasi antar-chat**: `ModuleRuntime` kini memakai context map per
+     token korelasi (dua chat yang menjalankan modul paralel tidak lagi
+     salah routing chat.emit/storage/Stop), draft attachment dibersihkan
+     saat pindah chat, plus
+     uji regresi paralel penuh.
+  4. **Panel Plan live**: dipasang di atas daftar pesan (bukan di footer
+     yang sering di-unmount), status terbuka/tutup global milik pengguna —
+     real-time, tidak tertutup oleh streaming/transisi langkah/pindah
+     chat/run selesai.
+  5. **Performa**: id pesan streaming stabil (tanpa teardown subtree per
+     delta), style sheet markdown stabil (tanpa re-parse semua bubble tiap
+     sync), `jsonEncode` request LLM di isolate, refresh daftar chat tidak
+     lagi per-langkah (dulu baca ulang SEMUA file chat per tool batch),
+     `MediaQuery.sizeOf`, decode thumbnail (`cacheWidth`), dan
+     `fetch()` nyata untuk skrip embedded (git-over-HTTPS & Web3 kini
+     berfungsi).
 - **v1.37.0 — Browser Context paralel (fan of subagents tanpa antre) + drawer ikon**:
   1. **Browser Context per pekerja**: engine browser baru
      (`ContextualBrowserAutomation`) memberi SETIAP sesi chat dan SETIAP

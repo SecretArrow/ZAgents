@@ -161,10 +161,20 @@ class _TodoStatusIcon extends StatelessWidget {
 /// state — the in-progress step spins so the user can see at any time
 /// how far the agent has gotten.
 class TodoPlanView extends StatelessWidget {
-  const TodoPlanView({super.key, required this.todos, this.live = false});
+  const TodoPlanView({
+    super.key,
+    required this.todos,
+    this.live = false,
+    this.onClose,
+  });
 
   final List<TodoItem> todos;
   final bool live;
+
+  /// v1.38.0: when set, the header shows a close (X) button — used by the
+  /// pinned live Plan panel so the user can close it directly, no matter
+  /// whether the thinking footer (and its toggle) is currently mounted.
+  final VoidCallback? onClose;
 
   @override
   Widget build(BuildContext context) {
@@ -209,6 +219,23 @@ class TodoPlanView extends StatelessWidget {
                 strings.planProgress(done, total),
                 style: TextStyle(fontSize: 11.5, color: palette.muted),
               ),
+              if (onClose != null)
+                IconButton(
+                  key: const Key('plan-panel-close'),
+                  tooltip: strings.hidePlanTooltip,
+                  icon: Icon(
+                    Icons.close_rounded,
+                    size: 16,
+                    color: palette.muted,
+                  ),
+                  visualDensity: VisualDensity.compact,
+                  constraints: const BoxConstraints(
+                    minWidth: 30,
+                    minHeight: 30,
+                  ),
+                  padding: const EdgeInsets.all(5),
+                  onPressed: onClose,
+                ),
             ],
           ),
           Padding(

@@ -394,7 +394,7 @@ void main() {
       const Duration(seconds: 15),
     );
 
-    // All four actions live in the icon-only row (v1.34.0 + v1.37.0).
+    // All four actions live in the icon-only row (v1.34.0 + v1.38.0).
     expect(
       inDrawer(find.byKey(const Key('drawer-import-sessions'))),
       findsOneWidget,

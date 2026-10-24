@@ -4,10 +4,13 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../di.dart';
 import '../../l10n/app_strings.dart';
 import '../../models/models.dart';
 import '../theme.dart';
+import 'plan_panel.dart';
 import 'todo_plan_card.dart';
 import 'tool_call_card.dart';
 
@@ -55,8 +58,11 @@ class MessageBubble extends StatelessWidget {
             Align(
               alignment: Alignment.centerRight,
               child: Container(
+                // v1.38.0: sizeOf subscribes ONLY to size changes — the
+                // full MediaQuery.of also fired on keyboard inset
+                // animation frames, rebuilding every visible bubble.
                 constraints: BoxConstraints(
-                  maxWidth: MediaQuery.of(context).size.width * 0.8,
+                  maxWidth: MediaQuery.sizeOf(context).width * 0.8,
                 ),
                 padding: const EdgeInsets.symmetric(
                   horizontal: 14,
@@ -131,7 +137,7 @@ class MessageBubble extends StatelessWidget {
             alignment: Alignment.centerLeft,
             child: Container(
               constraints: BoxConstraints(
-                maxWidth: MediaQuery.of(context).size.width * 0.88,
+                maxWidth: MediaQuery.sizeOf(context).width * 0.88,
               ),
               padding: EdgeInsets.fromLTRB(
                 hasToolCards ? 10 : 14,
@@ -180,45 +186,13 @@ class MessageBubble extends StatelessWidget {
                     else
                       ToolCallCard(call: call),
                   if (showContent)
-                    MarkdownBody(
+                    _MemoMarkdown(
+                      // v1.38.0: keyed on the streaming flag — the flip at
+                      // finalize swaps the (now selectable) rendering with a
+                      // single fresh parse instead of streaming with one.
+                      key: ValueKey<bool>(message.isStreaming),
                       data: message.content,
-                      selectable: true,
-                      styleSheet: MarkdownStyleSheet(
-                        p: TextStyle(
-                          fontSize: 15,
-                          height: 1.5,
-                          color: Theme.of(context).colorScheme.onSurface,
-                        ),
-                        h1: const TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.w700,
-                        ),
-                        h2: const TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w700,
-                        ),
-                        h3: const TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w700,
-                        ),
-                        codeblockDecoration: BoxDecoration(
-                          color: context.zBackground,
-                          borderRadius: BorderRadius.circular(10),
-                          border: Border.all(color: context.zBorder),
-                        ),
-                        code: TextStyle(
-                          fontSize: 13,
-                          fontFamily: 'monospace',
-                          color: Theme.of(context).brightness == Brightness.dark
-                              ? const Color(0xFFB8C4FF)
-                              : const Color(0xFF3D51B4),
-                        ),
-                        listBullet: TextStyle(
-                          fontSize: 15,
-                          height: 1.5,
-                          color: Theme.of(context).colorScheme.onSurface,
-                        ),
-                      ),
+                      streaming: message.isStreaming,
                     ),
                   if (message.isStreaming ||
                       (agentWorking && message.role == Role.assistant))
@@ -378,72 +352,121 @@ class _CopyButtonState extends State<_CopyButton> {
 
 /// Footer row under a working assistant message: spinner + "thinking…"
 /// on the left, and — as soon as the agent has written a plan — a
-/// right-aligned show/hide toggle that reveals the LIVE todo panel so the
-/// user can check at any time how far the agent has progressed.
-class _ThinkingFooter extends StatefulWidget {
+/// right-aligned show/hide toggle for the PINNED live Plan panel
+/// (v1.38.0: the toggle flips the global [planPanelOpenProvider]; the
+/// panel itself renders above the message list, so it survives streaming
+/// rebuilds, step transitions, run end and chat switching).
+class _ThinkingFooter extends ConsumerStatefulWidget {
   const _ThinkingFooter({required this.todos});
 
   final List<TodoItem> todos;
 
   @override
-  State<_ThinkingFooter> createState() => _ThinkingFooterState();
+  ConsumerState<_ThinkingFooter> createState() => _ThinkingFooterState();
 }
 
-class _ThinkingFooterState extends State<_ThinkingFooter> {
-  bool _expanded = false;
-
+class _ThinkingFooterState extends ConsumerState<_ThinkingFooter> {
   @override
   Widget build(BuildContext context) {
     final AppStrings strings = stringsOf(context);
     final bool hasPlan = widget.todos.isNotEmpty;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      mainAxisSize: MainAxisSize.min,
+    final bool open = ref.watch(planPanelOpenProvider);
+    return Row(
       children: <Widget>[
-        Row(
-          children: <Widget>[
-            const SizedBox(
-              width: 12,
-              height: 12,
-              child: CircularProgressIndicator(strokeWidth: 2),
-            ),
-            const SizedBox(width: 8),
-            Text(
-              strings.thinking,
-              style: TextStyle(color: context.zMuted, fontSize: 12),
-            ),
-            const Spacer(),
-            if (hasPlan)
-              IconButton(
-                key: const Key('todo-toggle-button'),
-                tooltip: _expanded
-                    ? strings.hidePlanTooltip
-                    : strings.showPlanTooltip,
-                icon: Icon(
-                  _expanded
-                      ? Icons.visibility_off_outlined
-                      : Icons.visibility_outlined,
-                  size: 16,
-                  color: context.zMuted,
-                ),
-                visualDensity: VisualDensity.compact,
-                constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-                padding: const EdgeInsets.all(6),
-                onPressed: () => setState(() => _expanded = !_expanded),
-              ),
-          ],
+        const SizedBox(
+          width: 12,
+          height: 12,
+          child: CircularProgressIndicator(strokeWidth: 2),
         ),
-        AnimatedSwitcher(
-          duration: const Duration(milliseconds: 150),
-          child: _expanded && hasPlan
-              ? TodoPlanView(
-                  key: const Key('live-todo-panel'),
-                  todos: widget.todos,
-                  live: true,
-                )
-              : const SizedBox(width: double.infinity),
+        const SizedBox(width: 8),
+        Text(
+          strings.thinking,
+          style: TextStyle(color: context.zMuted, fontSize: 12),
         ),
+        const Spacer(),
+        if (hasPlan)
+          IconButton(
+            key: const Key('todo-toggle-button'),
+            tooltip: open ? strings.hidePlanTooltip : strings.showPlanTooltip,
+            icon: Icon(
+              open ? Icons.visibility_off_outlined : Icons.visibility_outlined,
+              size: 16,
+              color: context.zMuted,
+            ),
+            visualDensity: VisualDensity.compact,
+            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+            padding: const EdgeInsets.all(6),
+            onPressed: () => togglePlanPanel(ref),
+          ),
       ],
+    );
+  }
+}
+
+/// v1.38.0: markdown body with a STABLE style sheet.
+///
+/// The style sheet used to be constructed inline on every build, so
+/// flutter_markdown's update check (`data != old || styleSheet != old`)
+/// ALWAYS saw a new object and re-parsed the markdown of EVERY visible
+/// bubble on every provider emission — ~20x/second while streaming, for
+/// the growing answer AND every history bubble on screen (parse runs on
+/// the UI isolate; selectable additionally built SelectableText blocks).
+/// The sheet is now built once per theme change and reused, so only
+/// bubbles whose text actually changed re-parse.
+class _MemoMarkdown extends StatefulWidget {
+  const _MemoMarkdown({super.key, required this.data, required this.streaming});
+
+  final String data;
+  final bool streaming;
+
+  @override
+  State<_MemoMarkdown> createState() => _MemoMarkdownState();
+}
+
+class _MemoMarkdownState extends State<_MemoMarkdown> {
+  MarkdownStyleSheet? _sheet;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _sheet = MarkdownStyleSheet(
+      p: TextStyle(
+        fontSize: 15,
+        height: 1.5,
+        color: Theme.of(context).colorScheme.onSurface,
+      ),
+      h1: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
+      h2: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+      h3: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+      codeblockDecoration: BoxDecoration(
+        color: context.zBackground,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: context.zBorder),
+      ),
+      code: TextStyle(
+        fontSize: 13,
+        fontFamily: 'monospace',
+        color: Theme.of(context).brightness == Brightness.dark
+            ? const Color(0xFFB8C4FF)
+            : const Color(0xFF3D51B4),
+      ),
+      listBullet: TextStyle(
+        fontSize: 15,
+        height: 1.5,
+        color: Theme.of(context).colorScheme.onSurface,
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return MarkdownBody(
+      // Selection affordance only on FINAL text: building selectable text
+      // blocks on every streaming sync is one of the heaviest frame costs,
+      // and the text can still be copied through the copy button.
+      selectable: !widget.streaming,
+      data: widget.data,
+      styleSheet: _sheet,
     );
   }
 }
@@ -459,6 +482,12 @@ class _AttachmentPreview extends StatelessWidget {
   Widget build(BuildContext context) {
     if (attachment.kind == AttachmentKind.image) {
       final File file = File(attachment.path);
+      // v1.38.0: cacheWidth caps the decode resolution — a full-res photo
+      // (4000x3000) used to be decoded for a 120dp thumbnail on every
+      // visible scroll pass (jank + memory spikes). Decode at the box's
+      // physical resolution instead.
+      final int cacheWidth = (120 * MediaQuery.devicePixelRatioOf(context))
+          .round();
       return ClipRRect(
         borderRadius: BorderRadius.circular(10),
         child: file.existsSync()
@@ -467,6 +496,7 @@ class _AttachmentPreview extends StatelessWidget {
                 width: 120,
                 height: 120,
                 fit: BoxFit.cover,
+                cacheWidth: cacheWidth,
                 errorBuilder: (_, _, _) => Container(
                   width: 120,
                   height: 120,

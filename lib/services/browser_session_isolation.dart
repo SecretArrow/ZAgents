@@ -595,6 +595,12 @@ class _ContextSlot {
   /// their state through the [BrowserStateStore] like v1.19.0 did.
   final bool ephemeral;
 
+  /// v1.38.0: ops that have ENTERED _run for this slot but not finished
+  /// their mutex turn (queued included). Eviction must never dispose a
+  /// slot with queued work — the queued op would otherwise boot an
+  /// untracked replacement engine (leak) and run against a dead context.
+  int pendingOps = 0;
+
   /// Operations inside ONE context serialize here; different contexts
   /// hold different mutexes and run side by side.
   final _Mutex mutex;
@@ -664,6 +670,11 @@ class ContextualBrowserAutomation implements BrowserAutomation {
   int _stamp = 0;
   int _opsInFlight = 0;
   bool _purgedOnce = false;
+
+  /// v1.38.0: set when the one-time jar purge had to be deferred because
+  /// the process's first browser activity was a parallel fan; retried in
+  /// _run's teardown the moment _opsInFlight reaches 0.
+  bool _purgePending = false;
 
   static const String _legacyKey = '_legacy';
 
@@ -901,20 +912,44 @@ class ContextualBrowserAutomation implements BrowserAutomation {
     _opsInFlight++;
     _stamp++;
     final int stamp = _stamp;
+    // Hoisted so the idle-teardown finally below can reach the slot.
+    _ContextSlot? slot;
     try {
-      final _ContextSlot slot = _slotFor(key, sessionId);
+      slot = _slotFor(key, sessionId);
       slot.lastUsed = stamp;
       slot.inOp = true;
+      slot.pendingOps++;
       try {
         return await slot.mutex.protect(() async {
-          await _ensureLoaded(slot, sessionId);
-          return op(slot);
+          await _ensureLoaded(slot!, sessionId);
+          return op(slot!);
         });
       } finally {
-        slot.inOp = false;
+        // v1.38.0: keep inOp true while sibling ops are still QUEUED on
+        // this slot's mutex — clearing it early made the slot look idle,
+        // so eviction could dispose a context that still had work lined
+        // up (the queued op then leaked an untracked engine).
+        slot.inOp = slot.pendingOps > 1;
+        slot.pendingOps--;
       }
     } finally {
       _opsInFlight--;
+      if (!_purgedOnce && _purgePending && _opsInFlight == 0) {
+        // The whole process just went idle after a parallel first fan —
+        // now the shared jar can be wiped safely.
+        _purgePending = false;
+        _purgedOnce = true;
+        try {
+          await cookies.clearAll();
+        } catch (_) {
+          // Best effort.
+        }
+        try {
+          await slot!.inner.purgeSiteData();
+        } catch (_) {
+          // Best effort.
+        }
+      }
       _evictIdleSlots();
     }
   }
@@ -947,18 +982,29 @@ class ContextualBrowserAutomation implements BrowserAutomation {
     // Process-first purge: leftovers from previous app runs (the WebView
     // profile outlives the process) must not leak into any context. Only
     // safe when this is the only live operation — with parallel contexts
-    // the jar is already shared by design.
-    if (!_purgedOnce && _opsInFlight <= 1 && _slots.length <= 1) {
-      _purgedOnce = true;
-      try {
-        await cookies.clearAll();
-      } catch (_) {
-        // Best effort.
-      }
-      try {
-        await slot.inner.purgeSiteData();
-      } catch (_) {
-        // Best effort.
+    // the jar is already shared by design. v1.38.0: when the first
+    // activity is a parallel fan (every op sees _opsInFlight > 1), the
+    // purge is DEFERRED and retried at the moment the process goes fully
+    // idle instead of being skipped for the whole app run.
+    if (!_purgedOnce) {
+      final bool otherBusy = _slots.values.any(
+        (_ContextSlot s) => !identical(s, slot) && (s.inOp || s.pendingOps > 0),
+      );
+      if (_opsInFlight <= 1 && !otherBusy) {
+        _purgedOnce = true;
+        _purgePending = false;
+        try {
+          await cookies.clearAll();
+        } catch (_) {
+          // Best effort.
+        }
+        try {
+          await slot.inner.purgeSiteData();
+        } catch (_) {
+          // Best effort.
+        }
+      } else {
+        _purgePending = true;
       }
     }
     // Restore this context's own cookies additively (never a wholesale
@@ -1073,7 +1119,11 @@ class ContextualBrowserAutomation implements BrowserAutomation {
     var excess = _slots.length - maxContexts;
     if (excess <= 0) return;
     final List<_ContextSlot> candidates =
-        _slots.values.where((_ContextSlot s) => !s.inOp && !s.disposed).toList()
+        _slots.values
+            .where(
+              (_ContextSlot s) => !s.inOp && s.pendingOps <= 0 && !s.disposed,
+            )
+            .toList()
           ..sort((_ContextSlot a, _ContextSlot b) {
             if (a.ephemeral != b.ephemeral) return a.ephemeral ? -1 : 1;
             return a.lastUsed.compareTo(b.lastUsed);
@@ -1096,6 +1146,11 @@ class ContextualBrowserAutomation implements BrowserAutomation {
   }
 
   Future<void> _releaseCookies(_ContextSlot slot) async {
+    // v1.38.0: the eviction release runs async — if the same context key
+    // was recreated in the meantime, the jar now holds the NEW context's
+    // fresh cookies and deleting the victim's recorded names would log
+    // the new context out on its very next op.
+    if (_slots.containsKey(slot.key)) return;
     for (final MapEntry<String, OriginState> entry
         in slot.state.origins.entries) {
       final OriginState o = entry.value;

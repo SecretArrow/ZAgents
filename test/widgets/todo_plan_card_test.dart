@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:zagents/di.dart';
 import 'package:zagents/l10n/app_strings.dart';
 import 'package:zagents/models/models.dart';
 import 'package:zagents/ui/theme.dart';
@@ -22,17 +24,19 @@ ChatMessage _assistantWith(Map<String, dynamic> args) => ChatMessage.assistant(
 );
 
 void main() {
-  Widget wrap(Widget child) => MaterialApp(
-    theme: buildDarkTheme(),
-    locale: const Locale('en'),
-    supportedLocales: const <Locale>[Locale('en'), Locale('id')],
-    localizationsDelegates: const <LocalizationsDelegate<dynamic>>[
-      zLocalizationsDelegate,
-      GlobalMaterialLocalizations.delegate,
-      GlobalWidgetsLocalizations.delegate,
-      GlobalCupertinoLocalizations.delegate,
-    ],
-    home: Scaffold(body: ListView(children: <Widget>[child])),
+  Widget wrap(Widget child) => ProviderScope(
+    child: MaterialApp(
+      theme: buildDarkTheme(),
+      locale: const Locale('en'),
+      supportedLocales: const <Locale>[Locale('en'), Locale('id')],
+      localizationsDelegates: const <LocalizationsDelegate<dynamic>>[
+        zLocalizationsDelegate,
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+      ],
+      home: Scaffold(body: ListView(children: <Widget>[child])),
+    ),
   );
 
   testWidgets('todo_write renders a plan card with progress and statuses', (
@@ -105,7 +109,7 @@ void main() {
     ];
 
     testWidgets('streaming message with a plan shows the right-aligned '
-        'show/hide toggle that reveals the live plan panel', (
+        'show/hide toggle that flips the GLOBAL panel open state', (
       WidgetTester tester,
     ) async {
       final ChatMessage message = ChatMessage.assistant(
@@ -113,29 +117,32 @@ void main() {
         isStreaming: true,
       );
 
+      late WidgetRef capturedRef;
       await tester.pumpWidget(
-        wrap(MessageBubble(message: message, todos: todos)),
+        wrap(
+          Consumer(
+            builder: (_, WidgetRef ref, _) {
+              capturedRef = ref;
+              return MessageBubble(message: message, todos: todos);
+            },
+          ),
+        ),
       );
 
-      // Toggle exists, panel hidden at first.
+      // Toggle exists, panel closed at first.
       expect(find.byKey(const Key('todo-toggle-button')), findsOneWidget);
-      expect(find.byKey(const Key('live-todo-panel')), findsNothing);
       expect(find.text('thinking…'), findsOneWidget);
-
-      // Show: the live plan renders with progress and todos.
-      await tester.tap(find.byKey(const Key('todo-toggle-button')));
-      // pump (not pumpAndSettle): the streaming spinner animates forever.
-      // Two pumps: one to start the switcher transition, one to finish it.
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 200));
-      expect(find.byKey(const Key('live-todo-panel')), findsOneWidget);
       expect(
-        find.text(const AppStringsEn().planProgress(1, 3)),
-        findsOneWidget,
+        capturedRef.read(planPanelOpenProvider),
+        isFalse,
+        reason: 'panel starts closed',
       );
-      expect(find.text('research topic'), findsOneWidget);
-      expect(find.text('draft report'), findsOneWidget);
-      expect(find.text('review output'), findsOneWidget);
+
+      // Show: the toggle flips the global state — the pinned panel
+      // (rendered by ChatBody, covered by plan_panel_test) reacts to it.
+      await tester.tap(find.byKey(const Key('todo-toggle-button')));
+      await tester.pump();
+      expect(capturedRef.read(planPanelOpenProvider), isTrue);
       expect(
         find.byTooltip(const AppStringsEn().hidePlanTooltip),
         findsOneWidget,
@@ -144,8 +151,7 @@ void main() {
       // Hide again.
       await tester.tap(find.byKey(const Key('todo-toggle-button')));
       await tester.pump();
-      await tester.pump(const Duration(milliseconds: 200));
-      expect(find.byKey(const Key('live-todo-panel')), findsNothing);
+      expect(capturedRef.read(planPanelOpenProvider), isFalse);
     });
 
     testWidgets('no plan yet: the toggle is not rendered', (

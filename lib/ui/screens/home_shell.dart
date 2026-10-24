@@ -6,7 +6,7 @@ import '../../di.dart';
 import '../../l10n/app_strings.dart';
 import '../../models/models.dart';
 import '../../services/agent_controller.dart'
-    show ChatState, ModuleSetupRequest;
+    show ChatState, ConfirmationRequest, ModuleSetupRequest;
 import '../theme.dart';
 import '../widgets/agent_toggle.dart';
 import '../widgets/chat_body.dart';
@@ -164,10 +164,136 @@ class _HomeShellState extends ConsumerState<HomeShell> {
             children: <Widget>[
               const Expanded(child: ChatBody()),
               const ModuleRepairCard(),
+              const _ConfirmationCard(),
               const _ModuleSetupBanner(),
               const Composer(),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// v1.38.0: explicit user-approval card for the `request_confirmation`
+/// tool — the authorization boundary for money-moving/irreversible
+/// actions. The agent loop is BLOCKED while this card is visible; only
+/// Approve resumes the exact described action, Deny (or Stop) fails it
+/// closed. Rendered as an inline card (not a dialog) so it survives
+/// rebuilds exactly like the module repair card and can never be
+/// swallowed by route churn.
+class _ConfirmationCard extends ConsumerWidget {
+  const _ConfirmationCard();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final ConfirmationRequest? request = ref.watch(
+      chatControllerProvider.select((ChatState s) => s.pendingConfirmation),
+    );
+    if (request == null) return const SizedBox.shrink();
+    final AppStrings strings = stringsOf(context);
+    return Material(
+      key: const Key('confirmation-card'),
+      color: request.danger ? context.zSurfaceAlt : context.zSurface,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Row(
+              children: <Widget>[
+                Icon(
+                  request.danger
+                      ? Icons.warning_amber_rounded
+                      : Icons.touch_app_rounded,
+                  size: 18,
+                  color: request.danger
+                      ? const Color(0xFFFFB020)
+                      : Theme.of(context).colorScheme.primary,
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    request.title,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            Padding(
+              padding: const EdgeInsets.only(top: 4, left: 28),
+              child: Text(
+                strings.confirmDialogPrompt,
+                style: TextStyle(
+                  fontSize: 11.5,
+                  color: Theme.of(context).hintColor,
+                ),
+              ),
+            ),
+            if (request.details.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 8, left: 28),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    for (final String line in request.details)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 3),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: <Widget>[
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                line,
+                                style: const TextStyle(
+                                  fontSize: 12.5,
+                                  height: 1.35,
+                                  fontFamily: 'monospace',
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            Padding(
+              padding: const EdgeInsets.only(top: 10, left: 28),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: <Widget>[
+                  OutlinedButton(
+                    key: const Key('confirmation-deny'),
+                    onPressed: () => ref
+                        .read(chatControllerProvider.notifier)
+                        .resolveConfirmation(request.id, false),
+                    child: Text(strings.confirmDeny),
+                  ),
+                  const SizedBox(width: 10),
+                  FilledButton(
+                    key: const Key('confirmation-approve'),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: request.danger
+                          ? const Color(0xFFE5484D)
+                          : null,
+                    ),
+                    onPressed: () => ref
+                        .read(chatControllerProvider.notifier)
+                        .resolveConfirmation(request.id, true),
+                    child: Text(strings.confirmApprove),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ),
       ),
     );

@@ -276,6 +276,14 @@ abstract class AppStrings {
   String planProgress(int done, int total);
   String get showPlanTooltip;
   String get hidePlanTooltip;
+  String get confirmDialogTitle;
+  String get confirmDialogPrompt;
+  String get confirmApprove;
+  String get confirmDeny;
+  String get confirmDenied;
+  String get confirmApproved;
+  String get confirmTimeout;
+  String get confirmUnavailable;
   String get copyMessage;
   String get copied;
   String get activateProviderTitle;
@@ -936,6 +944,32 @@ class AppStringsEn implements AppStrings {
   @override
   String get hidePlanTooltip => 'Hide plan';
   @override
+  String get confirmDialogTitle => 'Approval required';
+  @override
+  String get confirmDialogPrompt =>
+      'The agent asks for your explicit approval before performing this '
+      'action. Review every line before deciding.';
+  @override
+  String get confirmApprove => 'Approve';
+  @override
+  String get confirmDeny => 'Deny';
+  @override
+  String get confirmDenied =>
+      'DENIED by the user. Do not perform this action and do not retry '
+      'it in this conversation.';
+  @override
+  String get confirmApproved =>
+      'APPROVED by the user. You may perform exactly the action described '
+      '— nothing more.';
+  @override
+  String get confirmTimeout =>
+      'No answer within 10 minutes — treated as DENIED. Do not perform '
+      'the action.';
+  @override
+  String get confirmUnavailable =>
+      'This chat is not on screen, so the user cannot see the approval '
+      'prompt. Bring this chat to the foreground and ask again.';
+  @override
   String get copyMessage => 'Copy';
   @override
   String get copied => 'Copied';
@@ -1136,7 +1170,7 @@ class AppStringsEn implements AppStrings {
   String get aboutSection => 'About';
   @override
   String get aboutBody =>
-      'ZAgents v1.37.0 — an Android clone of the chat.z.ai agent mode UI, '
+      'ZAgents v1.38.0 — an Android clone of the chat.z.ai agent mode UI, '
       'with custom OpenAI-compatible providers (OpenRouter, InferHub, '
       'Z.AI, OpenAI, DeepSeek, Groq, and more), per-provider API keys, '
       'light/dark themes, parallel multi-session chat with background '
@@ -1206,6 +1240,27 @@ class AppStringsEn implements AppStrings {
       'paired with every browser, so rotating or randomizing your '
       'identity in Settings draws from a far larger pool of '
       'realistic fingerprints. New in '
+      'v1.38.0: a REAL skills system — install external agent skills '
+      '(SKILL.md packages, e.g. Binance Agentic Wallet) straight from '
+      'GitHub with skill_install, configure their secrets on-device '
+      '(never echoed into the chat), read their manuals with skill_info '
+      'and run their scripts in the embedded sandbox with skill_run '
+      '(network via fetch, npm packages, file access) — available in '
+      'every chat once installed. Money-moving actions now REQUIRE an '
+      'explicit user approval card (request_confirmation): the agent '
+      'blocks until you approve the transaction summary (network, '
+      'asset, amount, destination, fee) and a denial is final — seed '
+      'phrases and private keys are never requested. Also new: '
+      'cross-chat isolation hardening (concurrent module runs can no '
+      'longer misroute chat output, storage or Stop between chats), a '
+      'pinned live Plan panel that updates in real time and stays open '
+      'until YOU close it (surviving chat switches, step transitions '
+      'and run end), and a broad performance pass: stable streaming '
+      'message ids (no more per-delta subtree teardown), markdown '
+      're-parse elimination, off-UI-thread request encoding, cheap '
+      'chat-list refreshes, thumbnail decoding and a real network '
+      'stack for embedded scripts (fetch now works for git-over-HTTPS '
+      'and Web3 skills). New in '
       'v1.37.0: parallel Browser Contexts — every chat session and '
       'every subagent of a fan of subagents browses in its OWN '
       'isolated engine (private WebView, cookies and storage), so '
@@ -1928,6 +1983,32 @@ class AppStringsId implements AppStrings {
   @override
   String get hidePlanTooltip => 'Sembunyikan rencana';
   @override
+  String get confirmDialogTitle => 'Perlu persetujuan';
+  @override
+  String get confirmDialogPrompt =>
+      'Agen meminta persetujuan eksplisit Anda sebelum melakukan aksi '
+      'ini. Periksa setiap baris sebelum memutuskan.';
+  @override
+  String get confirmApprove => 'Setujui';
+  @override
+  String get confirmDeny => 'Tolak';
+  @override
+  String get confirmDenied =>
+      'DITOLAK oleh pengguna. Jangan lakukan aksi ini dan jangan mencoba '
+      'lagi di percakapan ini.';
+  @override
+  String get confirmApproved =>
+      'DISETUJUI oleh pengguna. Anda boleh melakukan persis aksi yang '
+      'dijelaskan — tidak lebih.';
+  @override
+  String get confirmTimeout =>
+      'Tidak ada jawaban dalam 10 menit — dianggap DITOLAK. Jangan '
+      'lakukan aksi ini.';
+  @override
+  String get confirmUnavailable =>
+      'Chat ini tidak berada di layar sehingga pengguna tidak dapat '
+      'melihat permintaan persetujuan. Buka chat ini lalu minta lagi.';
+  @override
   String get copyMessage => 'Salin';
   @override
   String get copied => 'Tersalin';
@@ -2131,7 +2212,7 @@ class AppStringsId implements AppStrings {
   String get aboutSection => 'Tentang';
   @override
   String get aboutBody =>
-      'ZAgents v1.37.0 — klon UI agent mode chat.z.ai untuk Android, '
+      'ZAgents v1.38.0 — klon UI agent mode chat.z.ai untuk Android, '
       'dengan custom provider OpenAI-compatible (OpenRouter, InferHub, '
       'Z.AI, OpenAI, DeepSeek, Groq, dan lainnya), API key per-provider, '
       'tema terang/gelap, multi-sesi paralel dengan proses latar '
@@ -2202,6 +2283,29 @@ class AppStringsId implements AppStrings {
       'bawaan dipadukan dengan setiap browser, sehingga memutar atau '
       'mengacak identitas di Pengaturan memakai kolam sidik jari '
       'realistis yang jauh lebih besar. Baru di '
+      'v1.38.0: sistem skills NYATA — pasang skill agen eksternal '
+      '(paket SKILL.md, mis. Binance Agentic Wallet) langsung dari '
+      'GitHub dengan skill_install, simpan secret-nya di perangkat '
+      '(tidak pernah di-echo ke chat), baca manualnya dengan '
+      'skill_info, dan jalankan skripnya di sandbox tersemat dengan '
+      'skill_run (jaringan via fetch, paket npm, akses file) — '
+      'tersedia di semua chat setelah sekali pasang. Aksi yang '
+      'memindahkan aset kini WAJIB mendapat kartu persetujuan '
+      'eksplisit (request_confirmation): agen berhenti sampai Anda '
+      'menyetujui ringkasan transaksi (jaringan, aset, jumlah, '
+      'tujuan, biaya) dan penolakan bersifat final — seed phrase dan '
+      'private key tidak pernah diminta. Juga baru: penguatan '
+      'isolasi antar-chat (modul yang berjalan paralel tidak lagi '
+      'salah routing output, storage, atau Stop antar chat), panel '
+      'Plan live yang terpasang di atas daftar pesan, diperbarui '
+      'real-time, dan tetap terbuka sampai Anda sendiri menutupnya '
+      '(bertahan lintas perpindahan chat, transisi langkah, dan '
+      'akhir run), serta perbaikan performa menyeluruh: id pesan '
+      'streaming stabil (tanpa teardown subtree per delta), '
+      'eliminasi re-parse markdown, encoding request di luar UI '
+      'thread, refresh daftar chat yang murah, decode thumbnail, '
+      'dan stack jaringan nyata untuk skrip tersemat (fetch kini '
+      'berfungsi untuk git-over-HTTPS dan skill Web3). Baru di '
       'v1.37.0: Browser Context paralel — setiap sesi chat dan setiap '
       'subagent dalam fan of subagents menjelajah dengan engine '
       'isolasinya sendiri (WebView, cookie, dan storage pribadi), '

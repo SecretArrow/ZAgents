@@ -173,6 +173,13 @@ class _ToolCallCardState extends State<ToolCallCard> {
                       File(call.screenshotPath!),
                       width: double.infinity,
                       fit: BoxFit.cover,
+                      // v1.38.0: browser screenshots are full-screen
+                      // bitmaps — decode at display resolution, not the
+                      // source's 1080x1920, to keep scrolling smooth.
+                      cacheWidth:
+                          (MediaQuery.sizeOf(context).width *
+                                  MediaQuery.devicePixelRatioOf(context))
+                              .round(),
                       errorBuilder:
                           (
                             BuildContext context,

@@ -27,7 +27,9 @@ import 'services/module_runtime.dart';
 import 'services/npm_service.dart';
 import 'services/prompt_repository.dart';
 import 'services/session_export.dart';
+import 'services/script_fetch_proxy.dart';
 import 'services/session_sandbox.dart';
+import 'services/skill_registry.dart';
 import 'services/settings_repository.dart';
 import 'services/subagents.dart';
 import 'services/tool_executor.dart';
@@ -104,6 +106,21 @@ final userAgentManagerProvider = Provider<UserAgentManager>(
   UserAgentManager.new,
 );
 
+/// v1.38.0: REAL network for the embedded JS runtime (`node_run`, skill
+/// scripts, isomorphic-git over HTTPS). Before this the `window.fetch`
+/// shim rejected every call ("fetch is unavailable") — Web3/wallet skills
+/// and git-over-HTTPS silently could not work.
+final scriptFetchProxyProvider = Provider<ScriptFetchProxy>((ref) {
+  final proxy = ScriptFetchProxy(
+    resolveUserAgent: () {
+      final AppSettings settings = ref.read(settingsProvider);
+      return ref.read(userAgentManagerProvider).resolve(settings.uaMode).ua;
+    },
+  );
+  ref.onDispose(proxy.dispose);
+  return proxy;
+});
+
 /// Hidden-WebView JavaScript runtime for the embedded Node.js-style tools.
 /// Serialized: node_run calls from parallel chat sessions execute one at a
 /// time, and every run boots a fresh JS context (no module cache, window
@@ -114,6 +131,24 @@ final jsRuntimeProvider = Provider<JsRuntime>((ref) {
       final AppSettings settings = ref.read(settingsProvider);
       return ref.read(userAgentManagerProvider).resolve(settings.uaMode).ua;
     },
+    fetchProxy:
+        (
+          String url,
+          String method,
+          String? body, {
+          Map<String, String> headers = const <String, String>{},
+          bool bodyIsBase64 = false,
+        }) {
+          return ref
+              .read(scriptFetchProxyProvider)
+              .call(
+                url,
+                method,
+                body,
+                headers: headers,
+                bodyIsBase64: bodyIsBase64,
+              );
+        },
   );
   ref.onDispose(runtime.dispose);
   return SerializedJsRuntime(runtime);
@@ -126,6 +161,13 @@ final npmServiceProvider = Provider<NpmService>(
 /// Installs/lists/removes chat modules (plugins) under `<docs>/modules`.
 final moduleRegistryProvider = Provider<ModuleRegistry>(
   (ref) => ModuleRegistry(resolveBaseDir: ref.watch(documentsDirProvider)),
+);
+
+/// v1.38.0: installs/lists/configures/removes external agent skills under
+/// `<docs>/skills` — global, shared by every chat (install once, use
+/// everywhere).
+final skillRegistryProvider = Provider<SkillRegistry>(
+  (ref) => SkillRegistry(resolveBaseDir: ref.watch(documentsDirProvider)),
 );
 
 /// Native shell runner for the module `device` capability (v1.31.0):
@@ -341,6 +383,9 @@ final toolExecutorProvider = Provider<ToolExecutor>((ref) {
     // registry is the ONLY doorway to installed modules, and the repair
     // tool merely stages a user-confirmed install card.
     modules: ref.watch(moduleRegistryProvider),
+    // v1.38.0 — skill tools (install/list/info/config/remove/run): the
+    // registry is the only doorway to installed skills.
+    skills: ref.watch(skillRegistryProvider),
     // Per-chat setup state for module_list (v1.33.0): the agent sees
     // whether each module's setup form is already completed for THIS
     // chat — so it stops asking for credentials the user already gave.
@@ -396,6 +441,14 @@ final runningSessionsProvider = StateProvider<Set<String>>((ref) => <String>{});
 final pendingAttachmentsProvider = StateProvider<List<ChatAttachment>>(
   (ref) => const <ChatAttachment>[],
 );
+
+/// v1.38.0: whether the user has the live Plan panel open — GLOBAL and
+/// user-owned. Riverpod state, not widget-local: element teardown during
+/// streaming, step transitions, run end or chat switching must never
+/// close the panel behind the user's back. It survives chat switches on
+/// purpose (each chat renders its own plan in it) and only the user's
+/// toggle (thinking-footer icon or the panel's close button) changes it.
+final planPanelOpenProvider = StateProvider<bool>((ref) => false);
 
 final chatListProvider = FutureProvider<List<ChatSummary>>(
   (ref) => ref.watch(chatStoreProvider).listSummaries(),

@@ -24,6 +24,7 @@ class SessionSandbox {
     'exports', // SessionExporter
     'sessions', // the isolated sandboxes themselves
     'shots', // WebViewAutomation screenshots
+    'skills', // SkillRegistry (v1.38.0 global installed skills)
   };
 
   /// Ensures the one-time import of the legacy shared workspace (files

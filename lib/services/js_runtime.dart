@@ -150,6 +150,7 @@ class ModuleInvocation {
     required this.bridge,
     this.sdkSource = '',
     this.timeout = const Duration(seconds: 30),
+    this.contextToken,
   });
 
   /// Source of the module entry point (e.g. `main.js`).
@@ -184,6 +185,13 @@ class ModuleInvocation {
   final String sdkSource;
 
   final Duration timeout;
+
+  /// Correlation token (v1.38.0): stamped onto every bridge request this
+  /// run emits (`__zctx` field) so a shared [ModuleBridge] can route each
+  /// call to the exact execution that produced it. Required now that two
+  /// chats may queue module runs concurrently — the bridge can no longer
+  /// assume a single live context.
+  final String? contextToken;
 }
 
 /// Dart-side capability provider for one module run. The JS SDK surfaces
@@ -214,12 +222,16 @@ abstract class ModuleBridge {
 class WebViewJsRuntime implements JsRuntime {
   WebViewJsRuntime({this.fetchProxy, this.resolveUserAgent});
 
-  /// Dart-side proxy for in-script `fetch(url)` calls (text bodies).
+  /// Dart-side proxy for in-script `fetch()` calls (v1.38.0: REAL network
+  /// — text and binary bodies, request headers, proper status codes; see
+  /// [ScriptFetchProxy]). The returned map becomes the bridge response.
   final Future<Map<String, dynamic>?> Function(
     String url,
     String method,
-    String? body,
-  )?
+    String? body, {
+    Map<String, String> headers,
+    bool bodyIsBase64,
+  })?
   fetchProxy;
 
   /// Resolves the User-Agent applied to the sandbox WebView so in-page
@@ -239,6 +251,11 @@ class WebViewJsRuntime implements JsRuntime {
   /// semantics.
   Set<String>? _modulePermissions;
   ModuleBridge? _moduleBridge;
+
+  /// Correlation token of the in-flight module run (v1.38.0) — stamped
+  /// onto every `zapi` bridge request so the shared ModuleBridge can
+  /// route ops to the exact run that produced them.
+  String? _moduleContextToken;
 
   static const String _handlerName = 'zagentsNode';
 
@@ -321,14 +338,23 @@ class WebViewJsRuntime implements JsRuntime {
           };
         }
         try {
-          return await bridge.handleOp(request);
+          return await bridge.handleOp(<String, dynamic>{
+            ...request,
+            if (_moduleContextToken != null) '__zctx': _moduleContextToken,
+          });
         } catch (e) {
           return <String, dynamic>{'ok': false, 'error': '$e'};
         }
       case 'fs':
         return _fsOp(request);
       case 'fetch':
-        final Future<Map<String, dynamic>?> Function(String, String, String?)?
+        final Future<Map<String, dynamic>?> Function(
+          String,
+          String,
+          String?, {
+          Map<String, String> headers,
+          bool bodyIsBase64,
+        })?
         proxy = fetchProxy;
         if (proxy == null) {
           return <String, dynamic>{
@@ -336,10 +362,18 @@ class WebViewJsRuntime implements JsRuntime {
             'error': 'fetch is unavailable',
           };
         }
+        final Object? rawHeaders = request['headers'];
         return proxy(
           request['url']?.toString() ?? '',
           request['method']?.toString() ?? 'GET',
           request['body']?.toString(),
+          headers: rawHeaders is Map
+              ? rawHeaders.map(
+                  (Object? k, Object? v) =>
+                      MapEntry<String, String>('$k', '$v'),
+                )
+              : const <String, String>{},
+          bodyIsBase64: request['bodyB64'] == true,
         );
       default:
         return null;
@@ -512,13 +546,41 @@ class WebViewJsRuntime implements JsRuntime {
 window.__zDone = false;
 (function(){
   \$_core
+  function zB64ToBuf(b64){
+    var bin = atob(b64);
+    var bytes = new Uint8Array(bin.length);
+    for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    return bytes.buffer;
+  }
+  function zBufToB64(buf){
+    var bytes = new Uint8Array(buf);
+    var bin = '';
+    for (var i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+    return btoa(bin);
+  }
   window.fetch = function(url, opts){
     opts = opts || {};
-    return post2({op:'fetch', url: String(url), method: opts.method || 'GET', body: opts.body ? String(opts.body) : null}).then(function(data){
+    var rawBody = opts.body;
+    var isStringBody = typeof rawBody === 'string';
+    return post2({
+      op:'fetch', url: String(url),
+      method: opts.method || 'GET',
+      body: rawBody == null ? null : (isStringBody ? rawBody : zBufToB64(rawBody.buffer ? rawBody.buffer : rawBody)),
+      bodyB64: rawBody != null && !isStringBody,
+      headers: opts.headers || {}
+    }).then(function(res){
+      if (!res || typeof res.status !== 'number') {
+        throw new Error((res && res.error) ? res.error : 'fetch proxy failed');
+      }
+      var bodyText = res.body != null ? String(res.body) : '';
       return {
-        ok: true, status: 200,
-        text: function(){ return Promise.resolve(typeof data === 'string' ? data : JSON.stringify(data)); },
-        json: function(){ return Promise.resolve(typeof data === 'string' ? JSON.parse(data) : data); }
+        ok: res.status >= 200 && res.status < 300,
+        status: res.status,
+        statusText: res.statusText || '',
+        headers: res.headers || {},
+        text: function(){ return Promise.resolve(bodyText); },
+        json: function(){ return Promise.resolve(JSON.parse(bodyText)); },
+        arrayBuffer: function(){ return Promise.resolve(res.bodyBase64 ? zB64ToBuf(res.bodyBase64) : new ArrayBuffer(0)); }
       };
     });
   };
@@ -904,6 +966,7 @@ window.__zDone = false;
     _console.clear();
     _modulePermissions = invocation.permissions;
     _moduleBridge = invocation.bridge;
+    _moduleContextToken = invocation.contextToken;
     _sandboxRoots = <String>[?invocation.workingDir, ...invocation.moduleRoots];
     final Map<String, Map<String, dynamic>> registry = _buildRegistry(
       invocation.entrySource,
@@ -948,6 +1011,7 @@ window.__zDone = false;
     } finally {
       _modulePermissions = null;
       _moduleBridge = null;
+      _moduleContextToken = null;
     }
 
     try {

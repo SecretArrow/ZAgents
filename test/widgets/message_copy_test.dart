@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zagents/l10n/app_strings.dart';
 import 'package:zagents/models/models.dart';
@@ -8,17 +9,19 @@ import 'package:zagents/ui/theme.dart';
 import 'package:zagents/ui/widgets/message_bubble.dart';
 
 void main() {
-  Widget wrap(Widget child) => MaterialApp(
-    theme: buildDarkTheme(),
-    locale: const Locale('en'),
-    supportedLocales: const <Locale>[Locale('en'), Locale('id')],
-    localizationsDelegates: const <LocalizationsDelegate<dynamic>>[
-      zLocalizationsDelegate,
-      GlobalMaterialLocalizations.delegate,
-      GlobalWidgetsLocalizations.delegate,
-      GlobalCupertinoLocalizations.delegate,
-    ],
-    home: Scaffold(body: ListView(children: <Widget>[child])),
+  Widget wrap(Widget child) => ProviderScope(
+    child: MaterialApp(
+      theme: buildDarkTheme(),
+      locale: const Locale('en'),
+      supportedLocales: const <Locale>[Locale('en'), Locale('id')],
+      localizationsDelegates: const <LocalizationsDelegate<dynamic>>[
+        zLocalizationsDelegate,
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+      ],
+      home: Scaffold(body: ListView(children: <Widget>[child])),
+    ),
   );
 
   // Captures Clipboard.setData calls so tests can assert the copied text.

@@ -1,0 +1,352 @@
+import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
+
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:zagents/di.dart';
+import 'package:zagents/models/models.dart';
+import 'package:zagents/services/agent_controller.dart';
+import 'package:zagents/services/llm_client.dart';
+
+import '../support/test_doubles.dart';
+
+/// v1.38.0 regressions: cross-chat isolation while parallel tasks run,
+/// streaming message-id stability (Plan panel + rebuild contract), and
+/// the request_confirmation approval flow.
+void main() {
+  late Directory tempDir;
+
+  setUp(() async {
+    tempDir = await Directory.systemTemp.createTemp('zagents_v138_test');
+  });
+
+  tearDown(() async {
+    if (await tempDir.exists()) await tempDir.delete(recursive: true);
+  });
+
+  Future<ProviderContainer> containerWith(
+    LlmClient llm, {
+    AppSettings? settings,
+  }) async {
+    final ProviderContainer container = ProviderContainer(
+      overrides: testOverrides(
+        llm: llm,
+        dir: tempDir,
+        settings: settings ?? AppSettings(apiKey: 'k', autoTitle: false),
+      ),
+    );
+    addTearDown(container.dispose);
+    return container;
+  }
+
+  test(
+    'streaming keeps ONE stable message id across deltas and finalize',
+    () async {
+      // A long answer streamed word by word: every throttled sync used to
+      // mint a fresh id (ValueKey churn, subtree teardown, panel state
+      // loss).
+      late ProviderContainer container;
+      final List<String> ids = <String>[];
+      final ScriptedLlmClient llm = ScriptedLlmClient(
+        <AssistantTurn>[
+          AssistantTurn(
+            content:
+                'alpha beta gamma delta epsilon zeta eta theta iota kappa '
+                'lambda mu nu xi omicron pi rho sigma tau upsilon phi chi '
+                'psi omega end',
+          ),
+        ],
+        onFirstDelta: () {
+          ids.add(container.read(chatControllerProvider).messages.last.id);
+        },
+      );
+
+      container = await containerWith(llm);
+      await container.read(chatControllerProvider.notifier).send('hello');
+      final ChatState state = container.read(chatControllerProvider);
+      expect(state.isRunning, isFalse);
+
+      // Deltas fired at least once (long content) — every observed id,
+      // plus the finalized message, is THE SAME identity.
+      expect(ids, isNotEmpty);
+      expect(
+        state.messages.last.id,
+        ids.first,
+        reason: 'finalize must not re-mint the streaming message id',
+      );
+      expect(
+        state.messages.map((ChatMessage m) => m.id).toSet().length,
+        state.messages.length,
+        reason: 'no duplicate ids in the transcript',
+      );
+    },
+  );
+
+  test(
+    'a background session never leaks its output into the displayed chat',
+    () async {
+      final List<Completer<AssistantTurn>> gates =
+          List<Completer<AssistantTurn>>.generate(
+            2,
+            (_) => Completer<AssistantTurn>(),
+          );
+      int turn = 0;
+      final _GatedLlmClient llm = _GatedLlmClient(gates, () => turn++);
+      final ProviderContainer container = await containerWith(llm);
+
+      final Future<void> runA = container
+          .read(chatControllerProvider.notifier)
+          .send('task A');
+      await Future<void>.delayed(Duration.zero);
+      final String idA = container.read(chatControllerProvider).sessionId!;
+
+      // Switch away while A is parked mid-turn: A becomes a background
+      // run and B becomes the displayed chat.
+      await container.read(chatControllerProvider.notifier).newChat();
+      final Future<void> runB = container
+          .read(chatControllerProvider.notifier)
+          .send('task B');
+      await Future<void>.delayed(Duration.zero);
+      final String idB = container.read(chatControllerProvider).sessionId!;
+      expect(idB, isNot(idA));
+
+      // A's answer lands while B is on screen — it must reach A's OWN
+      // transcript and never B's UI state.
+      gates[0].complete(
+        AssistantTurn(content: 'SECRET-ANSWER-A only for chat A'),
+      );
+      await runA;
+
+      final ChatState state = container.read(chatControllerProvider);
+      expect(state.sessionId, idB);
+      expect(
+        state.messages.map((ChatMessage m) => m.content).join('\n'),
+        isNot(contains('SECRET-ANSWER-A')),
+      );
+
+      // A's transcript (persisted by the background run) has the answer.
+      final List<ChatMessage> aMessages = (await container
+          .read(chatStoreProvider)
+          .load(idA))!;
+      expect(
+        aMessages.map((ChatMessage m) => m.content).join('\n'),
+        contains('SECRET-ANSWER-A'),
+      );
+
+      gates[1].complete(AssistantTurn(content: 'B answer'));
+      await runB;
+      expect(
+        container.read(chatControllerProvider).messages.last.content,
+        'B answer',
+      );
+    },
+  );
+
+  group('request_confirmation', () {
+    ToolCallRequest confirmCall(String id) => ToolCallRequest(
+      id: id,
+      name: 'request_confirmation',
+      argumentsJson: jsonEncode(<String, dynamic>{
+        'title': 'Send 0.05 ETH',
+        'details': <String>[
+          'network: ethereum',
+          'asset: 0.05 ETH (~120 USD)',
+          'to: 0xABC...DEF',
+          'estimated fee: 0.0007 ETH',
+        ],
+        'danger': true,
+      }),
+    );
+
+    test(
+      'approve unblocks the run and reports APPROVED to the model',
+      () async {
+        final ProviderContainer container = await containerWith(
+          ScriptedLlmClient(<AssistantTurn>[
+            AssistantTurn(
+              content: '',
+              toolCalls: <ToolCallRequest>[confirmCall('c1')],
+            ),
+            AssistantTurn(content: 'done'),
+          ]),
+        );
+        final Future<void> run = container
+            .read(chatControllerProvider.notifier)
+            .send('swap please');
+        await Future<void>.delayed(Duration.zero);
+
+        final ChatState pending = container.read(chatControllerProvider);
+        expect(pending.pendingConfirmation, isNotNull);
+        expect(pending.pendingConfirmation!.title, 'Send 0.05 ETH');
+        expect(pending.pendingConfirmation!.danger, isTrue);
+        expect(pending.pendingConfirmation!.details, hasLength(4));
+        expect(
+          pending.isRunning,
+          isTrue,
+          reason: 'the loop is parked waiting for the user',
+        );
+
+        container
+            .read(chatControllerProvider.notifier)
+            .resolveConfirmation('c1', true);
+        await run;
+
+        final ChatState state = container.read(chatControllerProvider);
+        expect(state.pendingConfirmation, isNull);
+        expect(state.isRunning, isFalse);
+        final ChatMessage toolTurn = state.messages.firstWhere(
+          (ChatMessage m) => m.toolCalls.isNotEmpty,
+        );
+        expect(
+          toolTurn.toolCalls.single.resultText,
+          contains('APPROVED by the user'),
+        );
+        expect(state.messages.last.content, 'done');
+      },
+    );
+
+    test(
+      'deny reports DENIED and the loop continues without the action',
+      () async {
+        final ProviderContainer container = await containerWith(
+          ScriptedLlmClient(<AssistantTurn>[
+            AssistantTurn(
+              content: '',
+              toolCalls: <ToolCallRequest>[confirmCall('c2')],
+            ),
+            AssistantTurn(content: 'understood, not sending'),
+          ]),
+        );
+        final Future<void> run = container
+            .read(chatControllerProvider.notifier)
+            .send('send it');
+        await Future<void>.delayed(Duration.zero);
+        container
+            .read(chatControllerProvider.notifier)
+            .resolveConfirmation('c2', false);
+        await run;
+
+        final ChatState state = container.read(chatControllerProvider);
+        expect(
+          state.messages
+              .firstWhere((ChatMessage m) => m.toolCalls.isNotEmpty)
+              .toolCalls
+              .single
+              .resultText,
+          contains('DENIED by the user'),
+        );
+        expect(state.messages.last.content, 'understood, not sending');
+      },
+    );
+
+    test('Stop while the prompt is open fails closed (deny + stop)', () async {
+      final ProviderContainer container = await containerWith(
+        ScriptedLlmClient(<AssistantTurn>[
+          AssistantTurn(
+            content: '',
+            toolCalls: <ToolCallRequest>[confirmCall('c3')],
+          ),
+        ]),
+      );
+      final Future<void> run = container
+          .read(chatControllerProvider.notifier)
+          .send('transfer');
+      await Future<void>.delayed(Duration.zero);
+      expect(
+        container.read(chatControllerProvider).pendingConfirmation,
+        isNotNull,
+      );
+      container.read(chatControllerProvider.notifier).stop();
+      await run;
+
+      final ChatState state = container.read(chatControllerProvider);
+      expect(state.pendingConfirmation, isNull);
+      expect(
+        state.messages
+            .firstWhere((ChatMessage m) => m.toolCalls.isNotEmpty)
+            .toolCalls
+            .single
+            .resultText,
+        contains('DENIED by the user'),
+      );
+    });
+
+    test('background session cannot raise a prompt (fails closed with '
+        'guidance)', () async {
+      // Turn order: A#1 (confirmation call), B#1, A#2 (final).
+      final List<Completer<AssistantTurn>> gates =
+          List<Completer<AssistantTurn>>.generate(
+            3,
+            (_) => Completer<AssistantTurn>(),
+          );
+      int turn = 0;
+      final _GatedLlmClient llm = _GatedLlmClient(gates, () => turn++);
+      final ProviderContainer container = await containerWith(llm);
+
+      final Future<void> runA = container
+          .read(chatControllerProvider.notifier)
+          .send('A asks approval');
+      await Future<void>.delayed(Duration.zero);
+      final String idA = container.read(chatControllerProvider).sessionId!;
+
+      // Switch away; A becomes a background run.
+      await container.read(chatControllerProvider.notifier).newChat();
+      final Future<void> runB = container
+          .read(chatControllerProvider.notifier)
+          .send('B task');
+      await Future<void>.delayed(Duration.zero);
+
+      // A's tool turn completes while B is displayed.
+      gates[0].complete(
+        AssistantTurn(
+          content: '',
+          toolCalls: <ToolCallRequest>[confirmCall('c4')],
+        ),
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+
+      // No prompt may surface, and B's state stays clean.
+      expect(
+        container.read(chatControllerProvider).pendingConfirmation,
+        isNull,
+      );
+      expect(container.read(chatControllerProvider).sessionId, isNot(idA));
+
+      // A's loop gets its continuation and finishes without the action.
+      gates[2].complete(AssistantTurn(content: 'A finished without action'));
+      await runA;
+      gates[1].complete(AssistantTurn(content: 'B answer'));
+      await runB;
+
+      final List<ChatMessage> aMessages = (await container
+          .read(chatStoreProvider)
+          .load(idA))!;
+      final ChatMessage aToolTurn = aMessages.firstWhere(
+        (ChatMessage m) => m.toolCalls.isNotEmpty,
+      );
+      expect(aToolTurn.toolCalls.single.resultText, contains('not on screen'));
+    });
+  });
+}
+
+/// Gated LLM client (local copy so suites stay independent): turn N
+/// resolves through gates[N], handed out in call order.
+class _GatedLlmClient implements LlmClient {
+  _GatedLlmClient(this.gates, this.nextTurn);
+
+  final List<Completer<AssistantTurn>> gates;
+  final int Function() nextTurn;
+
+  @override
+  Future<AssistantTurn> complete({
+    required LlmConfig config,
+    required List<Map<String, dynamic>> messages,
+    List<Map<String, dynamic>>? tools,
+    void Function(String delta)? onDelta,
+    bool Function()? shouldAbort,
+  }) async {
+    final AssistantTurn turn = await gates[nextTurn()].future;
+    return turn;
+  }
+}

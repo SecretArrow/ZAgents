@@ -23,6 +23,8 @@ Guidelines:
 - Module doctor: use module_list to see installed modules and module_read to inspect their files (READ-ONLY diagnosis — pass an empty path to list the module files). module_export zips an installed module into this chat's exports/ folder so the user can share or back it up. To REPAIR a module: read its files, write fixed copies into a folder in this workspace (module.json + entry file at the folder root), zip the FOLDER with zip_file, then call module_stage_repair with the zip path. That only validates the zip and shows the user a confirmation card — NEVER claim the repair is installed until the user taps Install. Installing a repaired module keeps the module's per-chat data in this chat.
 - Module builder: when the user asks you to CREATE a plugin (e.g. they send /make_plugins <description>), build it in this workspace under plugins/<name>/ (module.json + CommonJS entry at the folder root — copy any session data the user wants INTO the folder, modules cannot read this workspace at runtime), zip the FOLDER with zip_file, then call module_stage_repair with the zip path. The user installs from the confirmation card and starts the plugin with /plugins <name>.
 - When the user attaches files, images travel as vision parts and text files are inlined; reference attachments by name.
+- Skills (v1.38.0): installed skills EXTEND your capabilities and persist across ALL chats (install once, use everywhere). List them with skill_list; read a skill's full manual with skill_info before first use and follow it exactly; run its scripts with skill_run. Install new skills from natural requests OR CLI-style commands — when the user says "install the X skill" or pastes something like "npx skills add owner/repo/path/to/skill", call skill_install with the same source (owner/repo[/path][@branch]). After installing: report what was installed, list its required config fields, and verify the install by reading skill_info. If a skill needs config values (API keys, wallet settings), collect them from the user and store them with skill_config — values are saved on-device and never echoed into the conversation. Skill scripts run in the embedded JS runtime with network access (fetch), file access and npm packages; they are NOT a full Node.js or terminal — native binaries, arbitrary CLI tools and non-JS scripts are unsupported, and you must say so honestly instead of pretending.
+- Security & money (CRITICAL): NEVER ask for a seed phrase, recovery phrase or private key in chat, and never store one in plain conversation — if a skill needs secrets, they go through skill_config secret fields. Use only the skill's official authentication flow (API keys, OAuth links, wallet-connect URLs the user opens themselves). Login or wallet connection is NEVER permission to transact: before ANY irreversible action — sending assets, swapping, selling/minting an NFT, token approvals, changing spending limits — call request_confirmation with a COMPLETE summary (network, asset, amount, destination address, estimated fee, what the user gets) and proceed ONLY when the user approves. Denials are final: do not retry the same action. If a capability is unsupported by the environment or the skill fails, report exactly what happened — never claim an action succeeded without evidence from a tool result.
 - When you have enough information, stop calling tools and write the final answer in Markdown.
 - Always answer in the same language the user writes in.
 ''';
@@ -461,5 +463,104 @@ List<Map<String, dynamic>> buildAgentTools({
       },
     },
     <String>['path'],
+  ),
+  _fn(
+    'skill_install',
+    'Install an EXTERNAL skill (capabilities package with a SKILL.md) into the app so it becomes available in every chat. Accepts GitHub shorthand (owner/repo or owner/repo/path/to/skill, optional @branch), an https .tar.gz/.zip URL, or a local archive path inside this chat workspace. The archive is really downloaded, validated (SKILL.md present, size caps, path safety) and installed — this is not a simulation. Afterwards verify with skill_info and report the skill\'s required config fields to the user.',
+    <String, dynamic>{
+      'source': <String, dynamic>{
+        'type': 'string',
+        'description': 'e.g. binance/binance-skills-hub/skills/binance-web3/binance-agentic-wallet — or a full https URL of a .tar.gz/.zip',
+      },
+    },
+    <String>['source'],
+  ),
+  _fn(
+    'skill_list',
+    'List installed skills with their status (ready / needs-config / broken), version, source and required config fields (names only, values never shown).',
+    <String, dynamic>{},
+    <String>[],
+  ),
+  _fn(
+    'skill_info',
+    'Read one installed skill\'s full SKILL.md instructions plus its config requirements. ALWAYS call this before running a skill for the first time and follow the instructions exactly.',
+    <String, dynamic>{
+      'name': <String, dynamic>{
+        'type': 'string',
+        'description': 'Skill name from skill_list',
+      },
+    },
+    <String>['name'],
+  ),
+  _fn(
+    'skill_config',
+    'Store configuration values for an installed skill (e.g. API keys, wallet settings). Values are persisted on-device in the skill\'s private config and are NEVER echoed back into the conversation — the result only confirms which keys were set. Never ask the user for a seed phrase or private key here; if a skill requires one, refuse and explain the security policy.',
+    <String, dynamic>{
+      'name': <String, dynamic>{
+        'type': 'string',
+        'description': 'Skill name from skill_list',
+      },
+      'values': <String, dynamic>{
+        'type': 'object',
+        'description': 'Config entries to set, e.g. {\'API_KEY\': \'...\'} — keys must match the skill\'s declared config fields',
+        'additionalProperties': <String, dynamic>{'type': 'string'},
+      },
+    },
+    <String>['name', 'values'],
+  ),
+  _fn(
+    'skill_remove',
+    'Uninstall an installed skill and delete its files and stored config.',
+    <String, dynamic>{
+      'name': <String, dynamic>{
+        'type': 'string',
+        'description': 'Skill name from skill_list',
+      },
+    },
+    <String>['name'],
+  ),
+  _fn(
+    'skill_run',
+    'Run one JavaScript script bundled with an installed skill in the embedded runtime (CommonJS, npm packages from node_install, network via fetch, file access). The skill\'s config values are injected as process.env entries (secret values stay out of the conversation). Scripts requiring a real terminal, native binaries or non-JS runtimes are unsupported — report that honestly instead of simulating.',
+    <String, dynamic>{
+      'name': <String, dynamic>{
+        'type': 'string',
+        'description': 'Skill name from skill_list',
+      },
+      'script': <String, dynamic>{
+        'type': 'string',
+        'description': 'Script path relative to the skill folder, e.g. scripts/check_balance.js',
+      },
+      'args': <String, dynamic>{
+        'type': 'object',
+        'description': 'Optional arguments exposed to the script as globalThis.__zSkillArgs',
+        'additionalProperties': <String, dynamic>{},
+      },
+      'timeout_seconds': <String, dynamic>{
+        'type': 'integer',
+        'description': 'Optional run timeout in seconds (default 90, max 300)',
+      },
+    },
+    <String>['name', 'script'],
+  ),
+  _fn(
+    'request_confirmation',
+    'Ask the user to explicitly APPROVE or DENY an action before you perform it. MANDATORY before any irreversible or money-moving action: sending/swapping assets, NFT listing/sale/mint, token approvals, changing spending limits, destructive account changes. Pass a COMPLETE human-readable summary — network/chain, asset, amount, destination address or contract, estimated fee, and what the user gets or risks. The tool blocks until the user answers; only an APPROVED result authorizes the action. A denial is final: never retry the same action in the same conversation.',
+    <String, dynamic>{
+      'title': <String, dynamic>{
+        'type': 'string',
+        'description': 'Short action title, e.g. Send 0.05 ETH',
+      },
+      'details': <String, dynamic>{
+        'type': 'array',
+        'items': <String, dynamic>{'type': 'string'},
+        'description': 'One line per fact: network, asset & amount, destination/contract, estimated fee, purpose/consequence',
+      },
+      'danger': <String, dynamic>{
+        'type': 'boolean',
+        'description': 'True (default) for money-moving or otherwise irreversible actions — rendered with a warning style',
+      },
+    },
+    <String>['title', 'details'],
   ),
 ];

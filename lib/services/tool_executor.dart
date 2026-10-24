@@ -9,6 +9,7 @@ import 'js_runtime.dart';
 import 'module_registry.dart';
 import 'module_runtime.dart';
 import 'npm_service.dart';
+import 'skill_registry.dart';
 import 'subagents.dart';
 import 'web_fetcher.dart';
 
@@ -54,6 +55,7 @@ class ToolExecutor {
     this.modules,
     this.moduleRuntime,
     this.subagents,
+    this.skills,
     this.deviceStatus,
   });
 
@@ -97,6 +99,10 @@ class ToolExecutor {
   /// Fan-of-subagents runner behind `spawn_subagents`. Nullable for
   /// legacy tests; the tool degrades gracefully when absent.
   final SubagentRunner? subagents;
+
+  /// Installed-skills registry behind the `skill_*` tools (v1.38.0).
+  /// Nullable for legacy tests; the tools degrade gracefully when absent.
+  final SkillRegistry? skills;
 
   /// Device-state probe behind the `device_status` tool (v1.32.0):
   /// verified airplane state (world-readable, NO root) + root
@@ -188,6 +194,18 @@ class ToolExecutor {
           return await _moduleStageRepair(args, sessionId);
         case 'spawn_subagents':
           return await _spawnSubagents(args, sessionId, shouldAbort);
+        case 'skill_install':
+          return await _skillInstall(args, sessionId);
+        case 'skill_list':
+          return await _skillList();
+        case 'skill_info':
+          return await _skillInfo(args);
+        case 'skill_config':
+          return await _skillConfig(args);
+        case 'skill_remove':
+          return await _skillRemove(args);
+        case 'skill_run':
+          return await _skillRun(args, sessionId);
         case 'device_status':
           return await _deviceStatus();
         default:
@@ -739,6 +757,377 @@ class ToolExecutor {
           : '$pkg is not installed.',
       displayText: removed ? 'removed $pkg' : 'not installed',
     );
+  }
+
+  // -- Skills (v1.38.0): real install/config/run of external skills -------
+
+  String? _classifySkillSource(String source) {
+    final String t = source.trim();
+    if (t.startsWith('http://') || t.startsWith('https://')) return 'url';
+    final String lower = t.toLowerCase();
+    if (lower.endsWith('.zip') ||
+        lower.endsWith('.tar.gz') ||
+        lower.endsWith('.tgz')) {
+      return 'file';
+    }
+    return 'github';
+  }
+
+  Future<ToolResult> _skillInstall(
+    Map<String, dynamic> args,
+    String? sessionId,
+  ) async {
+    final SkillRegistry? registry = skills;
+    if (registry == null) {
+      return const ToolResult(
+        ok: false,
+        llmOutput: 'Skills are not available in this build.',
+      );
+    }
+    final String source = args['source']?.toString().trim() ?? '';
+    if (source.isEmpty) {
+      return const ToolResult(
+        ok: false,
+        llmOutput: 'Parameter source is empty.',
+      );
+    }
+    final SkillInstallReport report;
+    try {
+      switch (_classifySkillSource(source)) {
+        case 'url':
+          report = await registry.install(source);
+        case 'file':
+          final Directory base = await _safeBaseDir(sessionId);
+          final String? abs = _resolveExistingFile(base, source);
+          if (abs == null) {
+            return ToolResult(
+              ok: false,
+              llmOutput:
+                  'Archive "$source" not found in this chat workspace '
+                  '(download it first, e.g. with a node_run fetch, then retry).',
+            );
+          }
+          report = await registry.installFromFile(abs);
+        default:
+          report = await registry.install(source);
+      }
+    } on SkillRegistryException catch (e) {
+      return ToolResult(
+        ok: false,
+        llmOutput: 'skill_install failed: ${e.message}',
+        displayText: 'install failed',
+      );
+    } catch (e) {
+      return ToolResult(
+        ok: false,
+        llmOutput: 'skill_install failed: $e',
+        displayText: 'install failed',
+      );
+    }
+    final InstalledSkill skill = report.skill;
+    final StringBuffer out = StringBuffer()
+      ..writeln('Installed skill "${skill.name}" v${skill.version}.')
+      ..writeln('Source: ${skill.source}')
+      ..writeln('Description: ${skill.description}')
+      ..writeln(
+        'Permissions declared by the skill: '
+        '${skill.permissions.isEmpty ? '(none declared)' : skill.permissions.join(', ')}',
+      )
+      ..writeln(
+        'Config: ${registry.describeConfig(skill, await registry.readConfig(skill))}',
+      );
+    for (final String note in report.notes) {
+      out.writeln('- $note');
+    }
+    out.writeln();
+    out.writeln(
+      'Security note: this skill runs with network and file '
+      'access inside the embedded sandbox. Verify its source before '
+      'executing money-moving workflows, and use request_confirmation '
+      'before any irreversible action it performs.',
+    );
+    return ToolResult(
+      ok: true,
+      llmOutput: out.toString(),
+      displayText: 'installed ${skill.name}',
+    );
+  }
+
+  Future<ToolResult> _skillList() async {
+    final SkillRegistry? registry = skills;
+    if (registry == null) {
+      return const ToolResult(
+        ok: false,
+        llmOutput: 'Skills are not available in this build.',
+      );
+    }
+    await registry.ensureCacheLoaded();
+    final List<InstalledSkill> list = registry.listSync();
+    if (list.isEmpty) {
+      return const ToolResult(
+        ok: true,
+        llmOutput: 'No skills installed yet. Install one with skill_install.',
+        displayText: 'no skills',
+      );
+    }
+    final StringBuffer out = StringBuffer();
+    for (final InstalledSkill skill in list) {
+      final SkillStatus status = await registry.statusOf(skill);
+      out.writeln(
+        '${skill.name} v${skill.version} [${status.name}] '
+        '- ${skill.description}',
+      );
+      final Set<String> missing = await registry.missingConfigValues(skill);
+      if (missing.isNotEmpty) {
+        out.writeln('  missing required config: ${missing.join(', ')}');
+      }
+    }
+    return ToolResult(
+      ok: true,
+      llmOutput: out.toString().trim(),
+      displayText: '${list.length} skill(s)',
+    );
+  }
+
+  Future<ToolResult> _skillInfo(Map<String, dynamic> args) async {
+    final SkillRegistry? registry = skills;
+    if (registry == null) {
+      return const ToolResult(
+        ok: false,
+        llmOutput: 'Skills are not available in this build.',
+      );
+    }
+    final InstalledSkill? skill = await registry.get(
+      args['name']?.toString() ?? '',
+    );
+    if (skill == null) {
+      return ToolResult(
+        ok: false,
+        llmOutput:
+            'Skill "${args['name']}" is not installed. '
+            'Use skill_list to see installed skills.',
+      );
+    }
+    final Map<String, String> config = await registry.readConfig(skill);
+    return ToolResult(
+      ok: true,
+      llmOutput:
+          '=== ${skill.name} v${skill.version} '
+          '[${(await registry.statusOf(skill)).name}] ===\n'
+          'Source: ${skill.source}\n'
+          'Config: ${registry.describeConfig(skill, config)}\n'
+          '--- SKILL.md ---\n'
+          '${skill.readInstructions()}',
+      displayText: skill.name,
+    );
+  }
+
+  Future<ToolResult> _skillConfig(Map<String, dynamic> args) async {
+    final SkillRegistry? registry = skills;
+    if (registry == null) {
+      return const ToolResult(
+        ok: false,
+        llmOutput: 'Skills are not available in this build.',
+      );
+    }
+    final InstalledSkill? skill = await registry.get(
+      args['name']?.toString() ?? '',
+    );
+    if (skill == null) {
+      return ToolResult(
+        ok: false,
+        llmOutput: 'Skill "${args['name']}" is not installed.',
+      );
+    }
+    final Object? rawValues = args['values'];
+    if (rawValues is! Map || rawValues.isEmpty) {
+      return const ToolResult(
+        ok: false,
+        llmOutput:
+            'Parameter values must be a non-empty object of '
+            'string config entries.',
+      );
+    }
+    // Secrets never travel back: the result lists KEYS only.
+    final Map<String, String> values = <String, String>{
+      for (final MapEntry<Object?, Object?> e in rawValues.entries)
+        e.key.toString(): e.value?.toString() ?? '',
+    };
+    await registry.writeConfig(skill, values);
+    final Map<String, String> stored = await registry.readConfig(skill);
+    final Set<String> missing = registry
+        .missingRequiredConfig(skill)
+        .where((String f) => !stored.containsKey(f) || stored[f]!.isEmpty)
+        .toSet();
+    return ToolResult(
+      ok: true,
+      llmOutput:
+          'Config saved for "${skill.name}" '
+          '(keys: ${values.keys.join(', ')}; values are stored locally '
+          'and never displayed).\n'
+          '${missing.isEmpty ? 'All required config is set — the skill is ready.' : 'Still missing required config: ${missing.join(', ')}'}',
+      displayText: 'config saved',
+    );
+  }
+
+  Future<ToolResult> _skillRemove(Map<String, dynamic> args) async {
+    final SkillRegistry? registry = skills;
+    if (registry == null) {
+      return const ToolResult(
+        ok: false,
+        llmOutput: 'Skills are not available in this build.',
+      );
+    }
+    final String name = args['name']?.toString() ?? '';
+    try {
+      await registry.remove(name);
+      return ToolResult(
+        ok: true,
+        llmOutput: 'Skill "$name" removed (files and stored config deleted).',
+        displayText: 'removed $name',
+      );
+    } on SkillRegistryException catch (e) {
+      return ToolResult(ok: false, llmOutput: e.message);
+    }
+  }
+
+  Future<ToolResult> _skillRun(
+    Map<String, dynamic> args,
+    String? sessionId,
+  ) async {
+    final SkillRegistry? registry = skills;
+    final JsRuntime? runtime = js;
+    if (registry == null || runtime == null) {
+      return const ToolResult(
+        ok: false,
+        llmOutput: 'Skills or the JS runtime are not available in this build.',
+      );
+    }
+    final InstalledSkill? skill = await registry.get(
+      args['name']?.toString() ?? '',
+    );
+    if (skill == null) {
+      return ToolResult(
+        ok: false,
+        llmOutput: 'Skill "${args['name']}" is not installed.',
+      );
+    }
+    final String script = args['script']?.toString().trim() ?? '';
+    if (script.isEmpty) {
+      return const ToolResult(
+        ok: false,
+        llmOutput: 'Parameter script is empty.',
+      );
+    }
+    if (script.startsWith('/') ||
+        script.contains('..') ||
+        script.contains('\\')) {
+      return const ToolResult(
+        ok: false,
+        llmOutput: 'Script path must be relative to the skill folder.',
+      );
+    }
+    if (!script.toLowerCase().endsWith('.js')) {
+      return ToolResult(
+        ok: false,
+        llmOutput:
+            'Only JavaScript (.js) skill scripts can run in the '
+            'embedded runtime. Native binaries, shells and other runtimes '
+            'are unsupported — report this limitation honestly.',
+      );
+    }
+    final File scriptFile = File(
+      '${skill.dirPath}${Platform.pathSeparator}'
+      '${script.replaceAll('/', Platform.pathSeparator)}',
+    );
+    if (!scriptFile.existsSync()) {
+      return ToolResult(
+        ok: false,
+        llmOutput:
+            'Script "$script" not found in skill "${skill.name}". '
+            'Check skill_info for the available scripts.',
+      );
+    }
+    // Required config must be complete before a run (skills gate on their
+    // credentials, mirroring the module setup gate).
+    final Map<String, String> config = await registry.readConfig(skill);
+    final Set<String> missing = registry
+        .missingRequiredConfig(skill)
+        .where((String f) => !config.containsKey(f) || config[f]!.isEmpty)
+        .toSet();
+    if (missing.isNotEmpty) {
+      return ToolResult(
+        ok: false,
+        llmOutput:
+            'Skill "${skill.name}" is missing required config: '
+            '${missing.join(', ')}. Collect the values from the user and '
+            'store them with skill_config.',
+      );
+    }
+    final Object? rawTimeout = args['timeout_seconds'];
+    final int timeoutSeconds = rawTimeout is int && rawTimeout >= 10
+        ? (rawTimeout > 300 ? 300 : rawTimeout)
+        : 90;
+    final Directory workspace = await _safeBaseDir(sessionId);
+    final Directory global = await _safeBaseDir(null);
+    final String npmRoot =
+        '${global.path}${Platform.pathSeparator}node_modules';
+
+    // Config values reach the script ONLY as process.env entries — the
+    // conversation never sees them.
+    final Map<String, String> env = <String, String>{
+      ...config,
+      'ZAGENTS_SKILL_NAME': skill.name,
+      'ZAGENTS_SKILL_DIR': skill.dirPath,
+      'ZAGENTS_WORKSPACE': workspace.path,
+    };
+    final Object? rawArgs = args['args'];
+    final String preamble =
+        'globalThis.__zSkillArgs = ${jsonEncode(rawArgs is Map ? rawArgs : <String, dynamic>{})};\n'
+        'window.process = window.process || {};\n'
+        'window.process.env = ${jsonEncode(env)};\n'
+        'globalThis.process = window.process;\n';
+
+    final String source = await scriptFile.readAsString();
+    final JsRunResult result = await runtime.run(
+      '$preamble\n$source',
+      moduleRoots: <String>[skill.dirPath, if (npmRoot.isNotEmpty) npmRoot],
+      workingDir: workspace.path,
+      timeout: Duration(seconds: timeoutSeconds),
+    );
+    final String output = result.output;
+    if (!result.ok) {
+      return ToolResult(
+        ok: false,
+        llmOutput: output.isEmpty
+            ? 'Skill script error: ${result.error}'
+            : '$output\nSkill script error: ${result.error}',
+        displayText: 'skill error',
+      );
+    }
+    final List<String> parts = <String>[
+      if (output.isNotEmpty) output,
+      if (result.result != null && result.result != 'undefined')
+        '=> ${result.result}',
+    ];
+    return ToolResult(
+      ok: true,
+      llmOutput: parts.isEmpty
+          ? 'Skill script finished with no output.'
+          : parts.join('\n'),
+      displayText: skill.name,
+    );
+  }
+
+  /// Resolves a file inside the session workspace, rejecting traversal.
+  String? _resolveExistingFile(Directory base, String requested) {
+    final String rel = requested.trim();
+    if (rel.isEmpty || rel.startsWith('/') || rel.contains('..')) return null;
+    final String candidate =
+        '${base.path}${Platform.pathSeparator}'
+        '${rel.replaceAll('/', Platform.pathSeparator)}';
+    final File file = File(candidate);
+    return file.existsSync() ? candidate : null;
   }
 
   // -- Server-side web fetch ----------------------------------------------

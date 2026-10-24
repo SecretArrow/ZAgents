@@ -188,8 +188,14 @@ class ChatMessage {
     String? model,
     TokenUsage? usage,
     String? moduleName,
+    String? id,
   }) => ChatMessage(
-    id: newId(),
+    // v1.38.0: callers updating a message in place (streaming deltas,
+    // finalize, status notes) pass the PREVIOUS id so the UI's per-message
+    // ValueKey stays stable — new ids on every delta used to tear down and
+    // re-inflate the whole bubble subtree ~20x/second (frame drops and
+    // Plan-panel state loss).
+    id: id ?? newId(),
     role: Role.assistant,
     content: content,
     toolCalls: toolCalls,

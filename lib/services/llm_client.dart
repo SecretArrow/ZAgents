@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io' show HttpException, SocketException;
+import 'dart:isolate';
 
 import 'package:http/http.dart' as http;
 
@@ -152,7 +153,9 @@ class LlmClient {
 
     final http.StreamedResponse response;
     try {
-      response = await _client.send(_buildRequest(config, url, requestBody));
+      response = await _client.send(
+        await _buildRequest(config, url, requestBody),
+      );
     } catch (e) {
       throw LlmException('Could not connect to provider: $e');
     }
@@ -167,7 +170,7 @@ class LlmClient {
         )..remove('stream_options');
         try {
           final http.StreamedResponse retry = await _client.send(
-            _buildRequest(config, url, retryBody),
+            await _buildRequest(config, url, retryBody),
           );
           if (retry.statusCode == 200) {
             return await _consume(retry, onDelta, shouldAbort);
@@ -193,18 +196,23 @@ class LlmClient {
     return _consume(response, onDelta, shouldAbort);
   }
 
-  http.Request _buildRequest(
+  Future<http.Request> _buildRequest(
     LlmConfig config,
     Uri url,
     Map<String, dynamic> body,
-  ) => http.Request('POST', url)
+  ) async => http.Request('POST', url)
     ..headers['Authorization'] = 'Bearer ${config.apiKey}'
     ..headers['Content-Type'] = 'application/json'
     ..headers['Accept'] = 'text/event-stream'
     // OpenRouter attribution (ignored by other providers).
     ..headers['HTTP-Referer'] = 'https://github.com/SecretArrow/ZAgents'
     ..headers['X-Title'] = 'ZAgents'
-    ..body = jsonEncode(body);
+    // v1.38.0: encode OFF the UI isolate — every agent step re-encodes
+    // the whole conversation (tool outputs + cached base64 images can
+    // reach multiple MB) and a main-thread jsonEncode of that size
+    // stalls every frame; ChatStore.save already does this for the same
+    // payloads.
+    ..body = await Isolate.run(() => jsonEncode(body));
 
   /// Shared response consumption: non-streaming JSON or SSE stream.
   Future<AssistantTurn> _consume(

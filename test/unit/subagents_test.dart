@@ -183,7 +183,7 @@ void main() {
       expect(names, contains('write_file'));
       expect(names, contains('node_run'));
       expect(names, contains('web_fetch'));
-      // v1.37.0: every subagent browses in its own browser context.
+      // v1.38.0: every subagent browses in its own browser context.
       expect(
         names,
         containsAll(<String>[

@@ -466,7 +466,7 @@ void main() {
 
     test('terminateSession cancels only that chat running module', () async {
       final ChatModule mod = module();
-      String? terminatedDuring;
+      List<String>? terminatedDuring;
       js.onModuleInvocation = (ModuleInvocation invocation) async {
         terminatedDuring = runtime.terminateSession('other');
       };
@@ -476,9 +476,9 @@ void main() {
         granted: mod.manifest.permissions,
       );
       js.onModuleInvocation = null;
-      expect(terminatedDuring, 'counter');
+      expect(terminatedDuring, <String>['counter']);
       // No live run afterwards.
-      expect(runtime.terminateSession('other'), isNull);
+      expect(runtime.terminateSession('other'), isEmpty);
     });
   });
 
