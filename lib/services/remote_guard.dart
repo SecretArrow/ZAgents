@@ -202,7 +202,11 @@ class RemoteGuard {
       final http.StreamedResponse response = await client
           .send(request)
           .timeout(timeout);
-      if (response.isRedirect) {
+      // NOTE: StreamedResponse.isRedirect is a constructor FIELD (default
+      // false), not a status-code getter — hand-built responses and several
+      // client wrappers never set it, so a 302 would fall through to the
+      // not-200 branch. Detect redirects from the status code instead.
+      if (const <int>{301, 302, 303, 307, 308}.contains(response.statusCode)) {
         final String? location = response.headers['location'];
         await response.stream.drain<void>();
         if (location == null || location.isEmpty) {

@@ -661,3 +661,98 @@ List<Override> testOverrides({
     ),
   ),
 ];
+
+/// v1.40.1 — fully in-memory ChatStore for WIDGET tests that render the
+/// shell: `restoreLastChat`/`openChat` read this store, and the real
+/// store's disk IO never completes inside the async test zone (which left
+/// `isLoading` — and the send button's spinner — stuck on forever, timing
+/// out every pumpAndSettle).
+class InMemoryChatStore implements ChatStore {
+  InMemoryChatStore({
+    Map<String, List<ChatMessage>>? sessions,
+    this.summaries = const <ChatSummary>[],
+  }) : _sessions = sessions ?? <String, List<ChatMessage>>{};
+
+  final Map<String, List<ChatMessage>> _sessions;
+  final List<ChatSummary> summaries;
+  final Map<String, String> _titles = <String, String>{};
+  final Map<String, List<String>> _modules = <String, List<String>>{};
+  final Map<String, bool> _waiting = <String, bool>{};
+  final Map<String, List<TodoItem>> _todos = <String, List<TodoItem>>{};
+
+  @override
+  Future<Directory> Function() get resolveBaseDir => _dummyDir;
+
+  Future<Directory> _dummyDir() async =>
+      Directory.systemTemp.createTemp('zagents_inmem');
+
+  @override
+  bool get offloadIsolate => false;
+
+  @override
+  Future<List<ChatSummary>> listSummaries() async => summaries;
+
+  @override
+  Future<List<ChatSearchHit>> searchAll(String query, {int limit = 50}) async =>
+      const <ChatSearchHit>[];
+
+  @override
+  Future<void> save({
+    required String id,
+    required String title,
+    required List<ChatMessage> messages,
+    List<String> modules = const <String>[],
+    bool waitingForSetup = false,
+    List<TodoItem> todos = const <TodoItem>[],
+  }) async {
+    _sessions[id] = messages;
+    _titles[id] = title;
+    _modules[id] = modules;
+    _waiting[id] = waitingForSetup;
+    _todos[id] = todos;
+  }
+
+  @override
+  Future<List<ChatMessage>?> load(String id) async => _sessions[id];
+
+  @override
+  Future<SessionBundle?> loadBundle(String id) async {
+    final List<ChatMessage>? messages = _sessions[id];
+    if (messages == null) return null;
+    return SessionBundle(
+      messages: messages,
+      modules: _modules[id] ?? const <String>[],
+      waitingForSetup: _waiting[id] ?? false,
+      todos: _todos[id] ?? const <TodoItem>[],
+    );
+  }
+
+  @override
+  Future<String> loadTitle(String id) async => _titles[id] ?? '';
+
+  @override
+  Future<List<String>> loadModules(String id) async =>
+      _modules[id] ?? const <String>[];
+
+  @override
+  Future<void> saveModules(String id, List<String> modules) async {
+    _modules[id] = modules;
+  }
+
+  @override
+  Future<bool> loadWaitingForSetup(String id) async => _waiting[id] ?? false;
+
+  @override
+  Future<List<TodoItem>> loadTodos(String id) async =>
+      _todos[id] ?? const <TodoItem>[];
+
+  @override
+  Future<void> delete(String id) async {
+    _sessions.remove(id);
+  }
+
+  @override
+  Future<void> rename(String id, String title) async {
+    _titles[id] = title;
+  }
+}

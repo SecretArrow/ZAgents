@@ -99,25 +99,32 @@ class ChatStore {
     // is stored WITH the transcript, so a mid-run crash can no longer wipe
     // the plan the user was watching (it used to live in memory only).
     List<TodoItem> todos = const <TodoItem>[],
-  }) async {
-    final dir = await _chatsDir();
-    final file = File('${dir.path}${Platform.pathSeparator}$id.json');
-    // toJson maps stay on the main isolate (cheap, one pass over the list);
-    // the megabyte-scale jsonEncode itself runs off the UI thread.
-    final Map<String, dynamic> payload = <String, dynamic>{
-      'id': id,
-      'title': title,
-      'updatedAt': DateTime.now().toIso8601String(),
-      'messages': messages.map((m) => m.toJson()).toList(),
-      'modules': modules,
-      // v1.29.0: true while a sent message WAITS for a module's required
-      // setup input — the agent must not process it until the form is
-      // submitted. Persisted so the wait survives app restarts.
-      'waitingForSetup': waitingForSetup,
-      'todos': todos.map((t) => t.toJson()).toList(),
-    };
-    final String encoded = await _offload(() => jsonEncode(payload));
-    await _withLock(id, () => _atomicWrite(file, encoded));
+  }) {
+    // v1.40.1: acquire the per-chat lock FIRST — before any async pre-work —
+    // so the lock queue order matches the CALL order. The body used to do
+    // async directory resolution + encoding before taking the lock, letting
+    // a delete called LATER overtake the save and then watch it resurrect
+    // the file (delete-queued-behind-a-save regression).
+    return _withLock<void>(id, () async {
+      final dir = await _chatsDir();
+      final file = File('${dir.path}${Platform.pathSeparator}$id.json');
+      // toJson maps stay on the main isolate (cheap, one pass over the list);
+      // the megabyte-scale jsonEncode itself runs off the UI thread.
+      final Map<String, dynamic> payload = <String, dynamic>{
+        'id': id,
+        'title': title,
+        'updatedAt': DateTime.now().toIso8601String(),
+        'messages': messages.map((m) => m.toJson()).toList(),
+        'modules': modules,
+        // v1.29.0: true while a sent message WAITS for a module's required
+        // setup input — the agent must not process it until the form is
+        // submitted. Persisted so the wait survives app restarts.
+        'waitingForSetup': waitingForSetup,
+        'todos': todos.map((t) => t.toJson()).toList(),
+      };
+      final String encoded = await _offload(() => jsonEncode(payload));
+      await _atomicWrite(file, encoded);
+    });
   }
 
   /// Per-chat write serialization. `save` / `saveModules` / `rename` /
@@ -301,11 +308,12 @@ class ChatStore {
   }
 
   /// Persists the module list of [sessionId] without touching messages.
-  Future<void> saveModules(String id, List<String> modules) async {
-    final dir = await _chatsDir();
-    final file = File('${dir.path}${Platform.pathSeparator}$id.json');
-    if (!await file.exists()) return;
-    await _withLock(id, () async {
+  Future<void> saveModules(String id, List<String> modules) {
+    // v1.40.1: lock FIRST (see save) — call order == lock order.
+    return _withLock<void>(id, () async {
+      final dir = await _chatsDir();
+      final file = File('${dir.path}${Platform.pathSeparator}$id.json');
+      if (!await file.exists()) return;
       try {
         // v1.34.0: decode + re-encode of the full transcript off the UI
         // isolate — only the resulting JSON string crosses back.
@@ -323,20 +331,22 @@ class ChatStore {
     });
   }
 
-  Future<void> delete(String id) async {
-    final dir = await _chatsDir();
-    final file = File('${dir.path}${Platform.pathSeparator}$id.json');
-    await _withLock(id, () async {
+  Future<void> delete(String id) {
+    // v1.40.1: lock FIRST (see save) — call order == lock order.
+    return _withLock<void>(id, () async {
+      final dir = await _chatsDir();
+      final file = File('${dir.path}${Platform.pathSeparator}$id.json');
       if (await file.exists()) await file.delete();
     });
   }
 
   /// Updates the stored title of a session (keeps messages untouched).
-  Future<void> rename(String id, String title) async {
-    final dir = await _chatsDir();
-    final file = File('${dir.path}${Platform.pathSeparator}$id.json');
-    if (!await file.exists()) return;
-    await _withLock(id, () async {
+  Future<void> rename(String id, String title) {
+    // v1.40.1: lock FIRST (see save) — call order == lock order.
+    return _withLock<void>(id, () async {
+      final dir = await _chatsDir();
+      final file = File('${dir.path}${Platform.pathSeparator}$id.json');
+      if (!await file.exists()) return;
       try {
         // v1.34.0: decode + re-encode of the full transcript off the UI
         // isolate.

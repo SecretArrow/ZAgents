@@ -181,6 +181,11 @@ void main() {
               ),
             ],
           ),
+          // v1.40.1: restoreLastChat/openChat read THIS store — the real
+          // store's disk IO never completes in the test zone, which left
+          // isLoading (and the send button's spinner) animating forever and
+          // made pumpAndSettle time out.
+          chatStoreProvider.overrideWithValue(InMemoryChatStore()),
           // restoreLastChat opens the newest of those chats on startup; with
           // the real (file) store that load never completes inside the test
           // zone, leaving an indeterminate spinner that makes pumpAndSettle
