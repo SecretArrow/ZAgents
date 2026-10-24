@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:zagents/main.dart';
+import 'package:zagents/di.dart';
 import 'package:zagents/models/models.dart';
 import 'package:zagents/services/llm_client.dart';
 
@@ -25,12 +26,22 @@ void main() {
   });
 
   Widget wrap({LlmClient? llm, AppSettings? settings}) => ProviderScope(
-    overrides: testOverrides(
-      llm: llm,
-      dir: tempDir,
-      settings: settings ?? AppSettings(apiKey: 'test-key', autoTitle: false),
-      writeScreenshots: false,
-    ),
+    overrides: [
+      ...testOverrides(
+        llm: llm,
+        dir: tempDir,
+        settings: settings ?? AppSettings(apiKey: 'test-key', autoTitle: false),
+        writeScreenshots: false,
+      ),
+      // v1.41.0: this file performs MULTIPLE sends on one session. The
+      // run-release path awaits the final persist, and real dart:io IO
+      // never completes inside the FakeAsync widget-test zone — the second
+      // send then waits forever on the first run's `finalized` future and
+      // is silently swallowed (transcript stays at [q1, answer one]).
+      // The in-memory store keeps every store future synchronous, so the
+      // release completes and multi-send flows behave like on a device.
+      chatStoreProvider.overrideWithValue(InMemoryChatStore()),
+    ],
     child: const ZAgentsApp(),
   );
 

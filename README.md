@@ -348,6 +348,12 @@ OpenAI-compatible: **OpenRouter, InferHub, Z.AI, OpenAI, DeepSeek, Groq, dan lai
   wajib — isolasi per-chat tidak berubah).
   4. `SessionSandbox.sessionsRoot()` + `ModuleRuntime.latestStoredSetup`
   (pemindai mtime terbaru, tahan file korup) + uji unit wire/module_list.
+- **v1.41.1 — perbaikan test deterministik**: `message_actions_test`
+  (dua kali kirim di satu sesi) sempat menggantung karena release run
+  menunggu persist final, sementara IO nyata tidak pernah selesai di zona
+  FakeAsync pengujian widget — kiriman kedua terbuat tanpa jejak. Harness
+  kini memakai store in-memory (pola yang sama dengan `chat_flow_test`);
+  perilaku produksi tidak berubah.
 - **v1.41.0 — perbaikan stabilitas storage isolate, sistem skill lebih lengkap (`skill_update`, config unset), dan perbaikan pipeline rilis**:
   1. **Storage chat anti-"unsendable"**: semua job JSON berat (save/load/
      list/bundle/search) kini dibuat lewat pabrik closure TOP-LEVEL — chain
