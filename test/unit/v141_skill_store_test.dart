@@ -24,7 +24,7 @@ import '../support/test_doubles.dart';
 ///     file) and installBundled config carry-over on reinstall.
 ///  3. skill_update — re-download, version compare, atomic replace with
 ///     config preserved, honest refusals for builtin/file sources.
-///  4. GitHub branch-ROOT URL normalization (tree/<branch> with no path).
+///  4. GitHub branch-ROOT URL normalization (`tree/<branch>` with no path).
 void main() {
   ar.ArchiveFile file(String path, List<int> bytes) =>
       ar.ArchiveFile(path, bytes.length, bytes);
@@ -480,7 +480,9 @@ void main() {
         'https://github.com/o/r/tree/branch',
       );
       expect(report.skill.name, 'root-url-skill');
-      expect(report.skill.source, 'github:o/r');
+      // The @branch suffix is preserved in the stored source so a later
+      // skill_update re-downloads from the same branch.
+      expect(report.skill.source, 'github:o/r@branch');
     });
 
     test('tree/<branch>/<path> still keeps the subpath', () async {
@@ -508,7 +510,7 @@ void main() {
         'https://github.com/o/r/tree/main/skills/demo',
       );
       expect(report.skill.name, 'sub-skill');
-      expect(report.skill.source, 'github:o/r/skills/demo');
+      expect(report.skill.source, 'github:o/r/skills/demo@main');
     });
   });
 }

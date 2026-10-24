@@ -1336,7 +1336,7 @@ class ToolExecutor {
         '=> ${result.result}',
       // v1.41.0: surface timeout coercion so the model never believes an
       // un-honored timeout was applied.
-      if (timeoutNote != null) timeoutNote,
+      ?timeoutNote,
     ];
     return ToolResult(
       ok: true,

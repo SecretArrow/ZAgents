@@ -832,12 +832,22 @@ class SkillRegistry {
   /// Reads the SKILL.md version out of a downloaded archive WITHOUT
   /// installing anything. Null when the archive has no readable SKILL.md at
   /// [subPath] (the install pipeline then reports the real problem).
+  ///
+  /// Mirrors the install pipeline's path handling: the longest common
+  /// top-level prefix (e.g. `repo-main/`) is stripped first, then the
+  /// [subPath] filter applies — otherwise a wrapped archive (`demo/SKILL.md`)
+  /// would never match a root-level SKILL.md lookup.
   String? _peekManifestVersion(List<int> bytes, String? subPath) {
     try {
       final Map<String, List<int>> files = _decodeArchive(bytes);
+      final List<String> paths = files.keys.toList();
+      final String stripPrefix = _longestCommonPrefix(paths);
       String? skillMdPath;
-      for (final String path in files.keys) {
+      for (final String path in paths) {
         String rel = path;
+        if (stripPrefix.isNotEmpty && rel.startsWith(stripPrefix)) {
+          rel = rel.substring(stripPrefix.length);
+        }
         if (subPath != null && subPath.isNotEmpty) {
           if (!rel.startsWith('$subPath/')) continue;
           rel = rel.substring(subPath.length + 1);
