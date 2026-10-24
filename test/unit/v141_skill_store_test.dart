@@ -304,11 +304,23 @@ void main() {
       expect(outcome.skill.version, '2.0.0');
       expect(outcome.report, isNotNull);
 
-      // One entry only, config survived the atomic replace.
-      final List<InstalledSkill> list = await installer.list();
+      // Post-update state. The registry cache is per-instance (refreshed by
+      // its own writes — the ModuleRegistry pattern; production uses one
+      // singleton), so freshness is asserted on the instance that performed
+      // the update AND on a brand-new reader, which proves the on-disk
+      // registry records the new version.
+      final List<InstalledSkill> list = await remote.list();
       expect(list, hasLength(1));
       expect(list.first.version, '2.0.0');
-      final Map<String, String> stored = await installer.readConfig(list.first);
+      final SkillRegistry freshReader = SkillRegistry(
+        resolveBaseDir: () async => docs,
+      );
+      final List<InstalledSkill> persisted = await freshReader.list();
+      expect(persisted, hasLength(1));
+      expect(persisted.first.version, '2.0.0');
+      final Map<String, String> stored = await freshReader.readConfig(
+        persisted.first,
+      );
       expect(stored['API_KEY'], 'S3CR3T');
     });
 

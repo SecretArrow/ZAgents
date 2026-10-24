@@ -348,6 +348,14 @@ OpenAI-compatible: **OpenRouter, InferHub, Z.AI, OpenAI, DeepSeek, Groq, dan lai
   wajib — isolasi per-chat tidak berubah).
   4. `SessionSandbox.sessionsRoot()` + `ModuleRuntime.latestStoredSetup`
   (pemindai mtime terbaru, tahan file korup) + uji unit wire/module_list.
+- **v1.41.3 — perbaikan test skill_update**: asersi status pasca-update
+  kini membaca instance yang melakukan update + pembaca disk baru (cache
+  registry bersifat per-instance sesuai pola ModuleRegistry; produksi
+  memakai satu singleton sehingga tidak terdampak).
+- **v1.41.2 — perbaikan version-peek skill_update**: _peekManifestVersion
+  mengikuti pipeline install (strip prefix) sehingga perbandingan versi
+  bekerja untuk arsip ber-folder; sumber tersimpan mempertahankan @branch;
+  dua temuan analyzer (null-aware element, doc comment) ditutup.
 - **v1.41.1 — perbaikan test deterministik**: `message_actions_test`
   (dua kali kirim di satu sesi) sempat menggantung karena release run
   menunggu persist final, sementara IO nyata tidak pernah selesai di zona
