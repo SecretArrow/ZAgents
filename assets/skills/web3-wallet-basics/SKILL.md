@@ -3,6 +3,7 @@ name: web3-wallet-basics
 title: Web3 Wallet Basics
 description: Safe workflow for connecting an official Web3 wallet, reading balances and history, and transacting only with explicit user approval. Use when the user asks to connect, check, or move crypto assets.
 version: "1.0"
+wallet: true
 permissions:
   - network
   - files

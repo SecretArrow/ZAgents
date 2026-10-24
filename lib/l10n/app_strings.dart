@@ -288,6 +288,10 @@ abstract class AppStrings {
   String skillInstallConfirmSource(String source);
   String get skillInstallConfirmBody;
   String get skillInstallDeclined;
+  String get skillWalletConfirmTitle;
+  String skillWalletConfirmAction(String skill, String script);
+  String get skillWalletConfirmBody;
+  String get skillWalletDeclined;
   String get copyMessage;
   String get copied;
   String get activateProviderTitle;
@@ -985,6 +989,21 @@ class AppStringsEn implements AppStrings {
   String get skillInstallDeclined =>
       'The user declined to install this skill. Do not install it and do '
       'not retry it in this conversation.';
+  @override
+  String get skillWalletConfirmTitle => 'Approve wallet action?';
+  @override
+  String skillWalletConfirmAction(String skill, String script) =>
+      'Skill: $skill — script: $script';
+  @override
+  String get skillWalletConfirmBody =>
+      'This skill moves value on a blockchain (transfer, swap, approval, '
+      'NFT sale or similar). Approve only if the amount, network and '
+      'destination match what you expect. A denial is final for this run.';
+  @override
+  String get skillWalletDeclined =>
+      'The user DENIED this wallet action. Do not perform it and do not '
+      'retry it in this conversation. Report the denial to the user and '
+      'stop; no transaction was sent.';
   @override
   String get copyMessage => 'Copy';
   @override
@@ -2037,6 +2056,22 @@ class AppStringsId implements AppStrings {
   String get skillInstallDeclined =>
       'Pengguna menolak memasang skill ini. Jangan pasang dan jangan coba '
       'lagi di percakapan ini.';
+  @override
+  String get skillWalletConfirmTitle => 'Setujui aksi wallet?';
+  @override
+  String skillWalletConfirmAction(String skill, String script) =>
+      'Skill: $skill — skrip: $script';
+  @override
+  String get skillWalletConfirmBody =>
+      'Skill ini memindahkan nilai di blockchain (transfer, swap, '
+      'approval, penjualan NFT, atau sejenisnya). Setujui hanya jika '
+      'jumlah, jaringan, dan tujuan sesuai dengan yang Anda harapkan. '
+      'Penolakan bersifat final untuk proses ini.';
+  @override
+  String get skillWalletDeclined =>
+      'Pengguna MENOLAK aksi wallet ini. Jangan lakukan dan jangan coba '
+      'lagi di percakapan ini. Laporkan penolakan kepada pengguna lalu '
+      'berhenti; tidak ada transaksi yang dikirim.';
   @override
   String get copyMessage => 'Salin';
   @override

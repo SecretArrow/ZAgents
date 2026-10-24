@@ -22,6 +22,22 @@ Official-flow only. Never ask for seed phrases. Every asset-moving action
 requires an explicit user confirmation.
 ''';
 
+const String _walletSkillMd = '''
+---
+name: wallet-skill
+title: Wallet Skill
+description: Moves value on-chain.
+version: "1.0"
+wallet: true
+permissions:
+  - network
+---
+
+# Wallet Skill
+
+Every asset-moving action requires explicit user confirmation.
+''';
+
 void main() {
   late Directory tempDir;
 
@@ -93,6 +109,30 @@ void main() {
         ),
         throwsA(isA<SkillRegistryException>()),
       );
+    });
+
+    test('the wallet flag is parsed from SKILL.md and persisted', () async {
+      final SkillRegistry reg = registry();
+      final SkillInstallReport wallet = await reg.installBundled(
+        bundledName: 'wallet-skill',
+        skillMd: _walletSkillMd,
+      );
+      expect(wallet.skill.wallet, isTrue);
+      // A fresh registry reads it back from registry.json — the approval
+      // gate must survive an app restart.
+      final SkillRegistry reloaded = registry();
+      final InstalledSkill? stored = await reloaded.get('wallet-skill');
+      expect(stored, isNotNull);
+      expect(stored!.wallet, isTrue);
+    });
+
+    test('a skill without the flag is not value-moving', () async {
+      final SkillRegistry reg = registry();
+      final SkillInstallReport plain = await reg.installBundled(
+        bundledName: 'binance-agentic-wallet',
+        skillMd: _bundledSkillMd,
+      );
+      expect(plain.skill.wallet, isFalse);
     });
   });
 

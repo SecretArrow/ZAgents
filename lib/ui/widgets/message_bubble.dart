@@ -229,42 +229,11 @@ class _EditButton extends StatelessWidget {
   final ValueChanged<String> onEdit;
 
   Future<void> _openDialog(BuildContext context) async {
-    final AppStrings strings = stringsOf(context);
-    final TextEditingController controller = TextEditingController(
-      text: initialText,
+    final String? newText = await showDialog<String>(
+      context: context,
+      builder: (BuildContext dialogContext) =>
+          _EditMessageDialog(initialText: initialText),
     );
-    final String? newText;
-    try {
-      newText = await showDialog<String>(
-        context: context,
-        builder: (BuildContext dialogContext) => AlertDialog(
-          backgroundColor: context.zSurface,
-          title: Text(strings.editDialogTitle),
-          content: TextField(
-            key: const Key('edit-message-field'),
-            controller: controller,
-            autofocus: true,
-            maxLines: 5,
-            minLines: 2,
-          ),
-          actions: <Widget>[
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(),
-              child: Text(strings.cancel),
-            ),
-            TextButton(
-              key: const Key('edit-message-save'),
-              onPressed: () => Navigator.of(dialogContext).pop(controller.text),
-              child: Text(strings.save),
-            ),
-          ],
-        ),
-      );
-    } finally {
-      // The dialog is gone: release the controller instead of leaking one
-      // per opened edit form.
-      controller.dispose();
-    }
     if (newText != null && newText.trim().isNotEmpty) {
       onEdit(newText);
     }
@@ -281,6 +250,59 @@ class _EditButton extends StatelessWidget {
       constraints: const BoxConstraints(minWidth: 30, minHeight: 26),
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
       icon: Icon(Icons.edit_rounded, size: 15, color: context.zMuted),
+    );
+  }
+}
+
+/// The edit form itself. It OWNS its [TextEditingController] so the
+/// controller lives exactly as long as the dialog route: disposing it right
+/// after `showDialog` returns is too early — the route is still animating
+/// out and rebuilds its [TextField] during that transition, which throws
+/// "A TextEditingController was used after being disposed".
+class _EditMessageDialog extends StatefulWidget {
+  const _EditMessageDialog({required this.initialText});
+
+  final String initialText;
+
+  @override
+  State<_EditMessageDialog> createState() => _EditMessageDialogState();
+}
+
+class _EditMessageDialogState extends State<_EditMessageDialog> {
+  late final TextEditingController _controller = TextEditingController(
+    text: widget.initialText,
+  );
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final AppStrings strings = stringsOf(context);
+    return AlertDialog(
+      backgroundColor: context.zSurface,
+      title: Text(strings.editDialogTitle),
+      content: TextField(
+        key: const Key('edit-message-field'),
+        controller: _controller,
+        autofocus: true,
+        maxLines: 5,
+        minLines: 2,
+      ),
+      actions: <Widget>[
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: Text(strings.cancel),
+        ),
+        TextButton(
+          key: const Key('edit-message-save'),
+          onPressed: () => Navigator.of(context).pop(_controller.text),
+          child: Text(strings.save),
+        ),
+      ],
     );
   }
 }

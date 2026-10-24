@@ -8,6 +8,7 @@ import 'package:zagents/di.dart';
 import 'package:zagents/models/models.dart';
 import 'package:zagents/services/agent_controller.dart';
 import 'package:zagents/services/llm_client.dart';
+import 'package:zagents/services/skill_registry.dart';
 import 'package:zagents/services/tool_executor.dart';
 
 import '../support/test_doubles.dart';
@@ -512,8 +513,150 @@ void main() {
         ToolStatus.success,
       );
     });
+
+    test('skill_run on a wallet skill is gated: a denial never reaches the '
+        'executor and the call is reported as failed', () async {
+      final SkillRegistry registry = SkillRegistry(
+        resolveBaseDir: () async => tempDir,
+      );
+      await registry.installBundled(
+        bundledName: 'wallet-skill',
+        skillMd: _walletSkillMd,
+      );
+      final _RecordingExecutor executor = _RecordingExecutor(tempDir);
+      final ProviderContainer container = await containerWith(
+        ScriptedLlmClient(<AssistantTurn>[
+          AssistantTurn(
+            content: '',
+            toolCalls: <ToolCallRequest>[
+              ToolCallRequest(
+                id: 'c9',
+                name: 'skill_run',
+                argumentsJson: jsonEncode(<String, dynamic>{
+                  'name': 'wallet-skill',
+                  'script': 'scripts/send.js',
+                }),
+              ),
+            ],
+          ),
+          AssistantTurn(content: 'denied, nothing sent'),
+        ]),
+        extra: <Override>[
+          toolExecutorProvider.overrideWithValue(executor),
+          skillRegistryProvider.overrideWithValue(registry),
+        ],
+      );
+      final Future<void> run = container
+          .read(chatControllerProvider.notifier)
+          .send('send 1 BNB');
+      await Future<void>.delayed(Duration.zero);
+
+      final ConfirmationRequest pending = container
+          .read(chatControllerProvider)
+          .pendingConfirmation!;
+      expect(pending.title, contains('wallet'));
+      expect(
+        pending.details.join('\n'),
+        allOf(contains('wallet-skill'), contains('scripts/send.js')),
+        reason: 'the user must see WHICH value-moving script will run',
+      );
+      expect(
+        executor.executed,
+        isEmpty,
+        reason: 'a value-moving script must not start before approval',
+      );
+
+      container
+          .read(chatControllerProvider.notifier)
+          .resolveConfirmation('wallet:c9', false);
+      await run;
+
+      expect(executor.executed, isEmpty);
+      final ToolCall call = container
+          .read(chatControllerProvider)
+          .messages
+          .firstWhere((ChatMessage m) => m.toolCalls.isNotEmpty)
+          .toolCalls
+          .single;
+      expect(call.status, ToolStatus.error);
+      expect(call.resultText, contains('DENIED'));
+    });
+
+    test('skill_run on a non-wallet skill runs without an approval prompt',
+        () async {
+      final SkillRegistry registry = SkillRegistry(
+        resolveBaseDir: () async => tempDir,
+      );
+      await registry.installBundled(
+        bundledName: 'readonly-skill',
+        skillMd: _readonlySkillMd,
+      );
+      final _RecordingExecutor executor = _RecordingExecutor(tempDir);
+      final ProviderContainer container = await containerWith(
+        ScriptedLlmClient(<AssistantTurn>[
+          AssistantTurn(
+            content: '',
+            toolCalls: <ToolCallRequest>[
+              ToolCallRequest(
+                id: 'c10',
+                name: 'skill_run',
+                argumentsJson: jsonEncode(<String, dynamic>{
+                  'name': 'readonly-skill',
+                  'script': 'scripts/report.js',
+                }),
+              ),
+            ],
+          ),
+          AssistantTurn(content: 'done'),
+        ]),
+        extra: <Override>[
+          toolExecutorProvider.overrideWithValue(executor),
+          skillRegistryProvider.overrideWithValue(registry),
+        ],
+      );
+
+      await container.read(chatControllerProvider.notifier).send('report');
+
+      expect(
+        container.read(chatControllerProvider).pendingConfirmation,
+        isNull,
+        reason: 'read-only skills must stay frictionless',
+      );
+      expect(executor.executed, <String>['skill_run']);
+    });
   });
 }
+
+const String _walletSkillMd = '''
+---
+name: wallet-skill
+title: Wallet Skill
+description: Moves value on-chain.
+version: "1.0"
+wallet: true
+permissions:
+  - network
+---
+
+# Wallet Skill
+
+Every asset-moving action requires explicit user confirmation.
+''';
+
+const String _readonlySkillMd = '''
+---
+name: readonly-skill
+title: Read-only Skill
+description: Produces a report.
+version: "1.0"
+permissions:
+  - network
+---
+
+# Read-only Skill
+
+Reports only; never moves value.
+''';
 
 /// ToolExecutor double: records the tool names the controller hands to the
 /// executor so approval gates can be asserted without touching the network

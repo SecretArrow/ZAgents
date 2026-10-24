@@ -41,7 +41,17 @@ void main() {
   });
 
   tearDown(() async {
-    if (await tempDir.exists()) await tempDir.delete(recursive: true);
+    // A module run may still be flushing a file when the test body ends; a
+    // single recursive delete then fails with ENOTEMPTY ("Directory not
+    // empty") and turns a green test into a red one. Retry briefly instead.
+    for (int attempt = 0; attempt < 10; attempt++) {
+      try {
+        if (await tempDir.exists()) await tempDir.delete(recursive: true);
+        return;
+      } on FileSystemException {
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+      }
+    }
   });
 
   /// Installs a module fixture into the registry via the public ZIP path.

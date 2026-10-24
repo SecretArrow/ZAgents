@@ -146,13 +146,14 @@ void main() {
           ),
         ),
       );
-      final List<int> bomb = List<int>.from(gz);
+      final Uint8List bomb = Uint8List.fromList(gz);
       // The ISIZE trailer (last 4 bytes, little endian) is the declared
-      // uncompressed size: patch it to 200 MB.
+      // uncompressed size: patch it to 200 MB. NOTE: patch the SAME buffer
+      // that is handed to the installer, and `sublistView` takes an END
+      // INDEX, not a length.
       ByteData.sublistView(
-        Uint8List.fromList(bomb),
+        bomb,
         bomb.length - 4,
-        4,
       ).setUint32(0, 200 * 1024 * 1024, Endian.little);
 
       await expectLater(

@@ -59,6 +59,7 @@ class InstalledSkill {
     required this.dirPath,
     required this.installedAt,
     this.requiresBins = const <String>[],
+    this.wallet = false,
   });
 
   final String name;
@@ -77,6 +78,12 @@ class InstalledSkill {
   /// model and the user instead of faking a successful run.
   final List<String> requiresBins;
 
+  /// True when the skill declares `wallet: true` in its SKILL.md: it drives
+  /// an asset-holding wallet, so `skill_run` on it is treated as a
+  /// value-moving action and requires the user's explicit approval every
+  /// time (one approval authorizes exactly one run).
+  final bool wallet;
+
   Map<String, dynamic> toJson() => <String, dynamic>{
     'name': name,
     'version': version,
@@ -85,6 +92,7 @@ class InstalledSkill {
     'source': source,
     'permissions': permissions,
     'requiresBins': requiresBins,
+    'wallet': wallet,
     'config': configFields.map((SkillConfigField f) => f.toJson()).toList(),
     'installedAt': installedAt.toIso8601String(),
   };
@@ -104,6 +112,7 @@ class InstalledSkill {
             ((json['requiresBins'] as List<dynamic>?) ?? const <dynamic>[])
                 .map((Object? e) => e.toString())
                 .toList(),
+        wallet: json['wallet'] == true,
         configFields: ((json['config'] as List<dynamic>?) ?? const <dynamic>[])
             .whereType<Map<String, dynamic>>()
             .map(SkillConfigField.fromJson)
@@ -484,6 +493,7 @@ class SkillRegistry {
           source: source,
           permissions: manifest.permissions,
           requiresBins: manifest.requiresBins,
+          wallet: manifest.wallet,
           configFields: manifest.configFields,
           dirPath: finalDir.path,
           installedAt: DateTime.now(),
@@ -629,6 +639,7 @@ class SkillRegistry {
           description: manifest.description,
           source: 'builtin:$bundledName',
           permissions: manifest.permissions,
+          wallet: manifest.wallet,
           configFields: manifest.configFields,
           dirPath: finalDir.path,
           installedAt: DateTime.now(),
@@ -1121,6 +1132,11 @@ class SkillRegistry {
           if (!nested) manifest.version = _unquote(value);
         case 'title':
           if (!nested) manifest.title = _unquote(value);
+        case 'wallet':
+          if (!nested) {
+            final String flag = _unquote(value).toLowerCase();
+            manifest.wallet = flag == 'true' || flag == 'yes' || flag == '1';
+          }
         case 'permissions':
         case 'config':
         case 'bins':
@@ -1317,6 +1333,11 @@ class _SkillManifest {
   String title = '';
   String description = '';
   final List<String> permissions = <String>[];
+
+  /// True when the skill's SKILL.md declares `wallet: true`: the skill
+  /// drives an asset-holding wallet, so every script it runs is treated as
+  /// value-moving and needs the user's explicit approval (v1.40.0).
+  bool wallet = false;
 
   /// Native executables the skill declares it needs (`requires.bins` /
   /// `openclaw.requires.bins`). The embedded JS runtime cannot provide

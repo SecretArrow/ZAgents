@@ -3,6 +3,7 @@ name: binance-agentic-wallet
 title: Binance Agentic Wallet
 description: Drive the official Binance wallet flow — connect/login via Binance's own pages, read balances and transactions, and gate every asset-moving action behind the user's explicit confirmation card.
 version: "1.0"
+wallet: true
 permissions:
   - network
   - files

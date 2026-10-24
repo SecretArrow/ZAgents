@@ -257,6 +257,135 @@ class ThrowingChatStore implements ChatStore {
       throw const FileSystemException('disk exploded');
 }
 
+/// In-memory [ChatStore] for WIDGET tests.
+///
+/// The real store's file IO never completes inside a `testWidgets`
+/// FakeAsync zone (the same reason the harness already replaces the
+/// background service and the JS runtime), which leaves `restoreLastChat`
+/// and `openChat` stuck in `isLoading` forever — and an indeterminate
+/// spinner then makes every `pumpAndSettle` time out. This double answers
+/// immediately from a map and behaves like the disk store for the purposes
+/// of the UI (sessions persist across screens within one test).
+class MemoryChatStore implements ChatStore {
+  MemoryChatStore([Map<String, SessionBundle>? seed])
+    : _sessions = <String, SessionBundle>{...?seed};
+
+  final Map<String, SessionBundle> _sessions;
+  final Map<String, DateTime> _updatedAt = <String, DateTime>{};
+
+  @override
+  Future<Directory> Function() get resolveBaseDir => _explode;
+
+  @override
+  bool get offloadIsolate => false;
+
+  Future<Directory> _explode() async =>
+      throw const FileSystemException('memory store has no directory');
+
+  /// Titles are kept alongside the bundles: [SessionBundle] carries no
+  /// title (the real store keeps it in the file's JSON header).
+  final Map<String, String> _titles = <String, String>{};
+
+  @override
+  Future<List<ChatSummary>> listSummaries() async {
+    final List<ChatSummary> out = <ChatSummary>[
+      for (final MapEntry<String, SessionBundle> entry in _sessions.entries)
+        ChatSummary(
+          id: entry.key,
+          title: _titles[entry.key] ?? 'Untitled',
+          updatedAt:
+              _updatedAt[entry.key] ?? DateTime.fromMillisecondsSinceEpoch(0),
+        ),
+    ];
+    out.sort(
+      (ChatSummary a, ChatSummary b) => b.updatedAt.compareTo(a.updatedAt),
+    );
+    return out;
+  }
+
+  @override
+  Future<List<ChatSearchHit>> searchAll(String query, {int limit = 50}) async {
+    final String q = query.trim().toLowerCase();
+    if (q.isEmpty) return <ChatSearchHit>[];
+    return <ChatSearchHit>[
+      for (final ChatSummary summary in await listSummaries())
+        if (summary.title.toLowerCase().contains(q))
+          ChatSearchHit(
+            sessionId: summary.id,
+            title: summary.title,
+            snippet: summary.title,
+            role: null,
+            createdAt: summary.updatedAt,
+          ),
+    ].take(limit).toList();
+  }
+
+  @override
+  Future<void> save({
+    required String id,
+    required String title,
+    required List<ChatMessage> messages,
+    List<String> modules = const <String>[],
+    bool waitingForSetup = false,
+    List<TodoItem> todos = const <TodoItem>[],
+  }) async {
+    _sessions[id] = SessionBundle(
+      messages: List<ChatMessage>.unmodifiable(messages),
+      modules: List<String>.unmodifiable(modules),
+      waitingForSetup: waitingForSetup,
+      todos: List<TodoItem>.unmodifiable(todos),
+    );
+    _titles[id] = title;
+    _updatedAt[id] = DateTime.now();
+  }
+
+  @override
+  Future<List<ChatMessage>?> load(String id) async => _sessions[id]?.messages;
+
+  @override
+  Future<SessionBundle?> loadBundle(String id) async => _sessions[id];
+
+  @override
+  Future<List<String>> loadModules(String id) async =>
+      _sessions[id]?.modules ?? const <String>[];
+
+  @override
+  Future<String> loadTitle(String id) async => _titles[id] ?? '';
+
+  @override
+  Future<void> saveModules(String id, List<String> modules) async {
+    final SessionBundle? old = _sessions[id];
+    if (old == null) return;
+    _sessions[id] = SessionBundle(
+      messages: old.messages,
+      modules: List<String>.unmodifiable(modules),
+      waitingForSetup: old.waitingForSetup,
+      todos: old.todos,
+    );
+  }
+
+  @override
+  Future<bool> loadWaitingForSetup(String id) async =>
+      _sessions[id]?.waitingForSetup ?? false;
+
+  @override
+  Future<List<TodoItem>> loadTodos(String id) async =>
+      _sessions[id]?.todos ?? const <TodoItem>[];
+
+  @override
+  Future<void> delete(String id) async {
+    _sessions.remove(id);
+    _titles.remove(id);
+    _updatedAt.remove(id);
+  }
+
+  @override
+  Future<void> rename(String id, String title) async {
+    if (!_sessions.containsKey(id)) return;
+    _titles[id] = title;
+  }
+}
+
 /// Browser test double whose every method throws — used to prove the tool
 /// executor degrades platform failures into error results instead of
 /// crashing the agent loop.

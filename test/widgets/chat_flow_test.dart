@@ -181,6 +181,11 @@ void main() {
               ),
             ],
           ),
+          // restoreLastChat opens the newest of those chats on startup; with
+          // the real (file) store that load never completes inside the test
+          // zone, leaving an indeterminate spinner that makes pumpAndSettle
+          // time out. The in-memory store answers immediately.
+          chatStoreProvider.overrideWithValue(MemoryChatStore()),
         ],
         child: const ZAgentsApp(),
       ),

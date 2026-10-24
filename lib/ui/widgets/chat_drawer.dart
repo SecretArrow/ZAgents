@@ -1,8 +1,8 @@
+import 'dart:io';
+
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-
-import 'dart:io';
 
 import '../../di.dart';
 import '../../l10n/app_strings.dart';
@@ -61,40 +61,11 @@ class ChatDrawer extends ConsumerWidget {
     WidgetRef ref,
     ChatSummary item,
   ) async {
-    final AppStrings strings = stringsOf(context);
-    final TextEditingController controller = TextEditingController(
-      text: item.title,
+    final String? newName = await showDialog<String>(
+      context: context,
+      builder: (BuildContext dialogContext) =>
+          _RenameChatDialog(initialName: item.title),
     );
-    final String? newName;
-    try {
-      newName = await showDialog<String>(
-        context: context,
-        builder: (BuildContext dialogContext) => AlertDialog(
-          backgroundColor: context.zSurface,
-          title: Text(strings.renameChatTitle),
-          content: TextField(
-            autofocus: true,
-            controller: controller,
-            decoration: InputDecoration(labelText: strings.nameHint),
-            onSubmitted: (String value) =>
-                Navigator.of(dialogContext).pop(value),
-          ),
-          actions: <Widget>[
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(),
-              child: Text(strings.cancel),
-            ),
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(controller.text),
-              child: Text(strings.save),
-            ),
-          ],
-        ),
-      );
-    } finally {
-      // One controller per opened rename dialog — release it with the dialog.
-      controller.dispose();
-    }
     if (newName == null || newName.trim().isEmpty) return;
     await ref
         .read(chatControllerProvider.notifier)
@@ -511,6 +482,57 @@ class ChatDrawer extends ConsumerWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// Rename form. It owns its [TextEditingController] for exactly as long as
+/// the dialog route exists: disposing the controller right after
+/// `showDialog` returns is too early, because the route keeps rebuilding its
+/// [TextField] while it animates out ("A TextEditingController was used
+/// after being disposed").
+class _RenameChatDialog extends StatefulWidget {
+  const _RenameChatDialog({required this.initialName});
+
+  final String initialName;
+
+  @override
+  State<_RenameChatDialog> createState() => _RenameChatDialogState();
+}
+
+class _RenameChatDialogState extends State<_RenameChatDialog> {
+  late final TextEditingController _controller = TextEditingController(
+    text: widget.initialName,
+  );
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final AppStrings strings = stringsOf(context);
+    return AlertDialog(
+      backgroundColor: context.zSurface,
+      title: Text(strings.renameChatTitle),
+      content: TextField(
+        autofocus: true,
+        controller: _controller,
+        decoration: InputDecoration(labelText: strings.nameHint),
+        onSubmitted: (String value) => Navigator.of(context).pop(value),
+      ),
+      actions: <Widget>[
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: Text(strings.cancel),
+        ),
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(_controller.text),
+          child: Text(strings.save),
+        ),
+      ],
     );
   }
 }

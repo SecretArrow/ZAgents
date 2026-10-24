@@ -1,11 +1,9 @@
 import 'dart:async';
-
-import 'package:meta/meta.dart';
-
 import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:meta/meta.dart';
 
 import '../di.dart';
 import '../l10n/app_strings.dart';
@@ -1971,6 +1969,16 @@ class ChatController extends Notifier<ChatState> {
           // Live progress in the foreground-service notification.
           await background.updateStatus(strings.notifStep(step + 1, call.name));
 
+          // One place that hands a call to the executor, so every approval
+          // branch below runs the tool the same way (and Stop still reaches
+          // LONG-RUNNING tools through `shouldAbort`).
+          Future<ToolResult> runTool() => executor.execute(
+            call.name,
+            call.arguments,
+            sessionId: run.sessionId,
+            shouldAbort: () => run.stopRequested,
+          );
+
           final ToolResult result;
           if (call.name == 'request_confirmation') {
             // v1.38.0: the loop BLOCKS here until the user approves or
@@ -1997,26 +2005,42 @@ class ChatController extends Notifier<ChatState> {
               ],
             );
             result = approved
-                ? await executor.execute(
-                    call.name,
-                    call.arguments,
-                    sessionId: run.sessionId,
-                    shouldAbort: () => run.stopRequested,
-                  )
+                ? await runTool()
                 : ToolResult(
                     ok: false,
                     llmOutput: strings.skillInstallDeclined,
                     displayText: 'install declined',
                   );
-          } else {
-            result = await executor.execute(
-              call.name,
-              call.arguments,
-              sessionId: run.sessionId,
-              // Stop must also reach LONG-RUNNING tools (the fan-of-
-              // subagents runner polls this between subagent steps).
-              shouldAbort: () => run.stopRequested,
+          } else if (call.name == 'skill_run' &&
+              await _isWalletSkill(call.arguments['name']?.toString())) {
+            // v1.41.0: a `wallet: true` skill moves value on-chain. A
+            // `request_confirmation` call earlier in the turn is only
+            // advisory — the model can skip it — so the enforced gate
+            // lives HERE: every run of a value-moving skill needs its own
+            // explicit approval, and a denial is reported as a failed
+            // call (never a silent success).
+            final String skillName = call.arguments['name']?.toString() ?? '';
+            final bool approved = await _askApproval(
+              run,
+              id: 'wallet:${call.id}',
+              title: strings.skillWalletConfirmTitle,
+              details: <String>[
+                strings.skillWalletConfirmAction(
+                  skillName,
+                  call.arguments['script']?.toString() ?? '',
+                ),
+                strings.skillWalletConfirmBody,
+              ],
             );
+            result = approved
+                ? await runTool()
+                : ToolResult(
+                    ok: false,
+                    llmOutput: strings.skillWalletDeclined,
+                    displayText: 'wallet action denied',
+                  );
+          } else {
+            result = await runTool();
           }
           call.status = result.ok ? ToolStatus.success : ToolStatus.error;
           call.resultText = result.llmOutput;
@@ -2643,6 +2667,24 @@ class ChatController extends Notifier<ChatState> {
 
   // -- request_confirmation (v1.38.0) -------------------------------------
 
+  /// True when [name] names an installed skill whose SKILL.md declares
+  /// `wallet: true` — i.e. running it can move value on-chain.
+  ///
+  /// Fails CLOSED: if the registry cannot answer, the skill may be a
+  /// wallet skill, so the caller must ask for approval anyway. An
+  /// uninstalled name returns false — the executor reports it as missing.
+  Future<bool> _isWalletSkill(String? name) async {
+    final String skillName = name?.trim() ?? '';
+    if (skillName.isEmpty) return false;
+    try {
+      final SkillRegistry registry = ref.read(skillRegistryProvider);
+      final InstalledSkill? skill = await registry.get(skillName);
+      return skill?.wallet ?? false;
+    } catch (_) {
+      return true;
+    }
+  }
+
   /// Hard cap on waiting for the user's approval decision.
   static const Duration confirmationTimeout = Duration(minutes: 10);
 
@@ -2959,13 +3001,42 @@ class ChatController extends Notifier<ChatState> {
         state.pendingModule != null ||
         ref.read(pendingAttachmentsProvider).isNotEmpty;
     try {
-      final List<ChatSummary> items = await ref.read(chatListProvider.future);
+      final List<ChatSummary> items = await _historyOnce();
       if (items.isEmpty) return;
       if (generation != _chatLoadGeneration || draftTouched()) return;
       await openChat(items.first);
     } catch (_) {
       // History unavailable: stay on the fresh draft.
     }
+  }
+
+  /// The history list, resolved even when the provider is INVALIDATED while
+  /// this call is waiting (v1.40.0). `ref.read(chatListProvider.future)`
+  /// returns a future owned by the provider instance of that moment: any
+  /// `ref.invalidate(chatListProvider)` (every finished run does one) while
+  /// it is still pending disposes that instance and the old future NEVER
+  /// completes — `restoreLastChat` then hung forever, which is exactly what
+  /// happens when the user sends a message while app-start history is still
+  /// loading. A manual listener re-fires on the replacement instance.
+  Future<List<ChatSummary>> _historyOnce() {
+    final Completer<List<ChatSummary>> done = Completer<List<ChatSummary>>();
+    late final ProviderSubscription<AsyncValue<List<ChatSummary>>> sub;
+    void settle(AsyncValue<List<ChatSummary>> value) {
+      if (done.isCompleted) return;
+      if (value.hasError) {
+        done.completeError(value.error!, value.stackTrace);
+      } else if (value.hasValue) {
+        done.complete(value.requireValue);
+      }
+    }
+
+    sub = ref.listenManual<AsyncValue<List<ChatSummary>>>(
+      chatListProvider,
+      (AsyncValue<List<ChatSummary>>? previous,
+          AsyncValue<List<ChatSummary>> next) => settle(next),
+      fireImmediately: true,
+    );
+    return done.future.whenComplete(sub.close);
   }
 
   Future<void> openChat(ChatSummary summary) async {

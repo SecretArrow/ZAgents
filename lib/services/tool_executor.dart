@@ -1000,6 +1000,13 @@ class ToolExecutor {
         'external processes.',
       );
     }
+    if (skill.wallet) {
+      out.writeln(
+        'WALLET SKILL: every skill_run on this skill is a value-moving '
+        'action — the app asks the user for explicit approval before each '
+        'run. Read-only steps use the browser/web tools, not skill_run.',
+      );
+    }
     if (files.isNotEmpty) {
       out.writeln('Files (read with skill_info path="…"): ${files.join(', ')}');
     }
