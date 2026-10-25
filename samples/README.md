@@ -13,12 +13,14 @@ see [`../docs/modules/`](../docs/modules/) for the full reference and
 | [`chat-streamer/`](chat-streamer/) | `chat` | Progressive output into the conversation with `zagents.chat.emit` |
 | [`onhomeroom-daily/`](onhomeroom-daily/) | `storage`, `network`, `agent` | Real-world daily bot for app.onhomeroom.com — challenge board, yes votes, chat replies, proposal pipeline. Every sentence is composed live by the chat agent via `zagents.agent.compose` (no templates). The app collects the account with a per-chat setup form before the first run (`zagents.info.setup`); text commands (`setup <email> <password>`, `status`, `reset`) still re-configure an already set-up chat |
 | [`airplane-mode/`](airplane-mode/) | `device` | Android airplane mode + carrier IP rotation: **CYCLE** — the one-command IP rotation `/airplane cycle` (aliases `ip`, `rotate`) via `zagents.device.airplaneCycle` (v1.34.0): airplane ON → hold → OFF → settle; the radio re-registers with a NEW IP and the cycle always ends OFF/online (rooted, needs the "Device commands (root)" switch). **AUTO** toggle via `zagents.device.shell` (`su -c`) on rooted phones, **MANUAL** guided mode on non-rooted ones — the state is always verified with the world-readable `zagents.device.airplane` probe (no root, works offline). Driven by the `/airplane cycle \| on \| off \| status` slash commands — the manifest `commands` field routes the message to the module instead of the LLM, and the commands keep working while airplane mode is ON |
+| [`evm-wallet/`](evm-wallet/) | `storage`, `network`, `chat` | Full per-chat EVM wallet via `/wallet` slash commands: GENERATE-ONLY accounts (fresh random key per chat — no import, no seed phrases, aligned with the app's Web3 red lines), EIP-55 checksum addresses, native + ERC-20 balances, gas price, 10 verified networks (Ethereum, Sepolia, BSC, Polygon, Arbitrum, Base, OP Mainnet + 3 testnets; default Sepolia), and EIP-155 signed transfers (pure-JS Keccak-256 / secp256k1 / RFC 6979 / RLP, zero npm deps) with a mandatory two-step confirm — `/wallet send` prints the FULL summary, `/wallet confirm` signs + broadcasts, `/wallet cancel` discards. Allowlist-restricted JSON-RPC via `zagents.http`; the canonical EIP-155 spec vector is reproduced byte-for-byte in the module test harness |
 
 ## Ready-made ZIPs — download and install directly
 
 Every sample also ships pre-packaged **next to its folder** as
 `<name>.zip` (`counter.zip`, `network-fetcher.zip`, `file-notes.zip`,
-`chat-streamer.zip`, `onhomeroom-daily.zip`, `airplane-mode.zip`).
+`chat-streamer.zip`, `onhomeroom-daily.zip`, `airplane-mode.zip`,
+`evm-wallet.zip`).
 Download one, then install
 it via **Settings → Modules → Install module** — no packaging needed.
 A test guards these archives: each `<name>.zip` must always match its
@@ -82,3 +84,9 @@ On Windows: right-click the sample folder → *Send to → Compressed
   OFF → settle, verified, always ends OFF — online with a fresh IP. The
   commands keep working while airplane mode is ON; when the radio comes
   back, auto-retry continues the chat.
+* `evm-wallet` — `/wallet create` mints a fresh per-chat account (testnet
+  by default); `/wallet send 0x… 0.05` prints the full transaction
+  summary and waits: `/wallet confirm` signs with the chat's own key and
+  broadcasts (hash + explorer link), `/wallet cancel` discards, and a
+  pending offer never survives a network switch. Balances, gas price,
+  ERC-20 tokens and receipts are read from the allowlisted public RPCs.

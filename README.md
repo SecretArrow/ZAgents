@@ -360,6 +360,24 @@ OpenAI-compatible: **OpenRouter, InferHub, Z.AI, OpenAI, DeepSeek, Groq, dan lai
   sendiri saat run selesai — flag buka/tutup tetap global sehingga
   perpindahan langkah, akhir run, dan pindah chat tidak pernah
   menutupnya.
+- **v1.42.1 — sample module baru: EVM Wallet per chat di `samples/`**:
+  contoh modul lengkap siap-install (`samples/evm-wallet/` + zip) yang
+  menghadirkan dompet EVM per chat via perintah slash `/wallet` —
+  **GENERATE-ONLY** (akun baru acak per chat, tanpa import; seed phrase
+  dan private key lama tidak pernah diminta, selaras dengan garis merah
+  keamanan Web3 aplikasi), alamat EIP-55 checksum, saldo native + ERC-20,
+  harga gas, 10 jaringan terverifikasi (Ethereum, Sepolia, BSC, Polygon,
+  Arbitrum, Base, OP Mainnet + 3 testnet; default **Sepolia**), dan
+  transfer bertanda tangan EIP-155 dengan kripto murni-JS tanpa
+  dependensi npm (Keccak-256, secp256k1, nonce deterministik RFC 6979,
+  RLP). Setiap transfer wajib konfirmasi dua langkah: `/wallet send`
+  menampilkan ringkasan penuh (dari/ke/jumlah/biaya/nonce/chain id),
+  `/wallet confirm` menandatangani + menyiarkan, `/wallet cancel`
+  membatalkan; tawaran tertunda kedaluwarsa 10 menit dan tidak pernah
+  lolos pergantian jaringan. RPC dibatasi `allowedHosts` manifest dan
+  seluruh endpoint diverifikasi langsung sebelum dikirim; tanda tangan
+  direproduksi byte-per-byte dengan vektor kanonik spesifikasi EIP-155
+  dan dicek silang dengan OpenSSL.
 - **v1.42.0 — notifikasi per chat aktif & tombol Stop/Force stop**:
   (1) **Notifikasi per chat aktif** — setiap chat yang sedang berjalan
   kini memasang notifikasinya sendiri (judul chat + langkah/tool yang
