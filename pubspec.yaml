@@ -1,7 +1,7 @@
 name: zagents
 description: "ZAgents - AI agent chat Android (gaya Z.AI agent mode) dengan custom provider (OpenRouter, InferHub, Z.AI, OpenAI, dll), katalog model live + pencarian/filter/paging, dan otomasi browser."
 publish_to: 'none'
-version: 1.43.0+58
+version: 1.43.1+59
 
 environment:
   sdk: ^3.13.5

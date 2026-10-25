@@ -42,6 +42,20 @@ String zResolveFsPath(String rawPath, List<String> sandboxRoots) {
   return '$prefix${out.join(Platform.pathSeparator)}';
 }
 
+/// True when [path] (already normalized by [zResolveFsPath]) sits under
+/// [root]: prefix match with a trailing separator, so a sibling directory
+/// sharing the root's text prefix (`/state-old`) never matches, and the
+/// root itself matches (writing the root dir itself is legitimate).
+bool zIsUnderRoot(String path, String root) {
+  final String p = path.endsWith(Platform.pathSeparator)
+      ? path
+      : '$path${Platform.pathSeparator}';
+  final String r = root.endsWith(Platform.pathSeparator)
+      ? root
+      : '$root${Platform.pathSeparator}';
+  return p.startsWith(r);
+}
+
 /// Normalizes a JavaScript source before it enters the CommonJS registry:
 /// a UTF-8 BOM and a leading shebang line (`#!...`) are stripped.
 ///
@@ -257,6 +271,27 @@ class WebViewJsRuntime implements JsRuntime {
   /// route ops to the exact run that produced them.
   String? _moduleContextToken;
 
+  /// v1.43.1 — module-mode write root: the run's per-chat state dir.
+  /// While a module runs, WRITE fs actions (writeFile / appendFile /
+  /// mkdir / unlink) must resolve under this directory; reads keep the
+  /// full sandbox-root scope (module code, npm) so `require`-adjacent
+  /// reads still work. Null during plain runs, which keep their
+  /// workspace-sandboxed write semantics. Closes the last theoretical
+  /// cross-chat channel: the sandbox roots also contain the module's
+  /// GLOBAL program directory, so without this lock two chats running
+  /// the same module could exchange data through that shared folder.
+  String? _writeRoot;
+
+  /// fs actions that mutate the filesystem — gated to [_writeRoot] in
+  /// module mode (v1.43.1). Read actions (readFile / readdir / stat)
+  /// keep the sandbox-root scope.
+  static const Set<String> _fsWriteActions = <String>{
+    'writeFile',
+    'appendFile',
+    'mkdir',
+    'unlink',
+  };
+
   static const String _handlerName = 'zagentsNode';
 
   Future<void> _ensureRunning({String? bootstrap}) async {
@@ -383,14 +418,8 @@ class WebViewJsRuntime implements JsRuntime {
   /// Sandbox the fs bridge to the app documents dir + module roots.
   bool _isSandboxed(String path) {
     if (_sandboxRoots.isEmpty) return false;
-    final String normalized = path.endsWith(Platform.pathSeparator)
-        ? path
-        : '$path${Platform.pathSeparator}';
     for (final String root in _sandboxRoots) {
-      final String r = root.endsWith(Platform.pathSeparator)
-          ? root
-          : '$root${Platform.pathSeparator}';
-      if (normalized.startsWith(r)) return true;
+      if (zIsUnderRoot(path, root)) return true;
     }
     return false;
   }
@@ -420,6 +449,20 @@ class WebViewJsRuntime implements JsRuntime {
           'ok': false,
           'error': 'fs path is outside the app sandbox',
         };
+      }
+      // v1.43.1 (module mode): write actions are locked to the run's
+      // per-chat state dir. The sandbox roots also include the module's
+      // GLOBAL program directory and the npm root — without this lock
+      // two chats running the same module could exchange data through
+      // those shared folders. Reads are unaffected.
+      if (modulePerms != null && _fsWriteActions.contains(action)) {
+        final String? writeRoot = _writeRoot;
+        if (writeRoot == null || !zIsUnderRoot(resolved, writeRoot)) {
+          return <String, dynamic>{
+            'ok': false,
+            'error': 'fs write is confined to this chat\'s module state dir',
+          };
+        }
       }
       switch (action) {
         case 'readFile':
@@ -900,6 +943,14 @@ window.__zDone = false;
     }
     _console.clear();
     _sandboxRoots = <String>[?workingDir, ...moduleRoots];
+    // Plain runs are NOT module runs — drop any module-mode state a
+    // previous module run left on this shared runtime instance, or this
+    // run's fs bridge would be wrongly permission-gated and its bridge
+    // ops stamped with a dead context token.
+    _modulePermissions = null;
+    _moduleBridge = null;
+    _moduleContextToken = null;
+    _writeRoot = null;
     final Map<String, Map<String, dynamic>> registry = _buildRegistry(
       code,
       moduleRoots,
@@ -968,6 +1019,11 @@ window.__zDone = false;
     _moduleBridge = invocation.bridge;
     _moduleContextToken = invocation.contextToken;
     _sandboxRoots = <String>[?invocation.workingDir, ...invocation.moduleRoots];
+    // v1.43.1: writes lock to the per-chat state dir (workingDir) — the
+    // global module program dir and the npm root stay READ-only for
+    // modules, so nothing a module persists can outlive or leave the
+    // chat that produced it.
+    _writeRoot = invocation.workingDir;
     final Map<String, Map<String, dynamic>> registry = _buildRegistry(
       invocation.entrySource,
       invocation.moduleRoots,

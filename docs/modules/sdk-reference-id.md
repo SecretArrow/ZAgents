@@ -191,7 +191,13 @@ await zagents.fs.unlink('catatan.txt');
 const info = await zagents.fs.stat('sub'); // { isDirectory, size, modified }
 ```
 
-Path di luar direktori state akan ditolak.
+Path di luar direktori `state/` ditolak. Penulisan ditegakkan ketat di
+sisi Dart (v1.43.1): setiap aksi yang mengubah isi
+(`writeFile` / `appendFile` / `mkdir` / `unlink`) wajib berada di bawah
+direktori `state/` per chat tempat run berjalan — direktori program
+modul yang global dan root npm tetap read-only, sehingga apa pun yang
+disimpan modul tidak pernah bisa menjangkau chat lain. Pembacaan kode
+modul (untuk `require`) tetap berjalan seperti biasa.
 
 ### `zagents.http` — izin `network`
 HTTP melalui aplikasi (status + body + header respons), opsional dibatasi

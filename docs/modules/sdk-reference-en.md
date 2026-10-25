@@ -193,7 +193,13 @@ await zagents.fs.unlink('note.txt');
 const info = await zagents.fs.stat('sub'); // { isDirectory, size, modified }
 ```
 
-Paths outside the state directory are rejected.
+Paths outside the state directory are rejected. Writes are enforced
+strictly on the Dart side (v1.43.1): every mutating action
+(`writeFile` / `appendFile` / `mkdir` / `unlink`) must resolve under the
+run's per-chat `state/` directory — the module's own global program
+directory and the npm root stay read-only, so nothing a module persists
+can ever reach another chat. Reads of module code (for `require`) keep
+working.
 
 ### `zagents.http` — permission `network`
 HTTP through the app (status + body + response headers), optionally
