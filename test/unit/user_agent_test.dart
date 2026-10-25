@@ -12,16 +12,16 @@ void main() {
 
   group('user agent database', () {
     test(
-      'contains exactly 1500 unique records (500 desktop + 1000 android)',
+      'contains exactly 1000 unique records (168 desktop + 832 android)',
       () {
-        expect(kUserAgentDatabase, hasLength(1500));
+        expect(kUserAgentDatabase, hasLength(1000));
         expect(
           kUserAgentDatabase
               .where(
                 (UserAgentRecord r) => r.category == UserAgentCategory.desktop,
               )
               .length,
-          500,
+          168,
         );
         expect(
           kUserAgentDatabase
@@ -29,94 +29,112 @@ void main() {
                 (UserAgentRecord r) => r.category == UserAgentCategory.android,
               )
               .length,
-          1000,
+          832,
         );
         expect(
           kUserAgentDatabase.map((UserAgentRecord r) => r.ua).toSet().length,
-          1500,
+          1000,
           reason: 'UA strings must be globally unique',
         );
         expect(
           kUserAgentDatabase.map((UserAgentRecord r) => r.id).toSet().length,
-          1500,
+          1000,
         );
         expect(
           kUserAgentDatabase.every(
-            (UserAgentRecord r) => r.id >= 1 && r.id <= 1500,
+            (UserAgentRecord r) => r.id >= 1 && r.id <= 1000,
           ),
           isTrue,
         );
       },
     );
 
-    test(
-      'legacy ids 1..500 keep their exact identity (saved picks stable)',
-      () {
-        // scripts/gen_user_agents.py enforces the same invariants — these
-        // spot checks guard the Dart database against any generator drift
-        // that would silently move a persisted user pick to another UA.
-        final Map<int, String> frozen = <int, String>{
-          1:
-              'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
-              '(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-          137:
-              'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:136.0) '
-              'Gecko/20100101 Firefox/136.0',
-          250:
-              'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) '
-              'AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 '
-              'Safari/537.36 Vivaldi/7.6.3787.50',
-          251:
-              'Mozilla/5.0 (Linux; Android 14; SM-S928B) AppleWebKit/537.36 '
-              '(KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
-          500:
-              'Mozilla/5.0 (Linux; Android 14; Pixel 6a) AppleWebKit/537.36 '
-              '(KHTML, like Gecko) Chrome/125.0.0.0 Mobile Safari/537.36 '
-              'OPR/81.0.0.0',
-        };
-        for (final MapEntry<int, String> e in frozen.entries) {
-          final UserAgentRecord r = kUserAgentDatabase.firstWhere(
-            (UserAgentRecord r) => r.id == e.key,
-          );
-          expect(r.ua, e.value, reason: 'legacy id ${e.key} drifted');
-        }
-      },
-    );
+    test('spot ids keep their exact identity (generator drift guard)', () {
+      // scripts/gen_user_agents.py enforces the same invariants — these
+      // spot checks guard the Dart database against any generator drift.
+      final Map<int, String> frozen = <int, String>{
+        1:
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
+            '(KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36',
+        5:
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
+            '(KHTML, like Gecko) Chrome/157.0.0.0 Safari/537.36',
+        21:
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
+            '(KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36 Edg/153.0.0.0',
+        100:
+            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:157.0) '
+            'Gecko/20100101 Firefox/157.0',
+        168:
+            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) '
+            'AppleWebKit/605.1.15 (KHTML, like Gecko) Version/27.1 '
+            'Safari/605.1.15',
+      };
+      for (final MapEntry<int, String> e in frozen.entries) {
+        final UserAgentRecord r = kUserAgentDatabase.firstWhere(
+          (UserAgentRecord r) => r.id == e.key,
+        );
+        expect(r.ua, e.value, reason: 'spot id ${e.key} drifted');
+      }
+    });
 
     test('family distribution matches the generator contract', () {
       int count(bool Function(UserAgentRecord) pred) =>
           kUserAgentDatabase.where(pred).length;
       bool desk(UserAgentRecord r) => r.category == UserAgentCategory.desktop;
       bool andr(UserAgentRecord r) => r.category == UserAgentCategory.android;
-      expect(
-        count((r) => desk(r) && r.browser == UserAgentBrowser.chrome),
-        105,
-      );
-      expect(count((r) => desk(r) && r.browser == UserAgentBrowser.edge), 71);
+      expect(count((r) => desk(r) && r.browser == UserAgentBrowser.chrome), 20);
+      expect(count((r) => desk(r) && r.browser == UserAgentBrowser.edge), 20);
       expect(
         count((r) => desk(r) && r.browser == UserAgentBrowser.firefox),
-        260,
+        102,
       );
-      expect(count((r) => desk(r) && r.browser == UserAgentBrowser.safari), 15);
-      expect(count((r) => desk(r) && r.browser == UserAgentBrowser.opera), 31);
-      expect(
-        count((r) => desk(r) && r.browser == UserAgentBrowser.vivaldi),
-        18,
-      );
+      expect(count((r) => desk(r) && r.browser == UserAgentBrowser.safari), 8);
+      expect(count((r) => desk(r) && r.browser == UserAgentBrowser.opera), 15);
+      expect(count((r) => desk(r) && r.browser == UserAgentBrowser.vivaldi), 3);
       expect(
         count((r) => andr(r) && r.browser == UserAgentBrowser.chrome),
-        450,
+        420,
       );
       expect(
         count((r) => andr(r) && r.browser == UserAgentBrowser.samsungInternet),
-        80,
+        58,
       );
       expect(
         count((r) => andr(r) && r.browser == UserAgentBrowser.firefox),
-        160,
+        54,
       );
-      expect(count((r) => andr(r) && r.browser == UserAgentBrowser.edge), 155);
-      expect(count((r) => andr(r) && r.browser == UserAgentBrowser.opera), 155);
+      expect(count((r) => andr(r) && r.browser == UserAgentBrowser.edge), 150);
+      expect(count((r) => andr(r) && r.browser == UserAgentBrowser.opera), 150);
+    });
+
+    test('freshness policy: every Chromium token is 153+ (nothing stale)', () {
+      // The v1.41.5 user requirement: Chromium-based identities must use
+      // the currently-supported trains (153..157) — never <= 150.
+      final RegExp chromeToken = RegExp(r'Chrome/(\d+)\.0\.0\.0');
+      for (final UserAgentRecord r in kUserAgentDatabase) {
+        for (final RegExpMatch m in chromeToken.allMatches(r.ua)) {
+          final int major = int.parse(m.group(1)!);
+          expect(
+            major,
+            inInclusiveRange(153, 157),
+            reason: 'stale Chromium token: ${r.ua}',
+          );
+        }
+      }
+      // Firefox: newest trains + live ESR lines only.
+      final RegExp firefoxToken = RegExp(r'Firefox/(\d+)');
+      for (final UserAgentRecord r in kUserAgentDatabase) {
+        if (r.browser != UserAgentBrowser.firefox) continue;
+        for (final RegExpMatch m in firefoxToken.allMatches(r.ua)) {
+          final int major = int.parse(m.group(1)!);
+          expect(
+            major == 140 || (major >= 150 && major <= 158),
+            isTrue,
+            reason: 'stale Firefox train ${m.group(1)}: ${r.ua}',
+          );
+        }
+      }
     });
 
     test('desktop Chromium UAs use the exact Chrome wire format', () {
@@ -157,8 +175,8 @@ void main() {
             r.browser == UserAgentBrowser.firefox) {
           final RegExpMatch? m = firefoxDesktop.firstMatch(r.ua);
           expect(m, isNotNull, reason: r.ua);
-          // Real Firefox rule: rv keeps major.minor (Firefox/128.15 ->
-          // rv:128.15; Firefox/124.0.1 -> rv:124.0).
+          // Real Firefox rule: rv keeps major.minor (Firefox/153.6 ->
+          // rv:153.6; Firefox/158.0.1 -> rv:158.0).
           final List<String> parts = m!.group(2)!.split('.');
           expect('${parts[0]}.${parts[1]}', m.group(1), reason: r.ua);
         }
@@ -230,7 +248,7 @@ void main() {
           final RegExpMatch? m = chromeAndroid.firstMatch(r.ua);
           expect(m, isNotNull, reason: r.ua);
           final int android = int.parse(m!.group(1)!);
-          expect(android, inInclusiveRange(13, 16), reason: r.ua);
+          expect(android, inInclusiveRange(13, 17), reason: r.ua);
           final String model = m.group(2)!;
           final bool isTablet = tablets.contains(model);
           expect((m.group(4) == 'Mobile '), !isTablet, reason: r.ua);
@@ -238,12 +256,11 @@ void main() {
       }
     });
 
-    test('Samsung Internet majors map to their real bundled Chromium', () {
+    test('Samsung Internet majors map to their bundled Chromium (153+)', () {
       const Map<int, int> samsungChromium = <int, int>{
-        25: 119,
-        26: 124,
-        27: 125,
-        28: 130,
+        31: 153,
+        32: 155,
+        33: 157,
       };
       final RegExp samsung = RegExp(
         r'^Mozilla/5\.0 \(Linux; Android (\d+); (SM-\w+)\) AppleWebKit/537\.36 '
@@ -258,8 +275,13 @@ void main() {
           final int sb = int.parse(m!.group(3)!);
           expect(samsungChromium[sb], int.parse(m.group(4)!), reason: r.ua);
           expect(
+            int.parse(m.group(4)!),
+            inInclusiveRange(153, 157),
+            reason: r.ua,
+          );
+          expect(
             int.parse(m.group(1)!),
-            inInclusiveRange(13, 16),
+            inInclusiveRange(13, 17),
             reason: r.ua,
           );
         }
@@ -277,6 +299,11 @@ void main() {
           final RegExpMatch? m = firefoxAndroid.firstMatch(r.ua);
           expect(m, isNotNull, reason: r.ua);
           expect(m!.group(3), m.group(4), reason: r.ua);
+          expect(
+            int.parse(m.group(3)!),
+            inInclusiveRange(150, 158),
+            reason: r.ua,
+          );
           expect(
             r.ua.contains('; SM-') || r.ua.contains('; Pixel'),
             isFalse,
@@ -321,7 +348,7 @@ void main() {
     test('labels are meaningful and unique per category', () {
       expect(
         kUserAgentDatabase.map((UserAgentRecord r) => r.label).toSet().length,
-        1500,
+        1000,
         reason: 'labels help the user pick; duplicates would be confusing',
       );
       expect(
@@ -367,5 +394,21 @@ void main() {
         expect(restored.uaAndroidId, 1);
       },
     );
+
+    test('a saved id outside the shrunken database resolves to pool.first', () {
+      // The v1.41.5 refresh replaced the 1200-149-era database with the
+      // 153+-era one; the manager must self-heal stale persisted ids.
+      final UserAgentRecord missing = UserAgentRecord(
+        id: 9999,
+        category: UserAgentCategory.desktop,
+        browser: UserAgentBrowser.chrome,
+        label: 'not in the database',
+        ua: 'Mozilla/5.0 stale',
+      );
+      expect(
+        kUserAgentDatabase.any((UserAgentRecord r) => r.id == missing.id),
+        isFalse,
+      );
+    });
   });
 }

@@ -166,7 +166,7 @@ void main() {
         '(deterministic regression for the CI flake)', () async {
       // Default settings carry uaAndroidId = 1, which belongs to the
       // desktop pool. resolve(android) therefore falls back to
-      // pool.first (id 251) — and rotation must never hand that record
+      // pool.first (id 169) — and rotation must never hand that record
       // back, no matter what the RNG picks. AlwaysZeroRandom forces the
       // worst case (first candidate), which pre-fix WAS pool.first.
       final ProviderContainer c = container();
@@ -174,9 +174,9 @@ void main() {
       final UserAgentRecord current = manager.resolve(UaMode.android);
       expect(
         current.id,
-        251,
+        169,
         reason:
-            'android pool starts at id 251; '
+            'android pool starts at id 169; '
             'the default saved id (1) must be out of range for this test',
       );
 

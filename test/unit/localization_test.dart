@@ -157,8 +157,27 @@ void main() {
     expect(id.randomUaAccept, 'Ya, acak');
     expect(id.randomUaDecline, 'Pertahankan');
     expect(id.createdBy('Maragung'), 'Dibuat oleh Maragung');
-    expect(en.aboutBody, contains('v1.38.0'));
-    expect(id.aboutBody, contains('v1.38.0'));
+    expect(en.aboutBody, contains('OpenAI-compatible'));
+    expect(id.aboutBody, contains('OpenAI-compatible'));
+    // v1.41.5 — Help & About screen strings are localized end to end.
+    expect(en.helpAboutSection, 'Help & About');
+    expect(id.helpAboutSection, 'Bantuan & Tentang');
+    expect(en.helpTileTitle, contains('Help'));
+    expect(id.helpTileTitle, contains('Bantuan'));
+    expect(en.helpTopics.length, 11);
+    expect(id.helpTopics.length, 11);
+    for (final HelpEntry t in en.helpTopics) {
+      expect(t.title, isNotEmpty);
+      expect(t.body.length, greaterThan(80));
+    }
+    for (final HelpEntry t in id.helpTopics) {
+      expect(t.title, isNotEmpty);
+      expect(t.body.length, greaterThan(80));
+    }
+    expect(en.aboutDisclaimer, contains('Maragung'));
+    expect(id.aboutDisclaimer, contains('Maragung'));
+    expect(en.aboutTagline, isNotEmpty);
+    expect(id.aboutTagline, isNotEmpty);
     expect(en.autoRetryAirplaneNote, contains('Airplane mode'));
     expect(id.autoRetryAirplaneNote, contains('Mode pesawat'));
     expect(en.autoRetryAirplaneResumeNote, isNotEmpty);

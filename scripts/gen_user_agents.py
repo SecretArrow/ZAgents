@@ -1,27 +1,38 @@
 #!/usr/bin/env python3
-"""Generates lib/data/user_agents.g.dart for ZAgents (v1.7.0+, extended v1.36.0).
+"""Generates lib/data/user_agents.g.dart for ZAgents (v1.41.5 refresh).
 
-Builds a validated database of exactly 1500 unique, realistic User-Agent
-strings (500 desktop + 1000 Android) from curated component pools.
+Builds a validated database of exactly 1000 unique, realistic User-Agent
+strings (168 desktop + 832 Android) from curated component pools.
+
+v1.41.5 policy (user requirement): every Chromium-based identity carries a
+Chromium major of 153 or newer (the currently-supported stable trains:
+153..157 — 156 went stable Oct 7 2026, 157 is rolling out; nothing <= 150).
+Firefox identities use the newest real trains (150..158 — 158.0 shipped
+Oct 13 2026, 158.0.1 Oct 20 2026) plus the two live ESR lines (140.x and
+153.x). Safari uses the 26.x/27.x trains. Samsung Internet / Opera /
+Vivaldi use their newest real releases paired to a >= 153 Chromium base.
 
 Realism rules enforced here (and re-asserted in Dart tests):
   * every string follows the exact wire format of a real browser;
   * Edge/EdgA majors always equal their bundled Chromium major;
-  * Samsung Internet majors use their real bundled Chromium major
-    (25.0->119, 26.0->124, 27.0->125, 28.0->130);
+  * Opera desktop OPR majors equal Chromium - 20, Opera Mobile OPR equals
+    Chromium - 44 (the real-world offsets the app has always used);
+  * Samsung Internet majors pair 1:1 with their bundled Chromium major;
   * phone UAs carry the `Mobile` token, tablet UAs never do;
   * Android versions are plausible for each device model;
   * Firefox on macOS uses the dotted `Mac OS X 10.15` token while
     Chromium/Safari use `10_15_7` (exactly like the real browsers);
-  * Firefox desktop rv keeps major.minor (Firefox/128.15 -> rv:128.15,
-    Firefox/124.0.1 -> rv:124.0) exactly like the real browser;
+  * Firefox desktop rv keeps major.minor (Firefox/153.6 -> rv:153.6,
+    Firefox/158.0.1 -> rv:158.0) exactly like the real browser;
   * 32-bit Chrome on 64-bit Windows reports the real `WOW64` token;
-  * records 1..500 are byte-identical to the v1.7.0 database — ids are
-    stable so persisted user picks (settings uaDesktopId/uaAndroidId)
-    keep pointing at the same identity;
   * Firefox on Android never includes a device model (like the real app),
     so its uniqueness space is (Android version, rv);
   * no fabricated exotic vendors (no Huawei Chrome, etc.).
+
+Id note: the v1.38-2025 database (1200-149-era trains) was fully replaced
+by this 153+-era database, so persisted picks may point at an id that no
+longer carries the same identity — UserAgentManager documents this and
+falls back to the first record; the next rotate self-heals the pick.
 
 Run:  python3 scripts/gen_user_agents.py
 """
@@ -38,28 +49,29 @@ OUT = Path(__file__).resolve().parent.parent / "lib" / "data" / "user_agents.g.d
 # Component pools (real browser versions / real model codes only).
 # ----------------------------------------------------------------------------
 
-CHROME_MAJORS = list(range(120, 144))            # 120..143 (real trains)
-FIREFOX_MAJORS = list(range(124, 150))           # 124..149 (real trains)
-# Apple Safari versions (real): 17.6 + the 18.x line + the 26.x line.
+CHROME_MIN = 153                                   # user floor: nothing older
+CHROME_MAJORS = list(range(153, 158))              # 153..157 (supported trains)
+FIREFOX_MAJORS = list(range(150, 159))             # 150..158 (real trains)
+# Firefox ESR point releases (real): 140.10..140.16 and the 153.x line.
+FIREFOX_ESR = [f"140.{m}" for m in range(10, 17)] + [f"153.{m}" for m in range(1, 7)]
+# Apple Safari versions (real): the 26.x line + the 27.x train.
 SAFARI_VERSIONS = [
-    "17.6", "18.0", "18.1", "18.2", "18.3", "18.4", "18.5", "18.6",
-    "26.0", "26.1", "26.2", "26.3", "26.4",
+    "26.0", "26.1", "26.2", "26.3", "26.4", "26.5", "27.0", "27.1",
 ]
-# Opera desktop pairs (Chromium major -> OPR major).
-OPERA_PAIRS = {c: c - 20 for c in range(136, 144)}   # 136..143 -> 116..123
-OPERA_MOBILE_OFFSET = 44                              # Chromium 130 -> OPR/86
-# Samsung Internet -> bundled Chromium major (real pairings).
-SAMSUNG_PAIRS = [(25.0, 119), (26.0, 124), (27.0, 125)]
-# Vivaldi desktop versions (7.x line) with their Chromium base.
+# Opera desktop pairs (Chromium major -> OPR major). The real-world offset
+# the app has always shipped: OPR = Chromium - 20.
+OPERA_PAIRS = {c: c - 20 for c in CHROME_MAJORS}
+OPERA_MOBILE_OFFSET = 44                           # Chromium -> OPR on Android
+# Samsung Internet -> bundled Chromium major (newest releases, >= 153).
+SAMSUNG_PAIRS = [(31.0, 153), (32.0, 155), (33.0, 157)]
+# Vivaldi desktop versions with their Chromium base (>= 153; 8.2 ships 152
+# and is therefore excluded by the freshness policy).
 VIVALDI_PAIRS = [
-    ("7.2.3621.50", 137),
-    ("7.3.3635.7", 138),
-    ("7.4.3684.55", 139),
-    ("7.5.3735.41", 140),
-    ("7.6.3787.50", 141),
+    ("8.3.4157.3", 154),
 ]
 
 WIN = "Windows NT 10.0; Win64; x64"        # Windows 10 and 11 both report 10.0
+WIN32_ON_64 = "Windows NT 10.0; WOW64"     # 32-bit Chrome on 64-bit Windows
 MAC_CHROMIUM = "Macintosh; Intel Mac OS X 10_15_7"   # Chromium/Safari token
 MAC_FIREFOX = "Macintosh; Intel Mac OS X 10.15"      # Firefox token
 LINUX = "X11; Linux x86_64"
@@ -67,7 +79,7 @@ LINUX = "X11; Linux x86_64"
 # ----------------------------------------------------------------------------
 # Android device pool: model token in UA -> (display name, allowed Android
 # versions, kind). Real model codes only; Huawei is intentionally absent
-# (Chrome does not ship there).
+# (Chrome does not ship there). The pool carries the 2024-2026 flagships.
 # ----------------------------------------------------------------------------
 
 PHONE = "phone"
@@ -75,18 +87,23 @@ TABLET = "tablet"
 
 ANDROID_DEVICES: dict[str, tuple[str, list[int], str]] = {
     # Samsung phones
+    "SM-S938B": ("Samsung Galaxy S25 Ultra", [15, 16, 17], PHONE),
+    "SM-S936B": ("Samsung Galaxy S25+", [15, 16, 17], PHONE),
+    "SM-S931B": ("Samsung Galaxy S25", [15, 16, 17], PHONE),
     "SM-S928B": ("Samsung Galaxy S24 Ultra", [14, 15, 16], PHONE),
     "SM-S926B": ("Samsung Galaxy S24+", [14, 15, 16], PHONE),
     "SM-S921B": ("Samsung Galaxy S24", [14, 15, 16], PHONE),
-    "SM-S918B": ("Samsung Galaxy S23 Ultra", [14, 15], PHONE),
-    "SM-S911B": ("Samsung Galaxy S23", [14, 15], PHONE),
-    "SM-A556B": ("Samsung Galaxy A55 5G", [14, 15], PHONE),
+    "SM-S918B": ("Samsung Galaxy S23 Ultra", [14, 15, 16], PHONE),
+    "SM-S911B": ("Samsung Galaxy S23", [14, 15, 16], PHONE),
+    "SM-A556B": ("Samsung Galaxy A55 5G", [14, 15, 16], PHONE),
     "SM-A546B": ("Samsung Galaxy A54 5G", [13, 14, 15], PHONE),
     "SM-A346B": ("Samsung Galaxy A34 5G", [13, 14, 15], PHONE),
     # Google
-    "Pixel 9 Pro": ("Google Pixel 9 Pro", [14, 15, 16], PHONE),
-    "Pixel 9": ("Google Pixel 9", [14, 15, 16], PHONE),
-    "Pixel 9a": ("Google Pixel 9a", [15, 16], PHONE),
+    "Pixel 10 Pro": ("Google Pixel 10 Pro", [16, 17], PHONE),
+    "Pixel 10": ("Google Pixel 10", [16, 17], PHONE),
+    "Pixel 9 Pro": ("Google Pixel 9 Pro", [14, 15, 16, 17], PHONE),
+    "Pixel 9": ("Google Pixel 9", [14, 15, 16, 17], PHONE),
+    "Pixel 9a": ("Google Pixel 9a", [15, 16, 17], PHONE),
     "Pixel 8 Pro": ("Google Pixel 8 Pro", [14, 15, 16], PHONE),
     "Pixel 8": ("Google Pixel 8", [14, 15, 16], PHONE),
     "Pixel 8a": ("Google Pixel 8a", [14, 15, 16], PHONE),
@@ -114,11 +131,11 @@ ANDROID_DEVICES: dict[str, tuple[str, list[int], str]] = {
     "Infinix X6819": ("Infinix Note 30", [13, 14], PHONE),
     "TECNO KI7": ("TECNO Spark 10", [13, 14], PHONE),
     # Tablets (their UA must NOT contain the Mobile token)
-    "SM-X910": ("Samsung Galaxy Tab S9+", [14, 15], TABLET),
-    "SM-X710": ("Samsung Galaxy Tab S9", [14, 15], TABLET),
+    "SM-X910": ("Samsung Galaxy Tab S9+", [14, 15, 16], TABLET),
+    "SM-X710": ("Samsung Galaxy Tab S9", [14, 15, 16], TABLET),
     "SM-X210": ("Samsung Galaxy Tab A9+", [14, 15], TABLET),
     "SM-X200": ("Samsung Galaxy Tab A9", [14, 15], TABLET),
-    "Pixel Tablet": ("Google Pixel Tablet", [14, 15], TABLET),
+    "Pixel Tablet": ("Google Pixel Tablet", [14, 15, 16], TABLET),
     "23043RP34G": ("Xiaomi Pad 6", [14, 15], TABLET),
 }
 
@@ -166,6 +183,12 @@ def firefox_desktop_ua(platform_dots: str, version: str) -> str:
     )
 
 
+def firefox_esr_ua(platform_dots: str, version: str) -> str:
+    # Real ESR rule: rv keeps major.minor (Firefox/153.6 -> rv:153.6).
+    rv = ".".join(version.split(".")[:2])
+    return f"Mozilla/5.0 ({platform_dots}; rv:{rv}) Gecko/20100101 Firefox/{version}"
+
+
 def android_ua(model: str, android: int, chrome: int, extra: str = "") -> str:
     kind = ANDROID_DEVICES[model][2]
     mobile = "Mobile " if kind == PHONE else ""
@@ -189,71 +212,94 @@ def interleave(groups):
     return out
 
 
-# ----------------------------- DESKTOP (250) --------------------------------
+# ----------------------------- DESKTOP (168) --------------------------------
 
-# Chrome desktop — 68
-for major in CHROME_MAJORS:                    # 24 Windows
+# Chrome desktop — 20: one record per supported train per platform token
+# (Win64, WOW64 32-bit, macOS, Linux).
+for major in CHROME_MAJORS:
     add("desktop", "chrome", f"Chrome {major} · Windows 10/11", chromium_ua(WIN, major))
-for major in CHROME_MAJORS:                    # 24 macOS
+for major in CHROME_MAJORS:
+    add("desktop", "chrome", f"Chrome {major} · Windows 10/11 (32-bit)",
+        chromium_ua(WIN32_ON_64, major))
+for major in CHROME_MAJORS:
     add("desktop", "chrome", f"Chrome {major} · macOS", chromium_ua(MAC_CHROMIUM, major))
-for major in range(120, 140):                  # 20 Linux
+for major in CHROME_MAJORS:
     add("desktop", "chrome", f"Chrome {major} · Linux", chromium_ua(LINUX, major))
 
-# Edge desktop — 44 (Edge major always equals its Chromium major)
-for major in CHROME_MAJORS:                    # 24 Windows
+# Edge desktop — 20 (Edge major always equals its Chromium major).
+for major in CHROME_MAJORS:
     add("desktop", "edge", f"Edge {major} · Windows 10/11",
         chromium_ua(WIN, major, f"Edg/{major}.0.0.0"))
-for major in range(134, 144):                  # 10 macOS
+for major in CHROME_MAJORS:
+    add("desktop", "edge", f"Edge {major} · Windows 10/11 (32-bit)",
+        chromium_ua(WIN32_ON_64, major, f"Edg/{major}.0.0.0"))
+for major in CHROME_MAJORS:
     add("desktop", "edge", f"Edge {major} · macOS",
         chromium_ua(MAC_CHROMIUM, major, f"Edg/{major}.0.0.0"))
-for major in range(134, 144):                  # 10 Linux
+for major in CHROME_MAJORS:
     add("desktop", "edge", f"Edge {major} · Linux",
         chromium_ua(LINUX, major, f"Edg/{major}.0.0.0"))
 
-# Firefox desktop — 104 (point releases are real: Firefox ships .0.1 fixes)
-for major in FIREFOX_MAJORS:                   # 52 Windows (.0 / .0.1)
+# Opera desktop — 15 (OPR bundles a specific Chromium, OPR = Chromium - 20).
+for chrome, opr in OPERA_PAIRS.items():            # 5 Windows
+    add("desktop", "opera", f"Opera {opr} (Chromium {chrome}) · Windows 10/11",
+        chromium_ua(WIN, chrome, f"OPR/{opr}.0.0.0"))
+for chrome, opr in OPERA_PAIRS.items():            # 5 macOS
+    add("desktop", "opera", f"Opera {opr} (Chromium {chrome}) · macOS",
+        chromium_ua(MAC_CHROMIUM, chrome, f"OPR/{opr}.0.0.0"))
+for chrome, opr in OPERA_PAIRS.items():            # 5 Linux
+    add("desktop", "opera", f"Opera {opr} (Chromium {chrome}) · Linux",
+        chromium_ua(LINUX, chrome, f"OPR/{opr}.0.0.0"))
+
+# Vivaldi desktop — 3.
+for vivaldi, chrome in VIVALDI_PAIRS:
+    short = ".".join(vivaldi.split(".")[:2])
+    add("desktop", "vivaldi", f"Vivaldi {short} · Windows 10/11",
+        chromium_ua(WIN, chrome, f"Vivaldi/{vivaldi}"))
+    add("desktop", "vivaldi", f"Vivaldi {short} · macOS",
+        chromium_ua(MAC_CHROMIUM, chrome, f"Vivaldi/{vivaldi}"))
+    add("desktop", "vivaldi", f"Vivaldi {short} · Linux",
+        chromium_ua(LINUX, chrome, f"Vivaldi/{vivaldi}"))
+
+# Firefox desktop — 102 (point releases are real: Firefox ships .0.1/.0.2
+# fixes; rv keeps major.minor, exactly like the real browser).
+for major in FIREFOX_MAJORS:                       # 27 Windows (.0/.0.1/.0.2)
     add("desktop", "firefox", f"Firefox {major}.0 · Windows 10/11",
         firefox_desktop_ua(WIN, f"{major}.0"))
     add("desktop", "firefox", f"Firefox {major}.0.1 · Windows 10/11",
         firefox_desktop_ua(WIN, f"{major}.0.1"))
-for major in FIREFOX_MAJORS:                   # 26 macOS
+    add("desktop", "firefox", f"Firefox {major}.0.2 · Windows 10/11",
+        firefox_desktop_ua(WIN, f"{major}.0.2"))
+for major in FIREFOX_MAJORS:                       # 18 macOS (.0/.0.1)
     add("desktop", "firefox", f"Firefox {major}.0 · macOS",
         firefox_desktop_ua(MAC_FIREFOX, f"{major}.0"))
-for major in FIREFOX_MAJORS:                   # 26 Linux
+    add("desktop", "firefox", f"Firefox {major}.0.1 · macOS",
+        firefox_desktop_ua(MAC_FIREFOX, f"{major}.0.1"))
+for major in FIREFOX_MAJORS:                       # 18 Linux (.0/.0.1)
     add("desktop", "firefox", f"Firefox {major}.0 · Linux",
         firefox_desktop_ua(LINUX, f"{major}.0"))
+    add("desktop", "firefox", f"Firefox {major}.0.1 · Linux",
+        firefox_desktop_ua(LINUX, f"{major}.0.1"))
+for v in FIREFOX_ESR:                              # 39 ESR point releases
+    add("desktop", "firefox", f"Firefox ESR {v} · Windows 10/11",
+        firefox_esr_ua(WIN, v))
+    add("desktop", "firefox", f"Firefox ESR {v} · macOS", firefox_esr_ua(MAC_FIREFOX, v))
+    add("desktop", "firefox", f"Firefox ESR {v} · Linux", firefox_esr_ua(LINUX, v))
 
-# Safari macOS — 13 (Safari still reports 10_15_7)
+# Safari macOS — 8 (Safari still reports the frozen 10_15_7 token).
 for v in SAFARI_VERSIONS:
     add("desktop", "safari", f"Safari {v} · macOS",
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 "
         f"(KHTML, like Gecko) Version/{v} Safari/605.1.15")
 
-# Opera desktop — 14 (OPR bundles a specific Chromium)
-for chrome, opr in sorted(OPERA_PAIRS.items()):          # 8 Windows
-    add("desktop", "opera", f"Opera {opr} (Chromium {chrome}) · Windows 10/11",
-        chromium_ua(WIN, chrome, f"OPR/{opr}.0.0.0"))
-for chrome, opr in sorted(OPERA_PAIRS.items())[2:]:      # 6 macOS
-    add("desktop", "opera", f"Opera {opr} (Chromium {chrome}) · macOS",
-        chromium_ua(MAC_CHROMIUM, chrome, f"OPR/{opr}.0.0.0"))
+assert len(records) == 168, f"desktop count = {len(records)}"
 
-# Vivaldi desktop — 7
-for vivaldi, chrome in VIVALDI_PAIRS:                    # 5 Windows
-    short = ".".join(vivaldi.split(".")[:2])
-    add("desktop", "vivaldi", f"Vivaldi {short} · Windows 10/11",
-        chromium_ua(WIN, chrome, f"Vivaldi/{vivaldi}"))
-for vivaldi, chrome in VIVALDI_PAIRS[3:]:                # 2 macOS
-    short = ".".join(vivaldi.split(".")[:2])
-    add("desktop", "vivaldi", f"Vivaldi {short} · macOS",
-        chromium_ua(MAC_CHROMIUM, chrome, f"Vivaldi/{vivaldi}"))
-
-assert len(records) == 250, f"desktop count = {len(records)}"
-
-# ----------------------------- ANDROID (250) ---------------------------------
+# ----------------------------- ANDROID (832) ---------------------------------
 
 android_before = len(records)
+assert android_before == 168
 
-# Chrome phone — 120: round-robin over every phone model.
+# Chrome phone — 360: round-robin over every phone model.
 groups = []
 for model in ALL_PHONES:
     androids = ANDROID_DEVICES[model][1]
@@ -263,19 +309,55 @@ for model in ALL_PHONES:
     ]
     groups.append(combos)
 seen_combo: set[tuple] = set()
-for model, android, chrome in interleave(groups)[:120]:
+count = 0
+for model, android, chrome in interleave(groups):
+    if count >= 360:
+        break
     guard = 0
     while (model, android, chrome) in seen_combo:
         guard += 1
         if guard > len(CHROME_MAJORS):
-            sys.exit("FATAL: could not dedupe chrome phone pool")
+            break
         chrome = CHROME_MAJORS[(CHROME_MAJORS.index(chrome) + 1) % len(CHROME_MAJORS)]
+    if (model, android, chrome) in seen_combo:
+        continue
     seen_combo.add((model, android, chrome))
     name = ANDROID_DEVICES[model][0]
     add("android", "chrome", f"Chrome {chrome} · {name} (Android {android})",
         android_ua(model, android, chrome))
+    count += 1
+assert count == 360, f"chrome phone = {count}"
 
-# Samsung Internet — 40 (real bundled Chromium majors).
+# Chrome tablet — 60: no Mobile token (exactly like real Android tablets).
+groups = []
+for model in TABLETS:
+    androids = ANDROID_DEVICES[model][1]
+    combos = [
+        (model, androids[i % len(androids)], CHROME_MAJORS[(i * 7) % len(CHROME_MAJORS)])
+        for i in range(24 * len(androids))
+    ]
+    groups.append(combos)
+seen_combo.clear()
+count = 0
+for model, android, chrome in interleave(groups):
+    if count >= 60:
+        break
+    guard = 0
+    while (model, android, chrome) in seen_combo:
+        guard += 1
+        if guard > len(CHROME_MAJORS):
+            break
+        chrome = CHROME_MAJORS[(CHROME_MAJORS.index(chrome) + 1) % len(CHROME_MAJORS)]
+    if (model, android, chrome) in seen_combo:
+        continue
+    seen_combo.add((model, android, chrome))
+    name = ANDROID_DEVICES[model][0]
+    add("android", "chrome", f"Chrome {chrome} · {name} (Android {android})",
+        android_ua(model, android, chrome))
+    count += 1
+assert count == 60, f"chrome tablet = {count}"
+
+# Samsung Internet — 58 (real bundled Chromium majors, >= 153).
 groups = []
 for model in SAMSUNG_PHONES:
     combos = [
@@ -285,7 +367,15 @@ for model in SAMSUNG_PHONES:
     ]
     groups.append(combos)
 samsung_chrome = {int(s): c for s, c in SAMSUNG_PAIRS}
-for model, android, sb in interleave(groups)[:40]:
+candidates = [c for c in interleave(groups)]
+count = 0
+used_samsung: set[tuple] = set()
+for model, android, sb in candidates:
+    if count >= 58:
+        break
+    if (model, android, sb) in used_samsung:
+        continue
+    used_samsung.add((model, android, sb))
     chrome = samsung_chrome[int(sb)]
     name = ANDROID_DEVICES[model][0]
     add("android", "samsungInternet",
@@ -293,40 +383,18 @@ for model, android, sb in interleave(groups)[:40]:
         f"Mozilla/5.0 (Linux; Android {android}; {model}) AppleWebKit/537.36 "
         f"(KHTML, like Gecko) SamsungBrowser/{sb:.0f}.0 Chrome/{chrome}.0.0.0 "
         f"Mobile Safari/537.36")
+    count += 1
+assert count == 58, f"samsung = {count}"
 
-# Chrome tablet — 20: no Mobile token (exactly like real Android tablets).
-groups = []
-for model in TABLETS:
-    androids = ANDROID_DEVICES[model][1]
-    combos = [
-        (model, androids[i % len(androids)], CHROME_MAJORS[(i * 5) % len(CHROME_MAJORS)])
-        for i in range(24 * len(androids))
-    ]
-    groups.append(combos)
-seen_combo.clear()
-for model, android, chrome in interleave(groups)[:20]:
-    guard = 0
-    while (model, android, chrome) in seen_combo:
-        guard += 1
-        if guard > len(CHROME_MAJORS):
-            sys.exit("FATAL: could not dedupe chrome tablet pool")
-        chrome = CHROME_MAJORS[(CHROME_MAJORS.index(chrome) + 1) % len(CHROME_MAJORS)]
-    seen_combo.add((model, android, chrome))
-    name = ANDROID_DEVICES[model][0]
-    add("android", "chrome", f"Chrome {chrome} · {name} (Android {android})",
-        android_ua(model, android, chrome))
-
-# Firefox Android — 30 (24 phone + 6 tablet, real Gecko format).
+# Firefox Android — 54 (36 phone + 18 tablet, real Gecko format).
 # NOTE: Firefox on Android does NOT put the device model in its UA, so the
 # uniqueness space is (Android version, rv). Labels name a plausible
 # representative device for each Android version.
-FF_PHONE_MODEL = {13: "Pixel 7", 14: "Pixel 8", 15: "Pixel 9", 16: "Pixel 9 Pro"}
+FF_PHONE_MODEL = {14: "Pixel 8", 15: "Pixel 9", 16: "Pixel 9 Pro", 17: "Pixel 10"}
 count = 0
 for rv in FIREFOX_MAJORS:
-    if count >= 24:
-        break
-    for android in (13, 14, 15, 16):
-        if count >= 24:
+    for android in (14, 15, 16, 17):
+        if count >= 36:
             break
         model = FF_PHONE_MODEL[android]
         name = ANDROID_DEVICES[model][0]
@@ -334,14 +402,12 @@ for rv in FIREFOX_MAJORS:
             f"Mozilla/5.0 (Android {android}; Mobile; rv:{rv}.0) Gecko/{rv}.0 "
             f"Firefox/{rv}.0")
         count += 1
-assert count == 24, f"firefox phone = {count}"
-FF_TABLET_MODEL = {14: "SM-X910", 15: "Pixel Tablet"}
+assert count == 36, f"firefox phone = {count}"
+FF_TABLET_MODEL = {15: "Pixel Tablet", 16: "SM-X910"}
 count = 0
 for rv in FIREFOX_MAJORS:
-    if count >= 6:
-        break
-    for android in (14, 15):
-        if count >= 6:
+    for android in (15, 16):
+        if count >= 18:
             break
         model = FF_TABLET_MODEL[android]
         name = ANDROID_DEVICES[model][0]
@@ -349,12 +415,13 @@ for rv in FIREFOX_MAJORS:
             f"Mozilla/5.0 (Android {android}; Tablet; rv:{rv}.0) Gecko/{rv}.0 "
             f"Firefox/{rv}.0")
         count += 1
-assert count == 6, f"firefox tablet = {count}"
+assert count == 18, f"firefox tablet = {count}"
 
-# Edge Android — 20 (EdgA major == Chromium major).
+# Edge Android — 150 (EdgA major == Chromium major).
 edge_models = [
-    "SM-S921B", "Pixel 8 Pro", "SM-A546B", "Pixel 7", "CPH2451",
-    "V2249", "RMX3771", "CPH2449", "Pixel 8a", "SM-A556B",
+    "SM-S931B", "SM-S921B", "Pixel 10 Pro", "Pixel 8 Pro", "SM-A546B",
+    "Pixel 7", "CPH2451", "V2249", "RMX3771", "CPH2449", "Pixel 8a",
+    "SM-A556B", "Pixel 9", "CPH2557", "XT2303-2",
 ]
 groups = []
 for model in edge_models:
@@ -364,284 +431,57 @@ for model in edge_models:
         for i in range(24 * len(androids))
     ]
     groups.append(combos)
-for model, android, chrome in interleave(groups)[:20]:
+seen_combo.clear()
+count = 0
+for model, android, chrome in interleave(groups):
+    if count >= 150:
+        break
+    if (model, android, chrome) in seen_combo:
+        continue
+    seen_combo.add((model, android, chrome))
     name = ANDROID_DEVICES[model][0]
     add("android", "edge", f"Edge {chrome} · {name} (Android {android})",
         android_ua(model, android, chrome, f"EdgA/{chrome}.0.0.0"))
+    count += 1
+assert count == 150, f"edge android = {count}"
 
-# Opera Mobile — 20 (OPR = Chromium - 44, real-world offset).
+# Opera Mobile — 150 (OPR = Chromium - 44, real-world offset).
 opera_models = [
-    "SM-S928B", "Pixel 9", "SM-A346B", "Pixel 7a", "23021RAAEG",
-    "CPH2519", "RMX3521", "XT2303-2", "V2227", "Pixel 6a",
+    "SM-S938B", "Pixel 9", "SM-A346B", "Pixel 7a", "23021RAAEG",
+    "CPH2519", "RMX3521", "XT2341-3", "V2227", "Pixel 6a", "Pixel 9a",
+    "SM-S936B", "M2101K6G", "A063", "Infinix X6819",
 ]
 groups = []
 for model in opera_models:
     androids = ANDROID_DEVICES[model][1]
     combos = [
-        (model, androids[i % len(androids)], CHROME_MAJORS[(i * 5) % len(CHROME_MAJORS)])
+        (model, androids[i % len(androids)], CHROME_MAJORS[(i * 7) % len(CHROME_MAJORS)])
         for i in range(24 * len(androids))
     ]
     groups.append(combos)
-for model, android, chrome in interleave(groups)[:20]:
+seen_combo.clear()
+count = 0
+for model, android, chrome in interleave(groups):
+    if count >= 150:
+        break
+    guard = 0
+    while (model, android, chrome) in seen_combo:
+        guard += 1
+        if guard > len(CHROME_MAJORS):
+            break
+        chrome = CHROME_MAJORS[(CHROME_MAJORS.index(chrome) + 1) % len(CHROME_MAJORS)]
+    if (model, android, chrome) in seen_combo:
+        continue
+    seen_combo.add((model, android, chrome))
     opr = chrome - OPERA_MOBILE_OFFSET
     name = ANDROID_DEVICES[model][0]
     add("android", "opera", f"Opera {opr} · {name} (Android {android})",
         android_ua(model, android, chrome, f"OPR/{opr}.0.0.0"))
+    count += 1
+assert count == 150, f"opera android = {count}"
 
 android_count = len(records) - android_before
-assert android_count == 250, f"android count = {android_count}"
-
-# ----------------------------------------------------------------------------
-# EXTENSION (v1.36.0): +1000 records. Same realism rules and the SAME
-# device/browser pools, widened with newer real browser trains. The first
-# 500 records above are untouched — ids stay stable so persisted user
-# picks keep working. Desktop +250 (global ids 501..750), Android +750
-# (global ids 751..1500).
-# ----------------------------------------------------------------------------
-
-# ------------------------- DESKTOP EXTENSION (+250) -------------------------
-
-desktop_before_ext = len(records)
-assert desktop_before_ext == 500
-
-# Chrome desktop — newer real trains 144-146 on all three platforms (+13).
-for major in (144, 145, 146):
-    add("desktop", "chrome", f"Chrome {major} · Windows 10/11", chromium_ua(WIN, major))
-for major in (144, 145, 146):
-    add("desktop", "chrome", f"Chrome {major} · macOS", chromium_ua(MAC_CHROMIUM, major))
-for major in range(140, 147):
-    add("desktop", "chrome", f"Chrome {major} · Linux", chromium_ua(LINUX, major))
-
-# Chrome desktop — 32-bit Chrome on 64-bit Windows reports WOW64 (+24).
-WIN32_ON_64 = "Windows NT 10.0; WOW64"
-for major in CHROME_MAJORS:
-    add("desktop", "chrome", f"Chrome {major} · Windows 10/11 (32-bit)",
-        chromium_ua(WIN32_ON_64, major))
-
-# Edge desktop — newer trains on Windows (+3) and older real trains on
-# macOS/Linux (+24; Edge has shipped for both since 2020).
-for major in (144, 145, 146):
-    add("desktop", "edge", f"Edge {major} · Windows 10/11",
-        chromium_ua(WIN, major, f"Edg/{major}.0.0.0"))
-for major in range(120, 132):
-    add("desktop", "edge", f"Edge {major} · macOS",
-        chromium_ua(MAC_CHROMIUM, major, f"Edg/{major}.0.0.0"))
-for major in range(120, 132):
-    add("desktop", "edge", f"Edge {major} · Linux",
-        chromium_ua(LINUX, major, f"Edg/{major}.0.0.0"))
-
-# Firefox desktop — real trains 150-155 (+12 Windows .0/.0.1, +6 macOS,
-# +6 Linux).
-for major in range(150, 156):
-    add("desktop", "firefox", f"Firefox {major}.0 · Windows 10/11",
-        firefox_desktop_ua(WIN, f"{major}.0"))
-    add("desktop", "firefox", f"Firefox {major}.0.1 · Windows 10/11",
-        firefox_desktop_ua(WIN, f"{major}.0.1"))
-for major in range(150, 156):
-    add("desktop", "firefox", f"Firefox {major}.0 · macOS",
-        firefox_desktop_ua(MAC_FIREFOX, f"{major}.0"))
-for major in range(150, 156):
-    add("desktop", "firefox", f"Firefox {major}.0 · Linux",
-        firefox_desktop_ua(LINUX, f"{major}.0"))
-
-# Firefox desktop — .0.2 point releases (real: Firefox ships follow-up
-# fixes) for trains 124-149 on Windows (+26) and .0.1 point releases on
-# macOS/Linux (+26 each). rv stays major.0, exactly like real Firefox.
-for major in FIREFOX_MAJORS:
-    add("desktop", "firefox", f"Firefox {major}.0.2 · Windows 10/11",
-        firefox_desktop_ua(WIN, f"{major}.0.2"))
-for major in FIREFOX_MAJORS:
-    add("desktop", "firefox", f"Firefox {major}.0.1 · macOS",
-        firefox_desktop_ua(MAC_FIREFOX, f"{major}.0.1"))
-for major in FIREFOX_MAJORS:
-    add("desktop", "firefox", f"Firefox {major}.0.1 · Linux",
-        firefox_desktop_ua(LINUX, f"{major}.0.1"))
-
-# Firefox ESR — the 128 and 140 ESR trains get monthly point releases
-# (128.1..128.15 = +45, 140.1..140.3 = +9). Real rv rule: rv keeps
-# major.minor (Firefox/128.15 -> rv:128.15).
-def firefox_esr_ua(platform_dots: str, version: str) -> str:
-    rv = ".".join(version.split(".")[:2])
-    return (f"Mozilla/5.0 ({platform_dots}; rv:{rv}) Gecko/20100101 "
-            f"Firefox/{version}")
-
-for minor in range(1, 16):
-    v = f"128.{minor}"
-    add("desktop", "firefox", f"Firefox {v} · Windows 10/11", firefox_esr_ua(WIN, v))
-    add("desktop", "firefox", f"Firefox {v} · macOS", firefox_esr_ua(MAC_FIREFOX, v))
-    add("desktop", "firefox", f"Firefox {v} · Linux", firefox_esr_ua(LINUX, v))
-for minor in range(1, 4):
-    v = f"140.{minor}"
-    add("desktop", "firefox", f"Firefox {v} · Windows 10/11", firefox_esr_ua(WIN, v))
-    add("desktop", "firefox", f"Firefox {v} · macOS", firefox_esr_ua(MAC_FIREFOX, v))
-    add("desktop", "firefox", f"Firefox {v} · Linux", firefox_esr_ua(LINUX, v))
-
-# Safari — the 26.5 update and the 27.0 train shipped with the 2026 OS
-# releases; Safari still reports the frozen 10_15_7 token (+2).
-for v in ("26.5", "27.0"):
-    add("desktop", "safari", f"Safari {v} · macOS",
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 "
-        f"(KHTML, like Gecko) Version/{v} Safari/605.1.15")
-
-# Opera desktop — Chromium 144-146 on Windows/macOS (+6) and the Linux
-# build (real and popular) for every train 136-146 (+11).
-for chrome in (144, 145, 146):
-    opr = chrome - 20
-    add("desktop", "opera", f"Opera {opr} (Chromium {chrome}) · Windows 10/11",
-        chromium_ua(WIN, chrome, f"OPR/{opr}.0.0.0"))
-for chrome in (144, 145, 146):
-    opr = chrome - 20
-    add("desktop", "opera", f"Opera {opr} (Chromium {chrome}) · macOS",
-        chromium_ua(MAC_CHROMIUM, chrome, f"OPR/{opr}.0.0.0"))
-for chrome in range(136, 147):
-    opr = chrome - 20
-    add("desktop", "opera", f"Opera {opr} (Chromium {chrome}) · Linux",
-        chromium_ua(LINUX, chrome, f"OPR/{opr}.0.0.0"))
-
-# Vivaldi desktop — 7.7/7.8 trains (Chromium 142/143) on Windows/macOS
-# (+4) and the Linux build for every 7.x train (+7).
-VIVALDI_EXT_PAIRS = [
-    ("7.7.3851.44", 142),
-    ("7.8.3922.63", 143),
-]
-for vivaldi, chrome in VIVALDI_EXT_PAIRS:
-    short = ".".join(vivaldi.split(".")[:2])
-    add("desktop", "vivaldi", f"Vivaldi {short} · Windows 10/11",
-        chromium_ua(WIN, chrome, f"Vivaldi/{vivaldi}"))
-for vivaldi, chrome in VIVALDI_EXT_PAIRS:
-    short = ".".join(vivaldi.split(".")[:2])
-    add("desktop", "vivaldi", f"Vivaldi {short} · macOS",
-        chromium_ua(MAC_CHROMIUM, chrome, f"Vivaldi/{vivaldi}"))
-for vivaldi, chrome in VIVALDI_PAIRS + VIVALDI_EXT_PAIRS:
-    short = ".".join(vivaldi.split(".")[:2])
-    add("desktop", "vivaldi", f"Vivaldi {short} · Linux",
-        chromium_ua(LINUX, chrome, f"Vivaldi/{vivaldi}"))
-
-desktop_ext = len(records) - desktop_before_ext
-assert desktop_ext == 250, f"desktop extension = {desktop_ext}"
-
-# ------------------------- ANDROID EXTENSION (+750) -------------------------
-
-android_before_ext = len(records)
-
-EXT_CHROME_MAJORS = list(range(120, 147))     # 120..146
-FIREFOX_MAJORS_EXT = list(range(124, 156))    # 124..155
-
-
-def fill_candidates(models, quota_note, ua_builder, stride):
-    """Deterministic round-robin combo candidates over every model,
-    skipping UA strings already present in the database."""
-    groups = []
-    for mi, model in enumerate(models):
-        androids = ANDROID_DEVICES[model][1]
-        combos = []
-        for ai, android in enumerate(androids):
-            for ci in range(len(EXT_CHROME_MAJORS)):
-                chrome = EXT_CHROME_MAJORS[(ci * stride + mi + ai) % len(EXT_CHROME_MAJORS)]
-                combos.append((model, android, chrome))
-        groups.append(combos)
-    out = []
-    seen_local = set()
-    for model, android, chrome in interleave(groups):
-        ua = ua_builder(model, android, chrome)
-        if ua in _seen or (model, android, chrome) in seen_local:
-            continue
-        seen_local.add((model, android, chrome))
-        out.append((model, android, chrome))
-    return out
-
-
-# Chrome phone fill — +260 over every phone model.
-def plain_android_ua(model, android, chrome):
-    return android_ua(model, android, chrome)
-
-for model, android, chrome in fill_candidates(ALL_PHONES, "chrome-phone",
-                                              plain_android_ua, 1)[:260]:
-    name = ANDROID_DEVICES[model][0]
-    add("android", "chrome", f"Chrome {chrome} · {name} (Android {android})",
-        android_ua(model, android, chrome))
-
-# Chrome tablet fill — +50 over every tablet model (no Mobile token).
-for model, android, chrome in fill_candidates(TABLETS, "chrome-tablet",
-                                              plain_android_ua, 1)[:50]:
-    name = ANDROID_DEVICES[model][0]
-    add("android", "chrome", f"Chrome {chrome} · {name} (Android {android})",
-        android_ua(model, android, chrome))
-
-# Samsung Internet fill — +40: unused 25/26/27 combos plus the real
-# Samsung Internet 28 (bundles Chromium 130).
-SAMSUNG_PAIRS_EXT = SAMSUNG_PAIRS + [(28.0, 130)]
-samsung_chrome_ext = {int(s): c for s, c in SAMSUNG_PAIRS_EXT}
-
-
-def samsung_ua(model, android, sb):
-    return (f"Mozilla/5.0 (Linux; Android {android}; {model}) AppleWebKit/537.36 "
-            f"(KHTML, like Gecko) SamsungBrowser/{sb:.0f}.0 "
-            f"Chrome/{samsung_chrome_ext[int(sb)]}.0.0.0 Mobile Safari/537.36")
-
-
-groups = []
-for model in SAMSUNG_PHONES:
-    combos = [(model, android, sb)
-              for android in ANDROID_DEVICES[model][1]
-              for sb, _ in SAMSUNG_PAIRS_EXT]
-    groups.append(combos)
-candidates = [c for c in interleave(groups)
-              if samsung_ua(*c) not in _seen]
-for model, android, sb in candidates[:40]:
-    name = ANDROID_DEVICES[model][0]
-    add("android", "samsungInternet",
-        f"Samsung Internet {sb:.0f} · {name} (Android {android})",
-        samsung_ua(model, android, sb))
-
-# Firefox Android fill — +90 phone / +40 tablet (real Gecko format, no
-# device model in the UA; rv 130-155, since 124-129 are already used).
-FF_PHONE_MODEL_EXT = FF_PHONE_MODEL
-FF_TABLET_MODEL_EXT = FF_TABLET_MODEL
-candidates = [(rv, android) for rv in range(130, 156)
-              for android in (13, 14, 15, 16)]
-for rv, android in candidates[:90]:
-    model = FF_PHONE_MODEL_EXT[android]
-    name = ANDROID_DEVICES[model][0]
-    add("android", "firefox", f"Firefox {rv} · {name} (Android {android})",
-        f"Mozilla/5.0 (Android {android}; Mobile; rv:{rv}.0) Gecko/{rv}.0 "
-        f"Firefox/{rv}.0")
-candidates = [(rv, android) for rv in range(130, 156)
-              for android in (14, 15)]
-for rv, android in candidates[:40]:
-    model = FF_TABLET_MODEL_EXT[android]
-    name = ANDROID_DEVICES[model][0]
-    add("android", "firefox", f"Firefox {rv} · {name} (Android {android})",
-        f"Mozilla/5.0 (Android {android}; Tablet; rv:{rv}.0) Gecko/{rv}.0 "
-        f"Firefox/{rv}.0")
-
-# Edge Android fill — +135 across every phone model (EdgA major equals
-# its Chromium major).
-def edge_android_ua(model, android, chrome):
-    return android_ua(model, android, chrome, f"EdgA/{chrome}.0.0.0")
-
-for model, android, chrome in fill_candidates(ALL_PHONES, "edge",
-                                              edge_android_ua, 2)[:135]:
-    name = ANDROID_DEVICES[model][0]
-    add("android", "edge", f"Edge {chrome} · {name} (Android {android})",
-        edge_android_ua(model, android, chrome))
-
-# Opera Mobile fill — +135 across every phone model (OPR = Chromium - 44).
-
-
-def opera_android_ua(model, android, chrome):
-    opr = chrome - OPERA_MOBILE_OFFSET
-    return android_ua(model, android, chrome, f"OPR/{opr}.0.0.0")
-
-for model, android, chrome in fill_candidates(ALL_PHONES, "opera",
-                                              opera_android_ua, 5)[:135]:
-    opr = chrome - OPERA_MOBILE_OFFSET
-    name = ANDROID_DEVICES[model][0]
-    add("android", "opera", f"Opera {opr} · {name} (Android {android})",
-        opera_android_ua(model, android, chrome))
-
-android_ext = len(records) - android_before_ext
-assert android_ext == 750, f"android extension = {android_ext}"
+assert android_count == 832, f"android count = {android_count}"
 
 # ----------------------------------------------------------------------------
 # Validation (mirrored in test/unit/user_agent_test.dart)
@@ -688,7 +528,9 @@ R_OPERA_ANDROID = re.compile(
     R_CHROME_ANDROID.pattern[:-1] + r" OPR/(?P<o>\d+)\.0\.0\.0$"
 )
 
-SAMSUNG_CHROME_MAP = {int(s): c for s, c in SAMSUNG_PAIRS_EXT}  # includes SI 28 -> 130
+SAMSUNG_CHROME_MAP = {int(s): c for s, c in SAMSUNG_PAIRS}
+
+CHROMIUM_TOKEN_MIN = CHROME_MIN  # every Chrome/NNN token must be >= 153
 
 for r in records:
     ua = r["ua"]
@@ -702,8 +544,8 @@ for r in records:
         elif browser == "firefox":
             m = R_FIREFOX_DESKTOP.match(ua)
             assert m, ua
-            # rv keeps major.minor (Firefox/128.15 -> rv:128.15,
-            # Firefox/124.0.1 -> rv:124.0) — the real Firefox rule.
+            # rv keeps major.minor (Firefox/153.6 -> rv:153.6,
+            # Firefox/158.0.1 -> rv:158.0) — the real Firefox rule.
             assert ".".join(m.group("f").split(".")[:2]) == m.group("rv"), ua
         elif browser == "safari":
             assert R_SAFARI.match(ua), ua
@@ -745,20 +587,27 @@ for r in records:
         else:
             sys.exit(f"unknown android browser {browser}")
 
-assert len({r["ua"] for r in records}) == 1500, "UA strings must be globally unique"
-assert len({r["id"] for r in records}) == 1500
-assert sum(1 for r in records if r["category"] == "desktop") == 500
-assert sum(1 for r in records if r["category"] == "android") == 1000
-# Legacy ids must be byte-stable: persisted user picks point at them.
-LEGACY_SPOT_CHECKS = {
-    1: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    250: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36 Vivaldi/7.6.3787.50",
-    251: "Mozilla/5.0 (Linux; Android 14; SM-S928B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36",
-    500: "Mozilla/5.0 (Linux; Android 14; Pixel 6a) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Mobile Safari/537.36 OPR/81.0.0.0",
+    # The v1.41.5 freshness policy: every Chromium token >= 153.
+    for tok in re.findall(r"Chrome/(\d+)\.0\.0\.0", ua):
+        assert int(tok) >= CHROMIUM_TOKEN_MIN, f"stale Chromium {tok}: {ua}"
+
+assert len({r["ua"] for r in records}) == 1000, "UA strings must be globally unique"
+assert len({r["id"] for r in records}) == 1000
+assert sum(1 for r in records if r["category"] == "desktop") == 168
+assert sum(1 for r in records if r["category"] == "android") == 832
+assert len({r["label"] for r in records}) == 1000, "labels must be unique"
+
+# Spot checks: the exact records at fixed ids (regeneration drift guard).
+SPOT_CHECKS = {
+    1: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36",
+    5: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/157.0.0.0 Safari/537.36",
+    21: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36 Edg/153.0.0.0",
+    100: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:157.0) Gecko/20100101 Firefox/157.0",
+    168: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/27.1 Safari/605.1.15",
 }
-for lid, lua in LEGACY_SPOT_CHECKS.items():
-    got = next(r for r in records if r["id"] == lid)
-    assert got["ua"] == lua, f"legacy id {lid} drifted: {got['ua']}"
+for sid, sua in SPOT_CHECKS.items():
+    got = next(r for r in records if r["id"] == sid)
+    assert got["ua"] == sua, f"spot id {sid} drifted:\n  got:  {got['ua']}\n  want: {sua}"
 
 # ----------------------------------------------------------------------------
 # Emit Dart
@@ -783,15 +632,16 @@ lines = [
     "// GENERATED FILE — do not edit by hand.",
     "// Regenerate with: python3 scripts/gen_user_agents.py",
     "//",
-    "// Database of 1500 unique, realistic User-Agent strings (500 desktop +",
-    "// 1000 Android) composed from curated pools of real browser versions and",
+    "// Database of 1000 unique, realistic User-Agent strings (168 desktop +",
+    "// 832 Android) composed from curated pools of real browser versions and",
     "// real device model codes. Every entry is format-validated against the",
     "// wire format of the browser it represents (see scripts/gen_user_agents.py",
     "// and test/unit/user_agent_test.dart for the enforced rules).",
-    "// Records 1..500 are byte-identical to the v1.7.0 database (stable ids).",
+    "// v1.41.5 freshness policy: every Chromium token is 153+ (supported",
+    "// trains only), Firefox 150..158 + live ESR, Safari 26.x/27.x.",
     "import '../models/user_agent.dart';",
     "",
-    "/// 1500 validated User-Agent records: 500 desktop + 1000 Android.",
+    "/// 1000 validated User-Agent records: 168 desktop + 832 Android.",
     "const List<UserAgentRecord> kUserAgentDatabase = <UserAgentRecord>[",
 ]
 for r in records:

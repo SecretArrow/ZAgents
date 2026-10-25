@@ -32,14 +32,17 @@ enum UserAgentBrowser {
   vivaldi,
 }
 
-/// One entry of the bundled User-Agent database (1500 records).
+/// One entry of the bundled User-Agent database (1000 records).
 ///
 /// Every record was generated and format-validated by
 /// `scripts/gen_user_agents.py` so [ua] matches the wire format of the real
 /// browser it claims to be: Edge/EdgA majors equal their Chromium major,
-/// Samsung Internet versions map to their real bundled Chromium, phone UAs
+/// Samsung Internet versions map to their bundled Chromium, phone UAs
 /// carry the `Mobile` token while tablet UAs never do, and Android versions
-/// are plausible for each device model.
+/// are plausible for each device model. As of v1.41.5 every Chromium-based
+/// record carries a Chromium major of 153+ (currently-supported trains
+/// only), Firefox records use the newest trains (150+) and live ESR lines,
+/// and Safari records use the 26.x/27.x trains.
 class UserAgentRecord {
   const UserAgentRecord({
     required this.id,
@@ -49,9 +52,11 @@ class UserAgentRecord {
     required this.ua,
   });
 
-  /// Stable id, unique across the whole database (1..1500). Ids 1..500 are
-  /// byte-identical to the v1.7.0 database, so persisted user picks never
-  /// drift to a different identity when the database grows.
+  /// Stable id, unique across the whole database (1..1000). The v1.41.5
+  /// freshness refresh replaced the older 1200-149-era trains with the
+  /// 153+-era ones, so a persisted id now identifies the pool SLOT, not a
+  /// byte-frozen string; [UserAgentManager] falls back to the first record
+  /// when a saved id no longer exists and self-heals on the next rotate.
   final int id;
 
   final UserAgentCategory category;
@@ -68,7 +73,7 @@ class UserAgentRecord {
   bool get isDesktop => category == UserAgentCategory.desktop;
 }
 
-/// All records (500 desktop + 1000 Android), generated + validated.
+/// All records (168 desktop + 832 Android), generated + validated.
 List<UserAgentRecord> get userAgentDatabase => kUserAgentDatabase;
 
 /// Records of one category, ordered by id.

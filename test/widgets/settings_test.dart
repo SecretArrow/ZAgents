@@ -10,6 +10,8 @@ import 'package:zagents/ui/screens/preset_editor_screen.dart';
 import 'package:zagents/models/user_agent.dart';
 import 'package:zagents/ui/screens/providers_screen.dart';
 import 'package:zagents/services/background_service.dart';
+import 'package:zagents/ui/screens/about_screen.dart';
+import 'package:zagents/ui/screens/help_screen.dart';
 import 'package:zagents/ui/screens/settings_screen.dart';
 
 import '../../test/support/test_doubles.dart';
@@ -790,6 +792,68 @@ void main() {
 
       expect(background.batteryRequests, 1);
       expect(find.textContaining('Exempted'), findsOneWidget);
+    });
+
+    testWidgets('help tile sits above about tile and opens both screens', (
+      WidgetTester tester,
+    ) async {
+      await openSettings(tester);
+
+      // Both tiles live near the list bottom and the settings ListView
+      // builds lazily: reveal the section FIRST, then assert.
+      final Finder helpTile = find.byKey(const Key('help-tile'));
+      final Finder aboutTile = find.byKey(const Key('about-tile'));
+      await tester.dragUntilVisible(
+        aboutTile,
+        find.byType(ListView),
+        const Offset(0, -200),
+      );
+      await tester.pumpAndSettle(
+        const Duration(milliseconds: 100),
+        EnginePhase.sendSemanticsUpdate,
+        const Duration(seconds: 15),
+      );
+      expect(helpTile, findsOneWidget);
+      expect(aboutTile, findsOneWidget);
+      final double helpY2 = tester.getTopLeft(helpTile).dy;
+      final double aboutY2 = tester.getTopLeft(aboutTile).dy;
+      expect(helpY2, lessThan(aboutY2), reason: 'Help must sit above About');
+
+      // Tapping About opens the dedicated About screen.
+      await tester.tap(aboutTile);
+      await tester.pumpAndSettle(
+        const Duration(milliseconds: 100),
+        EnginePhase.sendSemanticsUpdate,
+        const Duration(seconds: 15),
+      );
+      expect(find.byType(AboutScreen), findsOneWidget);
+      expect(find.byKey(const Key('about-version')), findsOneWidget);
+
+      // Back to settings, then Help opens the dedicated guide screen.
+      await tester.pageBack();
+      await tester.pumpAndSettle(
+        const Duration(milliseconds: 100),
+        EnginePhase.sendSemanticsUpdate,
+        const Duration(seconds: 15),
+      );
+      await tester.dragUntilVisible(
+        helpTile,
+        find.byType(ListView),
+        const Offset(0, 200),
+      );
+      await tester.pumpAndSettle(
+        const Duration(milliseconds: 100),
+        EnginePhase.sendSemanticsUpdate,
+        const Duration(seconds: 15),
+      );
+      await tester.tap(helpTile);
+      await tester.pumpAndSettle(
+        const Duration(milliseconds: 100),
+        EnginePhase.sendSemanticsUpdate,
+        const Duration(seconds: 15),
+      );
+      expect(find.byType(HelpScreen), findsOneWidget);
+      expect(find.byKey(const Key('help-topic-0')), findsOneWidget);
     });
   });
 }

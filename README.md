@@ -348,6 +348,16 @@ OpenAI-compatible: **OpenRouter, InferHub, Z.AI, OpenAI, DeepSeek, Groq, dan lai
   wajib — isolasi per-chat tidak berubah).
   4. `SessionSandbox.sessionsRoot()` + `ModuleRuntime.latestStoredSetup`
   (pemindai mtime terbaru, tahan file korup) + uji unit wire/module_list.
+- **v1.41.5 — User-Agent 153+ & layar Help/About**: seluruh database
+  User-Agent di-refresh ke generasi terkini — semua browser berbasis
+  Chromium (Chrome, Edge, Opera, Samsung Internet, Vivaldi) kini memakai
+  Chromium **153–157** saja (tidak ada lagi token ≤ 150), Firefox memakai
+  rilis terbaru (150–158) plus ESR aktif (140.x/153.x), Safari 26.x/27.x,
+  dan pool perangkat bertambah Galaxy S25, Pixel 10, dan Android 16/17
+  (total 1000 identitas tervalidasi). Halaman Settings kini punya menu
+  **Help & About**: Bantuan (panduan lengkap 11 topik dua bahasa) dan
+  Tentang (layar about baru yang rapi: versi, pembuat, isi aplikasi,
+  disclaimer) — masing-masing di Activity/screen tersendiri.
 - **v1.41.4 — APK split per-ABI di release**: GitHub Actions kini
   membangun 4 APK bertanda tangan per rilis — universal (semua ABI,
   nama tidak berubah) + tiga split `arm64-v8a`, `armeabi-v7a`, `x86_64`

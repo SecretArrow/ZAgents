@@ -66,6 +66,13 @@ class _ZLocalizationsDelegate extends LocalizationsDelegate<ZLocalizations> {
 }
 
 /// Every user-facing string in the app.
+/// One bilingual help topic shown on the Help screen (v1.41.5).
+class HelpEntry {
+  const HelpEntry(this.title, this.body);
+  final String title;
+  final String body;
+}
+
 abstract class AppStrings {
   // -- Generic ---------------------------------------------------------
   String get menu;
@@ -385,6 +392,22 @@ abstract class AppStrings {
 
   String get aboutSection;
   String get aboutBody;
+
+  // -- Help & About screens (v1.41.5) ------------------------------------
+  String get helpAboutSection;
+  String get helpTileTitle;
+  String get helpTileSubtitle;
+  String get aboutTileTitle;
+  String get aboutTileSubtitle;
+  String get aboutTitle;
+  String get aboutTagline;
+  String get aboutCreatorLabel;
+  String get aboutVersionLabel;
+  String get aboutWhatsInside;
+  String get aboutDisclaimer;
+  String get helpTitle;
+  String get helpIntro;
+  List<HelpEntry> get helpTopics;
 
   // -- Message actions (v1.15.0) ----------------------------------------
   String get editMessageAction;
@@ -1205,110 +1228,171 @@ class AppStringsEn implements AppStrings {
   String get aboutSection => 'About';
   @override
   String get aboutBody =>
-      'ZAgents v1.38.0 — an Android clone of the chat.z.ai agent mode UI, '
-      'with custom OpenAI-compatible providers (OpenRouter, InferHub, '
-      'Z.AI, OpenAI, DeepSeek, Groq, and more), per-provider API keys, '
-      'light/dark themes, parallel multi-session chat with background '
-      'running, plan-first Todos, one-tap copy on every message, edit & '
-      'regenerate messages, global chat search, automatic conversation '
-      'titles, a Prompt Library, a web_fetch tool, git tools (clone, '
-      'status, commit, push, log) and automatic image downscaling for '
-      'vision models, Markdown chat export, whole-app encrypted backup, '
-      'token usage statistics, an optional app lock (biometric or PIN) and '
-      'background task-completion notifications, session-isolated workspaces (each chat '
-      'has its own private file sandbox, like a browser private window), '
-      'per-chat browser isolation (cookies and logins captured in one chat '
-      'never leak into another, and every session switch also purges the '
-      'shared cache, IndexedDB and service workers), a fresh Node runtime '
-      'for every script run so nothing crosses chats, file uploads with '
-      'zip extraction including password-protected '
-      'archives, a Context Manager, an in-app file manager, and an '
-      'embedded Node.js-style runtime with npm package management. Your '
-      'keys stay on this device, and chat modules (plugins) install from ZIP '
-      'files and run inside each chat\'s isolated sandbox with the '
-      'official zagents SDK (/plugins), a Modules screen and per-chat '
-      'storage, state, config and permission separation. Modules can ask '
-      'this chat\'s own agent to compose every sentence on demand '
-      '(zagents.agent.compose, gated and rate-shaped), send custom HTTP '
-      'headers, and receive your first activation message for setup '
-      'commands. The agent sees each module\'s per-chat setup state '
-      '(completed or not, secrets always masked) so it never re-asks for '
-      'credentials you already gave, and a new chat prefills the setup '
-      'form with your latest submitted values. A v1.34.0 performance pass '
-      'moves zip/unzip, JPEG downscaling, backup encryption and large '
-      'JSON work off the UI thread, throttles streaming and module-output '
-      'rebuilds, and closes the setup sheet instantly after submitting so '
-      'the app stays smooth. Modules always present the '
-      'User-Agent identity you pick '
-      'in Settings (readable via zagents.info.userAgent, un-overridable), '
-      'and can be uninstalled by you at any time — from the Modules '
-      'screen or the /plugins menu. A fan of subagents '
-      '(spawn_subagents) runs up to six parallel self-contained tasks and '
-      'synthesizes their results, an exit confirmation dialog keeps a '
-      'stray back press from killing a running task, a battery '
-      'optimization exemption protects long background runs, and heavy '
-      'JSON and crypto work stays off the UI thread. Modules can now '
-      'declare slash commands (new in v1.31.0): type /airplane on or '
-      '/airplane off in a chat where such a module is active and the '
-      'command runs the module directly instead of the LLM — on rooted '
-      'phones the bundled Airplane Mode module toggles airplane mode via '
-      'zagents.device.shell, gated by a Settings master switch (off by '
-      'default). Auto retry (v1.30.0): network errors, weak connections, '
-      'dropped streams and '
-      'transient provider failures no longer kill the agent task — it '
-      'waits and re-attempts automatically (configurable attempts and '
-      'delay in Settings), and a task that stops with an unfinished plan '
-      'is resumed too, with a red Stop button that always interrupts '
-      'instantly. New in v1.29.0: a '
-      'chat WAITS when a selected module still needs your input — your '
-      'message is queued and the agent works on it only after you submit '
-      'the module\'s setup form; module file writes with relative paths '
-      '(data.json & friends) now land in the chat\'s own per-chat state '
-      'folder; every chat\'s workspace can be exported to the device '
-      'file manager (Downloads/ZAgents/<chat>) with one tap; and '
-      'deleting a chat also removes its workspace folder. New in '
-      'v1.36.0: the bundled User-Agent database grows from 500 to '
-      '1500 validated identities (500 desktop + 1000 Android) — '
-      'newer real browser trains (Chrome/Edge 144-146, Firefox '
-      '150-155 plus ESR point releases, Safari 26.5/27.0, Opera for '
-      'Linux, Samsung Internet 28) and every bundled Android device '
-      'paired with every browser, so rotating or randomizing your '
-      'identity in Settings draws from a far larger pool of '
-      'realistic fingerprints. New in '
-      'v1.38.0: a REAL skills system — install external agent skills '
-      '(SKILL.md packages, e.g. Binance Agentic Wallet) straight from '
-      'GitHub with skill_install, configure their secrets on-device '
-      '(never echoed into the chat), read their manuals with skill_info '
-      'and run their scripts in the embedded sandbox with skill_run '
-      '(network via fetch, npm packages, file access) — available in '
-      'every chat once installed. Money-moving actions now REQUIRE an '
-      'explicit user approval card (request_confirmation): the agent '
-      'blocks until you approve the transaction summary (network, '
-      'asset, amount, destination, fee) and a denial is final — seed '
-      'phrases and private keys are never requested. Also new: '
-      'cross-chat isolation hardening (concurrent module runs can no '
-      'longer misroute chat output, storage or Stop between chats), a '
-      'pinned live Plan panel that updates in real time and stays open '
-      'until YOU close it (surviving chat switches, step transitions '
-      'and run end), and a broad performance pass: stable streaming '
-      'message ids (no more per-delta subtree teardown), markdown '
-      're-parse elimination, off-UI-thread request encoding, cheap '
-      'chat-list refreshes, thumbnail decoding and a real network '
-      'stack for embedded scripts (fetch now works for git-over-HTTPS '
-      'and Web3 skills). New in '
-      'v1.37.0: parallel Browser Contexts — every chat session and '
-      'every subagent of a fan of subagents browses in its OWN '
-      'isolated engine (private WebView, cookies and storage), so '
-      'parallel work runs side by side instead of waiting one by '
-      'one, and the drawer\'s export chat and token stats actions '
-      'became icon-only like import/export. New in '
-      'v1.35.0: the agent\'s plan (todos) is now crash-proof — the '
-      'transcript is saved after every working step and the current plan '
-      'state travels with it, so an app crash, ANR kill or dead battery '
-      'no longer wipes the plan you were watching: reopen the chat and '
-      'the plan card, its progress and the live plan panel all come back, '
-      'and continuing the task picks the unfinished plan straight back '
-      'up.';
+      'ZAgents is an Android agent-chat app styled after the chat.z.ai '
+      'agent mode: bring your own OpenAI-compatible provider (OpenRouter, '
+      'InferHub, Z.AI, OpenAI, DeepSeek, Groq, and more), run many chats '
+      'in parallel with real background execution, plan-first Todos with '
+      'a live Plan panel, a real skills system (install external skills '
+      'by CLI-style command or plain language, manage and run them '
+      'across every chat), Web3 wallet workflows with explicit '
+      'confirmation cards, per-chat isolated file sandboxes and browser '
+      'sessions, git and web_fetch tools, a Node.js-style runtime with '
+      'npm packages, Markdown export, encrypted whole-app backup, token '
+      'statistics, and an optional biometric/PIN app lock. Your API keys '
+      'and skill secrets stay on this device. See Help for the complete '
+      'guide.';
+
+  // -- Help & About screens (v1.41.5) ------------------------------------
+  @override
+  String get helpAboutSection => 'Help & About';
+  @override
+  String get helpTileTitle => 'Help & user guide';
+  @override
+  String get helpTileSubtitle =>
+      'Complete how-to for every feature, in plain language';
+  @override
+  String get aboutTileTitle => 'About ZAgents';
+  @override
+  String get aboutTileSubtitle => 'Version, creator, and what this app can do';
+  @override
+  String get aboutTitle => 'About';
+  @override
+  String get aboutTagline =>
+      'Your own AI agent team on Android — plan, browse, run, deliver.';
+  @override
+  String get aboutCreatorLabel => 'Creator';
+  @override
+  String get aboutVersionLabel => 'Version';
+  @override
+  String get aboutWhatsInside => 'What\'s inside';
+  @override
+  String get aboutDisclaimer =>
+      'ZAgents is an independent app by Maragung, styled after the '
+      'chat.z.ai agent mode UI, and is not affiliated with Z.AI. Skills '
+      'and modules run locally on this device; the app never asks for '
+      'seed phrases or private keys, and every wallet action that moves '
+      'value needs your explicit confirmation first.';
+  @override
+  String get helpTitle => 'Help';
+  @override
+  String get helpIntro =>
+      'Everything ZAgents can do, and how to use it. Sections follow the '
+      'order you will meet them in the app.';
+  @override
+  List<HelpEntry> get helpTopics => const [
+    HelpEntry(
+      '1. Get started: connect a provider',
+      'Open Settings → Providers, add your provider (OpenRouter, '
+          'InferHub, Z.AI, OpenAI, DeepSeek, Groq, or any OpenAI-compatible '
+          'endpoint), paste its API key and pick a model from the live '
+          'catalog (search and filters included). Keys are stored only on '
+          'this device. Without a working key the chat cannot answer, so '
+          'start here.',
+    ),
+    HelpEntry(
+      '2. Chats and background tasks',
+      'Create as many chats as you like from the side drawer — they run '
+          'in parallel. A task keeps running when you switch chats or leave '
+          'the app; a notification tells you when it finishes. Every chat '
+          'is fully isolated: its transcript, state, processes, output and '
+          'files never leak into another chat, and Stop only affects the '
+          'chat you pressed it in.',
+    ),
+    HelpEntry(
+      '3. Plans (Todos) and the Plan panel',
+      'Every task starts with a plan: the agent lists the steps, then '
+          'works through them. Open the live Plan panel from the plan icon '
+          '— it stays open until YOU close it, survives chat switches, and '
+          'updates in real time when a step completes or fails. Plans are '
+          'saved to disk continuously, so even an app crash or dead '
+          'battery keeps your plan and progress.',
+    ),
+    HelpEntry(
+      '4. Skills: install, configure, run',
+      'Skills are reusable instruction + script packages the agent can '
+          'discover, install and use. Install by asking in plain language '
+          '(\u201cinstall the X skill\u201d) or paste a CLI-style command '
+          'like \u201cnpx skills add owner/repo/path/to/skill\u201d — the '
+          'agent checks dependencies, reads the skill\'s instructions and '
+          'verifies the install honestly. Bundled Web3 wallet skills are '
+          'ready to use. Manage them in chat: skill_list, skill_info, '
+          'skill_config (API keys and settings, stored on-device and never '
+          'echoed), skill_update, and skill_run. Installed skills persist '
+          'across ALL chats — install once, use everywhere.',
+    ),
+    HelpEntry(
+      '5. Web3 wallet workflows and safety',
+      'Use the bundled wallet skills (Binance Agentic Wallet, Web3 '
+          'basics) or install compatible ones to check balances, read '
+          'transactions and interact with Web3 apps. Login always uses the '
+          'provider\'s official page — the agent shows you the link, you '
+          'connect yourself. The app NEVER asks for seed phrases or '
+          'private keys. Before anything irreversible (transfer, swap, '
+          'NFT listing, token approval) the agent must show a confirmation '
+          'card with network, asset, amount, destination and fee — nothing '
+          'moves until you approve. Logging in is never permission to '
+          'trade.',
+    ),
+    HelpEntry(
+      '6. Browser automation and User-Agent',
+      'The agent can browse, fill forms and fetch pages with a real '
+          'embedded browser. Each chat gets its own isolated browser '
+          'context — cookies and logins from one chat never leak into '
+          'another. In Settings → User Agent you choose the browser '
+          'identity: Auto uses the truthful Android identity; Desktop/Android '
+          'pools rotate through current-generation fingerprints — Chromium '
+          'browsers (Chrome, Edge, Opera, Samsung Internet, Vivaldi) all on '
+          'Chromium 153+, Firefox on the newest trains (150+ and live ESR), '
+          'Safari 26/27. Rotate manually or let new chats pick a random '
+          'identity.',
+    ),
+    HelpEntry(
+      '7. Modules (plugins)',
+      'Modules are zip-packaged JavaScript add-ons with the official '
+          'zagents SDK — upload one from the Modules screen and it runs in '
+          'each chat\'s own sandbox with per-chat setup forms, storage, '
+          'state and permissions. The agent sees each module\'s setup '
+          'state (secrets masked) and a new chat prefills the form with '
+          'your latest values. The Node screen manages the embedded '
+          'runtime and its npm packages; Device commands stay off unless '
+          'you explicitly enable them (rooted phones only).',
+    ),
+    HelpEntry(
+      '8. Files and per-chat sandbox',
+      'Every chat has a private workspace folder — uploads, generated '
+          'files and module state live there, invisible to other chats. '
+          'Export a workspace to your device file manager '
+          '(Downloads/ZAgents/<chat>) with one tap, and deleting a chat '
+          'removes its whole workspace. File uploads support zip '
+          'extraction, including password-protected archives.',
+    ),
+    HelpEntry(
+      '9. Search, export and backup',
+      'Global search (magnifier icon) finds titles and full message '
+          'text across every chat. Export any chat as Markdown from the '
+          'drawer. Settings → Data makes an encrypted whole-app backup '
+          '(chats, settings, skills config) you can restore after a '
+          'reinstall or move to a new phone.',
+    ),
+    HelpEntry(
+      '10. Stats, app lock and notifications',
+      'Stats shows token usage per model and per chat. The optional '
+          'app lock (biometric or PIN) protects the app on launch. '
+          'Background tasks post a completion notification; long runs can '
+          'be exempted from battery optimization so Android never pauses '
+          'them.',
+    ),
+    HelpEntry(
+      '11. Tips and troubleshooting',
+      'Provider error? Re-check the API key and the model\'s quota in '
+          'the provider dashboard. A module misbehaving? Use its repair '
+          'card or re-upload the zip. Unstable network? Auto-retry with '
+          'the airplane-mode guard resumes safely. Streaming text looks '
+          'stuck? Wait or press Stop — the transcript is saved after '
+          'every step. Found a bug or want a feature? Open an issue on '
+          'the project repository.',
+    ),
+  ];
 
   @override
   String createdBy(String name) => 'Created by $name';
@@ -2276,113 +2360,177 @@ class AppStringsId implements AppStrings {
   String get aboutSection => 'Tentang';
   @override
   String get aboutBody =>
-      'ZAgents v1.38.0 — klon UI agent mode chat.z.ai untuk Android, '
-      'dengan custom provider OpenAI-compatible (OpenRouter, InferHub, '
-      'Z.AI, OpenAI, DeepSeek, Groq, dan lainnya), API key per-provider, '
-      'tema terang/gelap, multi-sesi paralel dengan proses latar '
-      'belakang, Todos perencanaan, salin satu ketukan di setiap pesan, '
-      'edit & buat ulang pesan, pencarian chat global, judul percakapan '
-      'otomatis, Pustaka Prompt, tool web_fetch, tool git (clone, status, '
-      'commit, push, log) dan penurunan skala gambar otomatis untuk model '
-      'vision, ekspor chat Markdown, backup terenkripsi seluruh aplikasi, '
-      'statistik pemakaian token, kunci aplikasi opsional (biometrik atau '
-      'PIN) dan notifikasi tugas latar selesai, ruang kerja terisolasi per sesi '
-      '(setiap chat punya sandbox file pribadi, seperti jendela privat '
-      'browser), isolasi browser per chat (cookie dan login di satu chat '
-      'tidak pernah bocor ke chat lain, dan setiap pergantian sesi juga '
-      'membersihkan cache bersama, IndexedDB dan service worker), runtime '
-      'Node segar untuk setiap eksekusi skript sehingga tidak ada yang '
-      'melintas antar chat, unggah file dengan ekstraksi zip '
-      'termasuk arsip terproteksi kata sandi, Manajer Konteks, manajer '
-      'file, serta runtime bergaya Node.js tersemat dengan manajemen '
-      'package npm. Key Anda tetap di perangkat ini, dan modul chat '
-      '(plugin) dipasang dari file ZIP lalu berjalan di dalam sandbox '
-      'terisolasi milik tiap chat dengan SDK resmi zagents (/plugins), '
-      'layar Modul, serta pemisahan storage, state, konfigurasi dan izin '
-      'per chat. Modul dapat meminta agen chat ini menyusun setiap '
-      'kalimat sesuai kebutuhan (zagents.agent.compose, dengan gerbang '
-      'aturan), mengirim header HTTP khusus, dan menerima pesan aktivasi '
-      'pertama Anda untuk perintah setup. Agen dapat melihat status '
-      'setup per-chat setiap modul (selesai atau belum, rahasia selalu '
-      'disamarkan) sehingga tidak lagi meminta kredensial yang sudah '
-      'Anda berikan, dan chat baru mengisi form setup dengan nilai '
-      'terakhir Anda. Pass performa v1.34.0 memindahkan zip/unzip, '
-      'penurunan skala JPEG, enkripsi backup, dan kerja JSON besar keluar '
-      'dari thread UI, men-throttle rebuild streaming dan output modul, '
-      'serta menutup sheet setup seketika setelah dikirim agar aplikasi '
-      'tetap mulus. Modul selalu memakai identitas '
-      'User-Agent yang Anda pilih di Setelan (terbaca via '
-      'zagents.info.userAgent, tidak bisa digantikan), dan dapat Anda '
-      'hapus kapan saja — dari layar Modul atau menu /plugins. Fan of '
-      'subagents (spawn_subagents) menjalankan hingga enam tugas paralel '
-      'yang mandiri lalu merangkum hasilnya, dialog konfirmasi keluar '
-      'menjaga tekanan back tidak menghentikan tugas yang berjalan, '
-      'pengecualian optimisasi baterai melindungi proses latar belakang '
-      'yang panjang, dan kerja JSON serta kripto berat tetap keluar dari '
-      'thread UI. Modul kini bisa mendeklarasikan perintah slash (baru di '
-      'v1.31.0): ketik /airplane on atau /airplane off di chat yang '
-      'memiliki modul tersebut aktif, dan perintah itu menjalankan modul '
-      'langsung tanpa LLM — di ponsel yang di-root, modul Airplane Mode '
-      'bawaan mengganti mode pesawat lewat zagents.device.shell dengan '
-      'sakelar utama di Setelan (mati secara bawaan). Coba-ulang otomatis '
-      '(v1.30.0): error jaringan, '
-      'koneksi lemah, aliran terputus, dan error sementara provider tidak '
-      'lagi mematikan tugas agent — ia menunggu lalu mencoba ulang secara '
-      'otomatis (jumlah percobaan dan jeda bisa diatur di Setelan), dan '
-      'tugas yang berhenti dengan rencana belum selesai juga dilanjutkan, '
-      'dengan tombol Stop merah yang selalu langsung memotong. Baru di '
-      'v1.29.0: chat MENUNGGU saat modul terpilih '
-      'masih membutuhkan input Anda — pesan Anda masuk antrean dan agent '
-      'baru mengerjakannya setelah Anda mengirim formulir setup modul; '
-      'penulisan file modul dengan path relatif (data.json dan '
-      'kawan-kawannya) kini masuk ke folder state per-chat masing-masing; '
-      'folder ruang kerja setiap chat bisa diekspor ke file manager '
-      'perangkat (Downloads/ZAgents/<chat>) dengan satu ketukan; dan '
-      'menghapus chat juga menghapus folder ruang kerjanya. Baru di '
-      'v1.36.0: database User-Agent bawaan bertambah dari 500 menjadi '
-      '1500 identitas tervalidasi (500 desktop + 1000 Android) — '
-      'rilis browser nyata yang lebih baru (Chrome/Edge 144-146, '
-      'Firefox 150-155 plus rilis titik ESR, Safari 26.5/27.0, Opera '
-      'untuk Linux, Samsung Internet 28) dan setiap perangkat Android '
-      'bawaan dipadukan dengan setiap browser, sehingga memutar atau '
-      'mengacak identitas di Pengaturan memakai kolam sidik jari '
-      'realistis yang jauh lebih besar. Baru di '
-      'v1.38.0: sistem skills NYATA — pasang skill agen eksternal '
-      '(paket SKILL.md, mis. Binance Agentic Wallet) langsung dari '
-      'GitHub dengan skill_install, simpan secret-nya di perangkat '
-      '(tidak pernah di-echo ke chat), baca manualnya dengan '
-      'skill_info, dan jalankan skripnya di sandbox tersemat dengan '
-      'skill_run (jaringan via fetch, paket npm, akses file) — '
-      'tersedia di semua chat setelah sekali pasang. Aksi yang '
-      'memindahkan aset kini WAJIB mendapat kartu persetujuan '
-      'eksplisit (request_confirmation): agen berhenti sampai Anda '
-      'menyetujui ringkasan transaksi (jaringan, aset, jumlah, '
-      'tujuan, biaya) dan penolakan bersifat final — seed phrase dan '
-      'private key tidak pernah diminta. Juga baru: penguatan '
-      'isolasi antar-chat (modul yang berjalan paralel tidak lagi '
-      'salah routing output, storage, atau Stop antar chat), panel '
-      'Plan live yang terpasang di atas daftar pesan, diperbarui '
-      'real-time, dan tetap terbuka sampai Anda sendiri menutupnya '
-      '(bertahan lintas perpindahan chat, transisi langkah, dan '
-      'akhir run), serta perbaikan performa menyeluruh: id pesan '
-      'streaming stabil (tanpa teardown subtree per delta), '
-      'eliminasi re-parse markdown, encoding request di luar UI '
-      'thread, refresh daftar chat yang murah, decode thumbnail, '
-      'dan stack jaringan nyata untuk skrip tersemat (fetch kini '
-      'berfungsi untuk git-over-HTTPS dan skill Web3). Baru di '
-      'v1.37.0: Browser Context paralel — setiap sesi chat dan setiap '
-      'subagent dalam fan of subagents menjelajah dengan engine '
-      'isolasinya sendiri (WebView, cookie, dan storage pribadi), '
-      'sehingga pekerjaan paralel berjalan berdampingan tanpa antre '
-      'satu per satu, dan aksi ekspor chat serta statistik token di '
-      'drawer menjadi ikon saja seperti import/export. Baru di '
-      'v1.35.0: rencana agent (todos) kini tahan crash — transkrip '
-      'tersimpan setelah setiap langkah kerja dan status rencana terkini '
-      'ikut tersimpan, sehingga aplikasi crash, dibunuh ANR, atau baterai '
-      'habis tidak lagi menghapus rencana yang sedang Anda pantau: buka '
-      'kembali chat dan kartu rencana, progresnya, serta panel rencana '
-      'live semuanya kembali, dan melanjutkan tugas langsung menyambung '
-      'rencana yang belum selesai.';
+      'ZAgents adalah aplikasi chat agen Android bergaya agent mode '
+      'chat.z.ai: bawa provider OpenAI-compatible Anda sendiri '
+      '(OpenRouter, InferHub, Z.AI, OpenAI, DeepSeek, Groq, dan '
+      'lainnya), jalankan banyak chat paralel dengan proses latar '
+      'belakang sungguhan, Todos perencanaan dengan panel Plan live, '
+      'sistem skills nyata (pasang skill eksternal lewat perintah gaya '
+      'CLI atau bahasa biasa, kelola dan jalankan di semua chat), alur '
+      'kerja dompet Web3 dengan kartu konfirmasi eksplisit, sandbox '
+      'file dan sesi browser terisolasi per chat, tool git dan '
+      'web_fetch, runtime bergaya Node.js dengan paket npm, ekspor '
+      'Markdown, backup terenkripsi seluruh aplikasi, statistik token, '
+      'dan kunci aplikasi biometrik/PIN opsional. API key dan rahasia '
+      'skill Anda tetap di perangkat ini. Lihat Bantuan untuk panduan '
+      'lengkap.';
+
+  // -- Help & About screens (v1.41.5) ------------------------------------
+  @override
+  String get helpAboutSection => 'Bantuan & Tentang';
+  @override
+  String get helpTileTitle => 'Bantuan & panduan pakai';
+  @override
+  String get helpTileSubtitle =>
+      'Panduan lengkap semua fitur, dengan bahasa yang mudah';
+  @override
+  String get aboutTileTitle => 'Tentang ZAgents';
+  @override
+  String get aboutTileSubtitle => 'Versi, pembuat, dan kemampuan aplikasi ini';
+  @override
+  String get aboutTitle => 'Tentang';
+  @override
+  String get aboutTagline =>
+      'Tim agen AI Anda sendiri di Android — rencanakan, telusuri, '
+      'jalankan, selesaikan.';
+  @override
+  String get aboutCreatorLabel => 'Pembuat';
+  @override
+  String get aboutVersionLabel => 'Versi';
+  @override
+  String get aboutWhatsInside => 'Isi aplikasi';
+  @override
+  String get aboutDisclaimer =>
+      'ZAgents adalah aplikasi independen karya Maragung yang bergaya '
+      'antarmuka agent mode chat.z.ai dan tidak berafiliasi dengan '
+      'Z.AI. Skill dan modul berjalan lokal di perangkat ini; aplikasi '
+      'tidak pernah meminta seed phrase atau private key, dan setiap '
+      'aksi dompet yang memindahkan nilai butuh konfirmasi eksplisit '
+      'Anda terlebih dahulu.';
+  @override
+  String get helpTitle => 'Bantuan';
+  @override
+  String get helpIntro =>
+      'Semua yang bisa dilakukan ZAgents, dan cara memakainya. Bagian '
+      'diurutkan sesuai urutan Anda menemuinya di aplikasi.';
+  @override
+  List<HelpEntry> get helpTopics => const [
+    HelpEntry(
+      '1. Mulai: hubungkan provider',
+      'Buka Pengaturan → Providers, tambahkan provider Anda '
+          '(OpenRouter, InferHub, Z.AI, OpenAI, DeepSeek, Groq, atau '
+          'endpoint OpenAI-compatible apa pun), tempel API key-nya dan '
+          'pilih model dari katalog live (lengkap dengan pencarian dan '
+          'filter). Key hanya tersimpan di perangkat ini. Tanpa key yang '
+          'berfungsi chat tidak bisa menjawab, jadi mulai dari sini.',
+    ),
+    HelpEntry(
+      '2. Chat dan tugas latar belakang',
+      'Buat chat sebanyak yang Anda mau dari drawer samping — semuanya '
+          'berjalan paralel. Tugas tetap berjalan saat Anda pindah chat '
+          'atau keluar dari aplikasi; notifikasi memberi tahu saat ia '
+          'selesai. Setiap chat terisolasi penuh: transkrip, state, '
+          'proses, output, dan filenya tidak pernah bocor ke chat lain, '
+          'dan Stop hanya memengaruhi chat tempat Anda menekannya.',
+    ),
+    HelpEntry(
+      '3. Rencana (Todos) dan panel Plan',
+      'Setiap tugas dimulai dengan rencana: agent mendaftar langkahnya, '
+          'lalu mengerjakannya satu per satu. Buka panel Plan live dari '
+          'ikon rencana — panel tetap terbuka sampai ANDA menutupnya, '
+          'bertahan saat pindah chat, dan terbarui real-time saat langkah '
+          'selesai atau gagal. Rencana tersimpan terus-menerus ke disk, '
+          'jadi aplikasi crash atau baterai habis pun rencana dan progres '
+          'Anda tetap aman.',
+    ),
+    HelpEntry(
+      '4. Skills: pasang, atur, jalankan',
+      'Skill adalah paket instruksi + skrip yang bisa ditemukan, '
+          'dipasang, dan dipakai agent. Pasang dengan bahasa biasa '
+          '(\u201cpasang skill X\u201d) atau tempel perintah gaya CLI '
+          'seperti \u201cnpx skills add owner/repo/path/to/skill\u201d — '
+          'agent memeriksa dependensi, membaca instruksi skill, dan '
+          'memverifikasi hasil pemasangan secara jujur. Skill dompet Web3 '
+          'bawaan siap dipakai. Kelola lewat chat: skill_list, skill_info, '
+          'skill_config (API key dan pengaturan, tersimpan di perangkat '
+          'dan tidak pernah diecho), skill_update, dan skill_run. Skill '
+          'yang terpasang bertahan di SEMUA chat — pasang sekali, pakai '
+          'di mana saja.',
+    ),
+    HelpEntry(
+      '5. Alur kerja dompet Web3 dan keamanannya',
+      'Pakai skill dompet bawaan (Binance Agentic Wallet, Web3 basics) '
+          'atau pasang yang kompatibel untuk cek saldo, baca transaksi, '
+          'dan berinteraksi dengan aplikasi Web3. Login selalu memakai '
+          'halaman resmi penyedia — agent menampilkan tautannya, Anda '
+          'yang menghubungkan sendiri. Aplikasi TIDAK PERNAH meminta seed '
+          'phrase atau private key. Sebelum aksi tak bisa dibatalkan '
+          '(transfer, swap, listing NFT, token approval), agent wajib '
+          'menampilkan kartu konfirmasi berisi jaringan, aset, jumlah, '
+          'tujuan, dan biaya — tidak ada yang bergerak sebelum Anda '
+          'setujui. Login bukan izin untuk bertransaksi.',
+    ),
+    HelpEntry(
+      '6. Otomasi browser dan User-Agent',
+      'Agent bisa menjelajah, mengisi form, dan mengambil halaman '
+          'dengan browser tersemat sungguhan. Setiap chat punya konteks '
+          'browser terisolasi sendiri — cookie dan login satu chat tidak '
+          'pernah bocor ke chat lain. Di Pengaturan → User Agent Anda '
+          'memilih identitas browser: Auto memakai identitas Android yang '
+          'jujur; pool Desktop/Android memutar sidik jari generasi '
+          'terkini — browser Chromium (Chrome, Edge, Opera, Samsung '
+          'Internet, Vivaldi) semuanya di Chromium 153+, Firefox di rilis '
+          'terbaru (150+ dan ESR aktif), Safari 26/27. Putar manual atau '
+          'biarkan chat baru memilih identitas acak.',
+    ),
+    HelpEntry(
+      '7. Modul (plugin)',
+      'Modul adalah addon JavaScript terpaket zip dengan SDK resmi '
+          'zagents — unggah dari layar Modules dan ia berjalan di sandbox '
+          'masing-masing chat dengan form setup, storage, state, dan '
+          'izin per chat. Agent melihat status setup tiap modul (rahasia '
+          'selalu disamarkan) dan chat baru mengisi form dengan nilai '
+          'terakhir Anda. Layar Node mengelola runtime tersemat beserta '
+          'paket npm; perintah Device tetap mati kecuali Anda '
+          'mengaktifkannya eksplisit (khusus HP rooted).',
+    ),
+    HelpEntry(
+      '8. File dan sandbox per chat',
+      'Setiap chat punya folder ruang kerja pribadi — unggahan, file '
+          'hasil, dan state modul tinggal di sana, tak terlihat chat '
+          'lain. Ekspor ruang kerja ke file manager perangkat '
+          '(Downloads/ZAgents/<chat>) dengan satu ketukan, dan menghapus '
+          'chat ikut menghapus seluruh ruang kerjanya. Unggahan file '
+          'mendukung ekstraksi zip, termasuk arsip berpassword.',
+    ),
+    HelpEntry(
+      '9. Pencarian, ekspor, dan backup',
+      'Pencarian global (ikon kaca pembesar) menemukan judul dan isi '
+          'lengkap pesan di semua chat. Ekspor chat apa pun sebagai '
+          'Markdown dari drawer. Pengaturan → Data membuat backup '
+          'terenkripsi seluruh aplikasi (chat, pengaturan, konfigurasi '
+          'skill) yang bisa dipulihkan setelah instal ulang atau pindah '
+          'HP.',
+    ),
+    HelpEntry(
+      '10. Statistik, kunci aplikasi, dan notifikasi',
+      'Statistik menampilkan pemakaian token per model dan per chat. '
+          'Kunci aplikasi opsional (biometrik atau PIN) melindungi '
+          'aplikasi saat dibuka. Tugas latar belakang mengirim notifikasi '
+          'selesai; proses panjang bisa dikecualikan dari optimasi '
+          'baterai agar Android tidak pernah menjedanya.',
+    ),
+    HelpEntry(
+      '11. Tips dan pemecahan masalah',
+      'Provider error? Periksa ulang API key dan kuota model di '
+          'dashboard penyedia. Modul bermasalah? Pakai kartu perbaikannya '
+          'atau unggah ulang zip. Jaringan tidak stabil? Auto-retry '
+          'dengan penjaga mode pesawat melanjutkan dengan aman. Teks '
+          'streaming terasa macet? Tunggu atau tekan Stop — transkrip '
+          'tersimpan setelah setiap langkah. Menemukan bug atau ingin '
+          'fitur? Buka issue di repositori proyek.',
+    ),
+  ];
 
   @override
   String createdBy(String name) => 'Dibuat oleh $name';

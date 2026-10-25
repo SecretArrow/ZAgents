@@ -12,8 +12,10 @@ import '../../l10n/app_strings.dart';
 import '../../models/models.dart';
 import '../../models/user_agent.dart';
 import '../theme.dart';
+import 'about_screen.dart';
 import 'context_screen.dart';
 import 'files_screen.dart';
+import 'help_screen.dart';
 import 'node_screen.dart';
 import 'modules_screen.dart';
 import 'providers_screen.dart';
@@ -967,34 +969,47 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               ),
             ),
             const SizedBox(height: 16),
-            _sectionTitle(strings.aboutSection),
+            _sectionTitle(strings.helpAboutSection),
             _card(
               child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
                 children: <Widget>[
-                  Row(
-                    key: const Key('about-creator'),
-                    children: <Widget>[
-                      Icon(Icons.code_rounded, size: 20, color: palette.muted),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Text(
-                          strings.createdBy('Maragung'),
-                          style: const TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
+                  // v1.41.5 — the complete user guide lives on its own
+                  // screen; the tile sits ABOVE About, as requested.
+                  ListTile(
+                    key: const Key('help-tile'),
+                    contentPadding: EdgeInsets.zero,
+                    leading: const Icon(Icons.help_outline_rounded),
+                    title: Text(strings.helpTileTitle),
+                    subtitle: Text(
+                      strings.helpTileSubtitle,
+                      style: TextStyle(fontSize: 12, color: palette.muted),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    trailing: const Icon(Icons.chevron_right_rounded),
+                    onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => const HelpScreen(),
                       ),
-                    ],
+                    ),
                   ),
-                  const SizedBox(height: 10),
-                  Text(
-                    strings.aboutBody,
-                    style: TextStyle(
-                      fontSize: 12.5,
-                      color: palette.muted,
-                      height: 1.5,
+                  const Divider(height: 1),
+                  ListTile(
+                    key: const Key('about-tile'),
+                    contentPadding: EdgeInsets.zero,
+                    leading: const Icon(Icons.info_outline_rounded),
+                    title: Text(strings.aboutTileTitle),
+                    subtitle: Text(
+                      strings.aboutTileSubtitle,
+                      style: TextStyle(fontSize: 12, color: palette.muted),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    trailing: const Icon(Icons.chevron_right_rounded),
+                    onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => const AboutScreen(),
+                      ),
                     ),
                   ),
                 ],
