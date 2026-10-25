@@ -1,6 +1,8 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
+import 'app_strings_es.dart';
+
 /// Manual localization layer (no codegen) so CI stays deterministic.
 ///
 /// Two languages are supported:
@@ -12,12 +14,13 @@ import 'package:flutter/material.dart';
 /// (Riverpod notifiers) can produce localized error messages.
 
 /// Locale codes the app can render.
-const List<String> supportedLanguageCodes = <String>['en', 'id'];
+const List<String> supportedLanguageCodes = <String>['en', 'id', 'es'];
 
 /// Human-readable native names for the language picker.
 const Map<String, String> languageNames = <String, String>{
   'en': 'English',
   'id': 'Bahasa Indonesia',
+  'es': 'Español',
 };
 
 /// Default language used when no preference is stored.
@@ -25,10 +28,16 @@ const String defaultLanguageCode = 'en';
 
 /// Resolves [languageCode] to a strings bundle; unknown codes fall back to
 /// English.
-AppStrings appStringsFor(String languageCode) =>
-    languageCode.toLowerCase().startsWith('id')
-    ? AppStringsId()
-    : AppStringsEn();
+AppStrings appStringsFor(String languageCode) {
+  switch (languageCode.toLowerCase()) {
+    case 'id':
+      return AppStringsId();
+    case 'es':
+      return AppStringsEs();
+    default:
+      return AppStringsEn();
+  }
+}
 
 /// Lookup wrapper registered through a [LocalizationsDelegate].
 class ZLocalizations {
@@ -97,6 +106,39 @@ abstract class AppStrings {
   String get add;
   String get confirm;
   String get operationFailed;
+
+  // -- v1.44.0 image attachments & speech dictation --------------------
+  String get speechListen;
+  String get speechStop;
+  String get speechListening;
+  String get speechUnavailable;
+  String get speechPermissionDenied;
+  String get imageTooLarge;
+  String get imageNotAnImage;
+
+  // -- v1.44.0 update check --------------------------------------------
+  String get updateBannerTitle;
+  String get updateBannerBody;
+  String get updateOpenRelease;
+  String get updateDismiss;
+  String get checkUpdatesOnStart;
+  String get checkUpdatesNow;
+  String get updateChecking;
+  String get updateUpToDate;
+  String get updateCheckFailed;
+
+  // -- v1.44.0 module catalog ------------------------------------------
+  String get officialModulesTitle;
+  String get officialModulesSubtitle;
+  String get moduleUpdatedTo;
+
+  // -- v1.44.0 accessibility leftovers ---------------------------------
+  String get loading;
+  String get refresh;
+  String get parentFolder;
+  String get todoCompleted;
+  String get todoInProgress;
+  String get todoPending;
 
   // -- Home / chat -----------------------------------------------------
   String get askAnything;
@@ -601,6 +643,83 @@ class AppStringsEn implements AppStrings {
   String get askAnything => 'Ask anything…';
   @override
   String get attachFile => 'Attach file';
+
+  @override
+  String get speechListen => 'Dictate';
+
+  @override
+  String get speechStop => 'Stop dictation';
+
+  @override
+  String get speechListening => 'Listening…';
+
+  @override
+  String get speechUnavailable =>
+      'Speech recognition is not available on this device.';
+
+  @override
+  String get speechPermissionDenied => 'Microphone permission was denied.';
+
+  @override
+  String get imageTooLarge => 'Image is larger than 20 MB.';
+
+  @override
+  String get imageNotAnImage => 'That file is not a supported image.';
+
+  @override
+  String get updateBannerTitle => 'Update available';
+
+  @override
+  String get updateBannerBody => 'A newer version of ZAgents is out.';
+
+  @override
+  String get updateOpenRelease => 'View release';
+
+  @override
+  String get updateDismiss => 'Dismiss';
+
+  @override
+  String get checkUpdatesOnStart => 'Check for updates on start';
+
+  @override
+  String get checkUpdatesNow => 'Check for updates now';
+
+  @override
+  String get updateChecking => 'Checking…';
+
+  @override
+  String get updateUpToDate => 'You are on the latest version.';
+
+  @override
+  String get updateCheckFailed => 'Could not check for updates.';
+
+  @override
+  String get officialModulesTitle => 'Official sample modules';
+
+  @override
+  String get officialModulesSubtitle =>
+      'Install from the samples folder zips (samples/<name>.zip in the repo), then manage them here.';
+
+  @override
+  String get moduleUpdatedTo => 'Module updated to version';
+
+  @override
+  String get loading => 'Loading';
+
+  @override
+  String get refresh => 'Refresh';
+
+  @override
+  String get parentFolder => 'Parent folder';
+
+  @override
+  String get todoCompleted => 'Completed';
+
+  @override
+  String get todoInProgress => 'In progress';
+
+  @override
+  String get todoPending => 'Pending';
   @override
   String get newChat => 'New chat';
   @override
@@ -1756,6 +1875,84 @@ class AppStringsId implements AppStrings {
   String get askAnything => 'Tanya apa saja…';
   @override
   String get attachFile => 'Lampirkan file';
+
+  @override
+  String get speechListen => 'Dikte suara';
+
+  @override
+  String get speechStop => 'Hentikan dikte';
+
+  @override
+  String get speechListening => 'Mendengarkan…';
+
+  @override
+  String get speechUnavailable =>
+      'Pengenalan suara tidak tersedia di perangkat ini.';
+
+  @override
+  String get speechPermissionDenied => 'Izin mikrofon ditolak.';
+
+  @override
+  String get imageTooLarge => 'Gambar lebih besar dari 20 MB.';
+
+  @override
+  String get imageNotAnImage => 'File tersebut bukan gambar yang didukung.';
+
+  @override
+  String get updateBannerTitle => 'Pembaruan tersedia';
+
+  @override
+  String get updateBannerBody =>
+      'Versi ZAgents yang lebih baru sudah tersedia.';
+
+  @override
+  String get updateOpenRelease => 'Lihat rilis';
+
+  @override
+  String get updateDismiss => 'Tutup';
+
+  @override
+  String get checkUpdatesOnStart => 'Periksa pembaruan saat mulai';
+
+  @override
+  String get checkUpdatesNow => 'Periksa pembaruan sekarang';
+
+  @override
+  String get updateChecking => 'Memeriksa…';
+
+  @override
+  String get updateUpToDate => 'Anda sudah memakai versi terbaru.';
+
+  @override
+  String get updateCheckFailed => 'Gagal memeriksa pembaruan.';
+
+  @override
+  String get officialModulesTitle => 'Modul contoh resmi';
+
+  @override
+  String get officialModulesSubtitle =>
+      'Install dari zip di folder samples (samples/<nama>.zip di repo), lalu kelola di sini.';
+
+  @override
+  String get moduleUpdatedTo => 'Modul diperbarui ke versi';
+
+  @override
+  String get loading => 'Memuat';
+
+  @override
+  String get refresh => 'Muat ulang';
+
+  @override
+  String get parentFolder => 'Folder induk';
+
+  @override
+  String get todoCompleted => 'Selesai';
+
+  @override
+  String get todoInProgress => 'Sedang berjalan';
+
+  @override
+  String get todoPending => 'Menunggu';
   @override
   String get newChat => 'Percakapan baru';
   @override

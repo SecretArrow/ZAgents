@@ -246,12 +246,21 @@ class _ContextScreenState extends ConsumerState<ContextScreen> {
                       trailing: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: <Widget>[
-                          Switch(
-                            key: Key('context-switch-${entry.id}'),
-                            value: entry.enabled,
-                            onChanged: (bool value) => _toggle(entry, value),
+                          MergeSemantics(
+                            // The switch is announced with its meaning:
+                            // "Use this context, switch, on/off".
+                            child: Semantics(
+                              label: strings.contextEnabledLabel,
+                              child: Switch(
+                                key: Key('context-switch-${entry.id}'),
+                                value: entry.enabled,
+                                onChanged: (bool value) =>
+                                    _toggle(entry, value),
+                              ),
+                            ),
                           ),
                           PopupMenuButton<String>(
+                            tooltip: strings.menu,
                             onSelected: (String action) {
                               if (action == 'edit') _edit(entry);
                               if (action == 'delete') _delete(entry);

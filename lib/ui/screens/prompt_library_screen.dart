@@ -233,6 +233,7 @@ class _PromptLibraryScreenState extends ConsumerState<PromptLibraryScreen> {
                           mainAxisSize: MainAxisSize.min,
                           children: <Widget>[
                             PopupMenuButton<String>(
+                              tooltip: strings.menu,
                               onSelected: (String action) {
                                 if (action == 'edit') _edit(entry);
                                 if (action == 'delete') _delete(entry);

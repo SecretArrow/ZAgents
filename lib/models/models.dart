@@ -801,6 +801,7 @@ class AppSettings {
     this.autoTitle = true,
     this.appLockEnabled = false,
     this.notifyOnDone = true,
+    this.checkUpdatesOnStart = true,
     this.autoRetryEnabled = true,
     this.autoRetryAttempts = defaultAutoRetryAttempts,
     this.autoRetryDelay = defaultAutoRetryDelay,
@@ -851,6 +852,12 @@ class AppSettings {
   /// When true (default) a local notification is posted when an agent run
   /// finishes while the app is in the background (v1.18.0).
   final bool notifyOnDone;
+
+  /// v1.44.0 — when true (default) the app pings the GitHub Releases API
+  /// once at startup and shows an update banner when a newer tag exists.
+  /// Sideloaded APKs have no Play Store to nudge the user, so this is the
+  /// only update signal. Fully off-switchable (privacy) in Settings.
+  final bool checkUpdatesOnStart;
 
   /// v1.30.0 auto-retry: when true (default), a failed LLM turn (network
   /// error, weak connection, dropped stream, transient provider HTTP
@@ -922,6 +929,7 @@ class AppSettings {
     bool? autoTitle,
     bool? appLockEnabled,
     bool? notifyOnDone,
+    bool? checkUpdatesOnStart,
     bool? autoRetryEnabled,
     Object? autoRetryAttempts,
     Object? autoRetryDelay,
@@ -947,6 +955,7 @@ class AppSettings {
     autoTitle: autoTitle ?? this.autoTitle,
     appLockEnabled: appLockEnabled ?? this.appLockEnabled,
     notifyOnDone: notifyOnDone ?? this.notifyOnDone,
+    checkUpdatesOnStart: checkUpdatesOnStart ?? this.checkUpdatesOnStart,
     autoRetryEnabled: autoRetryEnabled ?? this.autoRetryEnabled,
     autoRetryAttempts: clampAutoRetryAttempts(
       autoRetryAttempts ?? this.autoRetryAttempts,
@@ -976,6 +985,7 @@ class AppSettings {
     'autoTitle': autoTitle,
     'appLockEnabled': appLockEnabled,
     'notifyOnDone': notifyOnDone,
+    'checkUpdatesOnStart': checkUpdatesOnStart,
     'autoRetryEnabled': autoRetryEnabled,
     'autoRetryAttempts': autoRetryAttempts,
     'autoRetryDelay': autoRetryDelay,
@@ -1004,6 +1014,7 @@ class AppSettings {
       autoTitle: json['autoTitle'] as bool? ?? true,
       appLockEnabled: json['appLockEnabled'] as bool? ?? false,
       notifyOnDone: json['notifyOnDone'] as bool? ?? true,
+      checkUpdatesOnStart: json['checkUpdatesOnStart'] as bool? ?? true,
       autoRetryEnabled: json['autoRetryEnabled'] as bool? ?? true,
       autoRetryAttempts: clampAutoRetryAttempts(
         json['autoRetryAttempts'] ?? defaultAutoRetryAttempts,

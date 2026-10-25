@@ -128,7 +128,12 @@ class _FilesScreenState extends ConsumerState<FilesScreen> {
         builder: (BuildContext dialogContext) => AlertDialog(
           backgroundColor: Theme.of(context).colorScheme.surface,
           title: Text(entry.name),
-          content: Image.file(File(abs), fit: BoxFit.contain),
+          content: Image.file(
+            File(abs),
+            fit: BoxFit.contain,
+            // TalkBack announces the image by its file name.
+            semanticLabel: entry.name,
+          ),
           actions: <Widget>[
             TextButton(
               onPressed: () => Navigator.of(dialogContext).pop(),
@@ -431,12 +436,15 @@ class _FilesScreenState extends ConsumerState<FilesScreen> {
       context: context,
       barrierDismissible: false,
       builder: (BuildContext dialogContext) => AlertDialog(
-        content: Row(
-          children: <Widget>[
-            const CircularProgressIndicator(strokeWidth: 2),
-            const SizedBox(width: 20),
-            Expanded(child: Text(strings.filesExporting)),
-          ],
+        content: MergeSemantics(
+          // One TalkBack stop: spinner + export status text.
+          child: Row(
+            children: <Widget>[
+              const CircularProgressIndicator(strokeWidth: 2),
+              const SizedBox(width: 20),
+              Expanded(child: Text(strings.filesExporting)),
+            ],
+          ),
         ),
       ),
     );
@@ -553,7 +561,12 @@ class _FilesScreenState extends ConsumerState<FilesScreen> {
         ],
       ),
       body: _loading
-          ? const Center(child: CircularProgressIndicator(strokeWidth: 2))
+          ? Center(
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                semanticsLabel: stringsOf(context).loading,
+              ),
+            )
           : _entries.isEmpty
           ? Padding(
               padding: const EdgeInsets.all(32),
@@ -607,6 +620,7 @@ class _FilesScreenState extends ConsumerState<FilesScreen> {
                     ),
                     trailing: PopupMenuButton<String>(
                       key: Key('file-menu-${entry.name}'),
+                      tooltip: strings.menu,
                       icon: Icon(
                         Icons.more_vert_rounded,
                         color: context.zMuted,
@@ -698,7 +712,8 @@ class _FilesScreenState extends ConsumerState<FilesScreen> {
           ? null
           : FloatingActionButton(
               heroTag: 'files-up',
-              tooltip: '..',
+              // l10n: no 'parent folder' string exists yet.
+              tooltip: stringsOf(context).parentFolder,
               onPressed: () async {
                 final int slash = _current.lastIndexOf('/');
                 setState(() {

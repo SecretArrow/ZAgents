@@ -242,6 +242,7 @@ class _ModelPickerSheetState extends ConsumerState<ModelPickerSheet> {
                     suffixIcon: _query.isEmpty
                         ? null
                         : IconButton(
+                            tooltip: strings.cancel,
                             icon: const Icon(Icons.close_rounded, size: 18),
                             onPressed: () {
                               _searchController.clear();
@@ -284,6 +285,7 @@ class _ModelPickerSheetState extends ConsumerState<ModelPickerSheet> {
                   decoration: InputDecoration(
                     hintText: strings.customModelHint,
                     suffixIcon: IconButton(
+                      tooltip: strings.confirm,
                       icon: const Icon(Icons.check_rounded),
                       onPressed: () => _select(_customController.text),
                     ),
@@ -394,10 +396,13 @@ class _ModelPickerSheetState extends ConsumerState<ModelPickerSheet> {
       builder:
           (BuildContext context, AsyncSnapshot<List<RemoteModel>> snapshot) {
             if (snapshot.connectionState != ConnectionState.done) {
-              return const Center(
+              return Center(
                 child: Padding(
-                  padding: EdgeInsets.all(32),
-                  child: CircularProgressIndicator(strokeWidth: 2.5),
+                  padding: const EdgeInsets.all(32),
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2.5,
+                    semanticsLabel: strings.fetchingModels,
+                  ),
                 ),
               );
             }
@@ -460,6 +465,8 @@ class _ModelPickerSheetState extends ConsumerState<ModelPickerSheet> {
         selected ? Icons.check_circle_rounded : Icons.circle_outlined,
         size: 18,
         color: selected ? kAccentColor : context.zMuted,
+        // The checkmark tells TalkBack which model is active.
+        semanticLabel: selected ? strings.activeBadge : null,
       ),
       title: Text(
         model.id,
@@ -467,38 +474,41 @@ class _ModelPickerSheetState extends ConsumerState<ModelPickerSheet> {
         overflow: TextOverflow.ellipsis,
         style: const TextStyle(fontSize: 13.5, fontFamily: 'monospace'),
       ),
-      subtitle: Row(
-        children: <Widget>[
-          Expanded(
-            child: Text(
-              <String>[
-                if (model.name != model.id) model.name,
-                ...meta,
-              ].join(' · '),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(fontSize: 11, color: context.zMuted),
-            ),
-          ),
-          if (model.isFree)
-            Container(
-              margin: const EdgeInsets.only(left: 8),
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-              decoration: BoxDecoration(
-                color: kAccentColor.withValues(alpha: 0.15),
-                borderRadius: BorderRadius.circular(6),
-              ),
+      subtitle: MergeSemantics(
+        // One TalkBack stop: name, meta and the FREE badge together.
+        child: Row(
+          children: <Widget>[
+            Expanded(
               child: Text(
-                strings.freeBadge,
-                style: const TextStyle(
-                  fontSize: 9.5,
-                  fontWeight: FontWeight.w700,
-                  color: kAccentColor,
-                  letterSpacing: 0.5,
+                <String>[
+                  if (model.name != model.id) model.name,
+                  ...meta,
+                ].join(' · '),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(fontSize: 11, color: context.zMuted),
+              ),
+            ),
+            if (model.isFree)
+              Container(
+                margin: const EdgeInsets.only(left: 8),
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                decoration: BoxDecoration(
+                  color: kAccentColor.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Text(
+                  strings.freeBadge,
+                  style: const TextStyle(
+                    fontSize: 9.5,
+                    fontWeight: FontWeight.w700,
+                    color: kAccentColor,
+                    letterSpacing: 0.5,
+                  ),
                 ),
               ),
-            ),
-        ],
+          ],
+        ),
       ),
       onTap: () => _select(model.id),
     );
@@ -512,6 +522,8 @@ class _ModelPickerSheetState extends ConsumerState<ModelPickerSheet> {
         model.id == active ? Icons.check_circle_rounded : Icons.circle_outlined,
         size: 18,
         color: model.id == active ? kAccentColor : context.zMuted,
+        // The checkmark tells TalkBack which model is active.
+        semanticLabel: model.id == active ? strings.activeBadge : null,
       ),
       title: Text(
         model.id,

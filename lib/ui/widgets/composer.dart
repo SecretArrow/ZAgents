@@ -5,7 +5,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../di.dart';
+import '../../services/attachment_service.dart';
 import '../../services/module_registry.dart';
+import '../../services/speech_service.dart';
 import '../../l10n/app_strings.dart';
 import '../../models/models.dart';
 import '../screens/modules_screen.dart';
@@ -26,6 +28,11 @@ class _ComposerState extends ConsumerState<Composer> {
   final TextEditingController _controller = TextEditingController();
   final FocusNode _focusNode = FocusNode();
   bool _picking = false;
+
+  /// v1.44.0 — live dictation state: a listening session renders an inline
+  /// partial-text row and turns the mic control into a stop control.
+  bool _listening = false;
+  String _speechPartial = '';
 
   /// v1.42.0 — consecutive Stop taps while the SAME run is still active.
   /// 1 tap = graceful stop; tap 2 asks again + hints; tap 3 opens the
@@ -369,6 +376,34 @@ class _ComposerState extends ConsumerState<Composer> {
       final XFile? picked = await openFile();
       if (picked == null) return;
       if (ref.read(activeSessionIdProvider) != sessionId) return;
+      // v1.44.0: images take the optimization pipeline — validated by
+      // content magic, downscaled to a 1600 px long edge, re-encoded —
+      // and are stored under `attachments/` in the SAME per-chat sandbox.
+      // Non-image files keep the byte-for-byte uploads copy below.
+      if (AttachmentService.looksLikeImage(picked.name)) {
+        final AttachmentResult result = await ref
+            .read(attachmentServiceProvider)
+            .optimizeAndStore(sessionId: sessionId, picked: picked);
+        if (ref.read(activeSessionIdProvider) != sessionId) return;
+        if (!result.ok) {
+          if (mounted) _showAttachmentError(result);
+          return;
+        }
+        final List<String> refParts = result.relativePath!.split(
+          Platform.pathSeparator,
+        );
+        final ChatAttachment attachment = ChatAttachment(
+          name: refParts.last,
+          path: result.absolutePath!,
+          sizeBytes: result.bytes!.length,
+          kind: AttachmentKind.image,
+        );
+        ref.read(pendingAttachmentsProvider.notifier).state = <ChatAttachment>[
+          ...ref.read(pendingAttachmentsProvider),
+          attachment,
+        ];
+        return;
+      }
       // Uploads live in the ACTIVE session's own workspace — files never
       // mix between chats (private-window isolation).
       final Directory root = await ref
@@ -572,6 +607,17 @@ class _ComposerState extends ConsumerState<Composer> {
       chatControllerProvider.select((s) => s.sessionId),
       (String? previous, String? current) => _rebind(current),
     );
+    // v1.44.0: dictation belongs to the chat it was started in — a chat
+    // switch ends the speech session instead of letting the final words
+    // land in another chat's draft.
+    ref.listen<String?>(chatControllerProvider.select((s) => s.sessionId), (
+      String? previous,
+      String? current,
+    ) {
+      if (previous != current && _listening) {
+        ref.read(speechServiceProvider).stop();
+      }
+    });
     // A chat whose history is still being read has no runnable transcript
     // yet — sending now would fork a duplicate session (see ChatController
     // .send), so the send control is disabled until the load lands.
@@ -584,6 +630,33 @@ class _ComposerState extends ConsumerState<Composer> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
+          // v1.44.0: live dictation preview — the partial transcript while
+          // the mic is open, so the user sees the phone is listening.
+          if (_listening)
+            Padding(
+              key: const Key('speech-listening-row'),
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Row(
+                children: <Widget>[
+                  Icon(
+                    Icons.graphic_eq_rounded,
+                    size: 16,
+                    color: context.zMuted,
+                  ),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      _speechPartial.isEmpty
+                          ? stringsOf(context).speechListening
+                          : _speechPartial,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(fontSize: 12, color: context.zMuted),
+                    ),
+                  ),
+                ],
+              ),
+            ),
           if (pending.isNotEmpty)
             SizedBox(
               height: 44,
@@ -643,6 +716,15 @@ class _ComposerState extends ConsumerState<Composer> {
                 onPressed: _openPromptSheet,
                 icon: Icon(Icons.notes_rounded, color: context.zMuted),
               ),
+              IconButton(
+                key: const Key('mic-button'),
+                tooltip: _listening ? strings.speechStop : strings.speechListen,
+                onPressed: _toggleMic,
+                icon: Icon(
+                  _listening ? Icons.stop_rounded : Icons.mic_none_rounded,
+                  color: _listening ? const Color(0xFFE5484D) : context.zMuted,
+                ),
+              ),
               Expanded(
                 child: TextField(
                   key: const Key('composer-field'),
@@ -690,6 +772,85 @@ class _ComposerState extends ConsumerState<Composer> {
         ],
       ),
     );
+  }
+
+  /// v1.44.0 — mic control: first tap probes availability (lazy init +
+  /// runtime RECORD_AUDIO prompt), starts dictation in the app language,
+  /// and the next tap stops it. Final recognition results are appended to
+  /// the composer text (per-chat draft, so they survive a chat switch);
+  /// partials only feed the inline preview row.
+  Future<void> _toggleMic() async {
+    final AppStrings strings = stringsOf(context);
+    if (_listening) {
+      await ref.read(speechServiceProvider).stop();
+      return;
+    }
+    final SpeechService speech = ref.read(speechServiceProvider);
+    final SpeechAvailability availability = await speech.ensureReady();
+    if (!mounted) return;
+    if (availability == SpeechAvailability.unavailable) {
+      _snack(strings.speechUnavailable);
+      return;
+    }
+    if (availability == SpeechAvailability.notAuthorized) {
+      _snack(strings.speechPermissionDenied);
+      return;
+    }
+    setState(() {
+      _listening = true;
+      _speechPartial = '';
+    });
+    await speech.start(
+      localeCode: ref.read(settingsProvider).languageCode,
+      onResult: (String text, bool finalResult) {
+        if (!mounted) return;
+        if (!finalResult) {
+          setState(() => _speechPartial = text);
+          return;
+        }
+        final String trimmed = text.trim();
+        if (trimmed.isNotEmpty) {
+          final String current = _controller.text;
+          final String merged = current.isEmpty
+              ? trimmed
+              : '$current ${trimmed.trimLeft()}';
+          _controller.value = TextEditingValue(
+            text: merged,
+            selection: TextSelection.collapsed(offset: merged.length),
+          );
+        }
+        setState(() => _speechPartial = '');
+      },
+      onEnd: () {
+        if (!mounted) return;
+        setState(() {
+          _listening = false;
+          _speechPartial = '';
+        });
+      },
+    );
+  }
+
+  /// Localized snackbar for the image-attachment failure kinds.
+  void _showAttachmentError(AttachmentResult result) {
+    final AppStrings strings = stringsOf(context);
+    switch (result.errorType) {
+      case AttachmentErrorType.tooLarge:
+        _snack(strings.imageTooLarge);
+      case AttachmentErrorType.notAnImage:
+        _snack(strings.imageNotAnImage);
+      case AttachmentErrorType.cancelled:
+        break;
+      case AttachmentErrorType.saveFailed:
+      case null:
+        _snack(strings.operationFailed);
+    }
+  }
+
+  void _snack(String message) {
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
   }
 
   /// v1.42.0 — 1 tap stops the process (graceful); the 2nd tap asks again

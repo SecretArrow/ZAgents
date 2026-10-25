@@ -18,7 +18,7 @@ env:
 
 jobs:
   build-release:
-    name: Build & publish APK
+    name: Build & publish APK + AAB
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -173,6 +173,20 @@ jobs:
           ZAGENTS_REQUIRE_SIGNING: 'true'
         run: flutter build apk --release --split-per-abi
 
+      # Also ship an Android App Bundle (.aab) as the 5th release artifact
+      # (for Play Console uploads). The release buildType signing config in
+      # android/app/build.gradle.kts applies to bundles too, so passing the
+      # same env as the APK steps yields an AAB signed with the same key.
+      - name: Build release app bundle (AAB)
+        env:
+          # Passed straight from secrets: never written to $GITHUB_ENV.
+          KEYSTORE_PATH: ${{ github.workspace }}/android/keystore/signing.keystore
+          KEYSTORE_STORE_PASSWORD: ${{ secrets.KEYSTORE_STORE_PASSWORD || secrets.KEYSTORE_PASSWORD }}
+          KEYSTORE_KEY_PASSWORD: ${{ secrets.KEYSTORE_KEY_PASSWORD || secrets.KEYSTORE_STORE_PASSWORD || secrets.KEYSTORE_PASSWORD }}
+          KEYSTORE_ALIAS: ${{ steps.keystore.outputs.alias }}
+          ZAGENTS_REQUIRE_SIGNING: 'true'
+        run: flutter build appbundle --release
+
       - name: Verify APK signatures (universal + every ABI split)
         run: |
           set -euo pipefail
@@ -197,11 +211,31 @@ jobs:
             echo "OK: $(basename "$APK")"
           done
 
+      - name: Verify app bundle (AAB)
+        run: |
+          set -euo pipefail
+          AAB=build/app/outputs/bundle/release/app-release.aab
+          if [ ! -f "$AAB" ]; then
+            echo "::error::$AAB not found."
+            exit 1
+          fi
+          # jarsigner verifies against the certificate embedded in the bundle
+          # (no keystore needed). Reject debug-signed bundles like the APKs.
+          if ! jarsigner -verify "$AAB" > /dev/null; then
+            echo "::error::Release AAB failed jarsigner verification."
+            exit 1
+          fi
+          if jarsigner -verify -certs "$AAB" 2>/dev/null | grep -qi 'CN=Android Debug'; then
+            echo "::error::Release AAB is debug-signed."
+            exit 1
+          fi
+          echo "OK: app-release.aab"
+
       - name: Delete unzipped keystore (always, even on failure)
         if: always()
         run: rm -rf android/keystore
 
-      - name: Organize artifacts (universal + per-ABI)
+      - name: Organize artifacts (universal + per-ABI + AAB)
         env:
           VERSION: ${{ steps.version.outputs.version }}
         run: |
@@ -217,9 +251,12 @@ jobs:
             ABI=$(basename "$APK" | sed 's/^app-//; s/-release\.apk$//')
             cp "$APK" "build-outputs/ZAgents-${VERSION}-${GITHUB_REF_NAME}-${ABI}.apk"
           done
-          COUNT=$(ls build-outputs/*.apk | wc -l)
-          if [ "$COUNT" -lt 4 ]; then
-            echo "::error::Expected 4 APKs (universal + 3 ABI splits), got $COUNT."
+          # Android App Bundle for Play Console (same name pattern as the APKs).
+          cp build/app/outputs/bundle/release/app-release.aab \
+             "build-outputs/ZAgents-${VERSION}-${GITHUB_REF_NAME}.aab"
+          COUNT=$(ls build-outputs/*.apk build-outputs/*.aab | wc -l)
+          if [ "$COUNT" -lt 5 ]; then
+            echo "::error::Expected 5 artifacts (4 APKs: universal + 3 ABI splits, plus 1 AAB), got $COUNT."
             ls -lh build-outputs
             exit 1
           fi
@@ -230,13 +267,17 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: app-release-apk
-          path: build-outputs/*.apk
+          path: |
+            build-outputs/*.apk
+            build-outputs/*.aab
 
       - name: Create GitHub Release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: build-outputs/*.apk
+          files: |
+            build-outputs/*.apk
+            build-outputs/*.aab
           generate_release_notes: true
           # Tags like v1.30.0-beta.1 publish as pre-releases and are not
           # promoted to "latest".

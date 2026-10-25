@@ -104,7 +104,11 @@ class _ModulesScreenState extends ConsumerState<ModulesScreen> {
           SnackBar(
             content: Text(
               result.ok
-                  ? strings.moduleInstallSuccess(result.module!.name)
+                  ? (result.message.startsWith('Updated')
+                        // v1.44.0: version-aware reinstall — surface
+                        // "Updated name vX → vY" verbatim.
+                        ? result.message
+                        : strings.moduleInstallSuccess(result.module!.name))
                   : strings.moduleInstallFailed(result.message),
             ),
           ),
@@ -236,8 +240,10 @@ class _ModulesScreenState extends ConsumerState<ModulesScreen> {
             : ListView.builder(
                 key: const Key('modules-list'),
                 padding: const EdgeInsets.fromLTRB(12, 8, 12, 96),
-                itemCount: items.length,
+                // +1: the official sample-module catalog footer (v1.44.0).
+                itemCount: items.length + 1,
                 itemBuilder: (BuildContext context, int index) {
+                  if (index == items.length) return const _OfficialCatalog();
                   final ChatModule module = items[index];
                   final bool isActive = activeModule == module.name;
                   return Card(
@@ -453,6 +459,167 @@ class SdkDocsScreen extends ConsumerWidget {
             ),
           );
         },
+      ),
+    );
+  }
+}
+
+/// A bundled catalog entry: one official sample module from the repo's
+/// `samples/` folder, with its slash command (or the /plugins activation
+/// path) and a one-line description.
+class _OfficialSample {
+  const _OfficialSample(this.name, this.command, this.description);
+  final String name;
+  final String command;
+  final String description;
+}
+
+/// Static catalog of every module shipped in `samples/` (kept in sync with
+/// the repo README). The app cannot reach into GitHub at runtime, so the
+/// catalog documents WHAT to install from the samples zips — the install
+/// itself stays a local, user-driven ZIP pick (no remote code execution).
+const List<_OfficialSample> _kOfficialSamples = <_OfficialSample>[
+  _OfficialSample(
+    'counter',
+    '/plugins counter',
+    'Per-chat counter — storage isolation demo.',
+  ),
+  _OfficialSample(
+    'network-fetcher',
+    '/plugins network-fetcher',
+    'Allowlisted HTTP fetch (api.github.com only).',
+  ),
+  _OfficialSample(
+    'file-notes',
+    '/plugins file-notes',
+    'Sandboxed notes inside the per-chat state dir.',
+  ),
+  _OfficialSample(
+    'chat-streamer',
+    '/plugins chat-streamer',
+    'Progressive output via zagents.chat.emit.',
+  ),
+  _OfficialSample(
+    'onhomeroom-daily',
+    '/plugins onhomeroom-daily',
+    'Daily bot for app.onhomeroom.com (agent.compose).',
+  ),
+  _OfficialSample(
+    'airplane-mode',
+    '/airplane',
+    'Airplane IP-rotation cycle (root / manual).',
+  ),
+  _OfficialSample(
+    'evm-wallet',
+    '/wallet',
+    'Generate-only EVM wallet with signed transfers.',
+  ),
+  _OfficialSample(
+    'web-browser',
+    '/web',
+    'Text-mode browser: reader extraction + search.',
+  ),
+  _OfficialSample(
+    'rss-reader',
+    '/rss',
+    'Per-chat RSS 2.0 / Atom subscriptions.',
+  ),
+  _OfficialSample('qr-tools', '/qr', 'Scannable QR codes, zero permissions.'),
+  _OfficialSample(
+    'totp-auth',
+    '/otp',
+    'RFC 6238 authenticator — secrets never leave the device.',
+  ),
+  _OfficialSample(
+    'csv-data',
+    '/csv',
+    'RFC 4180 CSV studio: stats, filter, chart.',
+  ),
+  _OfficialSample(
+    'converters',
+    '/cur + /unit',
+    'Live currency rates + offline unit engine.',
+  ),
+];
+
+/// v1.44.0 — the "Official sample modules" card at the bottom of the
+/// Modules screen: documents every sample shipped with the repo, what it
+/// demonstrates and how it is activated, so a fresh install knows what to
+/// reach for. Pure documentation — nothing here executes.
+class _OfficialCatalog extends ConsumerWidget {
+  const _OfficialCatalog();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final AppStrings strings = stringsOf(context);
+    return Card(
+      key: const Key('official-modules-catalog'),
+      margin: const EdgeInsets.symmetric(vertical: 8),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Row(
+              children: <Widget>[
+                const Icon(Icons.category_rounded, size: 20),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    strings.officialModulesTitle,
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Text(
+              strings.officialModulesSubtitle,
+              style: TextStyle(fontSize: 12, color: context.zMuted),
+            ),
+            const SizedBox(height: 8),
+            for (final _OfficialSample sample in _kOfficialSamples)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 6),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Expanded(
+                      flex: 3,
+                      child: Text(
+                        sample.name,
+                        style: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                    Expanded(
+                      flex: 3,
+                      child: Text(
+                        sample.command,
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: context.zMuted,
+                          fontFamily: 'monospace',
+                        ),
+                      ),
+                    ),
+                    Expanded(
+                      flex: 6,
+                      child: Text(
+                        sample.description,
+                        style: TextStyle(fontSize: 11, color: context.zMuted),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }

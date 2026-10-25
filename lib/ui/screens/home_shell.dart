@@ -15,6 +15,7 @@ import '../widgets/composer.dart';
 import '../widgets/model_picker.dart';
 import '../widgets/module_repair_card.dart';
 import '../widgets/module_setup_sheet.dart';
+import '../../services/update_checker.dart' show UpdateCheckResult;
 import 'settings_screen.dart';
 
 /// Main screen: app bar (brand, model chip, agent toggle, language menu),
@@ -45,6 +46,10 @@ class _HomeShellState extends ConsumerState<HomeShell> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         ref.read(chatControllerProvider.notifier).restoreLastChat();
+        // v1.44.0: one update probe per boot (skipped when the user turned
+        // the check off in Settings) — banner shows only when a newer tag
+        // exists on GitHub Releases.
+        ref.read(updateCheckProvider.notifier).checkAtStartup();
       }
     });
   }
@@ -174,6 +179,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
         body: SafeArea(
           child: Column(
             children: <Widget>[
+              const _UpdateBanner(),
               const Expanded(child: ChatBody()),
               const ModuleRepairCard(),
               const _ConfirmationCard(),
@@ -424,6 +430,85 @@ class _LanguageMenu extends ConsumerWidget {
             ),
           ),
       ],
+    );
+  }
+}
+
+/// v1.44.0 — update banner pinned above the chat body. Rendered only when
+/// a completed GitHub check found a newer release tag; otherwise it is a
+/// zero-height no-op so the chat layout is untouched. "View release"
+/// copies the release URL to the clipboard (the app deliberately ships no
+/// url_launcher dependency — sideload users know the releases page);
+/// Dismiss hides the banner for this boot.
+class _UpdateBanner extends ConsumerWidget {
+  const _UpdateBanner();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final UpdateCheckState state = ref.watch(updateCheckProvider);
+    final UpdateCheckResult? result = state.result;
+    if (result == null || !result.updateAvailable) {
+      return const SizedBox.shrink();
+    }
+    final AppStrings strings = stringsOf(context);
+    return Material(
+      key: const Key('update-banner'),
+      color: context.zSurfaceAlt,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 8, 8, 8),
+        child: Row(
+          children: <Widget>[
+            const Icon(
+              Icons.system_update_rounded,
+              size: 20,
+              color: Color(0xFFE5484D),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  Text(
+                    strings.updateBannerTitle,
+                    style: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  Text(
+                    '${strings.updateBannerBody} '
+                    '${result.latestTag.isNotEmpty ? result.latestTag : ''}',
+                    style: TextStyle(fontSize: 12, color: context.zMuted),
+                  ),
+                ],
+              ),
+            ),
+            TextButton(
+              key: const Key('update-banner-open'),
+              onPressed: () {
+                final String url =
+                    result.releaseUrl ?? result.apkDownloadUrl ?? '';
+                if (url.isEmpty) return;
+                Clipboard.setData(ClipboardData(text: url));
+                ScaffoldMessenger.of(context)
+                  ..hideCurrentSnackBar()
+                  ..showSnackBar(
+                    SnackBar(
+                      content: Text('${strings.updateOpenRelease}: $url'),
+                    ),
+                  );
+              },
+              child: Text(strings.updateOpenRelease),
+            ),
+            TextButton(
+              key: const Key('update-banner-dismiss'),
+              onPressed: () => ref.read(updateCheckProvider.notifier).dismiss(),
+              child: Text(strings.updateDismiss),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

@@ -13,6 +13,8 @@
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS"/>
     <!-- App lock: biometric unlock (local_auth). -->
     <uses-permission android:name="android.permission.USE_BIOMETRIC"/>
+    <!-- v1.44.0 speech dictation (runtime-requested, never forced) -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO"/>
     <application
         android:label="@string/app_name"
         android:usesCleartextTraffic="true"

@@ -90,37 +90,40 @@ class TodoPlanCard extends StatelessWidget {
             for (final TodoItem todo in items)
               Padding(
                 padding: const EdgeInsets.only(top: 5),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: <Widget>[
-                    Padding(
-                      padding: const EdgeInsets.only(top: 1),
-                      child: _TodoStatusIcon(status: todo.status),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        todo.content,
-                        style: TextStyle(
-                          fontSize: 13,
-                          height: 1.35,
-                          color: switch (todo.status) {
-                            TodoStatus.completed => palette.muted,
-                            TodoStatus.inProgress => Theme.of(
-                              context,
-                            ).colorScheme.onSurface,
-                            TodoStatus.pending => palette.muted,
-                          },
-                          decoration: todo.status == TodoStatus.completed
-                              ? TextDecoration.lineThrough
-                              : null,
-                          fontWeight: todo.status == TodoStatus.inProgress
-                              ? FontWeight.w600
-                              : FontWeight.w400,
+                child: MergeSemantics(
+                  // One TalkBack stop per todo: status + content.
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      Padding(
+                        padding: const EdgeInsets.only(top: 1),
+                        child: _TodoStatusIcon(status: todo.status),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          todo.content,
+                          style: TextStyle(
+                            fontSize: 13,
+                            height: 1.35,
+                            color: switch (todo.status) {
+                              TodoStatus.completed => palette.muted,
+                              TodoStatus.inProgress => Theme.of(
+                                context,
+                              ).colorScheme.onSurface,
+                              TodoStatus.pending => palette.muted,
+                            },
+                            decoration: todo.status == TodoStatus.completed
+                                ? TextDecoration.lineThrough
+                                : null,
+                            fontWeight: todo.status == TodoStatus.inProgress
+                                ? FontWeight.w600
+                                : FontWeight.w400,
+                          ),
                         ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
           ],
@@ -139,24 +142,27 @@ class _TodoStatusIcon extends StatelessWidget {
   Widget build(BuildContext context) {
     switch (status) {
       case TodoStatus.completed:
-        return const Icon(
+        return Icon(
           Icons.check_circle_rounded,
           size: 15,
-          color: Color(0xFF4ADE80),
+          color: const Color(0xFF4ADE80),
+          semanticLabel: stringsOf(context).todoCompleted,
         );
       case TodoStatus.inProgress:
         // Static glyph on purpose: historical plan cards show the state at
         // the time of the call, so a spinner would be misleading there.
-        return const Icon(
+        return Icon(
           Icons.radio_button_checked_rounded,
           size: 15,
           color: kAccentColor,
+          semanticLabel: stringsOf(context).todoInProgress,
         );
       case TodoStatus.pending:
         return Icon(
           Icons.radio_button_unchecked_rounded,
           size: 15,
           color: context.palette.muted,
+          semanticLabel: stringsOf(context).todoPending,
         );
     }
   }
@@ -259,37 +265,43 @@ class TodoPlanView extends StatelessWidget {
           for (final TodoItem todo in todos)
             Padding(
               padding: const EdgeInsets.only(top: 5),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  Padding(
-                    padding: const EdgeInsets.only(top: 1),
-                    child: _LiveTodoStatusIcon(status: todo.status, live: live),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      todo.content,
-                      style: TextStyle(
-                        fontSize: 13,
-                        height: 1.35,
-                        color: switch (todo.status) {
-                          TodoStatus.completed => palette.muted,
-                          TodoStatus.inProgress => Theme.of(
-                            context,
-                          ).colorScheme.onSurface,
-                          TodoStatus.pending => palette.muted,
-                        },
-                        decoration: todo.status == TodoStatus.completed
-                            ? TextDecoration.lineThrough
-                            : null,
-                        fontWeight: todo.status == TodoStatus.inProgress
-                            ? FontWeight.w600
-                            : FontWeight.w400,
+              child: MergeSemantics(
+                // One TalkBack stop per todo: status + content.
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Padding(
+                      padding: const EdgeInsets.only(top: 1),
+                      child: _LiveTodoStatusIcon(
+                        status: todo.status,
+                        live: live,
                       ),
                     ),
-                  ),
-                ],
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        todo.content,
+                        style: TextStyle(
+                          fontSize: 13,
+                          height: 1.35,
+                          color: switch (todo.status) {
+                            TodoStatus.completed => palette.muted,
+                            TodoStatus.inProgress => Theme.of(
+                              context,
+                            ).colorScheme.onSurface,
+                            TodoStatus.pending => palette.muted,
+                          },
+                          decoration: todo.status == TodoStatus.completed
+                              ? TextDecoration.lineThrough
+                              : null,
+                          fontWeight: todo.status == TodoStatus.inProgress
+                              ? FontWeight.w600
+                              : FontWeight.w400,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
         ],
@@ -310,12 +322,16 @@ class _LiveTodoStatusIcon extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (live && status == TodoStatus.inProgress) {
-      return const SizedBox(
+      return SizedBox(
         width: 14,
         height: 14,
         child: Padding(
-          padding: EdgeInsets.all(1),
-          child: CircularProgressIndicator(strokeWidth: 2),
+          padding: const EdgeInsets.all(1),
+          // l10n: no todo-status strings exist yet.
+          child: CircularProgressIndicator(
+            strokeWidth: 2,
+            semanticsLabel: stringsOf(context).todoInProgress,
+          ),
         ),
       );
     }

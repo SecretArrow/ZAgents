@@ -629,6 +629,11 @@ class ModuleRegistry {
         await target.parent.create(recursive: true);
         await target.writeAsBytes(entry.value.content as List<int>);
       }
+      final Map<String, ChatModule> registry = await _loadRegistry();
+      // v1.44.0: version-aware reinstall — the message distinguishes a
+      // fresh install from an upgrade and names the previous version, so
+      // installing a newer sample zip is a visible, honest event.
+      final ChatModule? previous = registry[manifest.name];
       final Directory target = Directory(
         '${modules.path}${Platform.pathSeparator}${manifest.name}',
       );
@@ -641,12 +646,14 @@ class ModuleRegistry {
         path: target.path,
         installedAt: DateTime.now(),
       );
-      final Map<String, ChatModule> registry = await _loadRegistry();
       registry[manifest.name] = module;
       await _saveRegistry(registry);
       return ModuleInstallResult(
         ok: true,
-        message: 'Installed ${manifest.name} v${manifest.version}',
+        message: previous == null
+            ? 'Installed ${manifest.name} v${manifest.version}'
+            : 'Updated ${manifest.name} '
+                  'v${previous.manifest.version} → v${manifest.version}',
         module: module,
       );
     } catch (e) {

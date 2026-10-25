@@ -153,7 +153,12 @@ class _NodeScreenState extends ConsumerState<NodeScreen> {
     return Scaffold(
       appBar: AppBar(title: Text(strings.nodeManagerTitle)),
       body: _loading
-          ? const Center(child: CircularProgressIndicator(strokeWidth: 2))
+          ? Center(
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                semanticsLabel: stringsOf(context).loading,
+              ),
+            )
           : Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: <Widget>[
@@ -237,6 +242,7 @@ class _NodeScreenState extends ConsumerState<NodeScreen> {
                                     ),
                                     trailing: IconButton(
                                       key: Key('node-remove-${module.name}'),
+                                      tooltip: strings.delete,
                                       icon: const Icon(
                                         Icons.delete_outline_rounded,
                                         size: 18,
@@ -260,9 +266,12 @@ class _NodeScreenState extends ConsumerState<NodeScreen> {
                         ),
                 ),
                 if (_installing)
-                  const Padding(
-                    padding: EdgeInsets.all(12),
-                    child: LinearProgressIndicator(minHeight: 3),
+                  Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: LinearProgressIndicator(
+                      minHeight: 3,
+                      semanticsLabel: strings.nodeInstalling,
+                    ),
                   ),
               ],
             ),

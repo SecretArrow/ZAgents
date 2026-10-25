@@ -563,6 +563,9 @@ class _AttachmentPreview extends StatelessWidget {
           height: 120,
           fit: BoxFit.cover,
           cacheWidth: cacheWidth,
+          // TalkBack announces the attachment by its file name instead of
+          // focusing an unlabeled image node.
+          semanticLabel: attachment.name,
           errorBuilder: (_, _, _) => Container(
             width: 120,
             height: 120,

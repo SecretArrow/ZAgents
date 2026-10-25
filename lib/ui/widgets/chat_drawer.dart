@@ -186,7 +186,10 @@ class ChatDrawer extends ConsumerWidget {
               ),
               child: Row(
                 children: <Widget>[
-                  const BrandMark(size: 36),
+                  // Decorative logo — the adjacent 'ZAgents' text carries
+                  // the meaning, so drop the empty 'Z' node from the
+                  // semantics tree.
+                  const ExcludeSemantics(child: BrandMark(size: 36)),
                   const SizedBox(width: 12),
                   // Expanded so narrow drawers can never overflow the row.
                   Expanded(
@@ -295,8 +298,11 @@ class ChatDrawer extends ConsumerWidget {
             ),
             Expanded(
               child: history.when(
-                loading: () => const Center(
-                  child: CircularProgressIndicator(strokeWidth: 2),
+                loading: () => Center(
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    semanticsLabel: stringsOf(context).loading,
+                  ),
                 ),
                 error: (Object error, StackTrace stack) => Padding(
                   padding: const EdgeInsets.all(16),
@@ -339,33 +345,40 @@ class ChatDrawer extends ConsumerWidget {
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(fontSize: 14),
                         ),
-                        subtitle: Row(
-                          children: <Widget>[
-                            Flexible(
-                              child: Text(
-                                '${item.updatedAt.day}/${item.updatedAt.month}/${item.updatedAt.year}',
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  color: context.zMuted,
+                        subtitle: MergeSemantics(
+                          // One TalkBack stop for date + running state.
+                          child: Row(
+                            children: <Widget>[
+                              Flexible(
+                                child: Text(
+                                  '${item.updatedAt.day}/${item.updatedAt.month}/${item.updatedAt.year}',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: context.zMuted,
+                                  ),
                                 ),
                               ),
-                            ),
-                            if (isRunning) ...<Widget>[
-                              const SizedBox(width: 8),
-                              const SizedBox(
-                                key: Key('running-badge'),
-                                width: 10,
-                                height: 10,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 1.5,
+                              if (isRunning) ...<Widget>[
+                                const SizedBox(width: 8),
+                                SizedBox(
+                                  key: const Key('running-badge'),
+                                  width: 10,
+                                  height: 10,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 1.5,
+                                    // Reuses the localized "agent running"
+                                    // notification title as the badge label.
+                                    semanticsLabel: strings.notifTitle,
+                                  ),
                                 ),
-                              ),
+                              ],
                             ],
-                          ],
+                          ),
                         ),
                         trailing: IconButton(
+                          tooltip: strings.delete,
                           icon: const Icon(
                             Icons.delete_outline_rounded,
                             size: 18,

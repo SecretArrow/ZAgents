@@ -360,6 +360,33 @@ OpenAI-compatible: **OpenRouter, InferHub, Z.AI, OpenAI, DeepSeek, Groq, dan lai
   sendiri saat run selesai — flag buka/tutup tetap global sehingga
   perpindahan langkah, akhir run, dan pindah chat tidak pernah
   menutupnya.
+- **v1.44.0 — keamanan, pembaruan, multimodal, suara, ekosistem modul, aksesibilitas, bahasa ke-3**:
+  (1) **API key terenkripsi** — kunci provider LLM tidak lagi tersimpan plaintext di
+  SharedPreferences: kini berada di `flutter_secure_storage` (Android Keystore), dipisah
+  lewat abstraksi `SecretBox`, dengan migrasi sekali-jalan yang crash-safe (salinan aman
+  ditulis DULU baru plaintext di-strip, idempoten, key lebih baru di secure storage selalu
+  menang) dan degradasi jujur bila secure storage gagal. (2) **Pemeriksa pembaruan** —
+  satu ping GitHub Releases saat startup (bisa dimatikan di Settings → Help & About) +
+  banner "Pembaruan tersedia" di atas chat dengan tombol salin tautan rilis; tersedia
+  juga tombol "Periksa sekarang" dengan status versi terkini. (3) **Build AAB** —
+  release CI kini menghasilkan 5 artefak: 4 APK split + `ZAgents-<versi>.aab`
+  (tanda tangan kunci sama, diverifikasi `jarsigner`, menolak sertifikat debug) — siap
+  untuk Google Play Console. (4) **Optimasi lampiran gambar** — file chooser tetap satu,
+  tapi gambar kini melewati pipeline validasi magic-byte, gate 20 MB, downscale sisi
+  panjang 1600 px (JPEG q85, PNG tetap PNG, GIF diambil frame pertamanya), copy-through
+  untuk file kecil, dan disimpan ke `attachments/` sandbox chat masing-masing (isolasi
+  per chat penuh, agent membacanya lewat tool fs chat itu sendiri). (5) **Dikte suara** —
+  tombol mikrofon di composer: tekan untuk mendikte (RECORD_AUDIO diminta saat pakai),
+  pratinjau parsial live di atas field, hasil final menyatu ke draft chat yang terikat
+  (pindah chat otomatis menghentikan sesi suara), locale mengikuti bahasa aplikasi
+  (en_US/id_ID/es_ES), perangkat tanpa mesin STT menyembunyikan kegagalan dengan pesan
+  jelas. (6) **Ekosistem modul** — install ulang zip versi baru kini melaporkan transisi
+  versi ("Updated name vX → vY") dan Modules screen menghadirkan katalog "Modul contoh
+  resmi" berisi 13 modul bawaan repo beserta slash command-nya. (7) **Aksesibilitas** —
+  pass TalkBack pertama: tooltip/semanticLabel untuk kontrol ikon, MergeSemantics untuk
+  kartu & baris status, spinner diberi label, ikon status todo berlabel. (8) **Bahasa
+  Spanyol** — paket string `es` lengkap (paritas 406/406 member dengan EN), tersedia di
+  pemilih bahasa dan mengikuti seluruh fitur baru.
 - **v1.43.1 — hardening isolasi antar chat pada `zagents.fs` (module mode)**:
   audit isolasi penuh menutup celah teoretis terakhir. Selama ini semua
   state modul memang per chat (`zagents.storage` →

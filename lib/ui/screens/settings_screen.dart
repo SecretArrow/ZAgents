@@ -8,6 +8,7 @@ import '../../di.dart';
 import '../../services/app_lock_service.dart';
 import '../../services/background_service.dart';
 import '../../services/backup_service.dart';
+import '../../services/update_checker.dart' show UpdateCheckResult;
 import '../../l10n/app_strings.dart';
 import '../../models/models.dart';
 import '../../models/user_agent.dart';
@@ -86,6 +87,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     bool? autoTitle,
     bool? appLockEnabled,
     bool? notifyOnDone,
+    bool? checkUpdatesOnStart,
     bool? autoRetryEnabled,
     Object? autoRetryAttempts,
     Object? autoRetryDelay,
@@ -109,6 +111,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             autoTitle: autoTitle,
             appLockEnabled: appLockEnabled,
             notifyOnDone: notifyOnDone,
+            checkUpdatesOnStart: checkUpdatesOnStart,
             autoRetryEnabled: autoRetryEnabled,
             autoRetryAttempts: autoRetryAttempts ?? current.autoRetryAttempts,
             autoRetryDelay: autoRetryDelay ?? current.autoRetryDelay,
@@ -1012,6 +1015,44 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                       ),
                     ),
                   ),
+                  const Divider(height: 1),
+                  // v1.44.0 — update check controls. Sideloaded APKs have
+                  // no store to nudge; the banner + this tile are the
+                  // only update signals.
+                  SwitchListTile(
+                    key: const Key('check-updates-switch'),
+                    contentPadding: EdgeInsets.zero,
+                    title: Text(strings.checkUpdatesOnStart),
+                    value: settings.checkUpdatesOnStart,
+                    onChanged: (bool value) =>
+                        _commit(checkUpdatesOnStart: value),
+                  ),
+                  ListTile(
+                    key: const Key('check-updates-now-tile'),
+                    contentPadding: EdgeInsets.zero,
+                    leading: const Icon(Icons.system_update_rounded),
+                    title: Text(strings.checkUpdatesNow),
+                    subtitle: Text(
+                      _updateSubtitle(strings),
+                      style: TextStyle(fontSize: 12, color: palette.muted),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    trailing:
+                        ref.watch(
+                          updateCheckProvider.select(
+                            (UpdateCheckState s) => s.checking,
+                          ),
+                        )
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.chevron_right_rounded),
+                    onTap: () =>
+                        ref.read(updateCheckProvider.notifier).checkNow(),
+                  ),
                 ],
               ),
             ),
@@ -1020,6 +1061,20 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         ),
       ),
     );
+  }
+
+  /// Subtitle of the "Check for updates now" tile — reflects the last
+  /// check (or the running version when none has completed yet).
+  String _updateSubtitle(AppStrings strings) {
+    final UpdateCheckState state = ref.watch(updateCheckProvider);
+    if (state.checking) return strings.updateChecking;
+    final UpdateCheckResult? result = state.result;
+    if (result == null) return kAppVersion;
+    if (!result.ok) return strings.updateCheckFailed;
+    if (result.updateAvailable) {
+      return '${strings.updateBannerTitle} — ${result.latestTag}';
+    }
+    return '${strings.updateUpToDate} ($kAppVersion)';
   }
 
   Widget _sectionTitle(String text) => Padding(

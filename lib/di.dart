@@ -12,6 +12,7 @@ import 'models/models.dart';
 import 'services/agent_composer.dart';
 import 'services/agent_controller.dart';
 import 'services/app_lock_service.dart';
+import 'services/attachment_service.dart';
 import 'services/backup_service.dart';
 import 'services/browser_automation.dart';
 import 'services/browser_session_isolation.dart';
@@ -31,10 +32,13 @@ import 'services/script_fetch_proxy.dart';
 import 'services/session_sandbox.dart';
 import 'services/skill_registry.dart';
 import 'services/settings_repository.dart';
+import 'services/speech_service.dart';
 import 'services/subagents.dart';
 import 'services/tool_executor.dart';
+import 'services/update_checker.dart';
 import 'services/user_agent_manager.dart';
 import 'services/web_fetcher.dart';
+import 'ui/screens/about_screen.dart' show kAppVersion;
 
 /// Must be overridden in main() with a real repository.
 final settingsRepositoryProvider = Provider<SettingsRepository>((ref) {
@@ -496,3 +500,77 @@ final contextListProvider = FutureProvider<List<ContextEntry>>(
 final promptListProvider = FutureProvider<List<PromptEntry>>(
   (ref) => ref.watch(promptRepositoryProvider).load(),
 );
+
+// -- v1.44.0: image attachments, speech dictation, update check -----------
+
+/// Saves a picked image into the ACTIVE chat's sandbox
+/// (`documents/sessions/<sessionId>/attachments/`) so per-chat isolation
+/// applies to attachments exactly like every other workspace file.
+final attachmentServiceProvider = Provider<AttachmentService>((ref) {
+  return AttachmentService(
+    resolveSandboxDir: ref.watch(sessionSandboxProvider).rootFor,
+  );
+});
+
+/// Speech dictation for the composer (speech_to_text wrapper). The
+/// availability probe runs lazily on first use — never at boot.
+final speechServiceProvider = Provider<SpeechService>((ref) {
+  return SpeechService();
+});
+
+/// Result of one update check (GitHub Releases vs the running version).
+class UpdateCheckState {
+  const UpdateCheckState({this.result, this.checking = false});
+
+  /// Null until the first completed check (never null-error: network
+  /// noise degrades to a silent no-banner).
+  final UpdateCheckResult? result;
+  final bool checking;
+}
+
+/// Checks GitHub Releases for a newer version. Runs once at startup when
+/// Settings → "Check updates on start" is on, and on demand from Settings
+/// ("Check now").
+class UpdateCheckController extends Notifier<UpdateCheckState> {
+  @override
+  UpdateCheckState build() => const UpdateCheckState();
+
+  /// Startup probe — at most one per app boot, skipped when the user
+  /// turned the check off.
+  Future<void> checkAtStartup() async {
+    if (state.checking || state.result != null) return;
+    if (!ref.read(settingsProvider).checkUpdatesOnStart) return;
+    await _run();
+  }
+
+  /// Explicit user action from Settings (bypasses the toggle).
+  Future<void> checkNow() async {
+    await _run();
+  }
+
+  /// Hides the banner for this boot (the user saw it — no nagging).
+  void dismiss() {
+    state = const UpdateCheckState();
+  }
+
+  Future<void> _run() async {
+    state = UpdateCheckState(checking: true, result: state.result);
+    try {
+      final UpdateCheckResult result = await ref
+          .read(updateCheckerProvider)
+          .check(currentVersion: kAppVersion);
+      state = UpdateCheckState(result: result);
+    } catch (_) {
+      // Never nag the user about a failed convenience check.
+      state = const UpdateCheckState();
+    }
+  }
+}
+
+final updateCheckProvider =
+    NotifierProvider<UpdateCheckController, UpdateCheckState>(
+      UpdateCheckController.new,
+    );
+
+/// GitHub Releases update checker (injectable client for tests).
+final updateCheckerProvider = Provider<UpdateChecker>((ref) => UpdateChecker());

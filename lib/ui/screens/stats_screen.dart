@@ -42,7 +42,8 @@ class _StatsScreenState extends ConsumerState<StatsScreen> {
           IconButton(
             key: const Key('stats-reload'),
             icon: const Icon(Icons.refresh_rounded, size: 22),
-            tooltip: strings.menu,
+            // Was strings.menu — wrong meaning for a refresh action.
+            tooltip: stringsOf(context).refresh,
             onPressed: _reload,
           ),
         ],
@@ -52,7 +53,11 @@ class _StatsScreenState extends ConsumerState<StatsScreen> {
         builder:
             (BuildContext context, AsyncSnapshot<TokenStatsResult> snapshot) {
               if (snapshot.connectionState != ConnectionState.done) {
-                return const Center(child: CircularProgressIndicator());
+                return Center(
+                  child: CircularProgressIndicator(
+                    semanticsLabel: stringsOf(context).loading,
+                  ),
+                );
               }
               if (snapshot.hasError) {
                 return Center(
@@ -203,29 +208,33 @@ class _StatCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-      decoration: BoxDecoration(
-        color: context.zSurface,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(
-          color: emphasized == true ? context.zBorder : context.zBorder,
-        ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          Text(label, style: TextStyle(fontSize: 11, color: context.zMuted)),
-          const SizedBox(height: 4),
-          Text(
-            value,
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.w700,
-              color: emphasized == true ? kAccentColor : null,
-            ),
+    // One TalkBack stop per card: "label, value" instead of two
+    // separate text nodes.
+    return MergeSemantics(
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        decoration: BoxDecoration(
+          color: context.zSurface,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: emphasized == true ? context.zBorder : context.zBorder,
           ),
-        ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Text(label, style: TextStyle(fontSize: 11, color: context.zMuted)),
+            const SizedBox(height: 4),
+            Text(
+              value,
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w700,
+                color: emphasized == true ? kAccentColor : null,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
