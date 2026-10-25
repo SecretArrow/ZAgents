@@ -219,13 +219,27 @@ void main() {
           );
         }
 
-        // Network samples must declare their allowlist.
+        // Network samples must declare their allowlist — UNLESS the
+        // sample is deliberately unrestricted (a browser/reader must
+        // reach any host), which it may only express through the
+        // explicit `unrestrictedNetwork` manifest marker plus a
+        // description that says so. No silent unrestricted network.
         if ((permissions as List<dynamic>).contains('network')) {
+          final bool allowlisted =
+              (manifest['allowedHosts'] as List<dynamic>? ?? const <dynamic>[])
+                  .isNotEmpty;
+          final bool declaredUnrestricted =
+              manifest['unrestrictedNetwork'] == true &&
+              (manifest['description'] as String? ?? '').toUpperCase().contains(
+                'UNRESTRICTED',
+              );
           expect(
-            (manifest['allowedHosts'] as List<dynamic>? ?? const <dynamic>[])
-                .isNotEmpty,
+            allowlisted || declaredUnrestricted,
             isTrue,
-            reason: 'network sample "$sample" must declare allowedHosts',
+            reason:
+                'network sample "$sample" must declare allowedHosts, '
+                'or deliberately declare unrestrictedNetwork: true and '
+                'document it (no silent unrestricted network)',
           );
         }
 
