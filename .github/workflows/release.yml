@@ -151,7 +151,7 @@ jobs:
             echo "::notice::Set the KEYSTORE_SHA256 secret to pin this fingerprint and fail releases signed by a different key."
           fi
 
-      - name: Build release APK
+      - name: Build release APK (universal)
         env:
           # Passed straight from secrets: never written to $GITHUB_ENV.
           KEYSTORE_PATH: ${{ github.workspace }}/android/keystore/signing.keystore
@@ -161,30 +161,68 @@ jobs:
           ZAGENTS_REQUIRE_SIGNING: 'true'
         run: flutter build apk --release
 
-      - name: Verify APK signature
+      # v1.41.4 — also ship per-ABI splits (arm64-v8a, armeabi-v7a, x86_64).
+      # Same signing key, smaller downloads; the universal APK stays as the
+      # safe default for users who do not know their device's ABI.
+      - name: Build release APKs (split per ABI)
+        env:
+          KEYSTORE_PATH: ${{ github.workspace }}/android/keystore/signing.keystore
+          KEYSTORE_STORE_PASSWORD: ${{ secrets.KEYSTORE_STORE_PASSWORD || secrets.KEYSTORE_PASSWORD }}
+          KEYSTORE_KEY_PASSWORD: ${{ secrets.KEYSTORE_KEY_PASSWORD || secrets.KEYSTORE_STORE_PASSWORD || secrets.KEYSTORE_PASSWORD }}
+          KEYSTORE_ALIAS: ${{ steps.keystore.outputs.alias }}
+          ZAGENTS_REQUIRE_SIGNING: 'true'
+        run: flutter build apk --release --split-per-abi
+
+      - name: Verify APK signatures (universal + every ABI split)
         run: |
           set -euo pipefail
           if ! command -v apksigner >/dev/null 2>&1; then
             sudo apt-get install -y -qq apksigner
           fi
-          apksigner verify --verbose --print-certs build/app/outputs/flutter-apk/app-release.apk
+          # The universal APK (app-release.apk) is NOT matched by the glob
+          # below (it has no middle segment), so verify it explicitly first.
+          apksigner verify --verbose --print-certs build/app/outputs/flutter-apk/app-release.apk > /dev/null
           if apksigner verify --print-certs build/app/outputs/flutter-apk/app-release.apk | grep -qi 'CN=Android Debug'; then
-            echo "::error::Release APK is debug-signed."
+            echo "::error::Universal release APK is debug-signed."
             exit 1
           fi
+          echo "OK: app-release.apk"
+          shopt -s nullglob
+          for APK in build/app/outputs/flutter-apk/app-*-release.apk; do
+            apksigner verify --verbose --print-certs "$APK" > /dev/null
+            if apksigner verify --print-certs "$APK" | grep -qi 'CN=Android Debug'; then
+              echo "::error::$APK is debug-signed."
+              exit 1
+            fi
+            echo "OK: $(basename "$APK")"
+          done
 
       - name: Delete unzipped keystore (always, even on failure)
         if: always()
         run: rm -rf android/keystore
 
-      - name: Organize artifacts
+      - name: Organize artifacts (universal + per-ABI)
         env:
           VERSION: ${{ steps.version.outputs.version }}
         run: |
           set -euo pipefail
           mkdir -p build-outputs
+          # Universal APK (all ABIs) keeps the legacy, unchanged name.
           cp build/app/outputs/flutter-apk/app-release.apk \
              "build-outputs/ZAgents-${VERSION}-${GITHUB_REF_NAME}.apk"
+          # Per-ABI splits get an explicit -<abi> suffix so users can pick
+          # the right download (arm64-v8a / armeabi-v7a / x86_64).
+          shopt -s nullglob
+          for APK in build/app/outputs/flutter-apk/app-*-release.apk; do
+            ABI=$(basename "$APK" | sed 's/^app-//; s/-release\.apk$//')
+            cp "$APK" "build-outputs/ZAgents-${VERSION}-${GITHUB_REF_NAME}-${ABI}.apk"
+          done
+          COUNT=$(ls build-outputs/*.apk | wc -l)
+          if [ "$COUNT" -lt 4 ]; then
+            echo "::error::Expected 4 APKs (universal + 3 ABI splits), got $COUNT."
+            ls -lh build-outputs
+            exit 1
+          fi
           ls -lh build-outputs
 
       - name: Upload artifact (manual runs)

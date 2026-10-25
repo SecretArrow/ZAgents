@@ -348,6 +348,12 @@ OpenAI-compatible: **OpenRouter, InferHub, Z.AI, OpenAI, DeepSeek, Groq, dan lai
   wajib — isolasi per-chat tidak berubah).
   4. `SessionSandbox.sessionsRoot()` + `ModuleRuntime.latestStoredSetup`
   (pemindai mtime terbaru, tahan file korup) + uji unit wire/module_list.
+- **v1.41.4 — APK split per-ABI di release**: GitHub Actions kini
+  membangun 4 APK bertanda tangan per rilis — universal (semua ABI,
+  nama tidak berubah) + tiga split `arm64-v8a`, `armeabi-v7a`, `x86_64`
+  (`--split-per-abi`, unduhan lebih kecil). Semua APK diverifikasi
+  apksigner (universal + tiap split, anti debug-sign), dan step artefak
+  gagal cepat bila jumlah APK kurang dari 4.
 - **v1.41.3 — perbaikan test skill_update**: asersi status pasca-update
   kini membaca instance yang melakukan update + pembaca disk baru (cache
   registry bersifat per-instance sesuai pola ModuleRegistry; produksi
