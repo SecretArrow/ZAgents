@@ -27,6 +27,12 @@ class _ComposerState extends ConsumerState<Composer> {
   final FocusNode _focusNode = FocusNode();
   bool _picking = false;
 
+  /// v1.42.0 — consecutive Stop taps while the SAME run is still active.
+  /// 1 tap = graceful stop; tap 2 asks again + hints; tap 3 opens the
+  /// force-stop offer dialog. Reset whenever the running flag flips (run
+  /// ended, or a new run started), so counts never leak across runs.
+  int _stopTaps = 0;
+
   /// v1.38.1 — the chat this text field is currently bound to (null =
   /// fresh draft). Typed text is stored per chat in the controller, so
   /// switching chats swaps the draft and one chat's text never appears
@@ -553,6 +559,14 @@ class _ComposerState extends ConsumerState<Composer> {
     final bool isRunning = ref.watch(
       chatControllerProvider.select((s) => s.isRunning),
     );
+    // v1.42.0: the tap counter is only meaningful within one run — any
+    // running-state change (run ended or a new run began) starts fresh.
+    ref.listen<bool>(chatControllerProvider.select((s) => s.isRunning), (
+      bool? previous,
+      bool next,
+    ) {
+      if (previous != next && _stopTaps != 0) _stopTaps = 0;
+    });
     // v1.38.1: swap the draft text when the displayed chat changes.
     ref.listen<String?>(
       chatControllerProvider.select((s) => s.sessionId),
@@ -655,11 +669,7 @@ class _ComposerState extends ConsumerState<Composer> {
                   key: Key(isRunning ? 'stop-button' : 'send-button'),
                   onPressed: isLoading
                       ? null
-                      : (isRunning
-                            ? () => ref
-                                  .read(chatControllerProvider.notifier)
-                                  .stop()
-                            : _submit),
+                      : (isRunning ? _handleStopPressed : _submit),
                   icon: isLoading
                       ? const SizedBox(
                           width: 18,
@@ -680,5 +690,68 @@ class _ComposerState extends ConsumerState<Composer> {
         ],
       ),
     );
+  }
+
+  /// v1.42.0 — 1 tap stops the process (graceful); the 2nd tap asks again
+  /// and hints; after the 3rd tap the force-stop offer is shown. Every tap
+  /// (re)arms the cooperative stop, so the loop keeps exiting as early as
+  /// it can while the user escalates.
+  void _handleStopPressed() {
+    _stopTaps++;
+    ref.read(chatControllerProvider.notifier).stop();
+    if (_stopTaps >= 3) {
+      _stopTaps = 0;
+      _showForceStopDialog();
+    } else if (_stopTaps == 2) {
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          SnackBar(
+            key: const Key('stop-hint-snack'),
+            content: Text(stringsOf(context).stopHintForce),
+            duration: const Duration(seconds: 3),
+          ),
+        );
+    }
+  }
+
+  /// Third-tap offer: force-stops ONLY after an explicit confirmation —
+  /// a mis-tap must never kill a healthy run.
+  Future<void> _showForceStopDialog() async {
+    final AppStrings strings = stringsOf(context);
+    final bool? confirmed = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext dialogContext) => AlertDialog(
+        key: const Key('force-stop-dialog'),
+        title: Text(strings.forceStopTitle),
+        content: Text(strings.forceStopBody),
+        actions: <Widget>[
+          TextButton(
+            key: const Key('force-stop-cancel'),
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: Text(strings.forceStopCancel),
+          ),
+          FilledButton(
+            key: const Key('force-stop-confirm'),
+            style: FilledButton.styleFrom(
+              backgroundColor: const Color(0xFFE5484D),
+            ),
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: Text(strings.forceStopConfirm),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    ref.read(chatControllerProvider.notifier).forceStop();
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          key: const Key('force-stop-done-snack'),
+          content: Text(stringsOf(context).forceStopDone),
+          duration: const Duration(seconds: 3),
+        ),
+      );
   }
 }

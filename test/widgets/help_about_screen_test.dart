@@ -19,19 +19,19 @@ Widget _wrap(Widget child, {Locale locale = const Locale('en')}) => MaterialApp(
 
 void main() {
   group('HelpScreen', () {
-    testWidgets('renders the intro and all 11 topics (EN)', (
+    testWidgets('renders the intro and all 12 topics (EN)', (
       WidgetTester tester,
     ) async {
       await tester.pumpWidget(_wrap(const HelpScreen()));
       await tester.pumpAndSettle();
       expect(find.byType(HelpScreen), findsOneWidget);
-      for (var i = 0; i < 11; i++) {
+      for (var i = 0; i < 12; i++) {
         expect(find.byKey(Key('help-topic-$i')), findsOneWidget);
       }
       // Only the first topic starts expanded; its body text is visible.
       expect(find.textContaining('connect a provider'), findsOneWidget);
       // Collapsed topics keep their titles reachable by scrolling.
-      expect(find.textContaining('11. Tips'), findsWidgets);
+      expect(find.textContaining('12. Tips'), findsWidgets);
     });
 
     testWidgets('expanding a topic reveals its full body text', (

@@ -164,8 +164,8 @@ void main() {
     expect(id.helpAboutSection, 'Bantuan & Tentang');
     expect(en.helpTileTitle, contains('Help'));
     expect(id.helpTileTitle, contains('Bantuan'));
-    expect(en.helpTopics.length, 11);
-    expect(id.helpTopics.length, 11);
+    expect(en.helpTopics.length, 12);
+    expect(id.helpTopics.length, 12);
     for (final HelpEntry t in en.helpTopics) {
       expect(t.title, isNotEmpty);
       expect(t.body.length, greaterThan(80));

@@ -34,23 +34,59 @@ class ZAgentsForegroundService : Service() {
         const val ACTION_START = "com.secretarrow.zagents.action.START"
         const val ACTION_UPDATE = "com.secretarrow.zagents.action.UPDATE"
         const val ACTION_STOP = "com.secretarrow.zagents.action.STOP"
+        // v1.42.0: per-chat running notifications — one notification per
+        // ACTIVE chat, tap opens exactly that conversation.
+        const val ACTION_START_SESSION = "com.secretarrow.zagents.action.START_SESSION"
+        const val ACTION_UPDATE_SESSION = "com.secretarrow.zagents.action.UPDATE_SESSION"
+        const val ACTION_STOP_SESSION = "com.secretarrow.zagents.action.STOP_SESSION"
         const val EXTRA_TITLE = "title"
         const val EXTRA_TEXT = "text"
+        const val EXTRA_SESSION_ID = "sessionId"
 
         const val CHANNEL_ID = "zagents_agent"
         const val NOTIFICATION_ID = 20251012
+        // Base for per-session notification ids: distinct from the service
+        // notification (20251012) and the done-notification (2001).
+        private const val SESSION_NOTIF_BASE = 20251101
         private const val WAKELOCK_TAG = "ZAgents::agentLoop"
     }
 
     private var wakeLock: PowerManager.WakeLock? = null
+
+    /// sessionId -> notification id, alive for the service lifetime.
+    private val sessionNotifIds = LinkedHashMap<String, Int>()
+    private var nextSessionNotifId = SESSION_NOTIF_BASE
 
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_STOP -> {
+                cancelAllSessionNotifications()
                 stopForegroundService()
                 return START_NOT_STICKY
+            }
+            ACTION_START_SESSION, ACTION_UPDATE_SESSION -> {
+                // Per-chat running notification (v1.42.0). The service is
+                // already foreground at this point (ACTION_START ran for the
+                // first session), so a plain notify() is enough — no
+                // startForegroundService round-trip needed.
+                val sessionId = intent.getStringExtra(EXTRA_SESSION_ID)
+                if (!sessionId.isNullOrEmpty()) {
+                    val title = intent.getStringExtra(EXTRA_TITLE)
+                        ?: getString(R.string.app_name)
+                    val text = intent.getStringExtra(EXTRA_TEXT) ?: ""
+                    upsertSessionNotification(sessionId, title, text)
+                    // Every progress step re-arms the wake lock, same as the
+                    // aggregate ACTION_UPDATE path.
+                    acquireWakeLock()
+                }
+            }
+            ACTION_STOP_SESSION -> {
+                val sessionId = intent.getStringExtra(EXTRA_SESSION_ID)
+                if (!sessionId.isNullOrEmpty()) {
+                    cancelSessionNotification(sessionId)
+                }
             }
             ACTION_UPDATE -> {
                 val text = intent.getStringExtra(EXTRA_TEXT) ?: ""
@@ -96,8 +132,80 @@ class ZAgentsForegroundService : Service() {
     }
 
     override fun onDestroy() {
+        cancelAllSessionNotifications()
         releaseWakeLock()
         super.onDestroy()
+    }
+
+    /// v1.42.0: posts (or refreshes) the running notification of ONE active
+    /// chat. The tap intent carries the session id through the existing
+    /// pending-session deep link (MainActivity.onNewIntent →
+    /// LockGate._openPendingSession), so tapping opens exactly that chat.
+    private fun upsertSessionNotification(sessionId: String, title: String, text: String) {
+        val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            manager.createNotificationChannel(
+                NotificationChannel(
+                    CHANNEL_ID,
+                    getString(R.string.app_name),
+                    NotificationManager.IMPORTANCE_LOW,
+                ).apply { setShowBadge(false) },
+            )
+        }
+        val notifId = sessionNotifIds[sessionId]
+            ?: nextSessionNotifId++.also { sessionNotifIds[sessionId] = it }
+        // Tapping the notification reopens THIS chat (not just the app).
+        val openChat = Intent(this, MainActivity::class.java).apply {
+            setFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+            putExtra(MainActivity.EXTRA_PENDING_SESSION, sessionId)
+        }
+        val contentIntent = PendingIntent.getActivity(
+            this,
+            notifId, // unique per session slot — no PendingIntent collisions.
+            openChat,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+        val builder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            Notification.Builder(this, CHANNEL_ID)
+        } else {
+            @Suppress("DEPRECATION")
+            Notification.Builder(this)
+        }
+        val notification = builder
+            .setContentTitle(title)
+            .setContentText(text)
+            .setSmallIcon(R.mipmap.ic_launcher)
+            .setContentIntent(contentIntent)
+            .setOngoing(true)
+            .setOnlyAlertOnce(true)
+            .build()
+        try {
+            manager.notify(notifId, notification)
+        } catch (_: Exception) {
+            // POST_NOTIFICATIONS denied (API 33+): notifications are simply
+            // not shown; the run itself is unaffected.
+        }
+    }
+
+    private fun cancelSessionNotification(sessionId: String) {
+        val notifId = sessionNotifIds.remove(sessionId) ?: return
+        try {
+            (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager)
+                .cancel(notifId)
+        } catch (_: Exception) {
+        }
+    }
+
+    private fun cancelAllSessionNotifications() {
+        if (sessionNotifIds.isEmpty()) return
+        val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        for (notifId in sessionNotifIds.values) {
+            try {
+                manager.cancel(notifId)
+            } catch (_: Exception) {
+            }
+        }
+        sessionNotifIds.clear()
     }
 
     private fun notification(title: String, text: String = ""): Notification {

@@ -360,6 +360,25 @@ OpenAI-compatible: **OpenRouter, InferHub, Z.AI, OpenAI, DeepSeek, Groq, dan lai
   sendiri saat run selesai — flag buka/tutup tetap global sehingga
   perpindahan langkah, akhir run, dan pindah chat tidak pernah
   menutupnya.
+- **v1.42.0 — notifikasi per chat aktif & tombol Stop/Force stop**:
+  (1) **Notifikasi per chat aktif** — setiap chat yang sedang berjalan
+  kini memasang notifikasinya sendiri (judul chat + langkah/tool yang
+  sedang dieksekusi), selain notifikasi agregat foreground service;
+  ketuk notifikasi untuk langsung membuka chat tersebut (deep link
+  pending-session kini juga di-drain saat app resume, bukan hanya saat
+  cold start), izin POST_NOTIFICATIONS diminta sekali secara runtime
+  untuk Android 13+, dan notifikasi per chat otomatis dibersihkan saat
+  run selesai/berhenti/service mati. (2) **Tombol Stop 1x klik + Force
+  stop 3x klik** — ketukan pertama menghentikan proses secara
+  kooperatif; ketukan kedua menampilkan petunjuk eskalasi; ketukan
+  ketiga menampilkan dialog tawaran **Force stop** (wajib konfirmasi)
+  yang langsung memutus transport HTTP run tersebut via registry
+  per-run `LlmClient.forceCancel` — stream yang macet tanpa delta pun
+  langsung mati, lalu jalur release standar (marker stopped, persist,
+  rilis state/background) yang teruji mengambil alih. Klien HTTP kini
+  per-request sehingga force-kill satu chat tidak pernah menyentuh
+  chat lain yang masih streaming. Bantuan in-app bertambah topik 11
+  (notifikasi per chat & Stop/Force stop, dua bahasa).
 - **v1.41.5 — User-Agent 153+ & layar Help/About**: seluruh database
   User-Agent di-refresh ke generasi terkini — semua browser berbasis
   Chromium (Chrome, Edge, Opera, Samsung Internet, Vivaldi) kini memakai

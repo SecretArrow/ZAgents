@@ -116,9 +116,38 @@ bool _retryableStatusCode(int code) =>
 /// Streaming client for OpenAI-compatible chat completion APIs
 /// (OpenRouter, Z.AI, OpenAI, DeepSeek, Groq, ...).
 class LlmClient {
-  LlmClient({http.Client? client}) : _client = client ?? http.Client();
+  LlmClient({http.Client? client}) : _injectedClient = client;
 
-  final http.Client _client;
+  /// Optional injected transport (tests). When null, every [complete] call
+  /// owns a dedicated client — which is what makes per-run force cancel
+  /// possible: closing one run's client can never touch another chat's
+  /// in-flight stream.
+  final http.Client? _injectedClient;
+
+  /// v1.42.0 — live streaming requests keyed by the caller's [cancelKey]
+  /// (the agent loop passes its per-run object). [forceCancel] looks a run
+  /// up here and hard-closes its HTTP client, which aborts even a STALLED
+  /// stream that emits no deltas (the `shouldAbort` poll only runs between
+  /// chunks — a silent connection would otherwise pin the run forever).
+  static final Map<Object, http.Client> _liveStreams = <Object, http.Client>{};
+
+  /// v1.42.0 — force-stops the in-flight request(s) registered under
+  /// [cancelKey]: the client is closed forcefully so the pending socket
+  /// read errors out immediately. Returns true when a live request was
+  /// found and killed. Safe to call at any time; no-op when nothing is
+  /// registered (run already between requests, finished, or test double).
+  static bool forceCancel(Object cancelKey) {
+    final http.Client? client = _liveStreams.remove(cancelKey);
+    if (client == null) return false;
+    try {
+      client.close();
+    } catch (_) {
+      // Best-effort: a broken transport is exactly the state we want.
+    }
+    return true;
+  }
+
+  http.Client _clientForCall() => _injectedClient ?? http.Client();
 
   /// Sends a chat completion request and streams the assistant turn.
   ///
@@ -133,6 +162,7 @@ class LlmClient {
     List<Map<String, dynamic>>? tools,
     void Function(String delta)? onDelta,
     bool Function()? shouldAbort,
+    Object? cancelKey,
   }) async {
     if (shouldAbort?.call() ?? false) {
       throw const LlmAbortedException('');
@@ -151,9 +181,48 @@ class LlmClient {
       'stream_options': <String, dynamic>{'include_usage': true},
     };
 
+    // v1.42.0: register the per-call client under [cancelKey] for the
+    // whole request lifetime (send + stream consumption) so [forceCancel]
+    // can tear it down mid-flight; unregister in the finally below. The
+    // client is closed here too when we own it, keeping sockets from
+    // leaking while preserving injected test transports.
+    final http.Client callClient = _clientForCall();
+    final bool ownsClient = _injectedClient == null;
+    if (cancelKey != null) _liveStreams[cancelKey] = callClient;
+    try {
+      return await _sendAndConsume(
+        callClient,
+        config,
+        url,
+        requestBody,
+        onDelta,
+        shouldAbort,
+      );
+    } finally {
+      if (cancelKey != null && identical(_liveStreams[cancelKey], callClient)) {
+        _liveStreams.remove(cancelKey);
+      }
+      if (ownsClient) {
+        try {
+          callClient.close();
+        } catch (_) {
+          // Never let transport cleanup mask the actual result.
+        }
+      }
+    }
+  }
+
+  Future<AssistantTurn> _sendAndConsume(
+    http.Client callClient,
+    LlmConfig config,
+    Uri url,
+    Map<String, dynamic> requestBody,
+    void Function(String delta)? onDelta,
+    bool Function()? shouldAbort,
+  ) async {
     final http.StreamedResponse response;
     try {
-      response = await _client.send(
+      response = await callClient.send(
         await _buildRequest(config, url, requestBody),
       );
     } catch (e) {
@@ -169,7 +238,7 @@ class LlmClient {
           requestBody,
         )..remove('stream_options');
         try {
-          final http.StreamedResponse retry = await _client.send(
+          final http.StreamedResponse retry = await callClient.send(
             await _buildRequest(config, url, retryBody),
           );
           if (retry.statusCode == 200) {

@@ -477,6 +477,23 @@ class ChatController extends Notifier<ChatState> {
     }
   }
 
+  /// v1.42.0 — HARD stop for the ACTIVE session, offered after the user
+  /// tapped Stop three times (see the composer's force-stop dialog).
+  /// [stop] is cooperative: it is polled between SSE deltas and at loop
+  /// checkpoints, so a STALLED connection that emits nothing can keep the
+  /// run pinned. [forceStop] additionally tears the run's HTTP transport
+  /// down RIGHT NOW via [LlmClient.forceCancel], so even a silent socket
+  /// errors out immediately and the normal, well-tested release path
+  /// (stopped marker → persist → state release → background release)
+  /// takes over. Idempotent: safe to call repeatedly.
+  void forceStop() {
+    final String? id = _activeSessionId;
+    final _SessionRun? run = id != null ? _runs[id] : null;
+    if (run == null) return;
+    stop();
+    LlmClient.forceCancel(run);
+  }
+
   Future<void> send(
     String text, {
     List<ChatAttachment> attachments = const <ChatAttachment>[],
@@ -1847,6 +1864,14 @@ class ChatController extends Notifier<ChatState> {
         title: strings.notifTitle,
         text: strings.notifProcessing,
       );
+      // v1.42.0: one notification PER ACTIVE CHAT, on top of the aggregate
+      // service notification — title + live step + tap-to-open-THIS-chat
+      // (the tap extra rides the existing pending-session deep link).
+      await background.startSession(
+        sessionId: run.sessionId,
+        title: run.title.isEmpty ? strings.notifTitle : run.title,
+        text: strings.notifProcessing,
+      );
     }
 
     try {
@@ -1953,6 +1978,11 @@ class ChatController extends Notifier<ChatState> {
           _sync(run);
           // Live progress in the foreground-service notification.
           await background.updateStatus(strings.notifStep(step + 1, call.name));
+          // v1.42.0: the per-chat notification mirrors the same step.
+          await background.updateSessionStatus(
+            sessionId: run.sessionId,
+            text: strings.notifStep(step + 1, call.name),
+          );
 
           // One place that hands a call to the executor, so every approval
           // branch below runs the tool the same way (and Stop still reaches
@@ -2138,7 +2168,12 @@ class ChatController extends Notifier<ChatState> {
     } finally {
       // Always release the background hold — success, error, or stop.
       // Refcounted: parallel sessions keep the service alive until all end.
-      if (holdStarted) await background.stop();
+      if (holdStarted) {
+        // v1.42.0: drop THIS chat's notification first, then the hold (the
+        // service itself only stops when the LAST session releases).
+        await background.stopSession(run.sessionId);
+        await background.stop();
+      }
     }
   }
 
@@ -2209,6 +2244,9 @@ class ChatController extends Notifier<ChatState> {
               },
               // Stop must interrupt DURING the stream, not after it.
               shouldAbort: () => run.stopRequested,
+              // v1.42.0: lets forceStop() hard-close THIS run's transport
+              // (stalled-connection kill) without touching other chats.
+              cancelKey: run,
             );
       } on LlmAbortedException {
         rethrow;

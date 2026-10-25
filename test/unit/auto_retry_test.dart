@@ -33,6 +33,7 @@ class _FlakyLlmClient implements LlmClient {
     List<Map<String, dynamic>>? tools,
     void Function(String delta)? onDelta,
     bool Function()? shouldAbort,
+    Object? cancelKey,
   }) async {
     if (shouldAbort?.call() ?? false) {
       throw const LlmAbortedException('');

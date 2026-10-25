@@ -88,4 +88,86 @@ void main() {
     await service.updateStatus('Step 1 · scroll'); // must not throw
     await service.stop(); // inactive → no channel call, must not throw
   });
+
+  test(
+    'per-chat notification round-trip with one-time permission ask',
+    () async {
+      final List<MethodCall> calls = <MethodCall>[];
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (MethodCall call) async {
+            calls.add(call);
+            return true;
+          });
+
+      final BackgroundRunService service = BackgroundRunService();
+
+      // First per-chat start asks for POST_NOTIFICATIONS exactly once, then
+      // posts the session notification.
+      await service.startSession(
+        sessionId: 's1',
+        title: 'Chat A',
+        text: 'Processing…',
+      );
+      expect(calls, hasLength(2));
+      expect(calls.first.method, 'requestNotificationPermission');
+      expect(calls.last.method, 'startSession');
+      expect(calls.last.arguments['sessionId'], 's1');
+      expect(calls.last.arguments['title'], 'Chat A');
+      expect(calls.last.arguments['text'], 'Processing…');
+      expect(service.activeSessionIds, <String>{'s1'});
+
+      // Live step update targets the right session.
+      await service.updateSessionStatus(sessionId: 's1', text: 'Step 1 · tool');
+      expect(calls, hasLength(3));
+      expect(calls.last.method, 'updateSession');
+      expect(calls.last.arguments['sessionId'], 's1');
+
+      // A second session starts WITHOUT another permission round-trip.
+      await service.startSession(sessionId: 's2', title: 'Chat B', text: 'x');
+      expect(calls, hasLength(4));
+      expect(calls.last.method, 'startSession');
+      expect(service.activeSessionIds, <String>{'s1', 's2'});
+
+      // Releasing s2 removes only s2.
+      await service.stopSession('s2');
+      expect(calls.last.method, 'stopSession');
+      expect(calls.last.arguments['sessionId'], 's2');
+      expect(service.activeSessionIds, <String>{'s1'});
+
+      // Updates for a released session are dropped (no channel traffic).
+      await service.updateSessionStatus(sessionId: 's2', text: 'ghost');
+      expect(calls, hasLength(5));
+
+      // Releasing s1 clears the set.
+      await service.stopSession('s1');
+      expect(service.activeSessionIds, isEmpty);
+    },
+  );
+
+  test('per-chat calls before/without any session are safe no-ops', () async {
+    final List<MethodCall> calls = <MethodCall>[];
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (MethodCall call) async {
+          calls.add(call);
+          return true;
+        });
+
+    final BackgroundRunService service = BackgroundRunService();
+    await service.updateSessionStatus(sessionId: 'ghost', text: 'x');
+    await service.stopSession('ghost');
+    expect(calls, isEmpty);
+    expect(service.activeSessionIds, isEmpty);
+  });
+
+  test(
+    'missing platform implementation never throws for per-chat calls',
+    () async {
+      // No mock handler registered → MissingPluginException, swallowed.
+      final BackgroundRunService service = BackgroundRunService();
+      await service.startSession(sessionId: 's1', title: 't', text: 'x');
+      await service.updateSessionStatus(sessionId: 's1', text: 'Step 1 · x');
+      await service.stopSession('s1');
+      expect(service.activeSessionIds, isEmpty);
+    },
+  );
 }

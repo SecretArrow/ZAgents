@@ -503,6 +503,29 @@ void main() {
     // …and was always released, even on success.
     expect(background.calls.last, 'stop');
     expect(background.isActive, isFalse);
+
+    // v1.42.0: the PER-CHAT notification rode the same lifecycle — started
+    // with the chat's own title, live step updates, released with the run.
+    final String? sessionId = container.read(chatControllerProvider).sessionId;
+    expect(
+      background.calls,
+      contains(
+        'startSession:$sessionId|go|${appStringsFor('en').notifProcessing}',
+      ),
+    );
+    expect(
+      background.calls,
+      contains(
+        'updateSession:$sessionId|'
+        '${appStringsFor('en').notifStep(1, 'browser_navigate')}',
+      ),
+    );
+    expect(background.calls, contains('stopSession:$sessionId'));
+    expect(
+      background.calls.indexOf('stopSession:$sessionId'),
+      lessThan(background.calls.lastIndexOf('stop')),
+    );
+    expect(background.activeSessions, isEmpty);
   });
 
   test('background hold is released even when the LLM throws', () async {
@@ -1725,6 +1748,7 @@ class _GatedLlmClient implements LlmClient {
     List<Map<String, dynamic>>? tools,
     void Function(String delta)? onDelta,
     bool Function()? shouldAbort,
+    Object? cancelKey,
   }) => gates[nextTurn() % gates.length].future;
 }
 
@@ -1738,6 +1762,7 @@ class _ThrowingLlmClient implements LlmClient {
     List<Map<String, dynamic>>? tools,
     void Function(String delta)? onDelta,
     bool Function()? shouldAbort,
+    Object? cancelKey,
   }) async => throw const SocketException('provider unreachable');
 }
 
@@ -1765,6 +1790,7 @@ class _AutoTitleLlmClient implements LlmClient {
     List<Map<String, dynamic>>? tools,
     void Function(String delta)? onDelta,
     bool Function()? shouldAbort,
+    Object? cancelKey,
   }) async {
     calls.add(messages);
     toolSets.add(tools);

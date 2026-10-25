@@ -22,6 +22,7 @@ class _NeverLlmClient implements LlmClient {
     List<Map<String, dynamic>>? tools,
     void Function(String delta)? onDelta,
     bool Function()? shouldAbort,
+    Object? cancelKey,
   }) => Completer<AssistantTurn>().future;
 }
 

@@ -285,6 +285,7 @@ class _ErrorLlmClient implements LlmClient {
     List<Map<String, dynamic>>? tools,
     void Function(String delta)? onDelta,
     bool Function()? shouldAbort,
+    Object? cancelKey,
   }) async {
     throw LlmException('HTTP 500: provider exploded');
   }

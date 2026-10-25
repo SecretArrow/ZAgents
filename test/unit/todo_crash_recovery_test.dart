@@ -25,6 +25,7 @@ class _FreezeAfterFirstTurn extends ScriptedLlmClient {
     List<Map<String, dynamic>>? tools,
     void Function(String delta)? onDelta,
     bool Function()? shouldAbort,
+    Object? cancelKey,
   }) async {
     if (calls.isNotEmpty) {
       // The "crash": this future never completes.

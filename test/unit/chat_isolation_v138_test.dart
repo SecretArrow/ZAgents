@@ -751,6 +751,7 @@ class _GatedLlmClient implements LlmClient {
     List<Map<String, dynamic>>? tools,
     void Function(String delta)? onDelta,
     bool Function()? shouldAbort,
+    Object? cancelKey,
   }) async {
     final AssistantTurn turn = await gates[nextTurn()].future;
     return turn;

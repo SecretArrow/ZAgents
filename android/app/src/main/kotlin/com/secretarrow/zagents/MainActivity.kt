@@ -79,6 +79,44 @@ class MainActivity : FlutterFragmentActivity() {
                             )
                             true
                         }
+                        "startSession" -> {
+                            // v1.42.0: per-chat running notification. The
+                            // service is already foreground ("start" ran for
+                            // the first session), so a plain startService
+                            // delivery is enough. Also asks (once) for the
+                            // Android 13+ POST_NOTIFICATIONS permission —
+                            // without it every notification is silently
+                            // dropped.
+                            requestNotificationPermissionIfNeeded()
+                            startService(sessionIntent(
+                                ZAgentsForegroundService.ACTION_START_SESSION,
+                                call.argument<String>("sessionId"),
+                                call.argument<String>("title"),
+                                call.argument<String>("text"),
+                            ))
+                            true
+                        }
+                        "updateSession" -> {
+                            startService(sessionIntent(
+                                ZAgentsForegroundService.ACTION_UPDATE_SESSION,
+                                call.argument<String>("sessionId"),
+                                null,
+                                call.argument<String>("text"),
+                            ))
+                            true
+                        }
+                        "stopSession" -> {
+                            startService(sessionIntent(
+                                ZAgentsForegroundService.ACTION_STOP_SESSION,
+                                call.argument<String>("sessionId"),
+                                null,
+                                null,
+                            ))
+                            true
+                        }
+                        "requestNotificationPermission" -> {
+                            requestNotificationPermissionIfNeeded()
+                        }
                         "notifyDone" -> {
                             notifyDone(
                                 title = call.argument<String>("title") ?: "ZAgents",
@@ -282,6 +320,38 @@ class MainActivity : FlutterFragmentActivity() {
             putExtra(ZAgentsForegroundService.EXTRA_TITLE, title)
             putExtra(ZAgentsForegroundService.EXTRA_TEXT, text)
         }
+
+    /// v1.42.0: service intent carrying the per-chat session id.
+    private fun sessionIntent(action: String, sessionId: String?, title: String?, text: String?): Intent =
+        Intent(this, ZAgentsForegroundService::class.java).apply {
+            this.action = action
+            putExtra(ZAgentsForegroundService.EXTRA_SESSION_ID, sessionId)
+            putExtra(ZAgentsForegroundService.EXTRA_TITLE, title)
+            putExtra(ZAgentsForegroundService.EXTRA_TEXT, text)
+        }
+
+    /// v1.42.0 — asks the user for POST_NOTIFICATIONS on Android 13+ (the
+    /// manifest permission alone is not enough there). One-shot and
+    /// best-effort: already-granted (or <13) returns true immediately; a
+    /// denial simply keeps notifications silent like before. Never throws.
+    private fun requestNotificationPermissionIfNeeded(): Boolean {
+        return try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) !=
+                android.content.pm.PackageManager.PERMISSION_GRANTED
+            ) {
+                requestPermissions(
+                    arrayOf(android.Manifest.permission.POST_NOTIFICATIONS),
+                    2001,
+                )
+                false
+            } else {
+                true
+            }
+        } catch (_: Exception) {
+            false
+        }
+    }
 
     /// Opens the system "ignore battery optimizations" dialog (v1.28.0).
     /// The REQUEST_IGNORE_BATTERY_OPTIMIZATIONS permission is declared in

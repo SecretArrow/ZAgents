@@ -82,6 +82,11 @@ class _LockGateState extends ConsumerState<LockGate>
       if (enabled && ref.read(appLockServiceProvider).hasPin) {
         setState(() => _locked = true);
       }
+      // v1.42.0: a tapped per-chat (or done) notification lands here when
+      // the app was alive in the background — MainActivity.onNewIntent
+      // parked the session id; drain it now so the tap opens THAT chat.
+      // (At cold start the same drain runs from initState.)
+      _openPendingSession();
     }
   }
 

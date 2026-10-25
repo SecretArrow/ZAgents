@@ -32,6 +32,7 @@ class _TaskKeyedLlm implements LlmClient {
     List<Map<String, dynamic>>? tools,
     void Function(String delta)? onDelta,
     bool Function()? shouldAbort,
+    Object? cancelKey,
   }) async {
     final String taskPrompt = messages
         .firstWhere((Map<String, dynamic> m) => m['role'] == 'user')['content']
@@ -631,6 +632,7 @@ class _EndlessToolCallLlm implements LlmClient {
     List<Map<String, dynamic>>? tools,
     void Function(String delta)? onDelta,
     bool Function()? shouldAbort,
+    Object? cancelKey,
   }) async {
     _id++;
     return AssistantTurn(

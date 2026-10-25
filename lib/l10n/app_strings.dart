@@ -532,6 +532,18 @@ abstract class AppStrings {
   String get notifTitle;
   String get notifProcessing;
   String notifStep(int step, String tool);
+
+  // -- Stop / force stop (v1.42.0) ---------------------------------------
+  /// Snack after the second Stop tap: one more tap offers the force-stop
+  /// dialog.
+  String get stopHintForce;
+  String get forceStopTitle;
+  String get forceStopBody;
+  String get forceStopConfirm;
+  String get forceStopCancel;
+
+  /// Snack after a confirmed force stop.
+  String get forceStopDone;
 }
 
 /// English strings (default).
@@ -1384,7 +1396,21 @@ class AppStringsEn implements AppStrings {
           'them.',
     ),
     HelpEntry(
-      '11. Tips and troubleshooting',
+      '11. Per-chat notifications and Stop / Force stop',
+      'Every RUNNING chat posts its own notification — the chat title '
+          'plus the step it is on (which tool is executing right now). '
+          'Tap it to jump straight into that chat, even after hours in '
+          'the background: the foreground service and wake lock keep '
+          'Android from pausing the work, and Android 13+ asks once for '
+          'the notification permission — allowing it is what makes these '
+          'visible. Need to end a run? The red Stop button stops the '
+          'process with ONE tap. If it will not die, tap Stop again (a '
+          'hint appears) and the third tap offers Force stop — it '
+          'immediately tears down the connection and ends the run; '
+          'partial progress stays saved in the transcript.',
+    ),
+    HelpEntry(
+      '12. Tips and troubleshooting',
       'Provider error? Re-check the API key and the model\'s quota in '
           'the provider dashboard. A module misbehaving? Use its repair '
           'card or re-upload the zip. Unstable network? Auto-retry with '
@@ -1655,6 +1681,24 @@ class AppStringsEn implements AppStrings {
   String get notifProcessing => 'Processing your request…';
   @override
   String notifStep(int step, String tool) => 'Step $step · $tool';
+
+  // -- Stop / force stop (v1.42.0) ---------------------------------------
+  @override
+  String get stopHintForce =>
+      'Stop requested — tap Stop once more to offer a force stop.';
+  @override
+  String get forceStopTitle => 'Force stop this process?';
+  @override
+  String get forceStopBody =>
+      'The process is still running after repeated Stop taps. A force stop '
+      'immediately tears down the connection and ends this run — partial '
+      'progress is kept in the transcript.';
+  @override
+  String get forceStopConfirm => 'Force stop';
+  @override
+  String get forceStopCancel => 'Cancel';
+  @override
+  String get forceStopDone => 'Force stop executed.';
 }
 
 /// Bahasa Indonesia strings.
@@ -2523,7 +2567,22 @@ class AppStringsId implements AppStrings {
           'baterai agar Android tidak pernah menjedanya.',
     ),
     HelpEntry(
-      '11. Tips dan pemecahan masalah',
+      '11. Notifikasi per chat dan Stop / Force stop',
+      'Setiap chat yang SEDANG BERJALAN memasang notifikasinya sendiri '
+          '— judul chat plus langkah yang sedang dikerjakan (tool apa '
+          'yang berjalan saat ini). Ketuk untuk langsung membuka chat '
+          'tersebut, bahkan setelah berjam-jam di background: foreground '
+          'service dan wake lock menjaga Android tidak menjeda '
+          'pekerjaan, dan Android 13+ bertanya sekali tentang izin '
+          'notifikasi — izinkan agar notifikasinya tampil. Ingin '
+          'menghentikan run? Tombol Stop merah menghentikan proses '
+          'dengan SATU ketukan. Jika tidak kunjung berhenti, ketuk Stop '
+          'lagi (muncul petunjuk) dan ketukan ketiga menawarkan Force '
+          'stop — koneksi langsung diputus dan run diakhiri; progres '
+          'parsial tetap tersimpan di transkrip.',
+    ),
+    HelpEntry(
+      '12. Tips dan pemecahan masalah',
       'Provider error? Periksa ulang API key dan kuota model di '
           'dashboard penyedia. Modul bermasalah? Pakai kartu perbaikannya '
           'atau unggah ulang zip. Jaringan tidak stabil? Auto-retry '
@@ -2799,4 +2858,22 @@ class AppStringsId implements AppStrings {
   String get notifProcessing => 'Memproses permintaan Anda…';
   @override
   String notifStep(int step, String tool) => 'Langkah $step · $tool';
+
+  // -- Stop / force stop (v1.42.0) ---------------------------------------
+  @override
+  String get stopHintForce =>
+      'Stop diminta — ketuk Stop sekali lagi untuk menawarkan force stop.';
+  @override
+  String get forceStopTitle => 'Force stop proses ini?';
+  @override
+  String get forceStopBody =>
+      'Proses masih berjalan setelah Stop ditap berulang. Force stop akan '
+      'langsung memutus koneksi dan mengakhiri run ini — progres parsial '
+      'tetap tersimpan di transkrip.';
+  @override
+  String get forceStopConfirm => 'Force stop';
+  @override
+  String get forceStopCancel => 'Batal';
+  @override
+  String get forceStopDone => 'Force stop dijalankan.';
 }

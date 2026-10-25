@@ -51,6 +51,7 @@ class ScriptedLlmClient implements LlmClient {
     List<Map<String, dynamic>>? tools,
     void Function(String delta)? onDelta,
     bool Function()? shouldAbort,
+    Object? cancelKey,
   }) async {
     if (shouldAbort?.call() ?? false) {
       throw const LlmAbortedException('');
@@ -483,6 +484,33 @@ class RecordingBackgroundRun implements BackgroundRun {
   Future<void> stop() async {
     calls.add('stop');
     _active = false;
+  }
+
+  /// Sessions with a live per-chat notification (v1.42.0 assertions).
+  final Set<String> activeSessions = <String>{};
+
+  @override
+  Future<void> startSession({
+    required String sessionId,
+    required String title,
+    required String text,
+  }) async {
+    calls.add('startSession:$sessionId|$title|$text');
+    activeSessions.add(sessionId);
+  }
+
+  @override
+  Future<void> updateSessionStatus({
+    required String sessionId,
+    required String text,
+  }) async {
+    calls.add('updateSession:$sessionId|$text');
+  }
+
+  @override
+  Future<void> stopSession(String sessionId) async {
+    calls.add('stopSession:$sessionId');
+    activeSessions.remove(sessionId);
   }
 
   @override
