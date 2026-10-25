@@ -1113,32 +1113,17 @@ class ChatController extends Notifier<ChatState> {
     await _executeRun(run, ref.read(settingsProvider));
   }
 
-  /// Form values for a [ModuleSetupRequest]: the THIS-chat values when
-  /// they already satisfy the setup (edit path); otherwise a convenience
-  /// PREFILL — the user's latest submitted values for this module from
-  /// ANY chat, merged under the current chat's own (possibly partial)
-  /// values. Per-chat isolation is untouched: nothing is shared at run
-  /// time, the prefill only saves re-typing and still requires an
-  /// explicit Save & run in the new chat. Failures degrade to [current].
+  /// Form values for a [ModuleSetupRequest]: STRICTLY the current chat's
+  /// own stored values. The v1.33-v1.41 cross-chat prefill scan was
+  /// removed in v1.41.6 — the user explicitly wants per-chat isolation
+  /// for the setup form: chat B's form must never show values typed in
+  /// chat A. Each chat keeps its own persistence via readStoredSetup and
+  /// still needs an explicit Save & run.
   Future<Map<String, dynamic>> _setupFormValues(
     String sessionId,
     ChatModule module,
     Map<String, dynamic> current,
-  ) async {
-    final ModuleSetup? setup = module.manifest.setup;
-    if (setup == null || setup.satisfiedBy(current)) return current;
-    try {
-      final Map<String, dynamic> prefill = await ref
-          .read(moduleRuntimeProvider)
-          .latestStoredSetup(module.name);
-      if (prefill.isNotEmpty) {
-        return <String, dynamic>{...prefill, ...current};
-      }
-    } catch (_) {
-      // Prefill is best-effort only.
-    }
-    return current;
-  }
+  ) async => current;
 
   /// Finds the first active module whose required per-chat setup is not
   /// satisfied yet (null when every active module is ready to run).

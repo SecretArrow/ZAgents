@@ -122,8 +122,9 @@ void main() {
     );
   });
 
-  testWidgets('panel STAYS OPEN across streaming rebuilds, step '
-      'transitions and run end', (WidgetTester tester) async {
+  testWidgets('pinned panel STEPS ASIDE while the agent runs (the thinking '
+      'footer renders the plan inline above the row) and the SAME open flag '
+      'restores it the moment the run ends', (WidgetTester tester) async {
     await tester.pumpWidget(wrap(const PlanPanel()));
     setActiveState(
       tester,
@@ -138,11 +139,16 @@ void main() {
       ),
     );
     await openPanel(tester);
-    expect(find.byKey(const Key('live-todo-panel')), findsOneWidget);
+    // While running, the pinned host renders nothing: the plan lives
+    // inline above the thinking row (footer render, v1.41.6).
+    expect(
+      find.byKey(const Key('live-todo-panel')),
+      findsNothing,
+      reason: 'pinned host must not double-render while the footer is up',
+    );
 
-    // Next agent step: the footer moves to a NEW streaming bubble — the
-    // old (pre-v1.38.0) inline panel died with the footer; the pinned
-    // one must not.
+    // Next agent step: still running — still stepped aside, and the open
+    // flag survives the transition (the footer re-renders it elsewhere).
     setActiveState(
       tester,
       ChatState(
@@ -158,12 +164,14 @@ void main() {
     );
     await tester.pump();
     expect(
-      find.byKey(const Key('live-todo-panel')),
-      findsOneWidget,
+      containerOf(tester).read(planPanelOpenProvider),
+      isTrue,
       reason: 'step transition must not close the panel',
     );
+    expect(find.byKey(const Key('live-todo-panel')), findsNothing);
 
-    // Run ends: the thinking footer unmounts entirely — panel survives.
+    // Run ends: the thinking footer unmounts — the pinned panel returns
+    // on its own, same plan, still open (run end never closes it).
     setActiveState(
       tester,
       ChatState(
@@ -177,10 +185,11 @@ void main() {
       ),
     );
     await tester.pump();
+    await tester.pump(const Duration(milliseconds: 200));
     expect(
       find.byKey(const Key('live-todo-panel')),
       findsOneWidget,
-      reason: 'run end must not close the panel',
+      reason: 'run end must hand the plan back to the pinned host',
     );
     expect(
       find.text('All done!'),

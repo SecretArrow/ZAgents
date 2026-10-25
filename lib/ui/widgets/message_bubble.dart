@@ -407,33 +407,60 @@ class _ThinkingFooterState extends ConsumerState<_ThinkingFooter> {
     final AppStrings strings = stringsOf(context);
     final bool hasPlan = widget.todos.isNotEmpty;
     final bool open = ref.watch(planPanelOpenProvider);
-    return Row(
+    // v1.41.6 — the live plan is rendered INLINE again, directly ABOVE the
+    // thinking row (like v1.36 and below), instead of only in the pinned
+    // top panel. The open/close state stays GLOBAL (planPanelOpenProvider)
+    // — the v1.36 bug was the footer's LOCAL _expanded flag dying on step
+    // transitions, not inline rendering itself — so step transitions, run
+    // end and chat switches can no longer close it behind the user's back.
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
       children: <Widget>[
-        const SizedBox(
-          width: 12,
-          height: 12,
-          child: CircularProgressIndicator(strokeWidth: 2),
-        ),
-        const SizedBox(width: 8),
-        Text(
-          strings.thinking,
-          style: TextStyle(color: context.zMuted, fontSize: 12),
-        ),
-        const Spacer(),
-        if (hasPlan)
-          IconButton(
-            key: const Key('todo-toggle-button'),
-            tooltip: open ? strings.hidePlanTooltip : strings.showPlanTooltip,
-            icon: Icon(
-              open ? Icons.visibility_off_outlined : Icons.visibility_outlined,
-              size: 16,
-              color: context.zMuted,
+        if (open && hasPlan)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 6),
+            child: TodoPlanView(
+              key: const Key('live-todo-panel'),
+              todos: widget.todos,
+              live: true,
+              onClose: () =>
+                  ref.read(planPanelOpenProvider.notifier).state = false,
             ),
-            visualDensity: VisualDensity.compact,
-            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-            padding: const EdgeInsets.all(6),
-            onPressed: () => togglePlanPanel(ref),
           ),
+        Row(
+          children: <Widget>[
+            const SizedBox(
+              width: 12,
+              height: 12,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+            const SizedBox(width: 8),
+            Text(
+              strings.thinking,
+              style: TextStyle(color: context.zMuted, fontSize: 12),
+            ),
+            const Spacer(),
+            if (hasPlan)
+              IconButton(
+                key: const Key('todo-toggle-button'),
+                tooltip: open
+                    ? strings.hidePlanTooltip
+                    : strings.showPlanTooltip,
+                icon: Icon(
+                  open
+                      ? Icons.visibility_off_outlined
+                      : Icons.visibility_outlined,
+                  size: 16,
+                  color: context.zMuted,
+                ),
+                visualDensity: VisualDensity.compact,
+                constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                padding: const EdgeInsets.all(6),
+                onPressed: () => togglePlanPanel(ref),
+              ),
+          ],
+        ),
       ],
     );
   }

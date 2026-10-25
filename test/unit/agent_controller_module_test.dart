@@ -31,7 +31,6 @@ void main() {
     moduleRuntime = ModuleRuntime(
       js: js,
       resolveSandboxRoot: sandbox.rootFor,
-      resolveSessionsRoot: sandbox.sessionsRoot,
       resolveModulePath: (String name) async =>
           (await registry.get(name))?.path,
       resolveSdkSource: () async => 'module.exports = zagents;',
@@ -695,8 +694,8 @@ void main() {
       expect(system, contains('NEVER ask the user to type or repeat'));
     });
 
-    test('setup form in a NEW chat is prefilled with the latest values from '
-        'another chat', () async {
+    test('setup form in a NEW chat stays EMPTY — no cross-chat prefill '
+        '(v1.41.6 isolation regression)', () async {
       final ProviderContainer c = await container();
       await installSetupModule('prefillme');
       js.nextResult = const JsRunResult(output: 'cycle ran');
@@ -713,7 +712,10 @@ void main() {
         isTrue,
       );
 
-      // Chat 2: a brand-new chat — nothing stored for it yet.
+      // Chat 2: a brand-new chat — its form must be COMPLETELY empty.
+      // The v1.33-v1.41 cross-chat prefill leaked chat 1's values into
+      // chat 2's form; the user explicitly wants strict per-chat
+      // isolation for the setup form fields.
       await controller.newChat();
       await controller.activateModule('prefillme');
       await controller.send('run');
@@ -723,10 +725,22 @@ void main() {
           .setupRequest;
       expect(request, isNotNull);
       expect(request!.moduleName, 'prefillme');
-      // Prefilled from chat 1's latest submission (the user still
-      // confirms with Save & run — per-chat isolation is untouched).
-      expect(request.values['email'], 'first@example.com');
-      expect(request.values['password'], 'hunter2');
+      expect(
+        request.values,
+        isEmpty,
+        reason: 'a new chat must never inherit another chat\'s form values',
+      );
+      // And chat 2's own storage stays empty: nothing was copied into it.
+      expect(
+        await c
+            .read(moduleRuntimeProvider)
+            .readStoredSetup(
+              c.read(chatControllerProvider).sessionId!,
+              'prefillme',
+            ),
+        isEmpty,
+        reason: 'chat 2 storage must stay empty too',
+      );
     });
 
     test('submitModuleSetup with awaitRun:false returns before the module '

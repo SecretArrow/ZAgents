@@ -24,16 +24,28 @@ import 'todo_plan_card.dart';
 ///     leaks into another chat's panel.
 /// When the displayed session has no plan the panel renders nothing
 /// (the open state is kept, so switching back restores it).
+///
+/// v1.41.6: WHILE the agent is running the plan renders INLINE again —
+/// directly above the thinking row inside the tail bubble (the v1.36
+/// placement, user request) — so this pinned host steps aside during a
+/// run to avoid a double render. The open flag is untouched by the
+/// switch: the moment the run ends (footer unmounts) the pinned panel
+/// reappears on its own, and chat switches never close it.
 class PlanPanel extends ConsumerWidget {
   const PlanPanel({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final bool open = ref.watch(planPanelOpenProvider);
+    final bool running = ref.watch(
+      chatControllerProvider.select((ChatState s) => s.isRunning),
+    );
     final List<TodoItem> todos = ref.watch(
       chatControllerProvider.select((ChatState s) => s.todos),
     );
-    final bool visible = open && todos.isNotEmpty;
+    // While the agent runs the thinking footer owns the inline render
+    // (above the thinking row); when idle this pinned panel is the host.
+    final bool visible = open && todos.isNotEmpty && !running;
     return AnimatedSize(
       key: const Key('plan-panel-host'),
       duration: const Duration(milliseconds: 150),

@@ -348,6 +348,18 @@ OpenAI-compatible: **OpenRouter, InferHub, Z.AI, OpenAI, DeepSeek, Groq, dan lai
   wajib — isolasi per-chat tidak berubah).
   4. `SessionSandbox.sessionsRoot()` + `ModuleRuntime.latestStoredSetup`
   (pemindai mtime terbaru, tahan file korup) + uji unit wire/module_list.
+- **v1.41.6 — isolasi form modul per chat & Plan kembali di atas
+  thinking**: (1) bug prefill lintas chat dihapus — form setup modul di
+  sebuah chat kini **hanya** menampilkan nilai yang pernah diisi di chat
+  itu sendiri (kosong bila belum pernah); pemindai `latestStoredSetup`
+  yang menyalin isian dari chat lain sudah dihapus total, persistensi
+  per-chat dan gerbang Save & run tidak berubah. (2) Rencana/todos live
+  kini dirender **inline tepat di atas baris "thinking"** saat agent
+  berjalan (penempatan v1.36 ke bawah, sesuai permintaan), sementara
+  panel tersemat di atas daftar otomatis mundur selama run dan kembali
+  sendiri saat run selesai — flag buka/tutup tetap global sehingga
+  perpindahan langkah, akhir run, dan pindah chat tidak pernah
+  menutupnya.
 - **v1.41.5 — User-Agent 153+ & layar Help/About**: seluruh database
   User-Agent di-refresh ke generasi terkini — semua browser berbasis
   Chromium (Chrome, Edge, Opera, Samsung Internet, Vivaldi) kini memakai

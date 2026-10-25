@@ -143,15 +143,56 @@ void main() {
       await tester.tap(find.byKey(const Key('todo-toggle-button')));
       await tester.pump();
       expect(capturedRef.read(planPanelOpenProvider), isTrue);
+      // v1.41.6: with the plan open there are TWO "Hide plan" affordances
+      // — the footer's eye toggle AND the inline panel's close (X) button.
       expect(
         find.byTooltip(const AppStringsEn().hidePlanTooltip),
-        findsOneWidget,
+        findsNWidgets(2),
       );
 
       // Hide again.
       await tester.tap(find.byKey(const Key('todo-toggle-button')));
       await tester.pump();
       expect(capturedRef.read(planPanelOpenProvider), isFalse);
+    });
+
+    testWidgets('v1.41.6: an OPEN plan renders INLINE directly ABOVE the '
+        'thinking row (v1.36 placement)', (WidgetTester tester) async {
+      final ChatMessage message = ChatMessage.assistant(
+        'Working on it…',
+        isStreaming: true,
+      );
+      await tester.pumpWidget(
+        wrap(MessageBubble(message: message, todos: todos)),
+      );
+
+      // Closed at first: no inline plan anywhere.
+      expect(find.byKey(const Key('live-todo-panel')), findsNothing);
+
+      // Open via the footer toggle: the plan appears INSIDE the same
+      // bubble, geometrically ABOVE the thinking row.
+      await tester.tap(find.byKey(const Key('todo-toggle-button')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 200));
+      final Finder panel = find.byKey(const Key('live-todo-panel'));
+      expect(panel, findsOneWidget);
+      final double panelY = tester.getTopLeft(panel).dy;
+      final double thinkingY = tester.getTopLeft(find.text('thinking…')).dy;
+      expect(
+        panelY,
+        lessThan(thinkingY),
+        reason: 'the live plan must sit ABOVE the thinking indicator',
+      );
+      // Plan rows are visible with live progress.
+      expect(find.text('research topic'), findsOneWidget);
+      expect(find.text('draft report'), findsOneWidget);
+      expect(find.text('review output'), findsOneWidget);
+
+      // Closing hides the inline plan again.
+      await tester.tap(find.byKey(const Key('plan-panel-close')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 200));
+      expect(panel, findsNothing);
     });
 
     testWidgets('no plan yet: the toggle is not rendered', (

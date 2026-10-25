@@ -753,7 +753,6 @@ void main() {
       moduleRuntime = ModuleRuntime(
         js: ScriptedJsRuntime(),
         resolveSandboxRoot: sandbox.rootFor,
-        resolveSessionsRoot: sandbox.sessionsRoot,
         resolveModulePath: (String name) async =>
             (await registry.get(name))?.path,
         resolveSdkSource: () async => 'module.exports = zagents;',

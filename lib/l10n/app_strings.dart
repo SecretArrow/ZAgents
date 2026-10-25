@@ -1352,8 +1352,9 @@ class AppStringsEn implements AppStrings {
           'zagents SDK — upload one from the Modules screen and it runs in '
           'each chat\'s own sandbox with per-chat setup forms, storage, '
           'state and permissions. The agent sees each module\'s setup '
-          'state (secrets masked) and a new chat prefills the form with '
-          'your latest values. The Node screen manages the embedded '
+          'state (secrets masked) — strictly per chat: a form in one chat '
+          'never shows values typed in another chat. The Node screen '
+          'manages the embedded '
           'runtime and its npm packages; Device commands stay off unless '
           'you explicitly enable them (rooted phones only).',
     ),
@@ -2489,8 +2490,9 @@ class AppStringsId implements AppStrings {
           'zagents — unggah dari layar Modules dan ia berjalan di sandbox '
           'masing-masing chat dengan form setup, storage, state, dan '
           'izin per chat. Agent melihat status setup tiap modul (rahasia '
-          'selalu disamarkan) dan chat baru mengisi form dengan nilai '
-          'terakhir Anda. Layar Node mengelola runtime tersemat beserta '
+          'selalu disamarkan) — ketat per chat: form di satu chat tidak '
+          'pernah menampilkan nilai yang diketik di chat lain. Layar '
+          'Node mengelola runtime tersemat beserta '
           'paket npm; perintah Device tetap mati kecuali Anda '
           'mengaktifkannya eksplisit (khusus HP rooted).',
     ),
