@@ -11,6 +11,7 @@ import 'package:path_provider/path_provider.dart';
 import 'models/models.dart';
 import 'services/agent_composer.dart';
 import 'services/agent_controller.dart';
+import 'services/agent_polisher.dart';
 import 'services/app_lock_service.dart';
 import 'services/attachment_service.dart';
 import 'services/backup_service.dart';
@@ -298,6 +299,23 @@ final moduleRuntimeProvider = Provider<ModuleRuntime>(
         throw const AgentComposeException('No model configured in Settings');
       }
       return AgentComposer(llm: ref.read(llmClientProvider)).compose(
+        request: request,
+        config: LlmConfig(
+          baseUrl: settings.baseUrl,
+          apiKey: settings.apiKey,
+          model: settings.model,
+        ),
+      );
+    },
+    agentPolish: (AgentPolishRequest request) async {
+      final AppSettings settings = ref.read(settingsProvider);
+      if (settings.apiKey.trim().isEmpty) {
+        throw const AgentPolishException('No API key configured in Settings');
+      }
+      if (settings.model.trim().isEmpty) {
+        throw const AgentPolishException('No model configured in Settings');
+      }
+      return AgentPolisher(llm: ref.read(llmClientProvider)).polish(
         request: request,
         config: LlmConfig(
           baseUrl: settings.baseUrl,

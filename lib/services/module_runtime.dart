@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'agent_composer.dart';
+import 'agent_polisher.dart';
 import 'device_shell.dart';
 import 'js_runtime.dart';
 import 'module_registry.dart';
@@ -27,6 +28,11 @@ typedef ModuleHttpTransport = Future<Map<String, dynamic>?> Function(
 typedef ModuleAgentCompose = Future<String> Function(
   AgentComposeRequest request,
 );
+
+/// Agent-backed reply polisher for `zagents.agent.polish` (v1.45.0).
+/// Implementations run the request through the chat's own LLM plus the
+/// reply-polish gate.
+typedef ModuleAgentPolish = Future<String> Function(AgentPolishRequest request);
 
 /// Resolves the User-Agent identity modules must use — always the one the
 /// user picked in Settings → User Agent (resolved at run start).
@@ -145,6 +151,7 @@ class ModuleRuntime implements ModuleBridge {
     required this.resolveNpmModulesRoot,
     this.httpTransport,
     this.agentCompose,
+    this.agentPolish,
     this.resolveUserAgent,
     this.deviceCommandsEnabled,
     this.deviceShell,
@@ -177,6 +184,9 @@ class ModuleRuntime implements ModuleBridge {
 
   /// Text composer for `zagents.agent.compose` (see [ModuleAgentCompose]).
   final ModuleAgentCompose? agentCompose;
+
+  /// Reply polisher for `zagents.agent.polish` (see [ModuleAgentPolish]).
+  final ModuleAgentPolish? agentPolish;
 
   /// Master switch for `zagents.device.shell` (v1.31.0): read on EVERY
   /// call — the Settings → Modules toggle turns the capability off live.
@@ -570,6 +580,72 @@ class ModuleRuntime implements ModuleBridge {
           return <String, dynamic>{
             'ok': false,
             'error': 'Agent compose failed: $e',
+          };
+        }
+      case 'agent.polish':
+        if (!context.permissions.contains('agent')) return _denied('agent');
+        if (context.cancelled) {
+          return const <String, dynamic>{
+            'ok': true,
+            'data': <String, dynamic>{'text': ''},
+          };
+        }
+        final polish = agentPolish;
+        if (polish == null) {
+          return const <String, dynamic>{
+            'ok': false,
+            'error': 'Agent polisher is unavailable',
+          };
+        }
+        final Object? rawTemplate = request['template'];
+        final String templateText = rawTemplate?.toString() ?? '';
+        if (templateText.trim().isEmpty) {
+          return const <String, dynamic>{
+            'ok': false,
+            'error': 'agent.polish requires a non-empty template',
+          };
+        }
+        final Object? rawReplyContext = request['context'];
+        final String replyContext = rawReplyContext?.toString() ?? '';
+        if (replyContext.trim().isEmpty) {
+          return const <String, dynamic>{
+            'ok': false,
+            'error': 'agent.polish requires a non-empty context',
+          };
+        }
+        final Object? rawAvoid = request['avoid'];
+        final List<String> avoid = <String>[
+          if (rawAvoid is List)
+            for (final Object? item in rawAvoid)
+              if (item != null && item.toString().trim().isNotEmpty)
+                item.toString(),
+        ].take(8).toList();
+        final Object? rawMaxChars = request['maxChars'];
+        final int maxChars = rawMaxChars is int && rawMaxChars > 0
+            ? rawMaxChars
+            : AgentPolishRequest.defaultMaxChars;
+        try {
+          final String text = await polish(
+            AgentPolishRequest(
+              template: templateText,
+              context: replyContext,
+              language: request['language']?.toString() ?? '',
+              tone: request['tone']?.toString() ?? '',
+              maxChars: maxChars,
+              allowEmoji: request['allowEmoji'] == true,
+              avoid: avoid,
+            ),
+          );
+          return <String, dynamic>{
+            'ok': true,
+            'data': <String, dynamic>{'text': text},
+          };
+        } on AgentPolishException catch (e) {
+          return <String, dynamic>{'ok': false, 'error': e.message};
+        } catch (e) {
+          return <String, dynamic>{
+            'ok': false,
+            'error': 'Agent polish failed: $e',
           };
         }
       case 'device.shell':

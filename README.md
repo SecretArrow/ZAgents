@@ -360,6 +360,23 @@ OpenAI-compatible: **OpenRouter, InferHub, Z.AI, OpenAI, DeepSeek, Groq, dan lai
   sendiri saat run selesai — flag buka/tutup tetap global sehingga
   perpindahan langkah, akhir run, dan pindah chat tidak pernah
   menutupnya.
+- **v1.45.0 — dua modul resmi baru: asisten Fanspage Facebook & asisten X/Twitter + SDK `agent.polish`**:
+  (1) **SDK baru `zagents.agent.polish`** — menulis ulang template balasan menjadi SATU balasan
+  sosial yang natural seperti manusia (1–3 kalimat, tanda baca normal, bahasa mengikuti
+  pengirim, anti-repetisi, tanpa markdown/link rekaan/frasa asisten, anggaran karakter
+  20–500) melalui LLM chat sendiri dengan pipeline validate → retry → sanitize →
+  re-validate yang sama ketatnya dengan `compose`. (2) **Modul `facebook-page`** (`/fb`) —
+  asisten fanspage: "auto-login" via Page Access Token (formulir setup per-chat, divalidasi
+  ke Graph API `/me`, tidak pernah di-log), auto-reply pesan Messenger DAN komentar post
+  dengan 8 keluarga template (greeting/question/price/shipping/thanks/complaint/generic/away)
+  yang dipoles AI secara live, klasifikasi intent kata kunci ID+EN, delay human-like
+  acak, dedupe seen-ID (tidak pernah balas dua kali), burst auto-watch `/fb auto`,
+  editor template, toggle per kanal. (3) **Modul `twitter-x`** (`/tw`) — auto-reply mention:
+  OAuth 1.0a murni-JS (penanda tangan diverifikasi terhadap worked example resmi docs X),
+  template + AI polish, dedupe dengan backoff gagal, `/tw tweet` + `/tw reply` manual,
+  penanganan tier jujur (Free = posting saja; baca butuh Basic). Kedua modul terdaftar
+  di katalog in-app (15 modul resmi), dilengkapi README cara mendapat token/keys, dan
+  zip siap instal di `samples/`.
 - **v1.44.0 — keamanan, pembaruan, multimodal, suara, ekosistem modul, aksesibilitas, bahasa ke-3**:
   (1) **API key terenkripsi** — kunci provider LLM tidak lagi tersimpan plaintext di
   SharedPreferences: kini berada di `flutter_secure_storage` (Android Keystore), dipisah

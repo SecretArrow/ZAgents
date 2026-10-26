@@ -254,6 +254,41 @@ Failures (no API key, provider down, repeated violations) throw — wrap
 the call in try/catch and skip the text action when composition is not
 possible.
 
+#### `zagents.agent.polish({ template, context, ... })` — permission `agent` (v1.45.0)
+
+Rewrite a reply TEMPLATE into ONE natural, human-sounding social reply
+that answers the incoming message — built for Facebook comment /
+Messenger auto-replies and X/Twitter mention auto-replies (see
+[`samples/facebook-page/`](../../samples/facebook-page/) and
+[`samples/twitter-x/`](../../samples/twitter-x/)). Freer than `compose`:
+1–3 sentences, normal punctuation (periods, commas, question marks), and
+the reply language matches the sender's language:
+
+* the module fills all template slots itself and passes the final
+  template — an unfilled `{slot}` in the output is rejected;
+* no markdown, no lists, no invented links (URLs are only allowed when
+  the template or the incoming message already had one), no assistant
+  phrasing ("as an AI", "hope this helps", …);
+* char budget via `maxChars` (default 280, clamped 20–500) instead of a
+  word budget; emoji off by default (`allowEmoji: true` allows one);
+* every promise/fact in the template must survive — the agent may not
+  invent prices, dates, names or features;
+* the same validate → corrective retry → sanitize → re-validate pipeline
+  as `compose`; failures throw so the module can fall back to its
+  template.
+
+```js
+const { text } = await zagents.agent.polish({
+  template: 'Halo {name}, makasih sudah menghubungi kami...'.replace('{name}', firstName),
+  context: incomingCommentText,
+  language: 'auto',   // or 'id', 'en', ...
+  tone: 'friendly',   // or 'professional', 'casual'
+  maxChars: 300,
+  allowEmoji: false,
+  avoid: recentSentReplies,
+});
+```
+
 ### `zagents.chat` — permission `chat`
 Post progressive output into the conversation while running:
 
@@ -387,6 +422,8 @@ The same example, ready to install, lives at [`samples/counter/`](../../samples/
 | [`samples/chat-streamer/`](../../samples/chat-streamer/) | `chat` — progressive `chat.emit` output |
 | [`samples/onhomeroom-daily/`](../../samples/onhomeroom-daily/) | `agent` — real-world daily bot whose every sentence is composed by the chat agent; per-chat setup form for its account |
 | [`samples/airplane-mode/`](../../samples/airplane-mode/) | `device` — rooted airplane-mode toggle + one-command carrier-IP rotation driven by the `/airplane cycle \| on \| off \| status` slash commands (v1.31.0, cycle v1.34.0) |
+| [`samples/facebook-page/`](../../samples/facebook-page/) | `agent` (`polish`) + `network` — fanspage assistant: auto-reply comments + Messenger with templates polished live by the chat agent, per-chat Page token via the setup form (`/fb` v1.45.0) |
+| [`samples/twitter-x/`](../../samples/twitter-x/) | `agent` (`polish`) + `network` — X/Twitter mention auto-replies with a pure-JS OAuth 1.0a signer, per-chat user keys via the setup form (`/tw` v1.45.0) |
 
 `module.json`
 

@@ -526,6 +526,16 @@ const List<_OfficialSample> _kOfficialSamples = <_OfficialSample>[
   ),
   _OfficialSample('qr-tools', '/qr', 'Scannable QR codes, zero permissions.'),
   _OfficialSample(
+    'facebook-page',
+    '/fb',
+    'Fanspage assistant: auto-reply comments + Messenger (templates + AI polish).',
+  ),
+  _OfficialSample(
+    'twitter-x',
+    '/tw',
+    'X/Twitter assistant: auto-reply mentions (OAuth 1.0a + AI polish).',
+  ),
+  _OfficialSample(
     'totp-auth',
     '/otp',
     'RFC 6238 authenticator — secrets never leave the device.',

@@ -20,6 +20,8 @@ see [`../docs/modules/`](../docs/modules/) for the full reference and
 | [`totp-auth/`](totp-auth/) | `storage` | Per-chat RFC 6238 authenticator via `/otp`: pure-JS SHA-1/SHA-256/SHA-512 + HMAC + Base32, all 18 official RFC 6238 vectors pass, 6-8 digits / 15-120 s periods, `otpauth://` export that pairs with `/qr`, two-step removal. NO network permission — secrets cannot leave the device |
 | [`csv-data/`](csv-data/) | `storage` | CSV analysis studio via `/csv`: RFC 4180 parser (quoted fields, embedded commas/newlines, `,`/`;`/tab auto-detection), per-column type inference, stats (min/max/mean/median/std/uniques), numeric-aware sort/filter, frequency tops, ASCII bar charts + histograms, 6-hour-cached nothing — fully offline. Datasets ≤56 KB per chat |
 | [`converters/`](converters/) | `network` (allowlisted), `storage` | Currency + units via `/cur` and `/unit`: live mid-market rates from open.er-api.com (no key) locked by the manifest allowlist with a 6-hour per-chat cache, friendly aliases (rupiah, euro, yen…), plus an OFFLINE unit engine across 8 categories (length/mass/data/speed/volume/area/time/temperature) with plural, symbol and squashed-input aliases |
+| [`facebook-page/`](facebook-page/) | `network` (allowlisted: graph.facebook.com), `storage`, `agent`, `chat` | Fanspage assistant via `/fb`: "auto-login" with a Page Access Token collected by the per-chat setup form (validated against Graph API `/me`, stored per chat, never logged), auto-reply to Messenger messages AND post comments through `zagents.agent.polish` — 8 built-in template families (greeting/question/price/shipping/thanks/complaint/generic/away, 1-4 variants each, `{name}`/`{page}` slots) rewritten live by the chat's own LLM into natural, human-sounding replies in the sender's language, keyword intent classifier (ID+EN), randomized human-like delays, seen-ID dedupe (replies never fire twice), burst auto-watch (`/fb auto`), speed presets, per-channel on/off toggles, template editor, two-step-friendly logout |
+| [`twitter-x/`](twitter-x/) | `network` (allowlisted: api.x.com, api.twitter.com), `storage`, `agent`, `chat` | X/Twitter assistant via `/tw`: OAuth 1.0a user keys from the per-chat setup form (pure-JS HMAC-SHA1 signer verified against the official X docs worked example), auto-reply to mentions through `zagents.agent.polish` with template families + AI polish in the sender's language, keyword intent classifier, human-like delays, seen-ID dedupe with failure backoff, burst auto-watch (`/tw auto`), manual `/tw tweet` + `/tw reply`, template editor, honest tier handling (Free = posting only; reads need Basic) |
 
 ## Ready-made ZIPs — download and install directly
 
@@ -27,7 +29,8 @@ Every sample also ships pre-packaged **next to its folder** as
 `<name>.zip` (`counter.zip`, `network-fetcher.zip`, `file-notes.zip`,
 `chat-streamer.zip`, `onhomeroom-daily.zip`, `airplane-mode.zip`,
 `evm-wallet.zip`, `web-browser.zip`, `rss-reader.zip`, `qr-tools.zip`,
-`totp-auth.zip`, `csv-data.zip`, `converters.zip`).
+`totp-auth.zip`, `csv-data.zip`, `converters.zip`, `facebook-page.zip`,
+`twitter-x.zip`).
 Download one, then install
 it via **Settings → Modules → Install module** — no packaging needed.
 A test guards these archives: each `<name>.zip` must always match its

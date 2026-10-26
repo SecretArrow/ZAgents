@@ -714,6 +714,26 @@ window.__zDone = false;
         }).then(function(data){
           return { text: (data && data.text) ? data.text : '' };
         });
+      },
+      // v1.45.0 — reply polisher: turns a slot-filled template into one
+      // natural multi-sentence social reply that answers the incoming
+      // message (Facebook comment/Messenger, X/Twitter mention). Freer
+      // than compose: normal punctuation allowed, language matched to
+      // the incoming message, char budget instead of a word budget.
+      polish: function(opts){
+        if (!zHas('agent')) return zDeny('agent');
+        opts = opts || {};
+        return zCall('agent.polish', {
+          template: (opts.template === undefined || opts.template === null) ? '' : String(opts.template),
+          context: (opts.context === undefined || opts.context === null) ? '' : String(opts.context),
+          language: (opts.language === undefined || opts.language === null) ? '' : String(opts.language),
+          tone: (opts.tone === undefined || opts.tone === null) ? '' : String(opts.tone),
+          maxChars: typeof opts.maxChars === 'number' ? opts.maxChars : null,
+          allowEmoji: opts.allowEmoji === true,
+          avoid: Array.isArray(opts.avoid) ? opts.avoid.map(String) : []
+        }).then(function(data){
+          return { text: (data && data.text) ? data.text : '' };
+        });
       }
     },
     storage: {

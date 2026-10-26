@@ -122,6 +122,28 @@ export interface ZAgentsAgentComposeOptions {
   trailingPeriod?: boolean;
 }
 
+/** Options for zagents.agent.polish (v1.45.0). */
+export interface ZAgentsAgentPolishOptions {
+  /** The reply template, all slots already filled by the module.
+   *  Required. */
+  template: string;
+  /** The live incoming message / comment / mention being answered.
+   *  Required. */
+  context: string;
+  /** `"auto"` (default) matches the language of the incoming message;
+   *  a fixed code such as `id`, `en`, `es` pins the reply language. */
+  language?: string;
+  /** `friendly` (default), `professional` or `casual`. */
+  tone?: string;
+  /** Character budget of the polished reply (default 280, clamped
+   *  20-500). */
+  maxChars?: number;
+  /** Allow one simple emoji. Default false. */
+  allowEmoji?: boolean;
+  /** Recent replies the polished text must not repeat (max 8). */
+  avoid?: string[];
+}
+
 /** Result of zagents.device.shell. */
 export interface ZAgentsShellResult {
   /** True only when the process ran, was not killed by the timeout, and
@@ -219,6 +241,16 @@ export interface ZAgentsSdk {
   agent: {
     compose(
       options: ZAgentsAgentComposeOptions,
+    ): Promise<{ text: string }>;
+    /** Polish a reply template into ONE natural multi-sentence social
+     *  reply that answers the incoming message (v1.45.0) — for Facebook
+     *  comment/Messenger and X/Twitter mention auto-replies. The host
+     *  enforces the polisher rules (no markdown, no unfilled slots, no
+     *  invented links, char budget, language match, no repeats) before
+     *  returning. Throws when composition is not possible.
+     *  Permission: `agent`. */
+    polish(
+      options: ZAgentsAgentPolishOptions,
     ): Promise<{ text: string }>;
   };
   /**

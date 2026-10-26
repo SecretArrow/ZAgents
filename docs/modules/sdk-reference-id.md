@@ -250,6 +250,42 @@ Kegagalan (API key kosong, provider down, pelanggaran berulang) melempar
 error — bungkus dengan try/catch dan lewati aksi teks tersebut bila
 komposisi tidak memungkinkan.
 
+#### `zagents.agent.polish({ template, context, ... })` — izin `agent` (v1.45.0)
+
+Menulis ulang TEMPLATE balasan menjadi SATU balasan sosial yang natural
+dan terdengar seperti manusia, menjawab pesan yang masuk — dibangun
+untuk auto-reply komentar/Messenger Facebook dan auto-reply mention
+X/Twitter (lihat [`samples/facebook-page/`](../../samples/facebook-page/)
+dan [`samples/twitter-x/`](../../samples/twitter-x/)). Lebih bebas dari
+`compose`: 1–3 kalimat, tanda baca normal (titik, koma, tanda tanya),
+dan bahasa balasan mengikuti bahasa pengirim:
+
+* modul mengisi semua slot template sendiri sebelum memanggil — output
+  yang masih memuat `{slot}` yang belum terisi akan ditolak;
+* tanpa markdown, tanpa list, tanpa link rekaan (URL hanya diizinkan
+  bila template atau pesan masuk memang memuat URL), tanpa frasa gaya
+  asisten ("as an AI", "hope this helps", …);
+* anggaran karakter via `maxChars` (bawaan 280, rentang 20–500)
+  menggantikan anggaran kata; emoji mati secara bawaan
+  (`allowEmoji: true` mengizinkan satu);
+* setiap janji/fakta pada template harus bertahan — agen tidak boleh
+  mengarang harga, tanggal, nama atau fitur;
+* pipeline yang sama: validate → satu percobaan perbaikan → sanitize →
+  re-validate; kegagalan melempar error sehingga modul bisa jatuh kembali
+  ke template-nya.
+
+```js
+const { text } = await zagents.agent.polish({
+  template: 'Halo {name}, makasih sudah menghubungi kami...'.replace('{name}', namaDepan),
+  context: teksKomenMasuk,
+  language: 'auto',   // atau 'id', 'en', ...
+  tone: 'friendly',   // atau 'professional', 'casual'
+  maxChars: 300,
+  allowEmoji: false,
+  avoid: balasanTerakhirTerkirim,
+});
+```
+
 ### `zagents.chat` — izin `chat`
 Kirim output bertahap ke percakapan selama modul berjalan:
 
@@ -384,6 +420,8 @@ Contoh yang sama, siap dipasang, ada di [`samples/counter/`](../../samples/count
 | [`samples/chat-streamer/`](../../samples/chat-streamer/) | `chat` — output bertahap `chat.emit` |
 | [`samples/onhomeroom-daily/`](../../samples/onhomeroom-daily/) | `agent` — bot harian dunia nyata yang setiap kalimatnya disusun agen chat; formulir setup per chat untuk akunnya |
 | [`samples/airplane-mode/`](../../samples/airplane-mode/) | `device` — pengalih mode pesawat + rotasi IP carrier satu perintah: AUTO (root) + mode MANUAL terverifikasi tanpa root, perintah slash `/airplane cycle \| on \| off \| status` (v1.32.0, siklus v1.34.0) |
+| [`samples/facebook-page/`](../../samples/facebook-page/) | `agent` (`polish`) + `network` — asisten fanspage: auto-reply komentar + Messenger dengan template yang dipoles agen chat secara live, token Page per-chat via formulir setup (`/fb` v1.45.0) |
+| [`samples/twitter-x/`](../../samples/twitter-x/) | `agent` (`polish`) + `network` — auto-reply mention X/Twitter dengan penanda tangan OAuth 1.0a JS murni, kunci user per-chat via formulir setup (`/tw` v1.45.0) |
 
 `module.json`
 
