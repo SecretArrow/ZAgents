@@ -360,6 +360,18 @@ OpenAI-compatible: **OpenRouter, InferHub, Z.AI, OpenAI, DeepSeek, Groq, dan lai
   sendiri saat run selesai — flag buka/tutup tetap global sehingga
   perpindahan langkah, akhir run, dan pindah chat tidak pernah
   menutupnya.
+- **v1.47.1 — perbaikan bug: toggle "Check for updates on start" selalu kembali ON setelah buka ulang app**:
+  akar masalahnya ada dua lapis. (1) **`_withPresetMigration` (dijalankan setiap load settings) tidak
+  membawa field `checkUpdatesOnStart`** — rekonsiliasi field-per-field melewatkan satu field ini, sehingga
+  nilai tersimpan selalu ditimpa default `true` di setiap restart, betapapun benar JSON-nya tersimpan di
+  disk; kini ke-25 field AppSettings lolos audit lengkap (konstruktor, rekonsiliasi, toJson/fromJson)
+  tanpa satu pun yang hilang. (2) **Urutan persistence di `save()`** — penulisan JSON settings ke
+  SharedPreferences kini dilakukan DULU (cepat, lokal), baru operasi Keystore untuk API key; kalau app
+  ditutup tiba-tiba atau Keystore lambat/gagal, toggle & settings lain tidak lagi hilang. Kegagalan tulis
+  prefs tidak lagi senyap (`lastSettingsWriteError`), `SettingsController.update` tak pernah melempar
+  exception ke pemanggil, dan plaintext API key tetap dipindahkan ke secure storage secara idempotent
+  seperti sebelumnya. +5 test regresi (ordering saat secure write masih in-flight, Keystore rusak, save
+  gagal, restart penuh toggle tetap OFF).
 - **v1.47.0 — ekspor modul fresh ke ZIP, nama file preset + bebas rename**: aksi **Export** pada tiap kartu
   modul kini membuka dialog nama file yang terisi preset `<nama>-v<versi>.zip` dan boleh diganti sebelum
   disimpan (karakter ilegal dibersihkan, akhiran `.zip` dijaga, kosong → kembali ke preset). Arsipnya

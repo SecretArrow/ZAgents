@@ -1,7 +1,10 @@
+import 'dart:async';
 import 'dart:convert';
 
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:zagents/di.dart';
 import 'package:zagents/models/models.dart';
 import 'package:zagents/services/settings_repository.dart';
 
@@ -50,6 +53,43 @@ class FakeSecretBoxException implements Exception {
 
   @override
   String toString() => 'FakeSecretBoxException: $message';
+}
+
+/// [SecretBox] fake whose every operation blocks on a [Completer] — lets a
+/// test observe what [PrefsSettingsRepository.save] has already persisted
+/// WHILE the secure-storage operation is still in flight (the v1.47.1
+/// save-ordering regression).
+class GatingSecretBox implements SecretBox {
+  GatingSecretBox();
+
+  final Completer<void> readGate = Completer<void>();
+  final Completer<void> writeGate = Completer<void>();
+  final Completer<void> deleteGate = Completer<void>();
+  final Map<String, String> _values = <String, String>{};
+  bool writeCalled = false;
+  bool deleteCalled = false;
+
+  String? operator [](String key) => _values[key];
+
+  @override
+  Future<String?> read(String key) async {
+    await readGate.future;
+    return _values[key];
+  }
+
+  @override
+  Future<void> write(String key, String value) async {
+    writeCalled = true;
+    await writeGate.future;
+    _values[key] = value;
+  }
+
+  @override
+  Future<void> delete(String key) async {
+    deleteCalled = true;
+    await deleteGate.future;
+    _values.remove(key);
+  }
 }
 
 /// Lets pending fire-and-forget futures (secure read/write + prefs rewrite)
@@ -162,6 +202,127 @@ void main() {
         repo.load().apiKey,
         'sk-keep',
         reason: 'legacy plaintext fallback stays readable',
+      );
+    });
+  });
+
+  group('save ordering (v1.47.1)', () {
+    test('non-secret settings land in prefs while the secure write is still '
+        'in flight', () async {
+      final GatingSecretBox box = GatingSecretBox();
+      final SharedPreferences prefs = await prefsWith(<String, Object>{});
+      final PrefsSettingsRepository repo = PrefsSettingsRepository(
+        prefs,
+        secretBox: box,
+      );
+
+      final AppSettings settings = baseSettings(apiKey: 'secret-key')
+          .copyWith(checkUpdatesOnStart: false);
+      final Future<void> done = repo.save(settings);
+      await flushMicrotasks();
+
+      // THE regression test: the toggle is already on disk even though
+      // the Keystore write has not finished. The pre-1.47.1 order awaited
+      // the box BEFORE the prefs write, so at this point NOTHING was
+      // persisted and the change was lost on process death (the user's
+      // "toggle resets to ON after reopening the app" bug).
+      expect(box.writeCalled, isTrue);
+      final Map<String, dynamic> json =
+          jsonDecode(prefs.getString(_settingsKey)!) as Map<String, dynamic>;
+      expect(json['checkUpdatesOnStart'], isFalse);
+
+      box.writeGate.complete();
+      await done;
+
+      final Map<String, dynamic> settled =
+          jsonDecode(prefs.getString(_settingsKey)!) as Map<String, dynamic>;
+      expect(
+        settled.containsKey('apiKey'),
+        isFalse,
+        reason: 'plaintext fallback must be stripped once secured',
+      );
+      expect(repo.lastSettingsWriteError, isNull);
+    });
+
+    test(
+      'empty apiKey: prefs still land before the gated delete completes',
+      () async {
+        // The common case — no API key configured, save only deletes from
+        // the box. The settings JSON must not wait for that either.
+        final GatingSecretBox box = GatingSecretBox();
+        final SharedPreferences prefs = await prefsWith(<String, Object>{});
+        final PrefsSettingsRepository repo = PrefsSettingsRepository(
+          prefs,
+          secretBox: box,
+        );
+
+        final Future<void> done = repo.save(
+          baseSettings().copyWith(checkUpdatesOnStart: false),
+        );
+        await flushMicrotasks();
+
+        expect(box.deleteCalled, isTrue);
+        final Map<String, dynamic> json =
+            jsonDecode(prefs.getString(_settingsKey)!) as Map<String, dynamic>;
+        expect(json['checkUpdatesOnStart'], isFalse);
+
+        box.deleteGate.complete();
+        await done;
+        expect(repo.lastSettingsWriteError, isNull);
+      },
+    );
+
+    test('a throwing SecretBox still persists the toggle and keeps the key '
+        'as plaintext fallback', () async {
+      // Simulated broken Keystore: the prefs write must already have
+      // happened by the time the secure step fails.
+      final FakeSecretBox box = FakeSecretBox()..failWrite = true;
+      final SharedPreferences prefs = await prefsWith(<String, Object>{});
+      final PrefsSettingsRepository repo = PrefsSettingsRepository(
+        prefs,
+        secretBox: box,
+      );
+
+      await repo.save(
+        baseSettings(apiKey: 'sk-keep').copyWith(checkUpdatesOnStart: false),
+      );
+
+      final Map<String, dynamic> json =
+          jsonDecode(prefs.getString(_settingsKey)!) as Map<String, dynamic>;
+      expect(json['checkUpdatesOnStart'], isFalse);
+      expect(
+        json['apiKey'],
+        'sk-keep',
+        reason: 'fallback semantics: the key must not be lost',
+      );
+      expect(repo.lastSecretStorageError, contains('write failed'));
+      expect(repo.lastSettingsWriteError, isNull);
+    });
+  });
+
+  group('SettingsController.update', () {
+    test('does not throw when the repository save fails', () async {
+      final ProviderContainer container = ProviderContainer(
+        overrides: <Override>[
+          settingsRepositoryProvider.overrideWithValue(
+            ThrowingSettingsRepository(),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      await container
+          .read(settingsProvider.notifier)
+          .update(
+            container
+                .read(settingsProvider)
+                .copyWith(checkUpdatesOnStart: false),
+          );
+
+      expect(
+        container.read(settingsProvider).checkUpdatesOnStart,
+        isFalse,
+        reason: 'in-session state must apply even when persistence fails',
       );
     });
   });
@@ -394,5 +555,42 @@ void main() {
           jsonDecode(prefs.getString(_settingsKey)!) as Map<String, dynamic>;
       expect(json.containsKey('apiKey'), isFalse);
     });
+
+    test(
+      'checkUpdatesOnStart survives a full app restart (v1.47.1 regression)',
+      () async {
+        final FakeSecretBox box = FakeSecretBox();
+        final SharedPreferences prefs = await prefsWith(<String, Object>{});
+        final PrefsSettingsRepository repo = PrefsSettingsRepository(
+          prefs,
+          secretBox: box,
+        );
+
+        await repo.save(
+          baseSettings(apiKey: 'sk-rt').copyWith(checkUpdatesOnStart: false),
+        );
+
+        // "Reopen the app": a brand-new repository instance over the same
+        // store. Before the fix the toggle could reset to ON because the
+        // save had never reached the prefs JSON.
+        final PrefsSettingsRepository reopened =
+            await PrefsSettingsRepository.create(secretBox: box);
+
+        expect(
+          reopened.load().checkUpdatesOnStart,
+          isFalse,
+          reason: 'the toggle must not reset to ON after reopening the app',
+        );
+      },
+    );
   });
+}
+
+/// Repository double whose persistence always fails — drives the
+/// [SettingsController] error-swallowing contract (v1.47.1).
+class ThrowingSettingsRepository extends MemorySettingsRepository {
+  @override
+  Future<void> save(AppSettings settings) async {
+    throw Exception('disk full');
+  }
 }

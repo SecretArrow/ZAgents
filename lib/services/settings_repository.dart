@@ -80,21 +80,30 @@ class InMemorySecretBox implements SecretBox {
 /// moving preset keys is deliberately out of scope for this hardening step
 /// (the active key is the one transported into every LLM request header).
 ///
-/// Crash safety: the secure copy is ALWAYS written before the plaintext is
-/// stripped, so a crash between the two steps leaves at least one intact copy
-/// and the next [load] re-attempts the migration (idempotent). Stripping only
-/// removes a plaintext value that is byte-identical to the value confirmed in
-/// the [SecretBox], so a concurrent newer save can never be wiped by an
-/// in-flight migration.
+/// Crash safety (v1.47.1 re-ordering): the non-secret settings JSON is
+/// persisted FIRST and is never gated behind the Keystore — the previous
+/// order awaited the secure copy before writing prefs, so a process death
+/// or a slow/hung Keystore in that window silently discarded the user's
+/// change (e.g. the "check updates on start" toggle resetting to ON after
+/// reopening the app). With the new order a crash at ANY point leaves
+/// either the previous intact JSON or a new JSON whose apiKey is either
+/// already secured (and stripped, or scheduled to be stripped idempotently
+/// by the next load's migration) or covered by the legacy-migration retry.
+/// The plaintext apiKey in prefs is a transient fallback: [save] removes it
+/// only after both the prefs write and the secure copy are confirmed, by
+/// reusing [_stripApiKeyFromPrefs] (re-reads the disk JSON, strips only a
+/// byte-identical value, idempotent).
 ///
 /// Failure behaviour (trade-off): if secure storage is unavailable,
 /// [load]/[save] never throw. Reads fall back to the legacy plaintext copy in
 /// prefs (old behaviour), and saves keep the key inside the prefs JSON as a
 /// last-resort fallback instead of losing it — degrading to the pre-hardening
-/// plaintext behaviour until secure storage recovers. Every degradation is
-/// recorded in [lastSecretStorageError] with a human-readable message. One
-/// caveat: if deleting an emptied key fails, a subsequent cold start may read
-/// the stale key back from secure storage; the user can simply clear it again.
+/// plaintext behaviour until secure storage recovers. Every secure-storage
+/// degradation is recorded in [lastSecretStorageError] with a human-readable
+/// message, and a failed prefs write is recorded in [lastSettingsWriteError].
+/// One caveat: if deleting an emptied key fails, a subsequent cold start may
+/// read the stale key back from secure storage; the user can simply clear it
+/// again.
 class PrefsSettingsRepository implements SettingsRepository {
   PrefsSettingsRepository(this._prefs, {SecretBox? secretBox})
     : _secrets = secretBox ?? const FlutterSecretBox() {
@@ -127,6 +136,14 @@ class PrefsSettingsRepository implements SettingsRepository {
   /// callers/tests surface degradation ("clear message") without this file
   /// depending on UI/print facilities.
   String? lastSecretStorageError;
+
+  /// Description of the most recent failed prefs write of the settings JSON,
+  /// or null. Cleared at the start of every [save] (so after it returns, a
+  /// null value means that save persisted the JSON successfully) and set
+  /// with a human-readable message when [SharedPreferences.setString]
+  /// throws (e.g. disk full). Lets callers/tests surface degradation without
+  /// this file depending on UI/print facilities.
+  String? lastSettingsWriteError;
 
   static Future<PrefsSettingsRepository> create({SecretBox? secretBox}) async {
     final prefs = await SharedPreferences.getInstance();
@@ -168,7 +185,20 @@ class PrefsSettingsRepository implements SettingsRepository {
     final String apiKey = settings.apiKey;
     _apiKeyCache = apiKey;
     _cacheGeneration++;
+    // v1.47.1 fix: persist the settings JSON FIRST. The old order awaited
+    // the (Keystore-backed) SecretBox before the prefs write, so process
+    // death or a slow/hung Keystore in that window silently lost the change
+    // — and a throwing prefs write could not be reported either. Non-secret
+    // settings must never be gated behind secure storage.
     final Map<String, dynamic> json = settings.toJson();
+    lastSettingsWriteError = null;
+    bool prefsOk = true;
+    try {
+      await _prefs.setString(_key, jsonEncode(json));
+    } catch (error) {
+      prefsOk = false;
+      lastSettingsWriteError = 'Settings write failed for $_key: $error';
+    }
     bool secured = false;
     try {
       if (apiKey.isEmpty) {
@@ -180,13 +210,15 @@ class PrefsSettingsRepository implements SettingsRepository {
     } catch (error) {
       _recordSecretFailure('write', error);
     }
-    if (secured) {
-      // Secure copy confirmed: never keep the plaintext in prefs. When the
-      // write failed, the JSON keeps the key (pre-hardening behaviour) so it
-      // is not lost; the next load() migrates it again.
-      json.remove('apiKey');
+    if (prefsOk && secured) {
+      // Both copies confirmed: drop the transient plaintext fallback from
+      // prefs. [_stripApiKeyFromPrefs] re-reads the disk JSON and only
+      // strips a value byte-identical to the confirmed key, so it is
+      // idempotent and can never wipe a concurrent newer save. When the
+      // prefs write failed, everything is left as-is for the next
+      // save/migration instead.
+      await _stripApiKeyFromPrefs(apiKey);
     }
-    await _prefs.setString(_key, jsonEncode(json));
   }
 
   /// One-shot legacy migration: moves a plaintext apiKey out of the prefs

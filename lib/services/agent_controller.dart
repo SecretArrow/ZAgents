@@ -2,8 +2,8 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:meta/meta.dart';
 
 import '../di.dart';
 import '../l10n/app_strings.dart';
@@ -3270,6 +3270,15 @@ class SettingsController extends Notifier<AppSettings> {
 
   Future<void> update(AppSettings next) async {
     state = next;
-    await ref.read(settingsRepositoryProvider).save(next);
+    try {
+      await ref.read(settingsRepositoryProvider).save(next);
+    } catch (e) {
+      // v1.47.1: a failed persistence (e.g. disk full) must not escape —
+      // callers fire-and-forget this future, so an unhandled error would
+      // only surface as a zone issue while the UI already shows the new
+      // value. In-session state stays applied; the repository surfaces
+      // degradation via lastSettingsWriteError/lastSecretStorageError.
+      debugPrint('settings save failed: $e');
+    }
   }
 }

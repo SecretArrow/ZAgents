@@ -1083,6 +1083,11 @@ class AppSettings {
       autoTitle: autoTitle,
       appLockEnabled: appLockEnabled,
       notifyOnDone: notifyOnDone,
+      // v1.47.1 fix: this reconstruction previously dropped the field, so
+      // load() reset the toggle to the default (true) on EVERY restart —
+      // the deterministic "off again after reopening the app" bug, even
+      // when the JSON on disk was persisted correctly.
+      checkUpdatesOnStart: checkUpdatesOnStart,
       autoRetryEnabled: autoRetryEnabled,
       autoRetryAttempts: autoRetryAttempts,
       autoRetryDelay: autoRetryDelay,
