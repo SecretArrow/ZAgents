@@ -588,6 +588,20 @@ class ModuleRegistry {
         .split(Platform.pathSeparator)
         .last
         .replaceAll(RegExp(r'\.zip$', caseSensitive: false), '');
+    return installFromBytes(bytes, zipStem);
+  }
+
+  /// Installs a module from raw ZIP bytes — the shared tail of
+  /// [installFromZip] and the remote-URL installer (`ModuleRemote`,
+  /// v1.46.0). The downloaded/picked bytes funnel through the EXACT same
+  /// intake (size caps, manifest parse, zip-slip, atomic staging), so a
+  /// URL install is byte-for-byte as scrutinized as a local file install.
+  /// [zipStem] only feeds the synthesized manifest name when the archive
+  /// ships no module.json/package.json.
+  Future<ModuleInstallResult> installFromBytes(
+    List<int> bytes,
+    String zipStem,
+  ) async {
     final (
       ModuleInstallResult? error,
       Map<String, ArchiveFile>? files,
@@ -662,6 +676,30 @@ class ModuleRegistry {
       } catch (_) {}
       return ModuleInstallResult(ok: false, message: 'Install failed: $e');
     }
+  }
+
+  /// Numeric comparison of two dotted module versions (`1.10.0` vs
+  /// `1.9.0` → 1): segments compare as integers, missing segments count
+  /// as 0, non-numeric suffixes compare as strings. Returns -1/0/1.
+  /// Drives the official-catalog Update badge (v1.46.0).
+  static int compareVersions(String a, String b) {
+    final List<String> left = a.trim().split('.');
+    final List<String> right = b.trim().split('.');
+    final int len = left.length > right.length ? left.length : right.length;
+    for (int i = 0; i < len; i++) {
+      final String ls = i < left.length ? left[i] : '0';
+      final String rs = i < right.length ? right[i] : '0';
+      final int? ln = int.tryParse(ls);
+      final int? rn = int.tryParse(rs);
+      final int cmp;
+      if (ln != null && rn != null) {
+        cmp = ln.compareTo(rn);
+      } else {
+        cmp = ls.compareTo(rs);
+      }
+      if (cmp != 0) return cmp < 0 ? -1 : 1;
+    }
+    return 0;
   }
 
   /// Validates a module ZIP WITHOUT installing it — the dry-run behind

@@ -557,6 +557,23 @@ abstract class AppStrings {
   String moduleRepairInstallFailed(String error);
   String get moduleExportTooltip;
 
+  // -- Module update & remote install (v1.46.0) ---------------------------
+  String get moduleInstallFromUrl;
+  String get moduleUrlDialogTitle;
+  String get moduleUrlDialogHint;
+  String get moduleUrlDialogBody;
+  String get moduleDownload;
+  String get moduleUpdateTooltip;
+  String get moduleUpdateTitle;
+  String moduleUpdateBody(String name);
+  String get moduleUpdateFromZip;
+  String get moduleUpdateFromUrl;
+  String get moduleDownloading;
+  String get moduleSampleInstall;
+  String get moduleSampleUpdate;
+  String get moduleSampleInstalled;
+  String get moduleSampleRepoHint;
+
   // -- Module builder (/make_plugins, v1.27.0) ----------------------------
   String moduleBuildCardTitle(String name, String version);
   String moduleBuildCardBody(String permissions);
@@ -1763,6 +1780,45 @@ class AppStringsEn implements AppStrings {
       'The repaired module could not be installed: $error';
   @override
   String get moduleExportTooltip => 'Export ZIP';
+
+  // -- Module update & remote install (v1.46.0) ---------------------------
+  @override
+  String get moduleInstallFromUrl => 'Install from URL';
+  @override
+  String get moduleUrlDialogTitle => 'Install module from URL';
+  @override
+  String get moduleUrlDialogHint => 'https://example.com/module.zip';
+  @override
+  String get moduleUrlDialogBody =>
+      'The module ZIP is downloaded over HTTPS and unpacked with the same '
+      'validation as a local file. Only install modules from sources you '
+      'trust.';
+  @override
+  String get moduleDownload => 'Download & install';
+  @override
+  String get moduleUpdateTooltip => 'Update module';
+  @override
+  String get moduleUpdateTitle => 'Update module';
+  @override
+  String moduleUpdateBody(String name) =>
+      'Choose the update source for \u201c$name\u201d. Installing replaces '
+      'the module files; per-chat module data is kept.';
+  @override
+  String get moduleUpdateFromZip => 'From ZIP file';
+  @override
+  String get moduleUpdateFromUrl => 'From URL';
+  @override
+  String get moduleDownloading => 'Downloading\u2026';
+  @override
+  String get moduleSampleInstall => 'Install';
+  @override
+  String get moduleSampleUpdate => 'Update';
+  @override
+  String get moduleSampleInstalled => 'Installed';
+  @override
+  String get moduleSampleRepoHint =>
+      'One tap installs or updates a module straight from the official '
+      'samples repository.';
 
   // -- Module builder (/make_plugins) -------------------------------------
   @override
@@ -3016,6 +3072,45 @@ class AppStringsId implements AppStrings {
       'Modul hasil perbaikan gagal terpasang: $error';
   @override
   String get moduleExportTooltip => 'Ekspor ZIP';
+
+  // -- Module update & remote install (v1.46.0) ---------------------------
+  @override
+  String get moduleInstallFromUrl => 'Install dari URL';
+  @override
+  String get moduleUrlDialogTitle => 'Install modul dari URL';
+  @override
+  String get moduleUrlDialogHint => 'https://contoh.com/modul.zip';
+  @override
+  String get moduleUrlDialogBody =>
+      'ZIP modul diunduh lewat HTTPS dan dibongkar dengan validasi yang '
+      'sama seperti file lokal. Hanya install modul dari sumber yang '
+      'Anda percaya.';
+  @override
+  String get moduleDownload => 'Unduh & install';
+  @override
+  String get moduleUpdateTooltip => 'Update modul';
+  @override
+  String get moduleUpdateTitle => 'Update modul';
+  @override
+  String moduleUpdateBody(String name) =>
+      'Pilih sumber update untuk \u201c$name\u201d. Menginstall menggantikan '
+      'file modul; data modul per-chat tetap tersimpan.';
+  @override
+  String get moduleUpdateFromZip => 'Dari file ZIP';
+  @override
+  String get moduleUpdateFromUrl => 'Dari URL';
+  @override
+  String get moduleDownloading => 'Mengunduh\u2026';
+  @override
+  String get moduleSampleInstall => 'Install';
+  @override
+  String get moduleSampleUpdate => 'Update';
+  @override
+  String get moduleSampleInstalled => 'Terpasang';
+  @override
+  String get moduleSampleRepoHint =>
+      'Sekali tap langsung menginstall atau mengupdate modul dari '
+      'repositori contoh resmi.';
 
   // -- Module builder (/make_plugins) -------------------------------------
   @override

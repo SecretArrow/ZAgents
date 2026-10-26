@@ -360,6 +360,16 @@ OpenAI-compatible: **OpenRouter, InferHub, Z.AI, OpenAI, DeepSeek, Groq, dan lai
   sendiri saat run selesai — flag buka/tutup tetap global sehingga
   perpindahan langkah, akhir run, dan pindah chat tidak pernah
   menutupnya.
+- **v1.46.0 — update modul ter-install (ZIP/URL), install satu-ketukan dari repo samples, composer lega**:
+  (1) **Update modul dari ZIP maupun URL** — setiap kartu modul kini punya aksi **Update**: pilih file ZIP
+  lokal atau tempel URL HTTPS (modul resmi otomatis terisi URL zip repo); unduhan melewati intake yang sama
+  persis dengan install lokal (cap 48 MB, validasi manifest, zip-slip, staging atomik) sehingga reinstall =
+  update versi yang aman. (2) **Install dari repo samples** — katalog "Modul contoh resmi" kini AKTIF: tiap
+  baris punya tombol **Install/Update** yang mengunduh `samples/<nama>.zip` langsung dari repo GitHub
+  (probe `module.json` kecil menandai versi lebih baru tanpa mengunduh arsip penuh), plus aksi **Install dari
+  URL** di AppBar. (3) **Composer baru** — ikon lampiran, prompt library, dan dikte pindah ke toolbar di ATAS
+  kotak "Ask anything" (kiri; toggle Plan/todos di kanan yang sama), sehingga kolom teks hanya berisi field +
+  tombol kirim — area ketik jauh lebih lega.
 - **v1.45.0 — dua modul resmi baru: asisten Fanspage Facebook & asisten X/Twitter + SDK `agent.polish`**:
   (1) **SDK baru `zagents.agent.polish`** — menulis ulang template balasan menjadi SATU balasan
   sosial yang natural seperti manusia (1–3 kalimat, tanda baca normal, bahasa mengikuti

@@ -25,6 +25,7 @@ import 'services/js_runtime.dart';
 import 'services/llm_client.dart';
 import 'services/model_catalog.dart';
 import 'services/module_registry.dart';
+import 'services/module_remote.dart';
 import 'services/module_runtime.dart';
 import 'services/npm_service.dart';
 import 'services/prompt_repository.dart';
@@ -166,6 +167,12 @@ final npmServiceProvider = Provider<NpmService>(
 /// Installs/lists/removes chat modules (plugins) under `<docs>/modules`.
 final moduleRegistryProvider = Provider<ModuleRegistry>(
   (ref) => ModuleRegistry(resolveBaseDir: ref.watch(documentsDirProvider)),
+);
+
+/// v1.46.0: remote module intake — install/update from a URL and the
+/// official samples-repo catalog (one-tap install/update per sample).
+final moduleRemoteProvider = Provider<ModuleRemote>(
+  (ref) => ModuleRemote(registry: ref.watch(moduleRegistryProvider)),
 );
 
 /// v1.38.0: installs/lists/configures/removes external agent skills under

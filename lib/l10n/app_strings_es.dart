@@ -1233,6 +1233,45 @@ class AppStringsEs implements AppStrings {
   @override
   String get moduleExportTooltip => 'Exportar ZIP';
 
+  // -- Module update & remote install (v1.46.0) ---------------------------
+  @override
+  String get moduleInstallFromUrl => 'Instalar desde URL';
+  @override
+  String get moduleUrlDialogTitle => 'Instalar módulo desde URL';
+  @override
+  String get moduleUrlDialogHint => 'https://ejemplo.com/modulo.zip';
+  @override
+  String get moduleUrlDialogBody =>
+      'El ZIP del módulo se descarga por HTTPS y se desempaqueta con la '
+      'misma validación que un archivo local. Instala solo módulos de '
+      'fuentes confiables.';
+  @override
+  String get moduleDownload => 'Descargar e instalar';
+  @override
+  String get moduleUpdateTooltip => 'Actualizar módulo';
+  @override
+  String get moduleUpdateTitle => 'Actualizar módulo';
+  @override
+  String moduleUpdateBody(String name) =>
+      'Elige la fuente de actualización para \u201c$name\u201d. Instalar '
+      'reemplaza los archivos del módulo; los datos por chat se conservan.';
+  @override
+  String get moduleUpdateFromZip => 'Desde archivo ZIP';
+  @override
+  String get moduleUpdateFromUrl => 'Desde URL';
+  @override
+  String get moduleDownloading => 'Descargando\u2026';
+  @override
+  String get moduleSampleInstall => 'Instalar';
+  @override
+  String get moduleSampleUpdate => 'Actualizar';
+  @override
+  String get moduleSampleInstalled => 'Instalado';
+  @override
+  String get moduleSampleRepoHint =>
+      'Un toque instala o actualiza el módulo directamente desde el '
+      'repositorio oficial de ejemplos.';
+
   // -- Module builder (/make_plugins) -------------------------------------
   @override
   String moduleBuildCardTitle(String name, String version) =>

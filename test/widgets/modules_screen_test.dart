@@ -10,6 +10,8 @@ import 'package:zagents/ui/screens/modules_screen.dart';
 
 import '../support/test_doubles.dart';
 
+import 'package:zagents/services/module_remote.dart';
+
 /// In-memory ModuleRegistry test double: no disk IO inside the async test
 /// zone, records every mutation for assertions.
 class ScriptedModuleRegistry extends ModuleRegistry {
@@ -50,6 +52,67 @@ class ScriptedModuleRegistry extends ModuleRegistry {
   }
 }
 
+/// v1.46.0 — scripted remote intake double: no network in the widget
+/// test zone. Versions come from a map, installs return a scripted
+/// result, every call is recorded for assertions.
+class FakeModuleRemote extends ModuleRemote {
+  FakeModuleRemote({
+    required super.registry,
+    this.versions = const <String, String?>{},
+    this.installResult,
+  });
+
+  final Map<String, String?> versions;
+  ModuleInstallResult? installResult;
+  final List<String> urlCalls = <String>[];
+  final List<String> sampleCalls = <String>[];
+
+  @override
+  Future<ModuleInstallResult> installFromUrl(String url) async {
+    urlCalls.add(url);
+    return installResult ??
+        ModuleInstallResult(
+          ok: true,
+          message: 'Installed fake v1.0.0',
+          module: ChatModule(
+            manifest: ModuleManifest(
+              name: 'fake',
+              version: '1.0.0',
+              title: 'fake',
+              description: '',
+              entry: 'main.js',
+            ),
+            path: '/tmp/modules/fake',
+            installedAt: DateTime(2026, 1, 1),
+          ),
+        );
+  }
+
+  @override
+  Future<ModuleInstallResult> installSample(String name) async {
+    sampleCalls.add(name);
+    return installResult ??
+        ModuleInstallResult(
+          ok: true,
+          message: 'Updated $name v1.0.0 → v2.0.0',
+          module: ChatModule(
+            manifest: ModuleManifest(
+              name: ModuleManifest.sanitizeName(name),
+              version: '2.0.0',
+              title: name,
+              description: '',
+              entry: 'main.js',
+            ),
+            path: '/tmp/modules/$name',
+            installedAt: DateTime(2026, 1, 1),
+          ),
+        );
+  }
+
+  @override
+  Future<String?> sampleRemoteVersion(String name) async => versions[name];
+}
+
 ChatModule _module(
   String name, {
   List<ModulePermission> permissions = const <ModulePermission>[
@@ -70,11 +133,18 @@ ChatModule _module(
   );
 }
 
-Widget _host(List<Override> overrides, Directory tempDir) => ProviderScope(
+Widget _host(
+  List<Override> overrides,
+  Directory tempDir, {
+  required ModuleRemote remote,
+}) => ProviderScope(
   overrides: <Override>[
     // Full app override set (settings repo, lock, JS runtime, ...) —
     // the SDK docs viewer reads the language preference.
     ...testOverrides(dir: tempDir, writeScreenshots: false),
+    // The catalog probes/installs through this double — never the real
+    // network (tests that need scripting pass their own via [remote]).
+    moduleRemoteProvider.overrideWithValue(remote),
     ...overrides,
   ],
   child: MaterialApp(
@@ -113,9 +183,11 @@ void main() {
     registry.seed(_module('alpha'));
     registry.seed(_module('beta', permissions: <ModulePermission>[]));
     await tester.pumpWidget(
-      _host(<Override>[
-        moduleRegistryProvider.overrideWithValue(registry),
-      ], tempDir),
+      _host(
+        <Override>[moduleRegistryProvider.overrideWithValue(registry)],
+        tempDir,
+        remote: FakeModuleRemote(registry: registry),
+      ),
     );
     await tester.pumpAndSettle();
 
@@ -129,9 +201,11 @@ void main() {
     WidgetTester tester,
   ) async {
     await tester.pumpWidget(
-      _host(<Override>[
-        moduleRegistryProvider.overrideWithValue(registry),
-      ], tempDir),
+      _host(
+        <Override>[moduleRegistryProvider.overrideWithValue(registry)],
+        tempDir,
+        remote: FakeModuleRemote(registry: registry),
+      ),
     );
     await tester.pumpAndSettle();
 
@@ -144,9 +218,11 @@ void main() {
   ) async {
     registry.seed(_module('alpha'));
     await tester.pumpWidget(
-      _host(<Override>[
-        moduleRegistryProvider.overrideWithValue(registry),
-      ], tempDir),
+      _host(
+        <Override>[moduleRegistryProvider.overrideWithValue(registry)],
+        tempDir,
+        remote: FakeModuleRemote(registry: registry),
+      ),
     );
     await tester.pumpAndSettle();
 
@@ -165,9 +241,11 @@ void main() {
     WidgetTester tester,
   ) async {
     await tester.pumpWidget(
-      _host(<Override>[
-        moduleRegistryProvider.overrideWithValue(registry),
-      ], tempDir),
+      _host(
+        <Override>[moduleRegistryProvider.overrideWithValue(registry)],
+        tempDir,
+        remote: FakeModuleRemote(registry: registry),
+      ),
     );
     await tester.pumpAndSettle();
 
@@ -248,5 +326,168 @@ void main() {
     await tester.tap(find.text('go'));
     await tester.pumpAndSettle();
     expect(allowed, isTrue);
+  });
+
+  testWidgets('URL install flow: dialog hands the URL to the remote intake '
+      'and reports the failure verbatim', (WidgetTester tester) async {
+    final FakeModuleRemote remote = FakeModuleRemote(
+      registry: registry,
+      installResult: const ModuleInstallResult(
+        ok: false,
+        message: 'Only HTTPS module URLs are allowed',
+      ),
+    );
+    await tester.pumpWidget(
+      _host(
+        <Override>[moduleRegistryProvider.overrideWithValue(registry)],
+        tempDir,
+        remote: remote,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('modules-install-url')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('module-url-dialog')), findsOneWidget);
+
+    await tester.enterText(
+      find.byKey(const Key('module-url-field')),
+      'http://example.com/mod.zip',
+    );
+    await tester.tap(find.byKey(const Key('module-url-download')));
+    await tester.pumpAndSettle();
+
+    expect(remote.urlCalls, <String>['http://example.com/mod.zip']);
+    expect(
+      find.text('Install failed: Only HTTPS module URLs are allowed'),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('catalog shows Update for a newer official sample and '
+      'installs it on tap', (WidgetTester tester) async {
+    registry.seed(_module('counter'));
+    final FakeModuleRemote remote = FakeModuleRemote(
+      registry: registry,
+      // The _module() helper stamps installed modules as v2.5.0 — the
+      // remote probe must report something newer for the Update badge.
+      versions: <String, String?>{'counter': '2.6.0'},
+    );
+    await tester.pumpWidget(
+      _host(
+        <Override>[moduleRegistryProvider.overrideWithValue(registry)],
+        tempDir,
+        remote: remote,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // Tall viewport: the whole list (module card + catalog) builds at
+    // once, so no scrolling gymnastics are needed in the test zone.
+    tester.view.physicalSize = const Size(800, 3200);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.pumpAndSettle();
+
+    // counter v2.5.0 installed, remote 2.6.0 → Update accent action.
+    expect(find.byKey(const Key('sample-update-counter')), findsOneWidget);
+    await tester.tap(find.byKey(const Key('sample-update-counter')));
+    await tester.pumpAndSettle();
+
+    expect(remote.sampleCalls, <String>['counter']);
+    expect(find.text('Updated counter v1.0.0 → v2.0.0'), findsOneWidget);
+  });
+
+  testWidgets('catalog offers Install for samples that are not installed '
+      'and reports success', (WidgetTester tester) async {
+    // One unrelated install keeps the screen in LIST mode — the official
+    // catalog footer only renders alongside installed modules.
+    registry.seed(_module('alpha'));
+    final FakeModuleRemote remote = FakeModuleRemote(registry: registry);
+    await tester.pumpWidget(
+      _host(
+        <Override>[moduleRegistryProvider.overrideWithValue(registry)],
+        tempDir,
+        remote: remote,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // Tall viewport: the whole list (module card + catalog) builds at
+    // once, so no scrolling gymnastics are needed in the test zone.
+    tester.view.physicalSize = const Size(800, 3200);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('sample-install-counter')), findsOneWidget);
+    await tester.tap(find.byKey(const Key('sample-install-counter')));
+    await tester.pumpAndSettle();
+
+    expect(remote.sampleCalls, <String>['counter']);
+    // The scripted sample install reports a version-aware update — the
+    // snackbar surfaces it verbatim (same contract as the FAB intake).
+    expect(find.text('Updated counter v1.0.0 → v2.0.0'), findsOneWidget);
+  });
+
+  testWidgets('per-module update sheet: From URL prefills the official '
+      'repo ZIP for known samples', (WidgetTester tester) async {
+    registry.seed(_module('counter'));
+    await tester.pumpWidget(
+      _host(
+        <Override>[moduleRegistryProvider.overrideWithValue(registry)],
+        tempDir,
+        remote: FakeModuleRemote(registry: registry),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('module-update-counter')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('module-update-from-zip')), findsOneWidget);
+    expect(find.byKey(const Key('module-update-from-url')), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('module-update-from-url')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('module-url-dialog')), findsOneWidget);
+    final TextField field = tester.widget<TextField>(
+      find.byKey(const Key('module-url-field')),
+    );
+    expect(
+      field.controller!.text,
+      'https://raw.githubusercontent.com/SecretArrow/ZAgents/main/samples/'
+      'counter.zip',
+    );
+  });
+
+  testWidgets('per-module update sheet: From ZIP hands off to the file '
+      'picker path', (WidgetTester tester) async {
+    registry.seed(_module('counter'));
+    await tester.pumpWidget(
+      _host(
+        <Override>[moduleRegistryProvider.overrideWithValue(registry)],
+        tempDir,
+        remote: FakeModuleRemote(registry: registry),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('module-update-counter')));
+    await tester.pumpAndSettle();
+
+    // The update body names the module and BOTH intake options are
+    // offered. (The ZIP intake itself is exercised end-to-end by the
+    // registry unit tests; driving the real file picker here would hang
+    // the widget-test zone on the plugin channel.)
+    expect(find.byKey(const Key('module-update-from-zip')), findsOneWidget);
+    expect(find.byKey(const Key('module-update-from-url')), findsOneWidget);
+    expect(find.textContaining('counter'), findsWidgets);
+
+    // Dismiss the sheet via the barrier; the screen is back to idle.
+    await tester.tapAt(const Offset(20, 20));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('module-update-from-zip')), findsNothing);
   });
 }

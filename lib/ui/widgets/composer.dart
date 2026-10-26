@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../di.dart';
+import '../../services/agent_controller.dart' show ChatState;
 import '../../services/attachment_service.dart';
 import '../../services/module_registry.dart';
 import '../../services/speech_service.dart';
@@ -12,6 +13,7 @@ import '../../l10n/app_strings.dart';
 import '../../models/models.dart';
 import '../screens/modules_screen.dart';
 import '../screens/prompt_library_screen.dart';
+import 'plan_panel.dart';
 import '../theme.dart';
 
 /// Bottom composer: attachment chips, rounded input, gradient send /
@@ -625,6 +627,17 @@ class _ComposerState extends ConsumerState<Composer> {
       chatControllerProvider.select((s) => s.isLoading),
     );
     final List<ChatAttachment> pending = ref.watch(pendingAttachmentsProvider);
+    // v1.46.0: the plan show/hide toggle moves into the composer toolbar
+    // (right side) so the three tool icons sit LEFT of it, in one row
+    // ABOVE the text field — the text row itself now holds only the
+    // field and the send/stop button, i.e. maximum typing width. The
+    // same global [planPanelOpenProvider] drives it, so it stays in sync
+    // with the thinking-footer eye: while a run streams the inline
+    // footer panel toggles, when idle the pinned top panel does.
+    final bool hasPlan = ref.watch(
+      chatControllerProvider.select((ChatState s) => s.todos.isNotEmpty),
+    );
+    final bool planOpen = ref.watch(planPanelOpenProvider);
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 4, 12, 12),
       child: Column(
@@ -695,8 +708,11 @@ class _ComposerState extends ConsumerState<Composer> {
                 ],
               ),
             ),
+          // v1.46.0 — composer TOOLBAR: attach / prompt library / mic on
+          // the left, the Plan show/hide eye on the right (only when the
+          // displayed chat actually has a plan). Everything else moved
+          // OUT of the text row so the "Ask anything" column is wide.
           Row(
-            crossAxisAlignment: CrossAxisAlignment.end,
             children: <Widget>[
               IconButton(
                 key: const Key('attach-button'),
@@ -725,6 +741,27 @@ class _ComposerState extends ConsumerState<Composer> {
                   color: _listening ? const Color(0xFFE5484D) : context.zMuted,
                 ),
               ),
+              const Spacer(),
+              if (hasPlan)
+                IconButton(
+                  key: const Key('composer-plan-toggle'),
+                  tooltip: planOpen
+                      ? strings.hidePlanTooltip
+                      : strings.showPlanTooltip,
+                  visualDensity: VisualDensity.compact,
+                  icon: Icon(
+                    planOpen
+                        ? Icons.visibility_off_outlined
+                        : Icons.visibility_outlined,
+                    color: context.zMuted,
+                  ),
+                  onPressed: () => togglePlanPanel(ref),
+                ),
+            ],
+          ),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: <Widget>[
               Expanded(
                 child: TextField(
                   key: const Key('composer-field'),
