@@ -557,6 +557,11 @@ abstract class AppStrings {
   String moduleRepairInstallFailed(String error);
   String get moduleExportTooltip;
 
+  // -- Module export dialog (v1.47.0) --------------------------------------
+  String get moduleExportTitle;
+  String get moduleExportHint;
+  String get moduleExportAction;
+
   // -- Module update & remote install (v1.46.0) ---------------------------
   String get moduleInstallFromUrl;
   String get moduleUrlDialogTitle;
@@ -1780,6 +1785,16 @@ class AppStringsEn implements AppStrings {
       'The repaired module could not be installed: $error';
   @override
   String get moduleExportTooltip => 'Export ZIP';
+
+  // -- Module export dialog (v1.47.0) --------------------------------------
+  @override
+  String get moduleExportTitle => 'Export module';
+  @override
+  String get moduleExportHint =>
+      'Saved as a fresh, installable ZIP — no accounts, sessions or chat '
+      'data are included. File name:';
+  @override
+  String get moduleExportAction => 'Export';
 
   // -- Module update & remote install (v1.46.0) ---------------------------
   @override
@@ -3072,6 +3087,16 @@ class AppStringsId implements AppStrings {
       'Modul hasil perbaikan gagal terpasang: $error';
   @override
   String get moduleExportTooltip => 'Ekspor ZIP';
+
+  // -- Module export dialog (v1.47.0) --------------------------------------
+  @override
+  String get moduleExportTitle => 'Ekspor modul';
+  @override
+  String get moduleExportHint =>
+      'Disimpan sebagai ZIP baru yang siap dipasang — tanpa akun, sesi, '
+      'atau data chat apa pun. Nama file:';
+  @override
+  String get moduleExportAction => 'Ekspor';
 
   // -- Module update & remote install (v1.46.0) ---------------------------
   @override

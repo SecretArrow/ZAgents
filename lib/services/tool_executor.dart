@@ -1824,7 +1824,10 @@ return commits.length + ' commit(s)';
     if (module == null) {
       return ToolResult(ok: false, llmOutput: 'Module not installed: $name');
     }
-    final String fileName = '${module.name}-v${module.manifest.version}.zip';
+    final String fileName = ModuleRegistry.presetZipFileName(
+      module.name,
+      module.manifest.version,
+    );
     final String target =
         '${base.path}${Platform.pathSeparator}exports'
         '${Platform.pathSeparator}$fileName';

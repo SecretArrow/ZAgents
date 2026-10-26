@@ -579,6 +579,137 @@ void main() {
     });
   });
 
+  group('exportToZip freshness filter (v1.47.0 source-only export)', () {
+    /// Installs the `freshy` module and plants stray runtime data INSIDE
+    /// the installed module directory — the legacy-install situation the
+    /// freshness filter must defend against (per-chat state now lives in
+    /// the session sandbox, but old installs may still carry it in-place).
+    Future<Directory> installFreshyWithRuntimeData() async {
+      final File zip =
+          File('${tempDir.path}${Platform.pathSeparator}freshy.zip')
+            ..writeAsBytesSync(
+              textZip(<String, String>{
+                'module.json':
+                    '{"name":"freshy","version":"2.1.0","entry":"main.js"}',
+                'main.js': 'module.exports = "hi";',
+                'README.md': '# freshy',
+              }),
+            );
+      final ModuleInstallResult install = await registry.installFromZip(
+        zip.path,
+      );
+      expect(install.ok, isTrue, reason: install.message);
+      final Directory moduleDir = Directory(
+        '${(await registry.modulesDir()).path}'
+        '${Platform.pathSeparator}freshy',
+      );
+      expect(moduleDir.existsSync(), isTrue);
+      void plant(String rel, String content) {
+        final File f = File(
+          '${moduleDir.path}${Platform.pathSeparator}'
+          '${rel.replaceAll('/', Platform.pathSeparator)}',
+        );
+        f.parent.createSync(recursive: true);
+        f.writeAsStringSync(content);
+      }
+
+      plant('state/storage.json', '{"token":"secret"}');
+      plant('debug.log', 'log line');
+      plant('cache.db', 'junk bytes');
+      plant('node_modules/dep.js', 'module.exports = 1;');
+      // Hidden junk is dropped by the PRE-EXISTING hidden rule — it must
+      // NOT be counted by the runtime-data counter below.
+      plant('.hidden.txt', 'secret');
+      return moduleDir;
+    }
+
+    test(
+      'fresh export keeps source files only and counts excluded runtime data',
+      () async {
+        await installFreshyWithRuntimeData();
+        final String target =
+            '${tempDir.path}${Platform.pathSeparator}out'
+            '${Platform.pathSeparator}freshy.zip';
+        final ModuleExportResult result = await registry.exportToZip(
+          'freshy',
+          target,
+        );
+        expect(result.ok, isTrue, reason: result.message);
+        // Exactly 4 runtime-data files were skipped (state/storage.json,
+        // debug.log, cache.db, node_modules/dep.js). `.hidden.txt` is
+        // dropped by the pre-existing hidden rule and stays OUT of the
+        // runtime-data counter.
+        expect(
+          result.message,
+          'Exported freshy v2.1.0 (3 files, 4 runtime-data files excluded)',
+        );
+        expect(result.fileCount, 3);
+        final Archive exported = ZipDecoder().decodeBytes(
+          File(target).readAsBytesSync(),
+        );
+        final Set<String> names = <String>{
+          for (final ArchiveFile f in exported) f.name,
+        };
+        expect(names, <String>{'module.json', 'main.js', 'README.md'});
+      },
+    );
+
+    test('presetZipFileName builds the <name>-v<version>.zip preset', () {
+      expect(
+        ModuleRegistry.presetZipFileName('rss-reader', '1.3.0'),
+        'rss-reader-v1.3.0.zip',
+      );
+    });
+
+    test('export → reinstall round-trip preserves the version', () async {
+      final ModuleInstallResult install = await registry.installFromBytes(
+        textZip(<String, String>{
+          'module.json': '{"name":"roundtrip","version":"3.2.1"}',
+          'main.js': 'module.exports = 1;',
+        }),
+        'roundtrip',
+      );
+      expect(install.ok, isTrue, reason: install.message);
+      final String target =
+          '${tempDir.path}${Platform.pathSeparator}out'
+          '${Platform.pathSeparator}'
+          '${ModuleRegistry.presetZipFileName('roundtrip', '3.2.1')}';
+      final ModuleExportResult result = await registry.exportToZip(
+        'roundtrip',
+        target,
+      );
+      expect(result.ok, isTrue, reason: result.message);
+      // Nothing was planted → no runtime-data note in the message.
+      expect(result.message, 'Exported roundtrip v3.2.1 (2 files)');
+      final ModuleInstallResult reinstall = await registry.installFromZip(
+        target,
+      );
+      expect(reinstall.ok, isTrue, reason: reinstall.message);
+      final ChatModule? module = await registry.get('roundtrip');
+      expect(module, isNotNull);
+      expect(module!.manifest.version, '3.2.1');
+    });
+
+    test('directory with only runtime data reports no source files', () async {
+      final Directory moduleDir = await installFreshyWithRuntimeData();
+      // Strip the source files so ONLY runtime data remains.
+      for (final String rel in <String>[
+        'module.json',
+        'main.js',
+        'README.md',
+      ]) {
+        final File f = File('${moduleDir.path}${Platform.pathSeparator}$rel');
+        if (f.existsSync()) f.deleteSync();
+      }
+      final ModuleExportResult result = await registry.exportToZip(
+        'freshy',
+        '${tempDir.path}${Platform.pathSeparator}none.zip',
+      );
+      expect(result.ok, isFalse);
+      expect(result.message, 'Module directory contains no source files');
+    });
+  });
+
   group('readModuleFile (read-only doctor access)', () {
     Future<void> installFixture() async {
       final File zip =

@@ -360,6 +360,15 @@ OpenAI-compatible: **OpenRouter, InferHub, Z.AI, OpenAI, DeepSeek, Groq, dan lai
   sendiri saat run selesai — flag buka/tutup tetap global sehingga
   perpindahan langkah, akhir run, dan pindah chat tidak pernah
   menutupnya.
+- **v1.47.0 — ekspor modul fresh ke ZIP, nama file preset + bebas rename**: aksi **Export** pada tiap kartu
+  modul kini membuka dialog nama file yang terisi preset `<nama>-v<versi>.zip` dan boleh diganti sebelum
+  disimpan (karakter ilegal dibersihkan, akhiran `.zip` dijaga, kosong → kembali ke preset). Arsipnya
+  dijamin FRESH — hanya berkas sumber modul (module.json, entry JS, aset); data runtime (`state/`,
+  `storage.json`, `node_modules/`, `*.db/*.sqlite/*.log/*.session/*.tmp`) dan berkas tersembunyi otomatis
+  dikecualikan, sehingga ZIP hasil ekspor tidak pernah membawa akun/sesi/data chat apa pun dan langsung
+  bisa di-install ulang lewat jalur install biasa. Tujuan simpan tetap lewat share sheet Android. Alat
+  agent `module_export` ikut memakai nama preset yang sama. (Acuan pengujian mengikuti checklist skill
+  `testing-setup` & prinsip least-privilege sharing dari repo android/skills.)
 - **v1.46.0 — update modul ter-install (ZIP/URL), install satu-ketukan dari repo samples, composer lega**:
   (1) **Update modul dari ZIP maupun URL** — setiap kartu modul kini punya aksi **Update**: pilih file ZIP
   lokal atau tempel URL HTTPS (modul resmi otomatis terisi URL zip repo); unduhan melewati intake yang sama

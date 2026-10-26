@@ -881,11 +881,25 @@ class ModuleRegistry {
     return (null, files, manifest);
   }
 
+  /// Preset file name for exporting a module: `<name>-v<version>.zip`.
+  /// The Modules screen pre-fills this into the rename dialog (the user
+  /// may edit it before saving).
+  static String presetZipFileName(String name, String version) =>
+      '$name-v$version.zip';
+
   /// Exports an installed module directory into a ZIP archive at
-  /// [targetPath] (absolute). The module root becomes the zip root —
-  /// the exact layout [installFromZip] consumes, so an export can be
-  /// re-installed (or edited and re-installed) directly. Used by the
-  /// Modules screen (share sheet) and the agent's `module_export` tool.
+  /// [targetPath] (absolute).
+  ///
+  /// The archive is FRESH and source-only (v1.47.0): besides hidden
+  /// entries, RUNTIME DATA is excluded — per-chat `state/`, npm
+  /// `node_modules/`, `storage.json`, databases (`*.db`/`*.sqlite*`),
+  /// logs, sessions, temp files and OS junk (`.DS_Store`, `Thumbs.db`) —
+  /// so the zip never carries accounts, sessions or module data, even
+  /// for legacy installs that kept such files inside the module
+  /// directory. The module root becomes the zip root — the exact layout
+  /// [installFromZip] consumes, so an export can be re-installed (or
+  /// edited and re-installed) directly. Used by the Modules screen
+  /// (share sheet) and the agent's `module_export` tool.
   Future<ModuleExportResult> exportToZip(String name, String targetPath) async {
     final ChatModule? module = await get(name);
     if (module == null) {
@@ -904,6 +918,7 @@ class ModuleRegistry {
     try {
       final Archive archive = Archive();
       int count = 0;
+      int skipped = 0;
       await for (final FileSystemEntity entity in dir.list(
         recursive: true,
         followLinks: false,
@@ -914,30 +929,66 @@ class ModuleRegistry {
             .replaceAll(Platform.pathSeparator, '/')
             .replaceFirst(RegExp(r'^/'), '');
         if (rel.isEmpty || rel.startsWith('.')) continue;
+        if (_isRuntimeDataPath(rel)) {
+          skipped++;
+          continue;
+        }
         final List<int> bytes = await entity.readAsBytes();
         archive.addFile(ArchiveFile(rel, bytes.length, bytes));
         count++;
       }
       if (count == 0) {
-        return const ModuleExportResult(
+        return ModuleExportResult(
           ok: false,
-          message: 'Module directory is empty',
+          message: skipped > 0
+              ? 'Module directory contains no source files'
+              : 'Module directory is empty',
         );
       }
       final File target = File(targetPath);
       await target.parent.create(recursive: true);
       await target.writeAsBytes(ZipEncoder().encode(archive));
+      final String skipNote = skipped > 0
+          ? ', $skipped runtime-data files excluded'
+          : '';
       return ModuleExportResult(
         ok: true,
         message:
             'Exported ${module.name} v${module.manifest.version} '
-            '($count files)',
+            '($count files$skipNote)',
         zipPath: target.path,
         fileCount: count,
       );
     } catch (e) {
       return ModuleExportResult(ok: false, message: 'Export failed: $e');
     }
+  }
+
+  /// True when [rel] (forward-slash relative path inside a module
+  /// directory, compared case-insensitively) is RUNTIME DATA rather
+  /// than distributable source: per-chat state, npm dependencies,
+  /// databases, logs, sessions, temp files and OS junk. The freshness
+  /// filter behind [exportToZip] — an exported zip must never carry
+  /// accounts, sessions or module data. Hidden entries never reach this
+  /// check (dropped earlier by the generic hidden-file rule).
+  static bool _isRuntimeDataPath(String rel) {
+    final String p = rel.toLowerCase();
+    final String base = p.split('/').last;
+    if (base == 'state' || base == 'storage.json') return true;
+    if (p.startsWith('state/') || p.startsWith('node_modules/')) return true;
+    const Set<String> runtimeExtensions = <String>{
+      '.db',
+      '.sqlite',
+      '.sqlite3',
+      '.log',
+      '.session',
+      '.tmp',
+    };
+    for (final String ext in runtimeExtensions) {
+      if (p.endsWith(ext)) return true;
+    }
+    const Set<String> osJunkNames = <String>{'.ds_store', 'thumbs.db'};
+    return osJunkNames.contains(base);
   }
 
   /// Read-only file access into an INSTALLED module's directory — the

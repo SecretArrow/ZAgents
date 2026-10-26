@@ -1233,6 +1233,16 @@ class AppStringsEs implements AppStrings {
   @override
   String get moduleExportTooltip => 'Exportar ZIP';
 
+  // -- Module export dialog (v1.47.0) --------------------------------------
+  @override
+  String get moduleExportTitle => 'Exportar módulo';
+  @override
+  String get moduleExportHint =>
+      'Se guarda como un ZIP nuevo instalable — sin cuentas, sesiones ni '
+      'datos de chat. Nombre del archivo:';
+  @override
+  String get moduleExportAction => 'Exportar';
+
   // -- Module update & remote install (v1.46.0) ---------------------------
   @override
   String get moduleInstallFromUrl => 'Instalar desde URL';

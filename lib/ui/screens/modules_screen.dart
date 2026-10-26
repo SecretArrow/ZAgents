@@ -78,6 +78,33 @@ class ModulesScreen extends ConsumerStatefulWidget {
     );
     return allowed ?? false;
   }
+
+  /// v1.47.0 — sanitizes a user-entered export file name. The rename
+  /// dialog hands raw text over; the file system must only ever see a
+  /// flat, portable name:
+  ///
+  /// 1. trim whitespace;
+  /// 2. REMOVE every character outside `A-Z a-z 0-9 . _ -` and space —
+  ///    no replacement, so `my ../module:name` becomes `my ..modulename`;
+  /// 3. collapse space/dot runs at the EDGES so the name never starts or
+  ///    ends with a dot or space (hidden-file/traversal lookalikes and
+  ///    runs stranded by step 2); internal spaces/dots are kept as typed
+  ///    — harmless inside a single flat file name with no separators;
+  /// 4. empty, `.` or `..` → [fallback] (the preset name);
+  /// 5. cap the base name at 120 characters (edge-collapsed again — the
+  ///    `.zip` suffix may extend the final name to 124);
+  /// 6. append `.zip` when the name does not already end with it
+  ///    (case-insensitive check; the user's casing is kept).
+  static String sanitizeExportFileName(String input, String fallback) {
+    String name = input.trim().replaceAll(RegExp(r'[^A-Za-z0-9._ -]'), '');
+    name = name.replaceAll(RegExp(r'^[.\s]+|[.\s]+$'), '');
+    if (name.isEmpty || name == '.' || name == '..') return fallback;
+    if (name.length > 120) name = name.substring(0, 120);
+    name = name.replaceAll(RegExp(r'^[.\s]+|[.\s]+$'), '');
+    if (name.isEmpty || name == '.' || name == '..') return fallback;
+    if (!name.toLowerCase().endsWith('.zip')) name = '$name.zip';
+    return name;
+  }
 }
 
 class _ModulesScreenState extends ConsumerState<ModulesScreen> {
@@ -310,17 +337,97 @@ class _ModulesScreenState extends ConsumerState<ModulesScreen> {
     if (navigator.canPop()) navigator.pop();
   }
 
-  /// Exports the module as an installable ZIP (module root = zip root)
-  /// into `<docs>/modules-export/` and opens the share sheet so the user
-  /// can save or send it. The archive re-installs via the normal path.
+  /// v1.47.0 — two-step export. Step 1: a rename dialog runs BEFORE any
+  /// byte is written — the field is pre-filled with the preset file name
+  /// ([ModuleRegistry.presetZipFileName]) and fully selected on focus, so
+  /// the user can rename the archive or accept it as-is. Step 2: the
+  /// entered name is sanitized ([sanitizeExportFileName]) and the fresh,
+  /// installable ZIP (module root = zip root, no account/session/chat
+  /// data) is written into `<docs>/modules-export/` and handed to the
+  /// share sheet. The archive re-installs via the normal path.
   Future<void> _export(ChatModule module) async {
     final AppStrings strings = stringsOf(context);
+    final String preset = ModuleRegistry.presetZipFileName(
+      module.name,
+      module.manifest.version,
+    );
+    final TextEditingController nameController = TextEditingController(
+      text: preset,
+    );
+    // Select the whole prefill when the field gains focus — typing then
+    // replaces the preset cleanly instead of inserting mid-name.
+    final FocusNode nameFocus = FocusNode();
+    nameFocus.addListener(() {
+      if (nameFocus.hasFocus) {
+        nameController.selection = TextSelection(
+          baseOffset: 0,
+          extentOffset: nameController.text.length,
+        );
+      }
+    });
+    // Captured by the dialog builder; the preset is always exportable.
+    bool canExport = preset.trim().isNotEmpty;
     try {
+      final String? chosen = await showDialog<String>(
+        context: context,
+        builder: (BuildContext dialogContext) => StatefulBuilder(
+          builder:
+              (
+                BuildContext builderContext,
+                void Function(VoidCallback) setDialogState,
+              ) => AlertDialog(
+                key: const Key('module-export-dialog'),
+                title: Text(strings.moduleExportTitle),
+                content: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text(
+                      strings.moduleExportHint,
+                      style: const TextStyle(fontSize: 13),
+                    ),
+                    const SizedBox(height: 10),
+                    TextField(
+                      key: const Key('module-export-name-field'),
+                      controller: nameController,
+                      focusNode: nameFocus,
+                      autofocus: true,
+                      autocorrect: false,
+                      enableSuggestions: false,
+                      onChanged: (String text) => setDialogState(
+                        () => canExport = text.trim().isNotEmpty,
+                      ),
+                    ),
+                  ],
+                ),
+                actions: <Widget>[
+                  TextButton(
+                    onPressed: () => Navigator.of(dialogContext).pop(),
+                    child: Text(strings.cancel),
+                  ),
+                  FilledButton(
+                    key: const Key('module-export-confirm'),
+                    onPressed: canExport
+                        ? () =>
+                              Navigator.of(dialogContext)
+                                  .pop(nameController.text)
+                        : null,
+                    child: Text(strings.moduleExportAction),
+                  ),
+                ],
+              ),
+        ),
+      );
+      if (chosen == null) return; // cancelled / dismissed
+      final String fileName = ModulesScreen.sanitizeExportFileName(
+        chosen,
+        preset,
+      );
+      if (!mounted) return;
       final Directory base = await ref.read(documentsDirProvider)();
       final String target =
           '${base.path}${Platform.pathSeparator}modules-export'
-          '${Platform.pathSeparator}'
-          '${module.name}-v${module.manifest.version}.zip';
+          '${Platform.pathSeparator}$fileName';
       final ModuleExportResult result = await ref
           .read(moduleRegistryProvider)
           .exportToZip(module.name, target);
@@ -339,6 +446,9 @@ class _ModulesScreenState extends ConsumerState<ModulesScreen> {
       ScaffoldMessenger.of(context)
         ..hideCurrentSnackBar()
         ..showSnackBar(SnackBar(content: Text(strings.operationFailed)));
+    } finally {
+      nameController.dispose();
+      nameFocus.dispose();
     }
   }
 

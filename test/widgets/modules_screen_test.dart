@@ -22,6 +22,13 @@ class ScriptedModuleRegistry extends ModuleRegistry {
   final List<String> removed = <String>[];
   final List<String> installAttempts = <String>[];
 
+  /// v1.47.0 — export targets recorded in call order; [exportResult]
+  /// scripts the outcome (defaults to a successful export). No disk IO
+  /// happens: the share sheet path then fails in the test zone and is
+  /// swallowed by the screen's failure snack.
+  final List<String> exportCalls = <String>[];
+  ModuleExportResult? exportResult;
+
   void seed(ChatModule module) => modules[module.name] = module;
 
   @override
@@ -49,6 +56,18 @@ class ScriptedModuleRegistry extends ModuleRegistry {
   Future<ModuleInstallResult> installFromZip(String zipPath) async {
     installAttempts.add(zipPath);
     return ModuleInstallResult(ok: false, message: 'not scripted');
+  }
+
+  @override
+  Future<ModuleExportResult> exportToZip(String name, String targetPath) async {
+    exportCalls.add(targetPath);
+    return exportResult ??
+        ModuleExportResult(
+          ok: true,
+          message: 'Exported $name (scripted)',
+          zipPath: targetPath,
+          fileCount: 1,
+        );
   }
 }
 
@@ -489,5 +508,115 @@ void main() {
     await tester.tapAt(const Offset(20, 20));
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('module-update-from-zip')), findsNothing);
+  });
+
+  group('export flow (v1.47.0)', () {
+    Future<void> openExportDialog(WidgetTester tester) async {
+      registry.seed(_module('counter'));
+      await tester.pumpWidget(
+        _host(
+          <Override>[moduleRegistryProvider.overrideWithValue(registry)],
+          tempDir,
+          remote: FakeModuleRemote(registry: registry),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('module-export-counter')));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('rename dialog appears before any write, prefilled with the '
+        'preset name and the freshness hint', (WidgetTester tester) async {
+      await openExportDialog(tester);
+
+      expect(find.byKey(const Key('module-export-dialog')), findsOneWidget);
+      final TextField field = tester.widget<TextField>(
+        find.byKey(const Key('module-export-name-field')),
+      );
+      // ModuleRegistry.presetZipFileName('counter', '2.5.0').
+      expect(field.controller!.text, 'counter-v2.5.0.zip');
+      expect(find.textContaining('fresh, installable ZIP'), findsOneWidget);
+      // Nothing is written before the user confirms.
+      expect(registry.exportCalls, isEmpty);
+    });
+
+    testWidgets('renamed export: the recorded target ends with the user '
+        'file name', (WidgetTester tester) async {
+      await openExportDialog(tester);
+
+      // The prefill is fully selected on focus, so entering text replaces
+      // it — appending -backup yields the renamed archive.
+      await tester.enterText(
+        find.byKey(const Key('module-export-name-field')),
+        'counter-v2.5.0-backup.zip',
+      );
+      await tester.pump();
+      await tester.tap(find.byKey(const Key('module-export-confirm')));
+      await tester.pumpAndSettle();
+
+      expect(registry.exportCalls, hasLength(1));
+      expect(
+        registry.exportCalls.single,
+        endsWith('counter-v2.5.0-backup.zip'),
+      );
+      expect(find.byKey(const Key('module-export-dialog')), findsNothing);
+    });
+
+    testWidgets('sanitizer: illegal characters are REMOVED, not replaced — '
+        'my ../module:name becomes my ..modulename.zip', (
+      WidgetTester tester,
+    ) async {
+      await openExportDialog(tester);
+
+      await tester.enterText(
+        find.byKey(const Key('module-export-name-field')),
+        'my ../module:name',
+      );
+      await tester.pump();
+      await tester.tap(find.byKey(const Key('module-export-confirm')));
+      await tester.pumpAndSettle();
+
+      // '/' and ':' are stripped; the interior '..' and space survive
+      // (harmless inside one flat file name); '.zip' is appended.
+      expect(registry.exportCalls.single, endsWith('my ..modulename.zip'));
+    });
+
+    testWidgets('sanitizer: dot-only names fall back to the preset', (
+      WidgetTester tester,
+    ) async {
+      await openExportDialog(tester);
+
+      await tester.enterText(
+        find.byKey(const Key('module-export-name-field')),
+        '..',
+      );
+      await tester.pump();
+      await tester.tap(find.byKey(const Key('module-export-confirm')));
+      await tester.pumpAndSettle();
+
+      expect(registry.exportCalls.single, endsWith('counter-v2.5.0.zip'));
+    });
+
+    testWidgets('empty name disables the Export action and keeps the dialog '
+        'open', (WidgetTester tester) async {
+      await openExportDialog(tester);
+
+      await tester.enterText(
+        find.byKey(const Key('module-export-name-field')),
+        '   ',
+      );
+      await tester.pump();
+
+      final FilledButton confirm = tester.widget<FilledButton>(
+        find.byKey(const Key('module-export-confirm')),
+      );
+      expect(confirm.onPressed, isNull);
+
+      // Tapping the disabled action changes nothing.
+      await tester.tap(find.byKey(const Key('module-export-confirm')));
+      await tester.pumpAndSettle();
+      expect(registry.exportCalls, isEmpty);
+      expect(find.byKey(const Key('module-export-dialog')), findsOneWidget);
+    });
   });
 }
