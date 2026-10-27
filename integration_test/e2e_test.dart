@@ -120,18 +120,15 @@ void main() {
     // 2. Drive the run to completion with a BOUNDED predicate loop.
     // v1.49 lesson (mirrors the module e2e tests): the run's real IO
     // (session persistence, screenshot bytes) only progresses inside
-    // tester.runAsync, and a bare pumpAndSettle can return while the
-    // agent loop is awaiting it — before any tool card is rendered.
-    // The loop interleaves frame settling with short real-async windows
-    // and exits as soon as the LAST expected artifact (final answer) is
-    // visible; it can never hang.
+    // tester.runAsync, and the thinking spinner keeps scheduling frames
+    // for the whole run — pumpAndSettle would either return too early
+    // (bare pump) or throw "timed out" (never-settling spinner). A plain
+    // pump() cannot time out, advances the fake clock, and the interleaved
+    // runAsync windows let real IO progress; the loop exits as soon as
+    // the LAST expected artifact (final answer) is visible.
     bool done = false;
     for (int i = 0; i < 60 && !done; i++) {
-      await tester.pumpAndSettle(
-        const Duration(milliseconds: 100),
-        EnginePhase.sendSemanticsUpdate,
-        const Duration(seconds: 2),
-      );
+      await tester.pump(const Duration(milliseconds: 200));
       done =
           find.text('browser_navigate').evaluate().isNotEmpty &&
           find.text('node_run').evaluate().isNotEmpty &&

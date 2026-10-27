@@ -360,6 +360,39 @@ OpenAI-compatible: **OpenRouter, InferHub, Z.AI, OpenAI, DeepSeek, Groq, dan lai
   sendiri saat run selesai — flag buka/tutup tetap global sehingga
   perpindahan langkah, akhir run, dan pindah chat tidak pernah
   menutupnya.
+- **v1.49.0 — Skills Manager, browser multi-context, todo blocked/depends_on, AgentRouter & dompet
+  agentic Binance**: gelombang upgrade besar aplikasi agent. (1) **Skills Manager penuh** (Settings →
+  Skills): browse/cari skill terpasang + katalog bundled, install dari URL/GitHub shorthand/ZIP,
+  enable/disable per skill, konfigurasi field per skill dengan **secret terenkripsi** (FlutterSecretBox;
+  nilai secret disamarkan `••••` di UI dan tidak pernah muncul utuh di log), inspect isi skill
+  (SKILL.md + file pendukung), update & uninstall dengan konfirmasi; sheet selector skill yang dapat
+  dicari untuk chat. (2) **Skill per-chat yang benar-benar memengaruhi eksekusi**: ikon skills baru di
+  composer (tepat KIRI ikon upload) membuka multi-select skill; pilihan tersimpan per-chat (terisolasi
+  antar chat, persisten), dan system prompt agent hanya mengiklankan skill yang dipilih di chat itu —
+  tanpa pilihan, perilaku global default tetap. `skill_run` kini menolak skill yang disabled dan
+  memberikan nilai secret ASLI ke skill (reveal saat eksekusi, tetap tak pernah di-log). (3) **Browser
+  multi-context bernama**: `browser_context_create/list/close` + parameter context pada
+  `browser_navigate` — hingga 4 context terisolasi per chat (slot LRU, context persistent tersimpan di
+  `<sandbox>/browser_contexts/<nama>.json`, cookie jar dilepas saat evict, nama valid `[a-z0-9][a-z0-9_-]{0,31}`),
+  dengan error kontrak yang jujur (nama invalid/duplikat/unknown). (4) **Todo blocked + depends_on**:
+  status baru `blocked` dengan alasan (maks 200 char) dan ketergantungan antar-item (maks 10 id),
+  kontrak verify-before-complete di prompt plan-first, nudge blocked-aware, UI kartu plan menampilkan
+  ikon blocked + alasan + deps. (5) **Provider AgentRouter (https://agentrouter.org)**: preset bawaan
+  baru dengan base `https://agentrouter.org/v1` protokol Anthropic Messages, daftar model dinamis dari
+  server (tanpa hardcode), transport `POST /messages` (streaming, system prompt, tool calling/results,
+  `max_tokens` wajib) dengan **probing protokol otomatis** — bila server menjawab 404/405 atau
+  OpenAI-shaped, beralih sendiri ke transport OpenAI-compatible tanpa duplikasi output; error auth/API
+  Anthropic asli tetap dipertahankan; identitas klien `User-Agent: claude-cli/1.0.60 (external, cli)`
+  HANYA untuk host `agentrouter.org` + subdomain sah (validasi hostname-boundary ketat, provider lain
+  tidak tersentuh); header `x-api-key` + `Authorization: Bearer` + `anthropic-version: 2023-06-01`;
+  API key aman dan tidak pernah di-log. +715 baris unit test AgentRouter. (6) **Modul agentic-wallet
+  (`/aw`)** — companion resmi Binance Agentic Wallet yang jujur: policy/bookkeeping murni per-chat
+  (pairing dua-langkah, limit harian, registry token BSC/ETH/Arbitrum/Base dengan checksum EIP-55,
+  draf spend → `request_confirmation` → history, reset dua-langkah) TANPA kunci, tanpa signing, tanpa
+  jaringan — eksekusi dana selalu di aplikasi/web resmi Binance oleh user; bundled skill
+  `binance-agentic-wallet` direfresh dan CLI `baw` didokumentasikan tidak runnable on-device (butuh
+  Node native). (7) Test: total suite CI 1.1k+ kasus hijau (unit 3 shard), termasuk +24 test browser
+  context, +33 test skills, +39 test hub/wave-2.
 - **v1.48.1 — Plan (todos) kini selalu ter-update setiap task selesai**: (1) **Perbaikan bug: plan tidak
   lagi terhapus oleh todo_write yang gagal** — sebelumnya satu todo_write kosong/argumen rusak langsung
   menghapus rencana berjalan di UI, mematikan nudge, bahkan menimpa JSON plan yang benar di disk; kini
