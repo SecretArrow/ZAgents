@@ -1148,7 +1148,7 @@ class AppStringsEn implements AppStrings {
   @override
   String get planTitle => 'Plan';
   @override
-  String planProgress(int done, int total) => '$done/$total done';
+  String planProgress(int done, int total) => '$done of $total done';
   @override
   String get showPlanTooltip => 'Show plan';
   @override
@@ -2455,7 +2455,7 @@ class AppStringsId implements AppStrings {
   @override
   String get planTitle => 'Rencana';
   @override
-  String planProgress(int done, int total) => '$done/$total selesai';
+  String planProgress(int done, int total) => '$done dari $total selesai';
   @override
   String get showPlanTooltip => 'Tampilkan rencana';
   @override

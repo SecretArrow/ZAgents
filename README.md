@@ -360,6 +360,21 @@ OpenAI-compatible: **OpenRouter, InferHub, Z.AI, OpenAI, DeepSeek, Groq, dan lai
   sendiri saat run selesai — flag buka/tutup tetap global sehingga
   perpindahan langkah, akhir run, dan pindah chat tidak pernah
   menutupnya.
+- **v1.48.1 — Plan (todos) kini selalu ter-update setiap task selesai**: (1) **Perbaikan bug: plan tidak
+  lagi terhapus oleh todo_write yang gagal** — sebelumnya satu todo_write kosong/argumen rusak langsung
+  menghapus rencana berjalan di UI, mematikan nudge, bahkan menimpa JSON plan yang benar di disk; kini
+  status plan hanya ditimpa oleh todo_write yang SUKSES dan berisi daftar valid. (2) **Penegakan update
+  per task** — prompt plan-first diperkuat (update SEGERA setiap langkah selesai, sebelum memanggil alat
+  berikutnya; status yang sudah completed tidak boleh mundur), ditambah pengingat wire-only otomatis
+  ketika agent mengerjakan 2 batch alat berturut-turut tanpa memperbarui plan (maks 20 per run, tidak
+  pernah tampil sebagai pesan chat); nudge akhir-run kini juga aktif meski plan-first dimatikan, asalkan
+  run-until-done menyala. (3) **Parser status lebih toleran** — 'complete', 'finished', 'selesai' kini
+  dibaca completed, bukan jatuh ke pending. (4) **Progres makin jelas terlihat** — panel plan terbuka
+  sendiri saat plan pertama dibuat di tengah run (memuat chat dari disk tidak pernah membukanya paksa,
+  dan tutup manual dihormati sampai run berikutnya), label progres di panel live kini terkunci test dan
+  berbunyi "x dari y selesai" disertai bar progres. +9 test (995 total): plan kebal todo_write gagal
+  (state + disk), pengingat wire-only (timing streak, reset, cap), nudge tanpa plan-first, parser status,
+  auto-open (berjalan vs idle vs tutup manual), label progres tiga bahasa.
 - **v1.48.0 — ikon alat naik ke baris thinking + peringatan IP sama saat pindah chat**: (1) **Baris
   thinking kini menjadi pusat aksi** — saat agent berjalan, ikon upload file, prompt library, dan record
   berpindah ke baris thinking itu sendiri (urusannya: `thinking… 📎 📝 🎤 👁`), tepat di KIRI ikon

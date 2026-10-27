@@ -228,7 +228,11 @@ class TodoPlanView extends StatelessWidget {
                 ),
               ),
               Text(
+                // v1.48.1: keyed so tests (and the live-progress invariant)
+                // can target the counter of the LIVE plan view only — the
+                // historical [TodoPlanCard] keeps its unlabeled counter.
                 strings.planProgress(done, total),
+                key: const Key('plan-progress-label'),
                 style: TextStyle(fontSize: 11.5, color: palette.muted),
               ),
               if (onClose != null)

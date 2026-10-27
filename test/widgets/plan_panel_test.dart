@@ -122,6 +122,48 @@ void main() {
     );
   });
 
+  testWidgets('v1.48.1: the live plan header shows the completed/total '
+      'counter label and a half-filled progress bar', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(wrap(const PlanPanel()));
+    setActiveState(
+      tester,
+      ChatState(
+        sessionId: 'a',
+        messages: <ChatMessage>[ChatMessage.user('hi')],
+        todos: const <TodoItem>[
+          TodoItem(content: 'step one', status: TodoStatus.completed),
+          TodoItem(content: 'step two', status: TodoStatus.completed),
+          TodoItem(content: 'step three', status: TodoStatus.inProgress),
+          TodoItem(content: 'step four', status: TodoStatus.pending),
+        ],
+      ),
+    );
+    await openPanel(tester);
+
+    expect(find.byKey(const Key('live-todo-panel')), findsOneWidget);
+    // Counter: "2 of 4 done" in the en harness — keyed on the LIVE view
+    // only (the historical TodoPlanCard keeps its unlabeled counter).
+    final Finder label = find.byKey(const Key('plan-progress-label'));
+    expect(label, findsOneWidget);
+    expect(
+      tester.widget<Text>(label).data,
+      const AppStringsEn().planProgress(2, 4),
+    );
+
+    // Thin progress bar under the header reflects 2/4 completed.
+    final Finder bar = find.descendant(
+      of: find.byKey(const Key('live-todo-panel')),
+      matching: find.byType(LinearProgressIndicator),
+    );
+    expect(bar, findsOneWidget);
+    expect(
+      tester.widget<LinearProgressIndicator>(bar).value,
+      closeTo(0.5, 0.001),
+    );
+  });
+
   testWidgets('pinned panel STEPS ASIDE while the agent runs (the thinking '
       'footer renders the plan inline above the row) and the SAME open flag '
       'restores it the moment the run ends', (WidgetTester tester) async {

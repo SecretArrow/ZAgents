@@ -549,7 +549,7 @@ class AppStringsEs implements AppStrings {
   @override
   String get planTitle => 'Plan';
   @override
-  String planProgress(int done, int total) => '$done/$total completados';
+  String planProgress(int done, int total) => '$done de $total completadas';
   @override
   String get showPlanTooltip => 'Mostrar plan';
   @override

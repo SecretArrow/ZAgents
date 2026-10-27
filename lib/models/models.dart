@@ -362,14 +362,19 @@ class ChatMessage {
 /// Execution status of one todo in the agent's task plan.
 enum TodoStatus { pending, inProgress, completed }
 
-/// Accepts the wire spelling (`in_progress`) and the Dart spelling
-/// (`inProgress`); anything unknown degrades to [TodoStatus.pending].
+/// Accepts the wire spelling (`in_progress`), the Dart spelling
+/// (`inProgress`) and common model typos/synonyms for done (`completed`,
+/// `done`, `complete`, `finished`, `selesai`); anything unknown degrades
+/// to [TodoStatus.pending].
 TodoStatus todoStatusFromName(String? name) {
   switch (name) {
     case 'in_progress':
     case 'inProgress':
       return TodoStatus.inProgress;
     case 'completed':
+    case 'complete':
+    case 'finished':
+    case 'selesai':
     case 'done':
       return TodoStatus.completed;
     default:

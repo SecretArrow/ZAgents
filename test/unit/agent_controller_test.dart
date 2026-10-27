@@ -1047,7 +1047,12 @@ void main() {
       );
     });
 
-    test('planFirst=false: no todo tool, no addendum, no nudge', () async {
+    test('planFirst=false + runUntilDone=false: no todo tool, no addendum, no nudge', () async {
+      // v1.48.1: the end-of-turn nudge fires when agentMode is on and
+      // EITHER runUntilDone or planFirst is on. This test turns BOTH
+      // off, so a premature answer is still accepted without a nudge.
+      // (runUntilDone=true + planFirst=false now DOES nudge — see
+      // plan_sync_test.dart.)
       final ScriptedLlmClient llm = ScriptedLlmClient(<AssistantTurn>[
         AssistantTurn(
           content: '',
@@ -1076,6 +1081,7 @@ void main() {
             apiKey: 'k',
             autoTitle: false,
             planFirst: false,
+            runUntilDone: false,
           ),
         ),
       );

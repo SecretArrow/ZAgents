@@ -23,6 +23,26 @@ class ChatBody extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final ChatState state = ref.watch(chatControllerProvider);
+    // v1.48.1: the user must SEE plan progress — the FIRST todo_write of a
+    // run (todos empty → non-empty while the run is active) auto-reveals
+    // the pinned Plan panel. Idle transitions (e.g. opening a saved chat
+    // from disk, isRunning false) never yank it open, and a later
+    // todo_write in the same run never re-opens it after the user closed
+    // it — only the empty→non-empty transition counts. ChatBody only
+    // exists for the on-screen chat, so background sessions can't fire it.
+    ref.listen<ChatState>(chatControllerProvider, (
+      ChatState? prev,
+      ChatState next,
+    ) {
+      final bool planJustAppeared =
+          (prev == null || prev.todos.isEmpty) &&
+          next.todos.isNotEmpty &&
+          next.isRunning &&
+          !ref.read(planPanelOpenProvider);
+      if (planJustAppeared) {
+        ref.read(planPanelOpenProvider.notifier).state = true;
+      }
+    });
     if (state.isLoading && state.messages.isEmpty) {
       // Opening a stored chat: show a spinner instead of the previous
       // chat's transcript (which used to linger for the whole disk read).

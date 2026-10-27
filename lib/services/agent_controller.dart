@@ -46,6 +46,35 @@ String planNudgeText(List<TodoItem> todos) {
   return buffer.toString();
 }
 
+/// Stable opening of every [todoSyncReminderText] message — the loop uses
+/// it for the belt-and-braces dedup check on the wire tail.
+const String todoSyncReminderPrefix =
+    'Reminder: you have been doing work without updating your plan.';
+
+/// v1.48.1 — wire-only user message appended after a tool batch that did
+/// real work WITHOUT calling todo_write while an incomplete plan exists.
+/// Mirrors [planNudgeText]'s mechanics (never persisted as a visible chat
+/// message) and rendering, but lists the FULL plan with all statuses so
+/// the model can re-send it accurately.
+String todoSyncReminderText(List<TodoItem> todos) {
+  final StringBuffer buffer = StringBuffer(
+    '$todoSyncReminderPrefix '
+    'Call todo_write NOW with the FULL updated list before continuing — '
+    'mark finished steps completed, set exactly one next step '
+    'in_progress, keep completed steps completed. Never batch plan '
+    'updates at the end. Current plan:\n',
+  );
+  for (final TodoItem todo in todos) {
+    final String status = todo.status == TodoStatus.inProgress
+        ? 'in_progress'
+        : todo.status == TodoStatus.completed
+        ? 'completed'
+        : 'pending';
+    buffer.writeln('- [$status] ${todo.content}');
+  }
+  return buffer.toString();
+}
+
 /// Immutable UI state of the currently ACTIVE chat session.
 class ChatState {
   const ChatState({
@@ -1888,6 +1917,12 @@ class ChatController extends Notifier<ChatState> {
       // to re-plan, so the nudge only tracks the current run.
       int planNudges = 0;
 
+      // v1.48.1 plan-sync: consecutive tool batches that did work without
+      // any todo_write, and how many wire-only reminders this run already
+      // spent (capped by [maxPlanNudges] like the end-of-turn nudge).
+      int stepsSinceTodoWrite = 0;
+      int todoReminders = 0;
+
       for (var step = 0; step < stepLimit; step++) {
         // Stop pressed before this turn even starts — leave immediately.
         if (run.stopRequested) break;
@@ -1934,13 +1969,14 @@ class ChatController extends Notifier<ChatState> {
         _sync(run);
 
         if (toolCalls.isEmpty) {
-          // The model produced a final answer. With "run until done" +
-          // plan-first, an incomplete todo plan means the task is NOT
-          // done: nudge the model to keep working (z.ai agent mode
-          // behavior) instead of accepting a premature summary.
-          if (settings.runUntilDone &&
-              settings.planFirst &&
-              settings.agentMode &&
+          // The model produced a final answer. An incomplete todo plan
+          // means the task is NOT done: nudge the model to keep working
+          // (z.ai agent mode behavior) instead of accepting a premature
+          // summary. v1.48.1: the nudge no longer requires plan-first —
+          // a model that planned on its own (planFirst off) must still
+          // finish its plan when run-until-done is on.
+          if (settings.agentMode &&
+              (settings.runUntilDone || settings.planFirst) &&
               !run.stopRequested &&
               hasIncompleteTodos(run.latestTodos) &&
               planNudges < maxPlanNudges) {
@@ -1972,6 +2008,9 @@ class ChatController extends Notifier<ChatState> {
         });
 
         final executor = ref.read(toolExecutorProvider);
+        // v1.48.1 plan-sync: did THIS batch sync the plan? Decided per call
+        // below and consumed at the batch tail.
+        bool batchIncludedTodoWrite = false;
         for (final call in toolCalls) {
           if (run.stopRequested) break;
           call.status = ToolStatus.running;
@@ -2077,7 +2116,17 @@ class ChatController extends Notifier<ChatState> {
           call.resultText = result.llmOutput;
           call.screenshotPath = result.screenshotPath;
           if (call.name == 'todo_write') {
-            run.latestTodos = parseTodoList(call.arguments['todos']);
+            batchIncludedTodoWrite = true;
+            // v1.48.1: only a SUCCESSFUL, non-empty todo_write may move the
+            // plan. A failed/empty call (malformed JSON args degrade to {},
+            // an empty array is rejected by the executor) must never wipe
+            // the live plan — UI, nudge loop and disk all read latestTodos.
+            final List<TodoItem> parsedTodos = parseTodoList(
+              call.arguments['todos'],
+            );
+            if (result.ok && parsedTodos.isNotEmpty) {
+              run.latestTodos = parsedTodos;
+            }
           }
           // Module doctor / builder: a validated module zip becomes a
           // pending install card. The tool only validated; the USER
@@ -2128,6 +2177,38 @@ class ChatController extends Notifier<ChatState> {
         // after the opening user message, plan cards included. The save is
         // fire-and-forget: the per-run persist chain guarantees ordering
         // and the loop never blocks on disk I/O.
+        //
+        // v1.48.1 plan-sync: a batch that did real work WITHOUT a
+        // todo_write lengthens the drift streak; any todo_write resets it.
+        // After two unsynced batches, remind the model ON THE WIRE ONLY
+        // (same mechanics as planNudgeText — never a visible message) to
+        // write the full updated plan, so the user's plan panel stays
+        // current after every completed step.
+        if (batchIncludedTodoWrite) {
+          stepsSinceTodoWrite = 0;
+        } else {
+          stepsSinceTodoWrite++;
+        }
+        if (stepsSinceTodoWrite >= 2 &&
+            todoReminders < maxPlanNudges &&
+            settings.agentMode &&
+            hasIncompleteTodos(run.latestTodos) &&
+            !run.stopRequested) {
+          final String reminder = todoSyncReminderText(run.latestTodos);
+          // Belt-and-braces dedup: never stack the reminder on itself.
+          final bool wireEndsWithReminder =
+              wire.isNotEmpty &&
+              wire.last['role'] == 'user' &&
+              wire.last['content'] is String &&
+              (wire.last['content'] as String).startsWith(
+                todoSyncReminderPrefix,
+              );
+          if (!wireEndsWithReminder) {
+            wire.add(<String, dynamic>{'role': 'user', 'content': reminder});
+            todoReminders++;
+          }
+          stepsSinceTodoWrite = 0;
+        }
         unawaited(_persist(run));
         if (run.stopRequested) break;
       }

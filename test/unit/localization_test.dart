@@ -33,15 +33,19 @@ void main() {
       expect(id.suggestions.length, appStringsFor('en').suggestions.length);
     });
 
-    test('plan-first strings are localized in both bundles', () {
+    test('plan-first strings are localized in all three bundles', () {
       final AppStrings en = appStringsFor('en');
       final AppStrings id = appStringsFor('id');
+      final AppStrings es = appStringsFor('es');
       expect(en.planFirstTitle, contains('Plan first'));
       expect(en.planTitle, 'Plan');
-      expect(en.planProgress(2, 5), '2/5 done');
+      expect(en.planProgress(2, 5), '2 of 5 done');
       expect(id.planFirstTitle, contains('rencana'));
       expect(id.planTitle, 'Rencana');
-      expect(id.planProgress(2, 5), '2/5 selesai');
+      expect(id.planProgress(2, 5), '2 dari 5 selesai');
+      expect(es.planFirstTitle, contains('Planificar'));
+      expect(es.planTitle, 'Plan');
+      expect(es.planProgress(2, 5), '2 de 5 completadas');
     });
 
     test('live plan toggle + provider activation strings are localized', () {

@@ -276,13 +276,22 @@ void main() {
       expect(off.copyWith(planFirst: true).planFirst, isTrue);
     });
 
-    test('todoStatusFromName accepts wire and dart spellings', () {
+    test('todoStatusFromName accepts wire, dart and typo spellings', () {
       expect(todoStatusFromName('pending'), TodoStatus.pending);
       expect(todoStatusFromName('in_progress'), TodoStatus.inProgress);
       expect(todoStatusFromName('inProgress'), TodoStatus.inProgress);
       expect(todoStatusFromName('completed'), TodoStatus.completed);
+      expect(todoStatusFromName('complete'), TodoStatus.completed);
+      expect(todoStatusFromName('finished'), TodoStatus.completed);
+      expect(todoStatusFromName('selesai'), TodoStatus.completed);
       expect(todoStatusFromName('done'), TodoStatus.completed);
       expect(todoStatusFromName('weird'), TodoStatus.pending);
+      expect(
+        todoStatusFromName('COMPLETE'),
+        TodoStatus.pending,
+        reason: 'matching is exact-lowercase, like before v1.48.1',
+      );
+      expect(todoStatusFromName(''), TodoStatus.pending);
       expect(todoStatusFromName(null), TodoStatus.pending);
     });
 

@@ -38,7 +38,10 @@ const String planFirstSystemPrompt = '''
 # Task planning (todos)
 - For every non-trivial task, ALWAYS begin by calling todo_write with a short plan (3-8 concise steps) before doing anything else.
 - While working, keep exactly ONE todo marked in_progress. As soon as a step is truly done, call todo_write again to mark it completed and move the next one to in_progress. Add newly discovered work as extra todos.
+- Update the plan IMMEDIATELY after each completed step — call todo_write before starting the next step; never batch plan updates at the end.
 - todo_write replaces the whole plan, so always send the complete updated list, not a diff.
+- Never regress statuses: a todo that is completed stays completed in every subsequent todo_write; always carry statuses over when re-sending the full list.
+- If you realize you finished work without updating the plan, call todo_write at once before anything else.
 - Keep working autonomously until EVERY todo is completed. Do not pause to ask for permission between steps.
 - Write the final summary only after all todos are completed (or after explaining in the summary why a todo cannot be completed). Never stop halfway through the plan.
 ''';
