@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../di.dart';
 import '../../l10n/app_strings.dart';
 import '../../models/models.dart';
+import '../../services/agentrouter_client.dart';
 import '../theme.dart';
 import '../widgets/paged_list.dart';
 import 'preset_editor_screen.dart';
@@ -192,6 +193,14 @@ class _ProviderCard extends StatelessWidget {
   final VoidCallback onUse;
   final VoidCallback? onLongPress;
 
+  /// AgentRouter presets (name or agentrouter.org host) show the protocol
+  /// hint right on the card.
+  bool get _isAgentRouter {
+    if (preset.name == 'AgentRouter') return true;
+    final String? host = hostOf(preset.baseUrl);
+    return host != null && isAgentRouterHost(host);
+  }
+
   @override
   Widget build(BuildContext context) {
     final String host = presetHostLabel(preset.baseUrl);
@@ -325,6 +334,19 @@ class _ProviderCard extends StatelessWidget {
                           ],
                         ],
                       ),
+                      if (_isAgentRouter) ...<Widget>[
+                        const SizedBox(height: 4),
+                        Text(
+                          strings.agentRouterHint,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 10.5,
+                            color: palette.muted,
+                            height: 1.3,
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 ),

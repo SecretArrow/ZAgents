@@ -3,6 +3,8 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 
+import 'agentrouter_client.dart';
+
 /// One model entry from a provider's `GET /models` catalog.
 class RemoteModel {
   const RemoteModel({
@@ -70,6 +72,17 @@ class ModelCatalogClient {
     if (apiKey.trim().isNotEmpty) {
       request.headers['Authorization'] = 'Bearer ${apiKey.trim()}';
     }
+    // AgentRouter accepts BOTH auth headers and expects its Anthropic-flavor
+    // branding on every request (discovery hits the same gateway as chat).
+    final String? host = hostOf(baseUrl);
+    final bool agentRouter = host != null && isAgentRouterHost(host);
+    if (agentRouter) {
+      if (apiKey.trim().isNotEmpty) {
+        request.headers['x-api-key'] = apiKey.trim();
+      }
+      request.headers['anthropic-version'] = kAnthropicVersion;
+      request.headers['User-Agent'] = kAgentRouterUserAgent;
+    }
 
     final http.StreamedResponse response;
     try {
@@ -94,11 +107,28 @@ class ModelCatalogClient {
       );
     }
 
-    return parseCatalog(body);
+    return agentRouter
+        ? parseAgentRouterCatalog(body)
+        : parseCatalog(body);
   }
 
-  /// Parses a catalog payload. Kept public for tests.
-  List<RemoteModel> parseCatalog(String body) {
+  /// Parses a catalog payload. Kept public for tests. Signature must stay
+  /// `parseCatalog(String)` — subclasses in existing tests override it.
+  List<RemoteModel> parseCatalog(String body) =>
+      _parseCatalogBody(body, agentRouter: false);
+
+  /// Anthropic-flavor parsing (AgentRouter): also accepts model entries of
+  /// the shape `{id, display_name}` — `id` is used, falling back to
+  /// `display_name`. The default [parseCatalog] stays byte-for-byte.
+  /// Deliberately STATIC: `implements ModelCatalogClient` test doubles
+  /// must not be forced to implement it.
+  static List<RemoteModel> parseAgentRouterCatalog(String body) =>
+      _parseCatalogBody(body, agentRouter: true);
+
+  static List<RemoteModel> _parseCatalogBody(
+    String body, {
+    required bool agentRouter,
+  }) {
     final Object? decoded;
     try {
       decoded = jsonDecode(body);
@@ -122,19 +152,27 @@ class ModelCatalogClient {
     final List<RemoteModel> models = <RemoteModel>[];
     for (final Object? raw in items) {
       if (raw is! Map<String, dynamic>) continue;
-      final RemoteModel? model = _parseModel(raw);
+      final RemoteModel? model = _parseModel(raw, agentRouter: agentRouter);
       if (model != null) models.add(model);
     }
     return models;
   }
 
-  RemoteModel? _parseModel(Map<String, dynamic> json) {
-    // `id` is the OpenAI standard; tolerate `model`/`name` aliases.
-    final Object? rawId = json['id'] ?? json['model'] ?? json['name'];
+  static RemoteModel? _parseModel(
+    Map<String, dynamic> json, {
+    required bool agentRouter,
+  }) {
+    // `id` is the OpenAI standard; tolerate `model`/`name` aliases. The
+    // Anthropic-style catalog (AgentRouter) also allows `display_name`.
+    final Object? rawId = agentRouter
+        ? (json['id'] ?? json['display_name'] ?? json['model'] ?? json['name'])
+        : (json['id'] ?? json['model'] ?? json['name']);
     final String id = rawId?.toString() ?? '';
     if (id.trim().isEmpty) return null;
 
-    final Object? rawName = json['name'];
+    final Object? rawName = agentRouter
+        ? (json['name'] ?? json['display_name'])
+        : json['name'];
     final String name = (rawName is String && rawName.trim().isNotEmpty)
         ? rawName.trim()
         : id;
@@ -152,7 +190,7 @@ class ModelCatalogClient {
   /// * OpenRouter: `supported_parameters` contains `tools`.
   /// * Generic: `capabilities.tools == true`, `tools == true`,
   ///   `function_calling == true`.
-  bool _detectTools(Map<String, dynamic> json) {
+  static bool _detectTools(Map<String, dynamic> json) {
     final Object? params = json['supported_parameters'];
     if (params is List) {
       return params.any((Object? p) => p?.toString() == 'tools');
@@ -166,7 +204,7 @@ class ModelCatalogClient {
 
   /// Free when both prompt and completion price are zero
   /// (OpenRouter ships prices as strings, others may use numbers).
-  bool _detectFree(Object? pricing) {
+  static bool _detectFree(Object? pricing) {
     if (pricing is! Map<String, dynamic>) return false;
     final double? prompt = _asDouble(pricing['prompt']);
     final double? completion = _asDouble(pricing['completion']);
@@ -174,14 +212,14 @@ class ModelCatalogClient {
     return prompt <= 0 && completion <= 0;
   }
 
-  int? _asInt(Object? value) {
+  static int? _asInt(Object? value) {
     if (value is int) return value;
     if (value is num) return value.toInt();
     if (value is String) return int.tryParse(value.trim());
     return null;
   }
 
-  double? _asDouble(Object? value) {
+  static double? _asDouble(Object? value) {
     if (value is num) return value.toDouble();
     if (value is String) return double.tryParse(value.trim());
     return null;

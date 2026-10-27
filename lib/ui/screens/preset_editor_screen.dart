@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../di.dart';
 import '../../l10n/app_strings.dart';
 import '../../models/models.dart';
+import '../../services/agentrouter_client.dart';
 import '../../services/model_catalog.dart';
 import '../theme.dart';
 import '../widgets/paged_list.dart';
@@ -53,6 +54,15 @@ class _PresetEditorScreenState extends ConsumerState<PresetEditorScreen> {
   bool get _isNew => _stored.name.isEmpty;
 
   AppStrings get _strings => stringsOf(context);
+
+  /// AgentRouter presets (by preset name or by agentrouter.org host) get
+  /// the protocol hint: Anthropic Messages with automatic OpenAI-compatible
+  /// fallback.
+  bool get _isAgentRouter {
+    if (_name.text.trim() == 'AgentRouter') return true;
+    final String? host = hostOf(_baseUrl.text.trim());
+    return host != null && isAgentRouterHost(host);
+  }
 
   @override
   void initState() {
@@ -305,6 +315,7 @@ class _PresetEditorScreenState extends ConsumerState<PresetEditorScreen> {
                   TextField(
                     key: const Key('editor-name-field'),
                     controller: _name,
+                    onChanged: (_) => setState(() {}),
                     decoration: InputDecoration(
                       labelText: strings.presetNameLabel,
                       hintText: 'My provider',
@@ -315,11 +326,38 @@ class _PresetEditorScreenState extends ConsumerState<PresetEditorScreen> {
                     key: const Key('editor-base-url-field'),
                     controller: _baseUrl,
                     keyboardType: TextInputType.url,
+                    onChanged: (_) => setState(() {}),
                     decoration: InputDecoration(
                       labelText: strings.baseUrlLabel,
                       hintText: 'https://openrouter.ai/api/v1',
                     ),
                   ),
+                  // AgentRouter speaks the Anthropic Messages protocol with
+                  // an automatic OpenAI-compatible fallback — surface that
+                  // whenever this preset targets it (name or host).
+                  if (_isAgentRouter) ...<Widget>[
+                    const SizedBox(height: 8),
+                    Row(
+                      children: <Widget>[
+                        Icon(
+                          Icons.info_outline_rounded,
+                          size: 14,
+                          color: palette.muted,
+                        ),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            strings.agentRouterHint,
+                            style: TextStyle(
+                              fontSize: 11.5,
+                              color: palette.muted,
+                              height: 1.35,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
                   const SizedBox(height: 12),
                   TextField(
                     key: const Key('editor-api-key-field'),

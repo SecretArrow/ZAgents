@@ -13,11 +13,18 @@ class LlmConfig {
     required this.baseUrl,
     required this.apiKey,
     required this.model,
+    this.maxTokens,
   });
 
   final String baseUrl;
   final String apiKey;
   final String model;
+
+  /// Optional hard cap on generated tokens (null = provider default).
+  /// The Anthropic-protocol transport (AgentRouter) needs it for the
+  /// REQUIRED `max_tokens` request field; OpenAI-compatible providers
+  /// ignore it.
+  final int? maxTokens;
 }
 
 /// A tool call requested by the model (arguments still raw JSON string).
@@ -116,13 +123,25 @@ bool _retryableStatusCode(int code) =>
 /// Streaming client for OpenAI-compatible chat completion APIs
 /// (OpenRouter, Z.AI, OpenAI, DeepSeek, Groq, ...).
 class LlmClient {
-  LlmClient({http.Client? client}) : _injectedClient = client;
+  LlmClient({
+    http.Client? client,
+    Map<String, String> Function(Uri url)? extraHeaders,
+  }) : _injectedClient = client,
+       _extraRequestHeaders = extraHeaders;
 
   /// Optional injected transport (tests). When null, every [complete] call
   /// owns a dedicated client — which is what makes per-run force cancel
   /// possible: closing one run's client can never touch another chat's
   /// in-flight stream.
   final http.Client? _injectedClient;
+
+  /// Optional per-URL extra headers merged into every outgoing request of
+  /// this client. The base transport ships none; the AgentRouter subclass
+  /// injects one so its OpenAI-compatible fallback traffic to agentrouter
+  /// hosts carries the required User-Agent. Deliberately a private
+  /// constructor-injected callback (not a public member) so that
+  /// `implements LlmClient` test doubles are unaffected.
+  final Map<String, String> Function(Uri url)? _extraRequestHeaders;
 
   /// v1.42.0 — live streaming requests keyed by the caller's [cancelKey]
   /// (the agent loop passes its per-run object). [forceCancel] looks a run
@@ -145,6 +164,20 @@ class LlmClient {
       // Best-effort: a broken transport is exactly the state we want.
     }
     return true;
+  }
+
+  /// Registers [client] as the live request for [key]. Shared by the base
+  /// OpenAI transport AND the Anthropic-protocol AgentRouter transport, so
+  /// per-run force-cancel works identically on both protocols.
+  static void registerLiveStream(Object key, http.Client client) {
+    _liveStreams[key] = client;
+  }
+
+  /// Removes [client] from [key]'s registry — only when it is still the
+  /// registered one, so a fallback transport registering under the same
+  /// key is never clobbered by the probe request's cleanup.
+  static void unregisterLiveStream(Object key, http.Client client) {
+    if (identical(_liveStreams[key], client)) _liveStreams.remove(key);
   }
 
   http.Client _clientForCall() => _injectedClient ?? http.Client();
@@ -188,7 +221,7 @@ class LlmClient {
     // leaking while preserving injected test transports.
     final http.Client callClient = _clientForCall();
     final bool ownsClient = _injectedClient == null;
-    if (cancelKey != null) _liveStreams[cancelKey] = callClient;
+    if (cancelKey != null) registerLiveStream(cancelKey, callClient);
     try {
       return await _sendAndConsume(
         callClient,
@@ -199,9 +232,7 @@ class LlmClient {
         shouldAbort,
       );
     } finally {
-      if (cancelKey != null && identical(_liveStreams[cancelKey], callClient)) {
-        _liveStreams.remove(cancelKey);
-      }
+      if (cancelKey != null) unregisterLiveStream(cancelKey, callClient);
       if (ownsClient) {
         try {
           callClient.close();
@@ -276,6 +307,7 @@ class LlmClient {
     // OpenRouter attribution (ignored by other providers).
     ..headers['HTTP-Referer'] = 'https://github.com/SecretArrow/ZAgents'
     ..headers['X-Title'] = 'ZAgents'
+    ..headers.addAll(_extraRequestHeaders?.call(url) ?? const <String, String>{})
     // v1.38.0: encode OFF the UI isolate — every agent step re-encodes
     // the whole conversation (tool outputs + cached base64 images can
     // reach multiple MB) and a main-thread jsonEncode of that size
