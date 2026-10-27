@@ -104,6 +104,11 @@ void main() {
     );
     await tester.pumpAndSettle(const Duration(seconds: 1));
 
+    final BuildContext chatContext = tester.element(find.byType(ZAgentsApp));
+    final ProviderContainer chatContainer = ProviderScope.containerOf(
+      chatContext,
+    );
+
     // 1. Send a prompt from the composer.
     await tester.enterText(
       find.byKey(const Key('composer-field')),
@@ -111,10 +116,48 @@ void main() {
     );
     await tester.tap(find.byKey(const Key('send-button')));
     await tester.pump();
-    await tester.pumpAndSettle(const Duration(seconds: 5));
 
-    // 2. All tool cards + final answer rendered.
-    expect(find.text('browser_navigate'), findsOneWidget);
+    // 2. Drive the run to completion with a BOUNDED predicate loop.
+    // v1.49 lesson (mirrors the module e2e tests): the run's real IO
+    // (session persistence, screenshot bytes) only progresses inside
+    // tester.runAsync, and a bare pumpAndSettle can return while the
+    // agent loop is awaiting it — before any tool card is rendered.
+    // The loop interleaves frame settling with short real-async windows
+    // and exits as soon as the LAST expected artifact (final answer) is
+    // visible; it can never hang.
+    bool done = false;
+    for (int i = 0; i < 60 && !done; i++) {
+      await tester.pumpAndSettle(
+        const Duration(milliseconds: 100),
+        EnginePhase.sendSemanticsUpdate,
+        const Duration(seconds: 2),
+      );
+      done =
+          find.text('browser_navigate').evaluate().isNotEmpty &&
+          find.text('node_run').evaluate().isNotEmpty &&
+          find.text('browser_screenshot').evaluate().isNotEmpty &&
+          find.textContaining('E2E selesai').evaluate().isNotEmpty;
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 25)),
+      );
+    }
+
+    // All tool cards + final answer rendered — with a full diagnostic
+    // dump so a regression names itself from the CI log alone.
+    String transcript() => chatContainer
+        .read(chatControllerProvider)
+        .messages
+        .map((ChatMessage m) => '[${m.role.name}] ${m.content}')
+        .join(' ||| ');
+    expect(
+      find.text('browser_navigate'),
+      findsOneWidget,
+      reason:
+          'tool card missing. error='
+          '${chatContainer.read(chatControllerProvider).error} '
+          'loading=${chatContainer.read(chatControllerProvider).isLoading} '
+          'llmCalls=${llm.calls.length} transcript=[${transcript()}]',
+    );
     expect(find.text('node_run'), findsOneWidget);
     expect(find.text('browser_screenshot'), findsOneWidget);
     expect(find.textContaining('E2E selesai'), findsOneWidget);
