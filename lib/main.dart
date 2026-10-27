@@ -36,6 +36,9 @@ Future<void> main() async {
     resolveBaseDir: getApplicationDocumentsDirectory,
   );
   final SharedPreferences appLockPrefs = await SharedPreferences.getInstance();
+  // Per-chat "last seen public IP" memo storage of the chat-switch guard
+  // (v1.48.0) — same async-at-boot pattern as the app-lock prefs.
+  final SharedPreferences ipMemoPrefs = await SharedPreferences.getInstance();
   runApp(
     ProviderScope(
       overrides: <Override>[
@@ -43,6 +46,7 @@ Future<void> main() async {
         contextRepositoryProvider.overrideWithValue(contextRepo),
         promptRepositoryProvider.overrideWithValue(promptRepo),
         appLockPrefsProvider.overrideWithValue(appLockPrefs),
+        ipMemoPrefsProvider.overrideWithValue(ipMemoPrefs),
       ],
       child: const ZAgentsApp(),
     ),

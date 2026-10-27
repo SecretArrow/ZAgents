@@ -112,6 +112,25 @@ class AppStringsEs implements AppStrings {
   String get updateCheckFailed => 'No se pudo buscar actualizaciones.';
 
   @override
+  String get ipSwitchWarnTitle => 'Avisar cuando la IP sea la misma';
+
+  @override
+  String get ipSwitchWarnSubtitle =>
+      'Antes de cambiar de chat, compara la IP pública actual con la última '
+      'usada en el chat de destino y pide confirmación antes de continuar.';
+
+  @override
+  String get ipSwitchWarnDialogTitle => 'Misma IP que la última sesión';
+
+  @override
+  String ipSwitchWarnDialogBody(String ip) =>
+      'La IP pública actual ($ip) es la misma que la última registrada en '
+      'este chat. ¿Continuar de todos modos?';
+
+  @override
+  String get ipSwitchWarnContinue => 'Continuar';
+
+  @override
   String get officialModulesTitle => 'Módulos oficiales de ejemplo';
 
   @override

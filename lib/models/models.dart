@@ -802,6 +802,7 @@ class AppSettings {
     this.appLockEnabled = false,
     this.notifyOnDone = true,
     this.checkUpdatesOnStart = true,
+    this.ipSwitchWarnEnabled = false,
     this.autoRetryEnabled = true,
     this.autoRetryAttempts = defaultAutoRetryAttempts,
     this.autoRetryDelay = defaultAutoRetryDelay,
@@ -858,6 +859,16 @@ class AppSettings {
   /// Sideloaded APKs have no Play Store to nudge the user, so this is the
   /// only update signal. Fully off-switchable (privacy) in Settings.
   final bool checkUpdatesOnStart;
+
+  /// v1.48.0 — when true, every user-initiated chat switch first fetches
+  /// the current public IP and compares it with the last IP recorded for
+  /// the TARGET chat; a match shows a confirmation dialog before the
+  /// switch proceeds (the user can cancel and stay in the current chat).
+  /// OFF by default: it makes one small network request per switch and is
+  /// only useful for users juggling distinct network identities (VPN/proxy
+  /// rotation). When the IP cannot be determined the check degrades
+  /// silently to "no warning, proceed" — it never blocks a switch.
+  final bool ipSwitchWarnEnabled;
 
   /// v1.30.0 auto-retry: when true (default), a failed LLM turn (network
   /// error, weak connection, dropped stream, transient provider HTTP
@@ -930,6 +941,7 @@ class AppSettings {
     bool? appLockEnabled,
     bool? notifyOnDone,
     bool? checkUpdatesOnStart,
+    bool? ipSwitchWarnEnabled,
     bool? autoRetryEnabled,
     Object? autoRetryAttempts,
     Object? autoRetryDelay,
@@ -956,6 +968,7 @@ class AppSettings {
     appLockEnabled: appLockEnabled ?? this.appLockEnabled,
     notifyOnDone: notifyOnDone ?? this.notifyOnDone,
     checkUpdatesOnStart: checkUpdatesOnStart ?? this.checkUpdatesOnStart,
+    ipSwitchWarnEnabled: ipSwitchWarnEnabled ?? this.ipSwitchWarnEnabled,
     autoRetryEnabled: autoRetryEnabled ?? this.autoRetryEnabled,
     autoRetryAttempts: clampAutoRetryAttempts(
       autoRetryAttempts ?? this.autoRetryAttempts,
@@ -986,6 +999,7 @@ class AppSettings {
     'appLockEnabled': appLockEnabled,
     'notifyOnDone': notifyOnDone,
     'checkUpdatesOnStart': checkUpdatesOnStart,
+    'ipSwitchWarnEnabled': ipSwitchWarnEnabled,
     'autoRetryEnabled': autoRetryEnabled,
     'autoRetryAttempts': autoRetryAttempts,
     'autoRetryDelay': autoRetryDelay,
@@ -1015,6 +1029,7 @@ class AppSettings {
       appLockEnabled: json['appLockEnabled'] as bool? ?? false,
       notifyOnDone: json['notifyOnDone'] as bool? ?? true,
       checkUpdatesOnStart: json['checkUpdatesOnStart'] as bool? ?? true,
+      ipSwitchWarnEnabled: json['ipSwitchWarnEnabled'] as bool? ?? false,
       autoRetryEnabled: json['autoRetryEnabled'] as bool? ?? true,
       autoRetryAttempts: clampAutoRetryAttempts(
         json['autoRetryAttempts'] ?? defaultAutoRetryAttempts,
@@ -1087,7 +1102,11 @@ class AppSettings {
       // load() reset the toggle to the default (true) on EVERY restart —
       // the deterministic "off again after reopening the app" bug, even
       // when the JSON on disk was persisted correctly.
+      // RULE (v1.48.0 audit): EVERY AppSettings field must be forwarded
+      // here too — this reconstruction rebuilds the object after fromJson,
+      // so a missing line silently resets that field on every restart.
       checkUpdatesOnStart: checkUpdatesOnStart,
+      ipSwitchWarnEnabled: ipSwitchWarnEnabled,
       autoRetryEnabled: autoRetryEnabled,
       autoRetryAttempts: autoRetryAttempts,
       autoRetryDelay: autoRetryDelay,

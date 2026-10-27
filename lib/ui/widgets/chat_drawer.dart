@@ -387,7 +387,16 @@ class ChatDrawer extends ConsumerWidget {
                           onPressed: () =>
                               _confirmDelete(context, ref, item.id),
                         ),
-                        onTap: () {
+                        onTap: () async {
+                          // v1.48.0: the chat-switch IP guard may interrupt
+                          // with a confirmation dialog when the current
+                          // public IP equals the last one recorded for the
+                          // TARGET chat. Cancelling aborts the switch and
+                          // keeps the drawer open with NO navigation.
+                          final bool allowed = await ref
+                              .read(ipGuardProvider)
+                              .confirmChatSwitch(context, ref, item.id);
+                          if (!allowed || !context.mounted) return;
                           Navigator.of(context).pop();
                           ref
                               .read(chatControllerProvider.notifier)

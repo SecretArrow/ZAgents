@@ -80,7 +80,15 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     }
   }
 
-  void _openHit(ChatSearchHit hit) {
+  Future<void> _openHit(ChatSearchHit hit) async {
+    // v1.48.0: the chat-switch IP guard may interrupt with a confirmation
+    // dialog when the current public IP equals the last one recorded for
+    // the TARGET chat. Cancelling aborts the switch and keeps the search
+    // screen open with NO navigation.
+    final bool allowed = await ref
+        .read(ipGuardProvider)
+        .confirmChatSwitch(context, ref, hit.sessionId);
+    if (!allowed || !mounted) return;
     ref
         .read(chatControllerProvider.notifier)
         .openChat(

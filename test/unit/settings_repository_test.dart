@@ -539,6 +539,8 @@ void main() {
       expect(loaded.planFirst, isFalse);
       expect(loaded.languageCode, 'id');
       expect(loaded.themeMode, ThemeModeSetting.light);
+      expect(loaded.checkUpdatesOnStart, isTrue);
+      expect(loaded.ipSwitchWarnEnabled, isFalse);
       // fromJson runs the pre-1.4.0 preset migration, which seeds every
       // built-in provider preset and merges the stored one by name — the
       // round trip preserves the stored preset's DATA, not its list shape.
@@ -583,6 +585,46 @@ void main() {
         );
       },
     );
+
+    test('ipSwitchWarnEnabled survives a full app restart (v1.48.0, '
+        'incl. _withPresetMigration)', () async {
+      final FakeSecretBox box = FakeSecretBox();
+      final SharedPreferences prefs = await prefsWith(<String, Object>{});
+      final PrefsSettingsRepository repo = PrefsSettingsRepository(
+        prefs,
+        secretBox: box,
+      );
+
+      // Toggle ON and persist, then "reopen the app" over the same store.
+      // AppSettings.fromJson routes through _withPresetMigration, which
+      // rebuilds the whole object — a field missing there resets on EVERY
+      // restart (the exact v1.47.1 bug class this test locks out).
+      await repo.save(
+        baseSettings(apiKey: 'sk-rt').copyWith(ipSwitchWarnEnabled: true),
+      );
+      final Map<String, dynamic> onDisk =
+          jsonDecode(prefs.getString(_settingsKey)!) as Map<String, dynamic>;
+      expect(onDisk['ipSwitchWarnEnabled'], isTrue);
+
+      final PrefsSettingsRepository reopened =
+          await PrefsSettingsRepository.create(secretBox: box);
+      final AppSettings loaded = reopened.load();
+
+      expect(
+        loaded.ipSwitchWarnEnabled,
+        isTrue,
+        reason: 'the toggle must not reset to OFF after reopening the app',
+      );
+
+      // The default stays OFF for stores that never carried the key
+      // (fresh installs and pre-1.48.0 settings JSON).
+      final SharedPreferences fresh = await prefsWith(<String, Object>{});
+      final PrefsSettingsRepository freshRepo = PrefsSettingsRepository(
+        fresh,
+        secretBox: FakeSecretBox(),
+      );
+      expect(freshRepo.load().ipSwitchWarnEnabled, isFalse);
+    });
   });
 }
 

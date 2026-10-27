@@ -360,6 +360,20 @@ OpenAI-compatible: **OpenRouter, InferHub, Z.AI, OpenAI, DeepSeek, Groq, dan lai
   sendiri saat run selesai — flag buka/tutup tetap global sehingga
   perpindahan langkah, akhir run, dan pindah chat tidak pernah
   menutupnya.
+- **v1.48.0 — ikon alat naik ke baris thinking + peringatan IP sama saat pindah chat**: (1) **Baris
+  thinking kini menjadi pusat aksi** — saat agent berjalan, ikon upload file, prompt library, dan record
+  berpindah ke baris thinking itu sendiri (urusannya: `thinking… 📎 📝 🎤 👁`), tepat di KIRI ikon
+  show/hide plan panel; aksi lama (pilih file, sheet prompt, dikte) berpindah tanpa kehilangan state
+  lewat `ComposerActions` bersama. Ikon show/hide plan yang duplikat di toolbar composer (baris di bawah
+  thinking) DIHAPUS; toolbar composer hanya muncul saat idle, sehingga saat berjalan area ketik murni
+  field + kirim. (2) **Fitur peringatan IP (default OFF)** — toggle baru di Settings: saat AKTIF, setiap
+  pindah chat membandingkan IP publik saat ini (api.ipify.org, timeout 5 dtk) dengan IP terakhir yang
+  tercatat untuk chat tujuan (memo per-chat, maks 200 entri); kalau SAMA muncul dialog konfirmasi —
+  lanjut → pindah chat berjalan & memo diperbarui, batal → pindah DIBATALKAN dan tetap di chat asal.
+  Kegagalan jaringan tidak pernah memblokir pindah chat (degrade senyap). Semua 26 field AppSettings
+  lolos audit 6 titik (konstruktor, field, copyWith, toJson, fromJson, _withPresetMigration) — pelajaran
+  v1.47.1 diterapkan sejak awal. +37 test (986 total): aksi composer, ikon di baris thinking kiri-eye,
+  tidak ada eye duplikat, guard IP (dialog batal/lanjut, memo cap, fetch gagal), round-trip settings.
 - **v1.47.1 — perbaikan bug: toggle "Check for updates on start" selalu kembali ON setelah buka ulang app**:
   akar masalahnya ada dua lapis. (1) **`_withPresetMigration` (dijalankan setiap load settings) tidak
   membawa field `checkUpdatesOnStart`** — rekonsiliasi field-per-field melewatkan satu field ini, sehingga

@@ -5,10 +5,19 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:zagents/di.dart';
 import 'package:zagents/l10n/app_strings.dart';
 import 'package:zagents/models/models.dart';
+import 'package:zagents/services/agent_controller.dart'
+    show ChatController, ChatState;
 import 'package:zagents/ui/theme.dart';
+import 'package:zagents/ui/widgets/composer.dart';
 import 'package:zagents/ui/widgets/message_bubble.dart';
 import 'package:zagents/ui/widgets/todo_plan_card.dart';
 import 'package:zagents/ui/widgets/tool_call_card.dart';
+
+const List<TodoItem> kFooterTodos = <TodoItem>[
+  TodoItem(content: 'research topic', status: TodoStatus.completed),
+  TodoItem(content: 'draft report', status: TodoStatus.inProgress),
+  TodoItem(content: 'review output', status: TodoStatus.pending),
+];
 
 ChatMessage _assistantWith(Map<String, dynamic> args) => ChatMessage.assistant(
   '',
@@ -22,6 +31,18 @@ ChatMessage _assistantWith(Map<String, dynamic> args) => ChatMessage.assistant(
     ),
   ],
 );
+
+/// A ChatController stub parked on a fixed state (running or not) — lets
+/// a widget harness render BOTH the thinking footer and the composer
+/// against the same state without booting the real app shell.
+class _ParkedChatController extends ChatController {
+  _ParkedChatController(this._initial);
+
+  final ChatState _initial;
+
+  @override
+  ChatState build() => _initial;
+}
 
 void main() {
   Widget wrap(Widget child) => ProviderScope(
@@ -244,6 +265,144 @@ void main() {
 
       expect(find.text('thinking…'), findsNothing);
       expect(find.byKey(const Key('todo-toggle-button')), findsNothing);
+    });
+  });
+
+  group('v1.48.0: the three tool icons live ON the thinking row', () {
+    Finder footerIcon(String key) => find.byKey(Key(key));
+
+    /// Center-x order assertions: attach < prompt < mic < eye — the eye
+    /// stays the RIGHTMOST control of the row ("di samping kirinya icon
+    /// show hide plan panel").
+    void expectLeftOfEyeOrder(WidgetTester tester) {
+      final double attachX = tester.getCenter(footerIcon('attach-button')).dx;
+      final double promptX = tester
+          .getCenter(footerIcon('prompt-insert-button'))
+          .dx;
+      final double micX = tester.getCenter(footerIcon('mic-button')).dx;
+      final double eyeX = tester.getCenter(footerIcon('todo-toggle-button')).dx;
+      expect(attachX, lessThan(promptX), reason: 'attach left of prompt');
+      expect(promptX, lessThan(micX), reason: 'prompt left of mic');
+      expect(micX, lessThan(eyeX), reason: 'mic immediately left of the eye');
+    }
+
+    void expectSameRowAsThinking(WidgetTester tester, Finder icon) {
+      final double thinkingY = tester.getCenter(find.text('thinking…')).dy;
+      expect(
+        (tester.getCenter(icon).dy - thinkingY).abs(),
+        lessThan(2.0),
+        reason: 'the icon must be aligned with the thinking text',
+      );
+    }
+
+    testWidgets('attach/prompt/mic render on the footer row, immediately '
+        'LEFT of the plan eye and vertically aligned with "thinking…"', (
+      WidgetTester tester,
+    ) async {
+      final ChatMessage message = ChatMessage.assistant(
+        'Working on it…',
+        isStreaming: true,
+      );
+
+      await tester.pumpWidget(
+        wrap(MessageBubble(message: message, todos: kFooterTodos)),
+      );
+
+      expect(footerIcon('attach-button'), findsOneWidget);
+      expect(footerIcon('prompt-insert-button'), findsOneWidget);
+      expect(footerIcon('mic-button'), findsOneWidget);
+      expect(footerIcon('todo-toggle-button'), findsOneWidget);
+
+      expectLeftOfEyeOrder(tester);
+      expectSameRowAsThinking(tester, footerIcon('attach-button'));
+      expectSameRowAsThinking(tester, footerIcon('prompt-insert-button'));
+      expectSameRowAsThinking(tester, footerIcon('mic-button'));
+      expectSameRowAsThinking(tester, footerIcon('todo-toggle-button'));
+    });
+
+    testWidgets('no plan yet: the tool icons still render on the thinking '
+        'row (only the eye is conditional)', (WidgetTester tester) async {
+      final ChatMessage message = ChatMessage.assistant('', isStreaming: true);
+
+      await tester.pumpWidget(
+        wrap(MessageBubble(message: message, todos: const <TodoItem>[])),
+      );
+
+      expect(footerIcon('attach-button'), findsOneWidget);
+      expect(footerIcon('prompt-insert-button'), findsOneWidget);
+      expect(footerIcon('mic-button'), findsOneWidget);
+      expect(footerIcon('todo-toggle-button'), findsNothing);
+    });
+
+    testWidgets('integration: while a run streams, the icons exist ONLY on '
+        'the footer — the composer renders no toolbar copy and the plan '
+        'eye is never duplicated', (WidgetTester tester) async {
+      final ChatState parked = ChatState(
+        sessionId: 'a',
+        isRunning: true,
+        messages: <ChatMessage>[
+          ChatMessage.user('go'),
+          ChatMessage.assistant('', isStreaming: true),
+        ],
+        todos: kFooterTodos,
+      );
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: <Override>[
+            chatControllerProvider.overrideWith(
+              () => _ParkedChatController(parked),
+            ),
+          ],
+          child: MaterialApp(
+            theme: buildDarkTheme(),
+            locale: const Locale('en'),
+            supportedLocales: const <Locale>[Locale('en'), Locale('id')],
+            localizationsDelegates: const <LocalizationsDelegate<dynamic>>[
+              zLocalizationsDelegate,
+              GlobalMaterialLocalizations.delegate,
+              GlobalWidgetsLocalizations.delegate,
+              GlobalCupertinoLocalizations.delegate,
+            ],
+            home: Scaffold(
+              body: Column(
+                children: <Widget>[
+                  Expanded(
+                    child: ListView(
+                      children: <Widget>[
+                        MessageBubble(
+                          message: parked.messages.last,
+                          todos: kFooterTodos,
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Composer(),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      // Footer: all four controls, eye rightmost, same row as "thinking…".
+      expect(footerIcon('attach-button'), findsOneWidget);
+      expect(footerIcon('prompt-insert-button'), findsOneWidget);
+      expect(footerIcon('mic-button'), findsOneWidget);
+      expect(footerIcon('todo-toggle-button'), findsOneWidget);
+      expectLeftOfEyeOrder(tester);
+
+      // EXACTLY ONE attach icon in the whole app — the composer toolbar
+      // row is gone while running.
+      final Finder composerAttach = find.descendant(
+        of: find.byType(Composer),
+        matching: footerIcon('attach-button'),
+      );
+      expect(composerAttach, findsNothing);
+      // The duplicate plan eye is deleted: no composer-side eye anywhere.
+      expect(footerIcon('composer-plan-toggle'), findsNothing);
+      // The input row stays.
+      expect(footerIcon('composer-field'), findsOneWidget);
     });
   });
 }

@@ -12,6 +12,7 @@ import 'package:zagents/services/backup_service.dart';
 import 'package:zagents/services/browser_automation.dart';
 import 'package:zagents/services/chat_store.dart';
 import 'package:zagents/services/context_repository.dart';
+import 'package:zagents/services/ip_guard.dart';
 import 'package:zagents/services/js_runtime.dart';
 import 'package:zagents/services/llm_client.dart';
 import 'package:zagents/services/prompt_repository.dart';
@@ -660,6 +661,14 @@ List<Override> testOverrides({
   appLockServiceProvider.overrideWith(
     (Ref ref) =>
         AppLockService(prefs: _MemoryPrefs(), biometric: _LockedOutBiometric()),
+  ),
+  // v1.48.0 — the chat-switch IP guard would otherwise read the real
+  // network (fetch) and the production prefs provider (which throws in
+  // tests). Plug in an INERT guard: fetch → null degrades to "no warning,
+  // proceed", so switches behave exactly like the pre-guard flow. Tests
+  // that exercise the guard override ipGuardProvider again explicitly.
+  ipGuardProvider.overrideWith(
+    (Ref ref) => IpGuard(prefs: _MemoryPrefs(), fetchIp: () async => null),
   ),
   browserAutomationProvider.overrideWithValue(
     ScriptedBrowserAutomation(

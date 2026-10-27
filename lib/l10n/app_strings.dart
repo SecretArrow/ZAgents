@@ -127,6 +127,13 @@ abstract class AppStrings {
   String get updateUpToDate;
   String get updateCheckFailed;
 
+  // -- v1.48.0 chat-switch IP guard -------------------------------------
+  String get ipSwitchWarnTitle;
+  String get ipSwitchWarnSubtitle;
+  String get ipSwitchWarnDialogTitle;
+  String ipSwitchWarnDialogBody(String ip);
+  String get ipSwitchWarnContinue;
+
   // -- v1.44.0 module catalog ------------------------------------------
   String get officialModulesTitle;
   String get officialModulesSubtitle;
@@ -714,6 +721,25 @@ class AppStringsEn implements AppStrings {
 
   @override
   String get updateCheckFailed => 'Could not check for updates.';
+
+  @override
+  String get ipSwitchWarnTitle => 'Warn when the IP is the same';
+
+  @override
+  String get ipSwitchWarnSubtitle =>
+      'Before switching chats, compare the current public IP with the last '
+      'one used in the target chat and ask before continuing.';
+
+  @override
+  String get ipSwitchWarnDialogTitle => 'Same IP as last session';
+
+  @override
+  String ipSwitchWarnDialogBody(String ip) =>
+      'The current public IP ($ip) is the same as the last IP recorded for '
+      'this chat. Continue anyway?';
+
+  @override
+  String get ipSwitchWarnContinue => 'Continue';
 
   @override
   String get officialModulesTitle => 'Official sample modules';
@@ -1996,6 +2022,26 @@ class AppStringsId implements AppStrings {
 
   @override
   String get updateCheckFailed => 'Gagal memeriksa pembaruan.';
+
+  @override
+  String get ipSwitchWarnTitle => 'Peringatkan saat IP sama';
+
+  @override
+  String get ipSwitchWarnSubtitle =>
+      'Sebelum berpindah chat, bandingkan IP publik saat ini dengan IP '
+      'terakhir yang dipakai di chat tujuan, lalu minta konfirmasi sebelum '
+      'lanjut.';
+
+  @override
+  String get ipSwitchWarnDialogTitle => 'IP sama dengan sesi terakhir';
+
+  @override
+  String ipSwitchWarnDialogBody(String ip) =>
+      'IP publik saat ini ($ip) sama dengan IP terakhir yang tercatat untuk '
+      'chat ini. Tetap lanjutkan?';
+
+  @override
+  String get ipSwitchWarnContinue => 'Lanjutkan';
 
   @override
   String get officialModulesTitle => 'Modul contoh resmi';

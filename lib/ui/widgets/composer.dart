@@ -1,19 +1,12 @@
-import 'dart:io';
-
-import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../di.dart';
-import '../../services/agent_controller.dart' show ChatState;
-import '../../services/attachment_service.dart';
 import '../../services/module_registry.dart';
-import '../../services/speech_service.dart';
 import '../../l10n/app_strings.dart';
 import '../../models/models.dart';
 import '../screens/modules_screen.dart';
-import '../screens/prompt_library_screen.dart';
-import 'plan_panel.dart';
+import 'composer_actions.dart';
 import '../theme.dart';
 
 /// Bottom composer: attachment chips, rounded input, gradient send /
@@ -29,12 +22,6 @@ class Composer extends ConsumerStatefulWidget {
 class _ComposerState extends ConsumerState<Composer> {
   final TextEditingController _controller = TextEditingController();
   final FocusNode _focusNode = FocusNode();
-  bool _picking = false;
-
-  /// v1.44.0 — live dictation state: a listening session renders an inline
-  /// partial-text row and turns the mic control into a stop control.
-  bool _listening = false;
-  String _speechPartial = '';
 
   /// v1.42.0 — consecutive Stop taps while the SAME run is still active.
   /// 1 tap = graceful stop; tap 2 asks again + hints; tap 3 opens the
@@ -48,9 +35,19 @@ class _ComposerState extends ConsumerState<Composer> {
   /// in another.
   String? _boundSession;
 
+  /// v1.48.0 — the shared tool-action controller, captured in initState
+  /// while `ref` is still usable, so dispose can unbind the field WITHOUT
+  /// touching `ref` (riverpod forbids ref reads after unmount).
+  ComposerActionsController? _actions;
+
   @override
   void initState() {
     super.initState();
+    // v1.48.0 — the shared tool-action controller writes prompt inserts
+    // and dictation finals straight into this field (caret + focus
+    // handled there); this widget is the single owner of the controller.
+    _actions = ref.read(composerActionsProvider.notifier);
+    _actions!.bindField(_controller, _focusNode);
     _boundSession = ref.read(chatControllerProvider).sessionId;
     _controller.text = ref
         .read(chatControllerProvider.notifier)
@@ -77,6 +74,10 @@ class _ComposerState extends ConsumerState<Composer> {
 
   @override
   void dispose() {
+    // Unbind BEFORE the field dies, so a late insertion degrades to the
+    // per-chat draft store instead of touching a disposed controller.
+    // Uses the initState-captured controller — `ref` is NOT usable here.
+    _actions?.unbindField(_controller);
     _controller.dispose();
     _focusNode.dispose();
     super.dispose();
@@ -366,230 +367,6 @@ class _ComposerState extends ConsumerState<Composer> {
       );
   }
 
-  Future<void> _pickFile() async {
-    if (_picking) return;
-    setState(() => _picking = true);
-    // The picker is a system dialog: the user can switch chats while it is
-    // open. Files belong to the chat they were picked FROM, so the session is
-    // captured before the await and the result is discarded if the user moved
-    // on — otherwise chat A's file silently appeared in chat B's composer.
-    final String? sessionId = ref.read(activeSessionIdProvider);
-    try {
-      final XFile? picked = await openFile();
-      if (picked == null) return;
-      if (ref.read(activeSessionIdProvider) != sessionId) return;
-      // v1.44.0: images take the optimization pipeline — validated by
-      // content magic, downscaled to a 1600 px long edge, re-encoded —
-      // and are stored under `attachments/` in the SAME per-chat sandbox.
-      // Non-image files keep the byte-for-byte uploads copy below.
-      if (AttachmentService.looksLikeImage(picked.name)) {
-        final AttachmentResult result = await ref
-            .read(attachmentServiceProvider)
-            .optimizeAndStore(sessionId: sessionId, picked: picked);
-        if (ref.read(activeSessionIdProvider) != sessionId) return;
-        if (!result.ok) {
-          if (mounted) _showAttachmentError(result);
-          return;
-        }
-        final List<String> refParts = result.relativePath!.split(
-          Platform.pathSeparator,
-        );
-        final ChatAttachment attachment = ChatAttachment(
-          name: refParts.last,
-          path: result.absolutePath!,
-          sizeBytes: result.bytes!.length,
-          kind: AttachmentKind.image,
-        );
-        ref.read(pendingAttachmentsProvider.notifier).state = <ChatAttachment>[
-          ...ref.read(pendingAttachmentsProvider),
-          attachment,
-        ];
-        return;
-      }
-      // Uploads live in the ACTIVE session's own workspace — files never
-      // mix between chats (private-window isolation).
-      final Directory root = await ref
-          .read(sessionSandboxProvider)
-          .rootFor(sessionId);
-      final Directory uploads = Directory(
-        '${root.path}${Platform.pathSeparator}uploads',
-      );
-      if (!uploads.existsSync()) uploads.createSync(recursive: true);
-      final String stamp = DateTime.now().millisecondsSinceEpoch.toString();
-      final String safeName = picked.name.replaceAll('/', '_');
-      final File dest = File(
-        '${uploads.path}${Platform.pathSeparator}${stamp}_$safeName',
-      );
-      await File(picked.path).copy(dest.path);
-      if (ref.read(activeSessionIdProvider) != sessionId) {
-        // The user switched while the copy ran: don't leave an orphan file
-        // (and don't stage it into the wrong chat).
-        try {
-          if (dest.existsSync()) dest.deleteSync();
-        } catch (_) {}
-        return;
-      }
-      final ChatAttachment attachment = ChatAttachment(
-        name: safeName,
-        path: dest.path,
-        sizeBytes: await dest.length(),
-        kind: attachmentKindFor(safeName),
-      );
-      ref.read(pendingAttachmentsProvider.notifier).state = <ChatAttachment>[
-        ...ref.read(pendingAttachmentsProvider),
-        attachment,
-      ];
-    } catch (_) {
-      if (mounted) {
-        ScaffoldMessenger.of(context)
-          ..hideCurrentSnackBar()
-          ..showSnackBar(
-            SnackBar(content: Text(stringsOf(context).operationFailed)),
-          );
-      }
-    } finally {
-      if (mounted) setState(() => _picking = false);
-    }
-  }
-
-  /// Appends the chosen prompt's content to the composer text (at the
-  /// cursor end) and keeps the keyboard focus.
-  void _insertPrompt(PromptEntry entry) {
-    final String base = _controller.text;
-    final String merged = base.isEmpty
-        ? entry.content
-        : base.endsWith('\n')
-        ? '$base${entry.content}'
-        : '$base\n${entry.content}';
-    _controller.text = merged;
-    _controller.selection = TextSelection.collapsed(offset: merged.length);
-    _focusNode.requestFocus();
-  }
-
-  /// Bottom sheet listing the Prompt Library entries; tapping one inserts
-  /// it into the composer. Includes a shortcut into the library screen.
-  Future<void> _openPromptSheet() async {
-    final AppStrings strings = stringsOf(context);
-    ref.invalidate(promptListProvider);
-    await showModalBottomSheet<void>(
-      context: context,
-      builder: (BuildContext sheetContext) => Consumer(
-        builder: (BuildContext context, WidgetRef sheetRef, _) {
-          final AsyncValue<List<PromptEntry>> prompts = sheetRef.watch(
-            promptListProvider,
-          );
-          return SafeArea(
-            child: prompts.when(
-              loading: () => const SizedBox(
-                height: 160,
-                child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
-              ),
-              error: (Object e, StackTrace s) => SizedBox(
-                height: 120,
-                child: Center(
-                  child: Text(
-                    strings.operationFailed,
-                    style: TextStyle(color: context.zMuted),
-                  ),
-                ),
-              ),
-              data: (List<PromptEntry> items) => Column(
-                mainAxisSize: MainAxisSize.min,
-                children: <Widget>[
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 14, 16, 6),
-                    child: Row(
-                      children: <Widget>[
-                        Expanded(
-                          child: Text(
-                            strings.promptLibrary,
-                            style: const TextStyle(fontWeight: FontWeight.w700),
-                          ),
-                        ),
-                        TextButton.icon(
-                          key: const Key('prompt-sheet-manage'),
-                          onPressed: () {
-                            Navigator.of(sheetContext).pop();
-                            Navigator.of(this.context).push(
-                              MaterialPageRoute<void>(
-                                builder: (_) => const PromptLibraryScreen(),
-                              ),
-                            );
-                          },
-                          icon: const Icon(Icons.bookmarks_rounded, size: 16),
-                          label: Text(strings.edit),
-                        ),
-                      ],
-                    ),
-                  ),
-                  if (items.isEmpty)
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 4, 16, 20),
-                      child: Column(
-                        children: <Widget>[
-                          Text(
-                            strings.promptLibraryEmpty,
-                            style: TextStyle(color: context.zMuted),
-                          ),
-                          const SizedBox(height: 8),
-                          TextButton.icon(
-                            key: const Key('prompt-sheet-open-library'),
-                            onPressed: () {
-                              Navigator.of(sheetContext).pop();
-                              Navigator.of(this.context).push(
-                                MaterialPageRoute<void>(
-                                  builder: (_) => const PromptLibraryScreen(),
-                                ),
-                              );
-                            },
-                            icon: const Icon(Icons.add_rounded, size: 16),
-                            label: Text(strings.newPrompt),
-                          ),
-                        ],
-                      ),
-                    )
-                  else
-                    Flexible(
-                      child: ListView.builder(
-                        key: const Key('prompt-sheet-list'),
-                        shrinkWrap: true,
-                        itemCount: items.length,
-                        itemBuilder: (BuildContext context, int index) {
-                          final PromptEntry entry = items[index];
-                          return ListTile(
-                            key: Key('prompt-sheet-item-${entry.id}'),
-                            dense: true,
-                            leading: const Icon(Icons.notes_rounded, size: 18),
-                            title: Text(
-                              entry.title,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                            subtitle: entry.content.isEmpty
-                                ? null
-                                : Text(
-                                    entry.content,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                            onTap: () {
-                              Navigator.of(sheetContext).pop();
-                              _insertPrompt(entry);
-                            },
-                          );
-                        },
-                      ),
-                    ),
-                  const SizedBox(height: 8),
-                ],
-              ),
-            ),
-          );
-        },
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     final AppStrings strings = stringsOf(context);
@@ -611,12 +388,13 @@ class _ComposerState extends ConsumerState<Composer> {
     );
     // v1.44.0: dictation belongs to the chat it was started in — a chat
     // switch ends the speech session instead of letting the final words
-    // land in another chat's draft.
+    // land in another chat's draft. The dictation STATE lives in the
+    // shared [composerActionsProvider] (v1.48.0), so the guard reads it.
     ref.listen<String?>(chatControllerProvider.select((s) => s.sessionId), (
       String? previous,
       String? current,
     ) {
-      if (previous != current && _listening) {
+      if (previous != current && ref.read(composerActionsProvider).listening) {
         ref.read(speechServiceProvider).stop();
       }
     });
@@ -627,17 +405,13 @@ class _ComposerState extends ConsumerState<Composer> {
       chatControllerProvider.select((s) => s.isLoading),
     );
     final List<ChatAttachment> pending = ref.watch(pendingAttachmentsProvider);
-    // v1.46.0: the plan show/hide toggle moves into the composer toolbar
-    // (right side) so the three tool icons sit LEFT of it, in one row
-    // ABOVE the text field — the text row itself now holds only the
-    // field and the send/stop button, i.e. maximum typing width. The
-    // same global [planPanelOpenProvider] drives it, so it stays in sync
-    // with the thinking-footer eye: while a run streams the inline
-    // footer panel toggles, when idle the pinned top panel does.
-    final bool hasPlan = ref.watch(
-      chatControllerProvider.select((ChatState s) => s.todos.isNotEmpty),
-    );
-    final bool planOpen = ref.watch(planPanelOpenProvider);
+    // v1.48.0 — the composer tool actions (attach / prompt library / mic)
+    // moved into the shared [composerActionsProvider]; while a run
+    // streams the toolbar row disappears entirely and the SAME three
+    // icons render on the thinking footer's row, immediately LEFT of the
+    // plan show/hide eye. The composer-side plan eye is DELETED — the
+    // thinking footer's eye is the only show/hide control.
+    final ComposerActionsState actions = ref.watch(composerActionsProvider);
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 4, 12, 12),
       child: Column(
@@ -645,7 +419,7 @@ class _ComposerState extends ConsumerState<Composer> {
         children: <Widget>[
           // v1.44.0: live dictation preview — the partial transcript while
           // the mic is open, so the user sees the phone is listening.
-          if (_listening)
+          if (actions.listening)
             Padding(
               key: const Key('speech-listening-row'),
               padding: const EdgeInsets.only(bottom: 8),
@@ -659,9 +433,9 @@ class _ComposerState extends ConsumerState<Composer> {
                   const SizedBox(width: 6),
                   Expanded(
                     child: Text(
-                      _speechPartial.isEmpty
+                      actions.speechPartial.isEmpty
                           ? stringsOf(context).speechListening
-                          : _speechPartial,
+                          : actions.speechPartial,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(fontSize: 12, color: context.zMuted),
@@ -708,57 +482,11 @@ class _ComposerState extends ConsumerState<Composer> {
                 ],
               ),
             ),
-          // v1.46.0 — composer TOOLBAR: attach / prompt library / mic on
-          // the left, the Plan show/hide eye on the right (only when the
-          // displayed chat actually has a plan). Everything else moved
-          // OUT of the text row so the "Ask anything" column is wide.
-          Row(
-            children: <Widget>[
-              IconButton(
-                key: const Key('attach-button'),
-                tooltip: strings.attachFile,
-                onPressed: _picking ? null : _pickFile,
-                icon: _picking
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : Icon(Icons.attach_file_rounded, color: context.zMuted),
-              ),
-              IconButton(
-                key: const Key('prompt-insert-button'),
-                tooltip: strings.insertPrompt,
-                onPressed: _openPromptSheet,
-                icon: Icon(Icons.notes_rounded, color: context.zMuted),
-              ),
-              IconButton(
-                key: const Key('mic-button'),
-                tooltip: _listening ? strings.speechStop : strings.speechListen,
-                onPressed: _toggleMic,
-                icon: Icon(
-                  _listening ? Icons.stop_rounded : Icons.mic_none_rounded,
-                  color: _listening ? const Color(0xFFE5484D) : context.zMuted,
-                ),
-              ),
-              const Spacer(),
-              if (hasPlan)
-                IconButton(
-                  key: const Key('composer-plan-toggle'),
-                  tooltip: planOpen
-                      ? strings.hidePlanTooltip
-                      : strings.showPlanTooltip,
-                  visualDensity: VisualDensity.compact,
-                  icon: Icon(
-                    planOpen
-                        ? Icons.visibility_off_outlined
-                        : Icons.visibility_outlined,
-                    color: context.zMuted,
-                  ),
-                  onPressed: () => togglePlanPanel(ref),
-                ),
-            ],
-          ),
+          // v1.48.0 — idle TOOLBAR: the three tool icons stay reachable
+          // while no run is active (no plan eye anymore). WHILE RUNNING
+          // the row is removed from the tree: the icons render on the
+          // thinking footer instead — exactly one copy on screen.
+          if (!isRunning) Row(children: <Widget>[const ComposerToolIcons()]),
           Row(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: <Widget>[
@@ -809,85 +537,6 @@ class _ComposerState extends ConsumerState<Composer> {
         ],
       ),
     );
-  }
-
-  /// v1.44.0 — mic control: first tap probes availability (lazy init +
-  /// runtime RECORD_AUDIO prompt), starts dictation in the app language,
-  /// and the next tap stops it. Final recognition results are appended to
-  /// the composer text (per-chat draft, so they survive a chat switch);
-  /// partials only feed the inline preview row.
-  Future<void> _toggleMic() async {
-    final AppStrings strings = stringsOf(context);
-    if (_listening) {
-      await ref.read(speechServiceProvider).stop();
-      return;
-    }
-    final SpeechService speech = ref.read(speechServiceProvider);
-    final SpeechAvailability availability = await speech.ensureReady();
-    if (!mounted) return;
-    if (availability == SpeechAvailability.unavailable) {
-      _snack(strings.speechUnavailable);
-      return;
-    }
-    if (availability == SpeechAvailability.notAuthorized) {
-      _snack(strings.speechPermissionDenied);
-      return;
-    }
-    setState(() {
-      _listening = true;
-      _speechPartial = '';
-    });
-    await speech.start(
-      localeCode: ref.read(settingsProvider).languageCode,
-      onResult: (String text, bool finalResult) {
-        if (!mounted) return;
-        if (!finalResult) {
-          setState(() => _speechPartial = text);
-          return;
-        }
-        final String trimmed = text.trim();
-        if (trimmed.isNotEmpty) {
-          final String current = _controller.text;
-          final String merged = current.isEmpty
-              ? trimmed
-              : '$current ${trimmed.trimLeft()}';
-          _controller.value = TextEditingValue(
-            text: merged,
-            selection: TextSelection.collapsed(offset: merged.length),
-          );
-        }
-        setState(() => _speechPartial = '');
-      },
-      onEnd: () {
-        if (!mounted) return;
-        setState(() {
-          _listening = false;
-          _speechPartial = '';
-        });
-      },
-    );
-  }
-
-  /// Localized snackbar for the image-attachment failure kinds.
-  void _showAttachmentError(AttachmentResult result) {
-    final AppStrings strings = stringsOf(context);
-    switch (result.errorType) {
-      case AttachmentErrorType.tooLarge:
-        _snack(strings.imageTooLarge);
-      case AttachmentErrorType.notAnImage:
-        _snack(strings.imageNotAnImage);
-      case AttachmentErrorType.cancelled:
-        break;
-      case AttachmentErrorType.saveFailed:
-      case null:
-        _snack(strings.operationFailed);
-    }
-  }
-
-  void _snack(String message) {
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(content: Text(message)));
   }
 
   /// v1.42.0 — 1 tap stops the process (graceful); the 2nd tap asks again

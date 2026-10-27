@@ -1,18 +1,24 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:zagents/di.dart';
 import 'package:zagents/l10n/app_strings.dart';
+import 'package:zagents/main.dart';
+import 'package:zagents/models/models.dart';
+import 'package:zagents/services/llm_client.dart';
 import 'package:zagents/ui/widgets/composer.dart';
 
 import '../support/test_doubles.dart';
 
-/// v1.46.0 — the composer TOOLBAR: attach / prompt library / mic moved
-/// OUT of the text row into a toolbar row above the "Ask anything" box
-/// (text row = field + send only, maximum typing width), with the Plan
-/// show/hide eye parked on the toolbar's right side when the displayed
-/// chat has a plan.
+/// v1.48.0 — the composer TOOL icons (attach / prompt library / mic) live
+/// in a toolbar row ABOVE the text field ONLY while no run is active, and
+/// the plan show/hide eye is GONE from the composer: while a run streams
+/// the toolbar row disappears entirely and the SAME three icons render on
+/// the thinking footer's row, immediately LEFT of the footer's eye (see
+/// todo_plan_card_test.dart for the footer-side geometry).
 void main() {
   late Directory tempDir;
 
@@ -41,6 +47,12 @@ void main() {
     await tester.pumpAndSettle();
   }
 
+  /// Scopes a finder to the COMPOSER subtree — during a run the thinking
+  /// footer (rendered by the message list, not here) owns the icons, so
+  /// toolbar assertions must be scoped.
+  Finder inComposer(Key key) =>
+      find.descendant(of: find.byType(Composer), matching: find.byKey(key));
+
   testWidgets('tool icons render in the toolbar above the text field', (
     WidgetTester tester,
   ) async {
@@ -60,10 +72,113 @@ void main() {
     expect(attach.bottom, lessThanOrEqualTo(field.top + 1));
   });
 
-  testWidgets('the plan toggle only exists when the chat has a plan', (
+  testWidgets('v1.48.0: the plan show/hide eye is DELETED from the composer — '
+      'zero matches, even with a plan in the chat', (
     WidgetTester tester,
   ) async {
     await pump(tester);
+
     expect(find.byKey(const Key('composer-plan-toggle')), findsNothing);
   });
+
+  testWidgets(
+    'while a run streams the toolbar row is HIDDEN — the three icons move '
+    'to the thinking footer (exactly one copy on screen), field + stop '
+    'stay, and no duplicate eye appears',
+    (WidgetTester tester) async {
+      final Completer<void> gate = Completer<void>();
+      late ProviderContainer container;
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: <Override>[
+            ...testOverrides(
+              llm: _GatedLlmClient(gate),
+              dir: tempDir,
+              settings: AppSettings(apiKey: 'test-key'),
+              writeScreenshots: false,
+            ),
+            chatListProvider.overrideWith((Ref ref) async => <ChatSummary>[]),
+          ],
+          child: Builder(
+            builder: (BuildContext context) {
+              container = ProviderScope.containerOf(context);
+              return const ZAgentsApp();
+            },
+          ),
+        ),
+      );
+      await tester.pump();
+
+      await tester.enterText(find.byKey(const Key('composer-field')), 'go');
+      await tester.tap(find.byKey(const Key('send-button')));
+      await tester.pump();
+
+      // The gated turn keeps the run alive: the red Stop control is up.
+      expect(find.byKey(const Key('stop-button')), findsOneWidget);
+      expect(container.read(chatControllerProvider).isRunning, isTrue);
+
+      // The composer toolbar row is GONE: none of the three tool keys
+      // inside the composer subtree…
+      expect(inComposer(const Key('attach-button')), findsNothing);
+      expect(inComposer(const Key('prompt-insert-button')), findsNothing);
+      expect(inComposer(const Key('mic-button')), findsNothing);
+      // …and the duplicate plan eye is gone from the whole app.
+      expect(find.byKey(const Key('composer-plan-toggle')), findsNothing);
+
+      // The input row stays untouched.
+      expect(find.byKey(const Key('composer-field')), findsOneWidget);
+
+      // The icons DID move (not vanish): the streaming assistant bubble's
+      // thinking footer now renders the attach icon — exactly ONCE. The
+      // streaming bubble is created by the run loop, so wait for it.
+      for (
+        var i = 0;
+        i < 20 && find.text('thinking…').evaluate().isEmpty;
+        i++
+      ) {
+        await tester.pump(const Duration(milliseconds: 50));
+      }
+      expect(find.text('thinking…'), findsOneWidget);
+      expect(find.byKey(const Key('attach-button')), findsOneWidget);
+      expect(find.byKey(const Key('prompt-insert-button')), findsOneWidget);
+      expect(find.byKey(const Key('mic-button')), findsOneWidget);
+
+      // Run ends: the toolbar comes back and the footer (with its icon
+      // copy) unmounts.
+      gate.complete();
+      await tester.pumpAndSettle(
+        const Duration(milliseconds: 100),
+        EnginePhase.sendSemanticsUpdate,
+        const Duration(seconds: 15),
+      );
+      expect(container.read(chatControllerProvider).isRunning, isFalse);
+      expect(find.byKey(const Key('send-button')), findsOneWidget);
+      expect(inComposer(const Key('attach-button')), findsOneWidget);
+      expect(find.text('thinking…'), findsNothing);
+    },
+  );
+}
+
+/// LLM double whose complete() PARKS on [gate] — the run stays
+/// `isRunning` (Stop button up, toolbar hidden) while the test asserts,
+/// and proceeds once the gate opens. Same pattern as stop_button_test.
+class _GatedLlmClient implements LlmClient {
+  _GatedLlmClient(this.gate);
+
+  final Completer<void> gate;
+
+  @override
+  Future<AssistantTurn> complete({
+    required LlmConfig config,
+    required List<Map<String, dynamic>> messages,
+    List<Map<String, dynamic>>? tools,
+    void Function(String delta)? onDelta,
+    bool Function()? shouldAbort,
+    Object? cancelKey,
+  }) async {
+    if (shouldAbort?.call() ?? false) throw const LlmAbortedException('');
+    await gate.future;
+    if (shouldAbort?.call() ?? false) throw const LlmAbortedException('');
+    return AssistantTurn(content: 'done after gate');
+  }
 }

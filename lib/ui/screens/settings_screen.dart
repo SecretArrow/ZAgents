@@ -88,6 +88,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     bool? appLockEnabled,
     bool? notifyOnDone,
     bool? checkUpdatesOnStart,
+    bool? ipSwitchWarnEnabled,
     bool? autoRetryEnabled,
     Object? autoRetryAttempts,
     Object? autoRetryDelay,
@@ -112,6 +113,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             appLockEnabled: appLockEnabled,
             notifyOnDone: notifyOnDone,
             checkUpdatesOnStart: checkUpdatesOnStart,
+            ipSwitchWarnEnabled: ipSwitchWarnEnabled,
             autoRetryEnabled: autoRetryEnabled,
             autoRetryAttempts: autoRetryAttempts ?? current.autoRetryAttempts,
             autoRetryDelay: autoRetryDelay ?? current.autoRetryDelay,
@@ -761,6 +763,24 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     ),
                     value: settings.askRandomUa,
                     onChanged: (bool value) => _commit(askRandomUa: value),
+                  ),
+                  const Divider(height: 20),
+                  // v1.48.0 — chat-switch IP guard. Kept in the User Agent
+                  // (network identity) card on purpose: together with the
+                  // UA pick it governs the fingerprint the device shows the
+                  // outside world while chatting.
+                  SwitchListTile(
+                    key: const Key('ip-switch-warn-switch'),
+                    contentPadding: EdgeInsets.zero,
+                    dense: true,
+                    title: Text(strings.ipSwitchWarnTitle),
+                    subtitle: Text(
+                      strings.ipSwitchWarnSubtitle,
+                      style: TextStyle(fontSize: 12, color: palette.muted),
+                    ),
+                    value: settings.ipSwitchWarnEnabled,
+                    onChanged: (bool value) =>
+                        _commit(ipSwitchWarnEnabled: value),
                   ),
                 ],
               ),

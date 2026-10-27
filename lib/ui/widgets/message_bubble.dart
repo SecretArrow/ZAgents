@@ -10,6 +10,7 @@ import '../../di.dart';
 import '../../l10n/app_strings.dart';
 import '../../models/models.dart';
 import '../theme.dart';
+import 'composer_actions.dart';
 import 'plan_panel.dart';
 import 'todo_plan_card.dart';
 import 'tool_call_card.dart';
@@ -387,11 +388,14 @@ class _CopyButtonState extends State<_CopyButton> {
 }
 
 /// Footer row under a working assistant message: spinner + "thinking…"
-/// on the left, and — as soon as the agent has written a plan — a
-/// right-aligned show/hide toggle for the PINNED live Plan panel
-/// (v1.38.0: the toggle flips the global [planPanelOpenProvider]; the
-/// panel itself renders above the message list, so it survives streaming
-/// rebuilds, step transitions, run end and chat switching).
+/// on the left; on the right — the three composer TOOL icons (attach /
+/// prompt library / mic, v1.48.0: they live HERE while a run streams —
+/// the composer toolbar hides so there is exactly one copy on screen) and
+/// — as soon as the agent has written a plan — a right-aligned show/hide
+/// toggle for the PINNED live Plan panel (v1.38.0: the toggle flips the
+/// global [planPanelOpenProvider]; the panel itself renders above the
+/// message list, so it survives streaming rebuilds, step transitions,
+/// run end and chat switching).
 class _ThinkingFooter extends ConsumerStatefulWidget {
   const _ThinkingFooter({required this.todos});
 
@@ -441,6 +445,11 @@ class _ThinkingFooterState extends ConsumerState<_ThinkingFooter> {
               style: TextStyle(color: context.zMuted, fontSize: 12),
             ),
             const Spacer(),
+            // v1.48.0 — the attach / prompt library / mic icons sit ON the
+            // thinking row ("lurus dengan thinking"), immediately LEFT of
+            // the plan eye. Compact density so the group matches the eye's
+            // 16 px icon sizing; taps drive the shared composer actions.
+            const ComposerToolIcons(compact: true),
             if (hasPlan)
               IconButton(
                 key: const Key('todo-toggle-button'),

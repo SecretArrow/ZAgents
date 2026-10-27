@@ -21,6 +21,7 @@ import 'services/chat_store.dart';
 import 'services/context_repository.dart';
 import 'services/device_export.dart';
 import 'services/device_shell.dart';
+import 'services/ip_guard.dart';
 import 'services/js_runtime.dart';
 import 'services/llm_client.dart';
 import 'services/model_catalog.dart';
@@ -356,6 +357,21 @@ final appLockPrefsProvider = Provider<SharedPreferences>((ref) {
 final appLockServiceProvider = Provider<AppLockService>((ref) {
   return AppLockService(prefs: ref.watch(appLockPrefsProvider));
 });
+
+/// Must be overridden in main() — SharedPreferences is async at boot.
+/// Holds the per-chat "last seen public IP" memo of the chat-switch IP
+/// guard (v1.48.0), kept OUTSIDE [AppSettings] on purpose: it is usage
+/// telemetry, not a user preference, so it never travels inside settings
+/// backups.
+final ipMemoPrefsProvider = Provider<SharedPreferences>((ref) {
+  throw UnimplementedError('ipMemoPrefsProvider must be overridden in main()');
+});
+
+/// Chat-switch IP guard (v1.48.0): overridable in tests with a scripted
+/// fetchIp and/or mock SharedPreferences.
+final ipGuardProvider = Provider<IpGuard>(
+  (ref) => IpGuard.withClient(prefs: ref.watch(ipMemoPrefsProvider)),
+);
 
 /// Whether the Flutter app is currently visible to the user. Updated by
 /// the lifecycle observer in LockGate; the agent loop reads it when a run

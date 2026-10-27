@@ -231,6 +231,35 @@ void main() {
     expect(container.read(settingsProvider).deviceCommandsEnabled, isTrue);
   });
 
+  testWidgets('ip-switch warn defaults OFF and persists (v1.48.0)', (
+    WidgetTester tester,
+  ) async {
+    final ProviderContainer container = await openSettings(tester);
+
+    await tester.dragUntilVisible(
+      find.byKey(const Key('ip-switch-warn-switch')),
+      find.byType(ListView),
+      const Offset(0, -120),
+    );
+    await tester.pumpAndSettle(
+      const Duration(milliseconds: 100),
+      EnginePhase.sendSemanticsUpdate,
+      const Duration(seconds: 15),
+    );
+
+    // Privacy-sensitive network probe: the switch ships off.
+    expect(container.read(settingsProvider).ipSwitchWarnEnabled, isFalse);
+    expect(find.byKey(const Key('ip-switch-warn-switch')), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('ip-switch-warn-switch')));
+    await tester.pumpAndSettle(
+      const Duration(milliseconds: 100),
+      EnginePhase.sendSemanticsUpdate,
+      const Duration(seconds: 15),
+    );
+    expect(container.read(settingsProvider).ipSwitchWarnEnabled, isTrue);
+  });
+
   testWidgets('theme picker switches light/dark/system and persists', (
     WidgetTester tester,
   ) async {
