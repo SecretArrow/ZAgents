@@ -29,8 +29,9 @@ class SkillOption {
 /// * Apply → the newly selected name list;
 /// * "Use global default" → `null` (follow the global default);
 /// * "Clear selection" → the empty list (no skills for this chat);
-/// * dismissed (barrier tap / back) → `null` — the caller keeps its
-///   current selection unchanged.
+/// * dismissed (barrier tap / back) → the CALLER'S `currentSelection`,
+///   so awaiting it never changes the chat's selection by accident —
+///   `null` is reserved for the explicit reset-to-global action.
 class SkillSelectorSheet {
   const SkillSelectorSheet._();
 
@@ -38,8 +39,8 @@ class SkillSelectorSheet {
     BuildContext context, {
     required List<SkillOption> options,
     List<String>? currentSelection,
-  }) {
-    return showModalBottomSheet<List<String>>(
+  }) async {
+    final Object? result = await showModalBottomSheet<Object>(
       context: context,
       isScrollControlled: true,
       builder: (BuildContext sheetContext) => _SheetBody(
@@ -47,8 +48,20 @@ class SkillSelectorSheet {
         initialSelection: currentSelection ?? const <String>[],
       ),
     );
+    if (result == null) {
+      // Barrier/back dismissal: resolve with the caller's current
+      // selection so "nothing changed" is a value, not a guess.
+      return currentSelection;
+    }
+    if (identical(result, _useGlobalDefault)) return null;
+    return result as List<String>;
   }
 }
+
+/// Result popped by the "Use global default" action. A sentinel (not a
+/// bare `null`) is needed because the route machinery pops `null` on a
+/// barrier/back dismissal — the two cases must stay distinguishable.
+const Object _useGlobalDefault = Object();
 
 class _SheetBody extends StatefulWidget {
   const _SheetBody({required this.options, required this.initialSelection});
@@ -165,7 +178,8 @@ class _SheetBodyState extends State<_SheetBody> {
                 Expanded(
                   child: TextButton(
                     key: const Key('skill-sheet-use-global'),
-                    onPressed: () => Navigator.of(context).pop(null),
+                    onPressed: () =>
+                        Navigator.of(context).pop(_useGlobalDefault),
                     child: Text(strings.skillSheetUseGlobal),
                   ),
                 ),
