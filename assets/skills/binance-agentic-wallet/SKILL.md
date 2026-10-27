@@ -1,8 +1,8 @@
 ---
 name: binance-agentic-wallet
 title: Binance Agentic Wallet
-description: Drive the official Binance wallet flow — connect/login via Binance's own pages, read balances and transactions, and gate every asset-moving action behind the user's explicit confirmation card.
-version: "1.0"
+description: Drive the official Binance wallet flow — connect/login via Binance's own pages, read balances and transactions, and gate every asset-moving action behind the user's explicit confirmation card. Companion in-app module /aw keeps per-chat policy (pairing note, daily limit, token registry, EIP-55 checks, spend intents + history).
+version: "1.1"
 wallet: true
 permissions:
   - network
@@ -28,6 +28,34 @@ sites). Anything else is a phishing target — abort immediately.
    confirmation card.
 4. Report failures as failures. Never fabricate balances, addresses or
    transaction hashes.
+
+## The in-app companion module — `/aw` (Agentic Wallet)
+
+The app ships a policy/bookkeeping sample module for exactly this
+workflow. It holds NO keys, does NO signing and makes NO network calls —
+it only records policy per chat. Route the user there with `/aw help`.
+
+- `/aw pair` + `/aw pair confirm` — record (bookkeeping only) that a
+  wallet is attached to THIS chat. The REAL pairing still happens in the
+  official Binance App / web wallet, by the user.
+- `/aw limit <amount>` — per-token daily spend cap the user wants you to
+  respect when drafting spends (`0` blocks all spending).
+- `/aw network <bsc|eth|arbitrum|base>` — the chain the user intends to
+  operate on (aliases `bnb`, `ethereum`); `/aw tokens` lists the
+  registered mainnet tokens (EIP-55 canonical addresses, decimals).
+- `/aw checksum <address> [network]` — validate shape + EIP-55 checksum
+  of any address before you use it anywhere.
+- `/aw spend <token> <amount> <to>` — policy-checked spend DRAFT. When
+  the user asks to move value, build it this way, then call
+  `request_confirmation` with EXACTLY the draft's facts (network, token,
+  amount, destination) and wait for approval. Record the approved spend
+  with `/aw spend confirm <id>`; drop it with `/aw spend cancel <id>`.
+- `/aw history` — the chat's recorded spends; `/aw status` shows pairing,
+  limit, today's book and any pending intent.
+
+Always check the module's output before drafting a spend: if the draft
+was rejected (over limit, unknown token, checksum mismatch), fix the
+parameters or tell the user — never bypass the policy layer.
 
 ## Workflow 1 — connect / login
 
@@ -55,7 +83,7 @@ sites). Anything else is a phishing target — abort immediately.
 
 1. Collect the exact parameters from the user: action, network (e.g.
    bnb-beacon-chain, bsc, ethereum), asset (BNB, USDT...), amount,
-   destination address.
+   destination address. Validate the address with `/aw checksum` first.
 2. On the official withdrawal/swap page, fill NOTHING until the user has
    confirmed the parameters in chat. Read the provider's fee quote with
    `browser_extract_text`.
@@ -67,10 +95,17 @@ sites). Anything else is a phishing target — abort immediately.
    Report the REAL outcome (transaction id or the exact error).
 5. On decline/timeout: stop immediately. No retries.
 
-## Limits on this device
+## Limits on this device (be honest)
 
 - ZAgents cannot sign transactions itself and cannot hold keys. Actions
   the Binance web UI does not offer on mobile web are UNSUPPORTED here —
   say so and suggest the official Binance app for those steps.
+- The OFFICIAL agentic-wallet skill package
+  (`npx skills add binance/binance-skills-hub/skills/binance-web3/binance-agentic-wallet`,
+  docs: https://www.binance.com/en/web3wallet) ships a `baw` CLI that
+  needs real Node.js: it is NOT runnable in this on-device runtime. Do
+  not pretend to run it — the companion `/aw` module covers only policy
+  and bookkeeping, and every actual transfer is executed by the user in
+  the Binance App / web wallet after a `request_confirmation` approval.
 - Smart-contract interactions beyond what the official web UI exposes are
   out of scope for this skill. Be explicit about that limitation.
