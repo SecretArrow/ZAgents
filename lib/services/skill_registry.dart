@@ -4,9 +4,11 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:archive/archive.dart' as ar;
+import 'package:flutter/services.dart' show rootBundle;
 import 'package:http/http.dart' as http;
 
 import 'remote_guard.dart';
+import 'settings_repository.dart' show SecretBox, FlutterSecretBox;
 
 /// One declared configuration input of a skill (SKILL.md `config:` block).
 /// Secret values live in the skill's local config file and are injected
@@ -41,8 +43,10 @@ class SkillConfigField {
       );
 }
 
-/// Lifecycle status of one installed skill.
-enum SkillStatus { ready, needsConfig, broken }
+/// Lifecycle status of one installed skill. [disabled] (v1.49.0) means the
+/// user turned the skill off in the Skills manager — it overrides every
+/// other state (an off skill never reports ready/needs-config).
+enum SkillStatus { ready, needsConfig, broken, disabled }
 
 /// One installed skill: an on-disk folder under `<docs>/skills/<name>/`
 /// with a SKILL.md (front-matter: name/description/version/permissions/
@@ -60,6 +64,7 @@ class InstalledSkill {
     required this.installedAt,
     this.requiresBins = const <String>[],
     this.wallet = false,
+    this.enabled = true,
   });
 
   final String name;
@@ -84,6 +89,13 @@ class InstalledSkill {
   /// time (one approval authorizes exactly one run).
   final bool wallet;
 
+  /// v1.49.0: user-owned on/off switch (Skills manager). A disabled skill
+  /// stays installed with its stored config but reports
+  /// [SkillStatus.disabled]; the list APIs still return it so callers can
+  /// render the flag and decide. Preserved across reinstalls/updates —
+  /// turning a skill off must not be silently undone by an update.
+  final bool enabled;
+
   Map<String, dynamic> toJson() => <String, dynamic>{
     'name': name,
     'version': version,
@@ -93,6 +105,7 @@ class InstalledSkill {
     'permissions': permissions,
     'requiresBins': requiresBins,
     'wallet': wallet,
+    'enabled': enabled,
     'config': configFields.map((SkillConfigField f) => f.toJson()).toList(),
     'installedAt': installedAt.toIso8601String(),
   };
@@ -113,6 +126,7 @@ class InstalledSkill {
                 .map((Object? e) => e.toString())
                 .toList(),
         wallet: json['wallet'] == true,
+        enabled: json['enabled'] != false,
         configFields: ((json['config'] as List<dynamic>?) ?? const <dynamic>[])
             .whereType<Map<String, dynamic>>()
             .map(SkillConfigField.fromJson)
@@ -124,8 +138,10 @@ class InstalledSkill {
       );
 
   /// Ready when the folder exists, instructions are readable and no
-  /// required config value is missing.
+  /// required config value is missing. A user-disabled skill reports
+  /// [SkillStatus.disabled] regardless of its config state (v1.49.0).
   SkillStatus status(Set<String> missingRequiredConfig) {
+    if (!enabled) return SkillStatus.disabled;
     final Directory dir = Directory(dirPath);
     if (!dir.existsSync() ||
         !File('$dirPath${Platform.pathSeparator}SKILL.md').existsSync()) {
@@ -258,13 +274,36 @@ class SkillRegistryException implements Exception {
 /// every entry path-safety checked (zip-slip), size-capped, and staged
 /// BEFORE an atomic rename into place.
 class SkillRegistry {
-  SkillRegistry({required this.resolveBaseDir, http.Client? client})
-    : _client = client ?? http.Client();
+  SkillRegistry({
+    required this.resolveBaseDir,
+    http.Client? client,
+    SecretBox? secretBox,
+  }) : _client = client ?? http.Client(),
+       // v1.49.0: secret config values live in the encrypted store. The
+       // default is the device Keystore-backed box — the SAME default
+       // [PrefsSettingsRepository] uses — so secrets survive restarts
+       // without a di.dart change. (An in-memory default would silently
+       // destroy user secrets on every app restart, because [writeConfig]
+       // strips the plaintext file once the box confirms the value.)
+       // Tests inject [InMemorySecretBox] explicitly.
+       _secrets = secretBox ?? const FlutterSecretBox();
 
   /// Documents-root resolver — public read-only on purpose (tools and
   /// tests introspect it).
   final Future<Directory> Function() resolveBaseDir;
   final http.Client _client;
+
+  /// Encrypted store behind secret skill config values (v1.49.0).
+  final SecretBox _secrets;
+
+  /// Skills whose legacy-plaintext config was already migrated into the
+  /// secret box during this registry's lifetime. Re-checked after every
+  /// registry (re)load — cheap and idempotent.
+  final Set<String> _migratedSkills = <String>{};
+
+  /// Mask returned by [readConfig] for encrypted secret values when
+  /// [revealSecrets] is false (module pattern: never echo the value).
+  static const String secretMask = '••••';
 
   static const String registryFileName = 'registry.json';
   static const String configFileName = '.zconfig.json';
@@ -523,6 +562,8 @@ class SkillRegistry {
       if (reservedNames.contains(name)) {
         throw SkillRegistryException('"$name" is a reserved app name.');
       }
+      // v1.49.0: carry the user's enabled choice over a reinstall/update.
+      final bool preservedEnabled = await _previousEnabled(name);
 
       // Atomic-ish replace: move the old install aside, stage the new,
       // drop the old — a failed move rolls the previous install back.
@@ -548,6 +589,7 @@ class SkillRegistry {
           configFields: manifest.configFields,
           dirPath: finalDir.path,
           installedAt: DateTime.now(),
+          enabled: preservedEnabled,
         );
         // v1.40.0: a reinstall must not throw away the user's stored secrets.
         // `.zconfig.json` never comes from the archive (it is blocked from
@@ -676,6 +718,8 @@ class SkillRegistry {
       if (reservedNames.contains(name)) {
         throw SkillRegistryException('"$name" is a reserved app name.');
       }
+      // v1.49.0: carry the user's enabled choice over a bundled reinstall.
+      final bool preservedEnabled = await _previousEnabled(name);
       final Directory root = await skillsDir();
       final Directory finalDir = Directory(
         '${root.path}${Platform.pathSeparator}$name',
@@ -698,6 +742,7 @@ class SkillRegistry {
           configFields: manifest.configFields,
           dirPath: finalDir.path,
           installedAt: DateTime.now(),
+          enabled: preservedEnabled,
         );
         // v1.41.0: a bundled reinstall must not throw away the user's
         // stored secrets — same policy as installFromArchiveBytes. The
@@ -761,6 +806,50 @@ class SkillRegistry {
     }
   }
 
+  /// v1.49.0: user enable/disable switch (Skills manager). Updates the
+  /// in-memory cache AND persists the flag into registry.json (atomic
+  /// write, flush). Unknown names are a no-op — the UI only calls this
+  /// for skills it listed.
+  Future<void> setEnabled(String name, bool value) async {
+    final List<InstalledSkill> all = await _readRegistry();
+    final int index = all.indexWhere((InstalledSkill s) => s.name == name);
+    if (index == -1) return;
+    final List<InstalledSkill> updated = List<InstalledSkill>.of(all)
+      ..[index] = _withEnabled(all[index], value);
+    await _writeRegistry(updated);
+  }
+
+  /// Copy of [skill] with a new [InstalledSkill.enabled] value.
+  InstalledSkill _withEnabled(InstalledSkill skill, bool value) =>
+      InstalledSkill(
+        name: skill.name,
+        version: skill.version,
+        title: skill.title,
+        description: skill.description,
+        source: skill.source,
+        permissions: skill.permissions,
+        configFields: skill.configFields,
+        dirPath: skill.dirPath,
+        installedAt: skill.installedAt,
+        requiresBins: skill.requiresBins,
+        wallet: skill.wallet,
+        enabled: value,
+      );
+
+  /// v1.49.0: the enabled flag of the CURRENTLY stored install with
+  /// [name] (read from registry.json, not the cache) so a reinstall or
+  /// update carries the user's choice over instead of resetting it.
+  Future<bool> _previousEnabled(String name) async {
+    try {
+      for (final InstalledSkill s in await _readRegistry()) {
+        if (s.name == name) return s.enabled;
+      }
+    } catch (_) {
+      // A registry read hiccup must never block an install.
+    }
+    return true;
+  }
+
   Future<void> remove(String name) async {
     final InstalledSkill? skill = await get(name);
     if (skill == null) {
@@ -769,6 +858,12 @@ class SkillRegistry {
     final Directory dir = Directory(skill.dirPath);
     if (dir.existsSync()) dir.deleteSync(recursive: true);
     await _deleteRegistryEntry(name);
+    // v1.49.0: encrypted secrets are keyed by skill name OUTSIDE the skill
+    // folder, so they would silently outlive an uninstall. Purge them.
+    for (final SkillConfigField f in skill.configFields) {
+      if (!f.secret || f.name.isEmpty) continue;
+      await _safeBoxDelete(secretBoxKey(skill.name, f.name));
+    }
   }
 
   /// v1.41.0 — re-downloads the skill's declared REMOTE source and replaces
@@ -869,7 +964,22 @@ class SkillRegistry {
   File _configFile(String dirPath) =>
       File('$dirPath${Platform.pathSeparator}$configFileName');
 
-  Future<Map<String, String>> readConfig(InstalledSkill skill) async {
+  /// Secret-box key for one skill config field. Encrypted values live
+  /// OUTSIDE the skill folder on purpose: they survive reinstalls (the
+  /// atomic replace swaps the whole directory) and can be purged on
+  /// uninstall.
+  static String secretBoxKey(String skillName, String field) =>
+      'zagents.skill.$skillName.$field';
+
+  /// Secret-declared field names of [skill] (non-empty ones only).
+  List<String> _secretFields(InstalledSkill skill) => skill.configFields
+      .where((SkillConfigField f) => f.secret && f.name.isNotEmpty)
+      .map((SkillConfigField f) => f.name)
+      .toList();
+
+  /// Raw config file map — plaintext values exactly as stored on disk.
+  /// Internal helper for the file-level stores; NEVER masked.
+  Map<String, String> _readPlainConfig(InstalledSkill skill) {
     final File file = _configFile(skill.dirPath);
     if (!file.existsSync()) return const <String, String>{};
     try {
@@ -885,30 +995,168 @@ class SkillRegistry {
     return const <String, String>{};
   }
 
+  // The box wrappers swallow every failure: secure storage can be
+  // unavailable (platform channel, Keystore trouble) and the registry must
+  // degrade to the legacy plaintext behaviour instead of crashing — the
+  // same documented trade-off as PrefsSettingsRepository.
+
+  Future<String?> _safeBoxRead(String key) async {
+    try {
+      return await _secrets.read(key);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<bool> _safeBoxWrite(String key, String value) async {
+    try {
+      await _secrets.write(key, value);
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<void> _safeBoxDelete(String key) async {
+    try {
+      await _secrets.delete(key);
+    } catch (_) {
+      // Best effort.
+    }
+  }
+
+  /// v1.49.0 one-shot migration per skill: a secret-declared value still
+  /// sitting as PLAINTEXT in `.zconfig.json` (pre-encryption installs, or
+  /// saves made while secure storage was unavailable) is copied into the
+  /// secret box and stripped from the file. Rules:
+  /// * the box value is never overwritten — the encrypted copy is newer;
+  /// * the plaintext is stripped once the box provably holds that key;
+  /// * an emptied file is deleted, matching [writeConfig];
+  /// * never throws — when the box is unavailable the plaintext stays as
+  ///   the working fallback and migration is retried after a registry
+  ///   reload;
+  /// * guarded by [_migratedSkills] so reads stay cheap.
+  Future<void> _migrateLegacySecrets(InstalledSkill skill) async {
+    if (_migratedSkills.contains(skill.name)) return;
+    _migratedSkills.add(skill.name);
+    try {
+      final List<String> secretFields = _secretFields(skill);
+      if (secretFields.isEmpty) return;
+      final Map<String, String> plain = Map<String, String>.of(
+        _readPlainConfig(skill),
+      );
+      bool changed = false;
+      for (final String field in secretFields) {
+        final String? value = plain[field];
+        if (value == null || value.isEmpty) continue;
+        final String key = secretBoxKey(skill.name, field);
+        if (await _safeBoxRead(key) == null) {
+          if (!await _safeBoxWrite(key, value)) continue; // box unavailable
+        }
+        // The box now holds this key — the file copy must not survive it.
+        plain.remove(field);
+        changed = true;
+      }
+      if (!changed) return;
+      final File file = _configFile(skill.dirPath);
+      if (plain.isEmpty) {
+        if (file.existsSync()) await file.delete();
+      } else {
+        await file.writeAsString(jsonEncode(plain), flush: true);
+      }
+    } catch (_) {
+      // Migration must never break a read.
+    }
+  }
+
+  /// Stored config for [skill]. Secret-declared fields that live in the
+  /// encrypted store are MASKED ([secretMask], '••••') unless
+  /// [revealSecrets] — this is the value handed to UI/LLM-visible
+  /// surfaces. Legacy plaintext values (secure storage unavailable) are
+  /// returned as-is so the skill keeps working until the box recovers;
+  /// internal consumers needing the real value pass `revealSecrets: true`
+  /// or use [readSecret].
+  Future<Map<String, String>> readConfig(
+    InstalledSkill skill, {
+    bool revealSecrets = false,
+  }) async {
+    await _migrateLegacySecrets(skill);
+    final Map<String, String> out = Map<String, String>.of(
+      _readPlainConfig(skill),
+    );
+    for (final String field in _secretFields(skill)) {
+      final String? boxed = await _safeBoxRead(
+        secretBoxKey(skill.name, field),
+      );
+      if (boxed == null) continue; // unset, or plaintext-fallback mode
+      out[field] = revealSecrets ? boxed : secretMask;
+    }
+    return out;
+  }
+
+  /// v1.49.0: the DECRYPTED value of one config field (or null). The
+  /// run path (env injection) and any internal consumer that needs the
+  /// real secret value goes through this instead of a masked
+  /// [readConfig].
+  Future<String?> readSecret(InstalledSkill skill, String field) async {
+    await _migrateLegacySecrets(skill);
+    final String? boxed = await _safeBoxRead(secretBoxKey(skill.name, field));
+    if (boxed != null) return boxed;
+    return _readPlainConfig(skill)[field];
+  }
+
   /// Persists config values for [skill]. A `null` value REMOVES the key
-  /// (v1.41.0 unset support — previously a stored key could only be blanked
-  /// by reinstalling the skill). When nothing remains the file is deleted.
+  /// from BOTH stores (v1.41.0 unset support — previously a stored key
+  /// could only be blanked by reinstalling the skill). When nothing
+  /// remains the file is deleted.
+  ///
+  /// v1.49.0 secrecy: values for fields declared `secret: true` are
+  /// stored ENCRYPTED in the secret box under
+  /// [secretBoxKey] (`zagents.skill.<skillName>.<fieldName>`) and STRIPPED
+  /// from the plaintext file. When the box write fails (secure storage
+  /// unavailable) the plaintext stays in the file as the working
+  /// fallback — the same documented trade-off as PrefsSettingsRepository.
   Future<void> writeConfig(
     InstalledSkill skill,
     Map<String, String?> values,
   ) async {
     if (values.isEmpty) return;
-    final Map<String, String> existing = Map<String, String>.of(
-      await readConfig(skill),
+    await _migrateLegacySecrets(skill);
+    final Map<String, String> fileMap = Map<String, String>.of(
+      _readPlainConfig(skill),
     );
+    final List<String> secretFields = _secretFields(skill);
+    bool changed = false;
     for (final MapEntry<String, String?> entry in values.entries) {
+      final String field = entry.key;
       if (entry.value == null) {
-        existing.remove(entry.key);
-      } else {
-        existing[entry.key] = entry.value!;
+        await _safeBoxDelete(secretBoxKey(skill.name, field));
+        if (fileMap.remove(field) != null) changed = true;
+        continue;
+      }
+      if (secretFields.contains(field)) {
+        if (await _safeBoxWrite(secretBoxKey(skill.name, field), entry.value!)) {
+          // Encrypted — the plaintext copy must not survive it.
+          if (fileMap.remove(field) != null) changed = true;
+        } else if (fileMap[field] != entry.value) {
+          // Fallback: secure storage unavailable — keep plaintext.
+          fileMap[field] = entry.value!;
+          changed = true;
+        }
+        continue;
+      }
+      if (fileMap[field] != entry.value) {
+        fileMap[field] = entry.value!;
+        changed = true;
       }
     }
     final File file = _configFile(skill.dirPath);
-    if (existing.isEmpty) {
+    if (!changed) return;
+    if (fileMap.isEmpty) {
       if (file.existsSync()) await file.delete();
       return;
     }
-    await file.writeAsString(jsonEncode(existing), flush: true);
+    await file.writeAsString(jsonEncode(fileMap), flush: true);
   }
 
   Set<String> missingRequiredConfig(InstalledSkill skill) {
@@ -919,15 +1167,20 @@ class SkillRegistry {
   }
 
   /// Required fields still missing VALUES (not merely declared) — the
-  /// real gate for run/readiness decisions.
+  /// real gate for run/readiness decisions. Reads with
+  /// `revealSecrets: true`: an encrypted secret counts as present.
   Future<Set<String>> missingConfigValues(InstalledSkill skill) async {
-    final Map<String, String> stored = await readConfig(skill);
+    final Map<String, String> stored = await readConfig(
+      skill,
+      revealSecrets: true,
+    );
     return missingRequiredConfig(skill)
         .where((String f) => !stored.containsKey(f) || stored[f]!.isEmpty)
         .toSet();
   }
 
-  /// Ready/needs-config/broken considering the stored config values.
+  /// Ready/needs-config/disabled/broken considering the stored config
+  /// values and the user's enabled switch (v1.49.0).
   Future<SkillStatus> statusOf(InstalledSkill skill) async {
     return skill.status(await missingConfigValues(skill));
   }
@@ -1191,6 +1444,68 @@ class SkillRegistry {
       subPath: parts.length > 2 ? parts.sublist(2).join('/') : '',
       branch: branch,
     );
+  }
+
+  // -- Bundled skills (v1.38.1 / v1.49.0 catalog) ---------------------------
+
+  /// SKILL.md assets bundled with the app binary. Mirrors the list wired
+  /// into the tool executor (di.dart `bundledSkills()`); bundled skills
+  /// are NOT registry-managed until installed, so the Skills manager
+  /// needs this catalog to render their install tiles.
+  static const List<String> bundledSkillNames = <String>[
+    'web3-wallet-basics',
+    'binance-agentic-wallet',
+  ];
+
+  /// True when [source] is a bundled (`builtin:`) install — its updates
+  /// ship with app updates, so the manager hides the Update action.
+  static bool isBuiltinSource(String source) => source.startsWith('builtin:');
+
+  /// v1.49.0 convenience for the Skills manager's one-tap bundled install:
+  /// loads the SKILL.md straight from the app asset and installs it.
+  /// Throws the same [SkillRegistryException]s as [installBundled]; a
+  /// missing asset fails with a clear message instead of a raw loader
+  /// error.
+  Future<SkillInstallReport> installBundledAsset(String bundledName) async {
+    final String skillMd;
+    try {
+      skillMd = await rootBundle.loadString(
+        'assets/skills/$bundledName/SKILL.md',
+      );
+    } catch (_) {
+      throw SkillRegistryException('No bundled skill named "$bundledName".');
+    }
+    return installBundled(bundledName: bundledName, skillMd: skillMd);
+  }
+
+  /// Loads and parses the bundled catalog for the Skills manager. A
+  /// missing or unreadable asset simply does not appear; never throws.
+  /// (Widget tests get the real assets through rootBundle; unit tests
+  /// never call this.)
+  Future<List<BundledSkillInfo>> bundledCatalog() async {
+    final List<BundledSkillInfo> out = <BundledSkillInfo>[];
+    for (final String bundledName in bundledSkillNames) {
+      try {
+        final String md = await rootBundle.loadString(
+          'assets/skills/$bundledName/SKILL.md',
+        );
+        final _SkillManifest manifest = _parseSkillManifest(md);
+        if (manifest.name.isEmpty) continue;
+        out.add(
+          BundledSkillInfo(
+            bundledName: bundledName,
+            name: sanitizeSkillName(manifest.name),
+            title: manifest.title,
+            description: manifest.description,
+            version: manifest.version,
+            wallet: manifest.wallet,
+          ),
+        );
+      } catch (_) {
+        // A missing bundled asset simply does not appear in the list.
+      }
+    }
+    return out;
   }
 
   // -- Paths & helpers ------------------------------------------------------
@@ -1461,6 +1776,9 @@ class SkillRegistry {
   }
 
   Future<List<InstalledSkill>> _readRegistry() async {
+    // Any registry (re)load re-arms the one-shot legacy-secret migration —
+    // cheap and idempotent (a clean file makes the re-check a no-op).
+    _migratedSkills.clear();
     final File file = await _registryFile();
     if (!file.existsSync()) return const <InstalledSkill>[];
     try {
@@ -1531,6 +1849,32 @@ class GitHubSkillRef {
   final String repo;
   final String subPath;
   final String branch;
+}
+
+/// Display info for one skill bundled with the app binary (v1.49.0) —
+/// shown by the Skills manager with an install button until it is really
+/// installed via [SkillRegistry.installBundled] (`builtin:<bundledName>`).
+class BundledSkillInfo {
+  const BundledSkillInfo({
+    required this.bundledName,
+    required this.name,
+    required this.title,
+    required this.description,
+    required this.version,
+    required this.wallet,
+  });
+
+  /// Asset name behind `builtin:<bundledName>` installs.
+  final String bundledName;
+
+  /// Sanitized front-matter name — the identity the install will take.
+  final String name;
+  final String title;
+  final String description;
+  final String version;
+
+  /// Parsed `wallet: true` flag (value-moving skill — approval gated).
+  final bool wallet;
 }
 
 class _SkillManifest {
