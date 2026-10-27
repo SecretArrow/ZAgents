@@ -556,12 +556,8 @@ TodoItem? _todoItemFromLoose(Map<Object?, Object?> entry) {
   final Object? content = entry['content'] ?? entry['text'];
   final String text = content?.toString().trim() ?? '';
   if (text.isEmpty) return null;
-  final TodoStatus status = todoStatusFromName(
-    entry['status']?.toString(),
-  );
-  final String reason = clampBlockedReason(
-    entry['blocked_reason']?.toString(),
-  );
+  final TodoStatus status = todoStatusFromName(entry['status']?.toString());
+  final String reason = clampBlockedReason(entry['blocked_reason']?.toString());
   return TodoItem(
     content: text.length > 500 ? text.substring(0, 500) : text,
     status: (status == TodoStatus.blocked && reason.isEmpty)
@@ -586,11 +582,10 @@ bool hasIncompleteTodos(List<TodoItem> todos) =>
 /// True when the plan still contains work the agent can act on right
 /// now: pending or in-progress steps. Blocked steps are NOT actionable —
 /// they must not keep the loop spinning forever.
-bool hasActionableTodos(List<TodoItem> todos) =>
-    todos.any(
-      (TodoItem t) =>
-          t.status == TodoStatus.pending || t.status == TodoStatus.inProgress,
-    );
+bool hasActionableTodos(List<TodoItem> todos) => todos.any(
+  (TodoItem t) =>
+      t.status == TodoStatus.pending || t.status == TodoStatus.inProgress,
+);
 
 /// True when at least one todo is blocked (with a reason) — the signal
 /// for the UI to surface a warning and for the loop to ask the user.

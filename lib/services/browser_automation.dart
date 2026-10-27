@@ -146,7 +146,9 @@ mixin UnsupportedNamedBrowserContexts {
 /// restarting the app. Desktop picks also switch the viewport into wide
 /// ("desktop site") rendering so the page layout matches the identity —
 /// the environment is adjusted together with the UA, never the UA alone.
-class WebViewAutomation with UnsupportedNamedBrowserContexts implements BrowserAutomation {
+class WebViewAutomation
+    with UnsupportedNamedBrowserContexts
+    implements BrowserAutomation {
   WebViewAutomation({UserAgentRecord? Function()? pickUserAgent})
     : _resolveUserAgent = pickUserAgent;
 

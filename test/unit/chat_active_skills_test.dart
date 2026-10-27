@@ -6,8 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:zagents/di.dart';
 import 'package:zagents/models/models.dart';
 import 'package:zagents/services/agent_controller.dart';
-import 'package:zagents/services/chat_store.dart'
-    show ChatStore, SessionBundle;
+import 'package:zagents/services/chat_store.dart' show ChatStore, SessionBundle;
 import 'package:zagents/services/llm_client.dart';
 
 import '../support/test_doubles.dart';
@@ -59,10 +58,7 @@ void main() {
       ]);
       // Applying another selection REPLACES it (apply = replace, the
       // sheet sends the full list every time).
-      expect(
-        pinned.copyWith(activeSkills: <String>[]).activeSkills,
-        isEmpty,
-      );
+      expect(pinned.copyWith(activeSkills: <String>[]).activeSkills, isEmpty);
     });
   });
 
@@ -105,56 +101,47 @@ void main() {
       expect(bundle!.skills, <String>['demo-skill']);
     });
 
-    test('open session: apply persists into the CURRENT chat file only',
-        () async {
-      final ProviderContainer c = container();
-      final ChatStore store = c.read(chatStoreProvider);
-      // Two persisted chats, neither with skills.
-      await store.save(
-        id: 'chat-a',
-        title: 'A',
-        messages: <ChatMessage>[ChatMessage.user('a')],
-      );
-      await store.save(
-        id: 'chat-b',
-        title: 'B',
-        messages: <ChatMessage>[ChatMessage.user('b')],
-      );
-      final ChatController controller = c.read(chatControllerProvider.notifier);
-      await controller.openChat(
-        ChatSummary(
+    test(
+      'open session: apply persists into the CURRENT chat file only',
+      () async {
+        final ProviderContainer c = container();
+        final ChatStore store = c.read(chatStoreProvider);
+        // Two persisted chats, neither with skills.
+        await store.save(
           id: 'chat-a',
           title: 'A',
-          updatedAt: DateTime.now(),
-        ),
-      );
-      await controller.setActiveSkills(<String>['demo-skill', 'other-skill']);
-      expect(c.read(chatControllerProvider).activeSkills, <String>[
-        'demo-skill',
-        'other-skill',
-      ]);
-      // chat-a's stored file carries the selection…
-      final Map<String, dynamic> rawA =
-          const JsonDecoder().convert(
-                File(
-                  '${tempDir.path}/chats/chat-a.json',
-                ).readAsStringSync(),
-              )
-              as Map<String, dynamic>;
-      expect(rawA['skills'], <String>['demo-skill', 'other-skill']);
-      // …chat-b's file stays untouched (isolation).
-      final Map<String, dynamic> rawB =
-          const JsonDecoder().convert(
-                File(
-                  '${tempDir.path}/chats/chat-b.json',
-                ).readAsStringSync(),
-              )
-              as Map<String, dynamic>;
-      expect(rawB['skills'] ?? <String>[], <String>[]);
-    });
+          messages: <ChatMessage>[ChatMessage.user('a')],
+        );
+        await store.save(
+          id: 'chat-b',
+          title: 'B',
+          messages: <ChatMessage>[ChatMessage.user('b')],
+        );
+        final ChatController controller = c.read(
+          chatControllerProvider.notifier,
+        );
+        await controller.openChat(
+          ChatSummary(id: 'chat-a', title: 'A', updatedAt: DateTime.now()),
+        );
+        await controller.setActiveSkills(<String>['demo-skill', 'other-skill']);
+        expect(c.read(chatControllerProvider).activeSkills, <String>[
+          'demo-skill',
+          'other-skill',
+        ]);
+        // chat-a's stored file carries the selection…
+        final Map<String, dynamic> rawA = const JsonDecoder().convert(
+          File('${tempDir.path}/chats/chat-a.json').readAsStringSync(),
+        ) as Map<String, dynamic>;
+        expect(rawA['skills'], <String>['demo-skill', 'other-skill']);
+        // …chat-b's file stays untouched (isolation).
+        final Map<String, dynamic> rawB = const JsonDecoder().convert(
+          File('${tempDir.path}/chats/chat-b.json').readAsStringSync(),
+        ) as Map<String, dynamic>;
+        expect(rawB['skills'] ?? <String>[], <String>[]);
+      },
+    );
 
-    test('selections are isolated per chat and restored on reopen',
-        () async {
+    test('selections are isolated per chat and restored on reopen', () async {
       final ProviderContainer c = container();
       final ChatStore store = c.read(chatStoreProvider);
       await store.save(
@@ -187,25 +174,29 @@ void main() {
       ], reason: 'returning to chat A restores its own selection');
     });
 
-    test('a new chat (draft) does not inherit the previous chat selection',
-        () async {
-      final ProviderContainer c = container();
-      final ChatStore store = c.read(chatStoreProvider);
-      await store.save(
-        id: 'chat-a',
-        title: 'A',
-        messages: <ChatMessage>[ChatMessage.user('a')],
-        skills: <String>['demo-skill'],
-      );
-      final ChatController controller = c.read(chatControllerProvider.notifier);
-      await controller.openChat(
-        ChatSummary(id: 'chat-a', title: 'A', updatedAt: DateTime.now()),
-      );
-      expect(c.read(chatControllerProvider).activeSkills, <String>[
-        'demo-skill',
-      ]);
-      await controller.newChat();
-      expect(c.read(chatControllerProvider).activeSkills, isEmpty);
-    });
+    test(
+      'a new chat (draft) does not inherit the previous chat selection',
+      () async {
+        final ProviderContainer c = container();
+        final ChatStore store = c.read(chatStoreProvider);
+        await store.save(
+          id: 'chat-a',
+          title: 'A',
+          messages: <ChatMessage>[ChatMessage.user('a')],
+          skills: <String>['demo-skill'],
+        );
+        final ChatController controller = c.read(
+          chatControllerProvider.notifier,
+        );
+        await controller.openChat(
+          ChatSummary(id: 'chat-a', title: 'A', updatedAt: DateTime.now()),
+        );
+        expect(c.read(chatControllerProvider).activeSkills, <String>[
+          'demo-skill',
+        ]);
+        await controller.newChat();
+        expect(c.read(chatControllerProvider).activeSkills, isEmpty);
+      },
+    );
   });
 }

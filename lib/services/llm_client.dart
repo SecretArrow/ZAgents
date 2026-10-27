@@ -307,7 +307,9 @@ class LlmClient {
     // OpenRouter attribution (ignored by other providers).
     ..headers['HTTP-Referer'] = 'https://github.com/SecretArrow/ZAgents'
     ..headers['X-Title'] = 'ZAgents'
-    ..headers.addAll(_extraRequestHeaders?.call(url) ?? const <String, String>{})
+    ..headers.addAll(
+      _extraRequestHeaders?.call(url) ?? const <String, String>{},
+    )
     // v1.38.0: encode OFF the UI isolate — every agent step re-encodes
     // the whole conversation (tool outputs + cached base64 images can
     // reach multiple MB) and a main-thread jsonEncode of that size

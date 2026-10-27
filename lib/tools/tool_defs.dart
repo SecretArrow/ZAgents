@@ -163,8 +163,7 @@ List<Map<String, dynamic>> buildAgentTools({
       },
       'persistent': <String, dynamic>{
         'type': 'boolean',
-        'description':
-            'Keep this context (and its logins) across restarts of this chat (default false)',
+        'description': 'Keep this context (and its logins) across restarts of this chat (default false)',
       },
     },
     <String>['name'],
@@ -196,8 +195,7 @@ List<Map<String, dynamic>> buildAgentTools({
       },
       'context': <String, dynamic>{
         'type': 'string',
-        'description':
-            'Optional name of a context created with browser_context_create to open this URL in (default context when omitted)',
+        'description': 'Optional name of a context created with browser_context_create to open this URL in (default context when omitted)',
       },
     },
     <String>['url'],

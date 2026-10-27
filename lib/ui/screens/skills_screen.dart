@@ -20,10 +20,9 @@ final skillsListProvider = FutureProvider<List<InstalledSkill>>((ref) async {
 
 /// Skills bundled with the app binary (assets/skills/*) — the manager
 /// shows an install tile for each one that is not installed yet.
-final bundledSkillCatalogProvider =
-    FutureProvider<List<BundledSkillInfo>>(
-      (ref) => ref.watch(skillRegistryProvider).bundledCatalog(),
-    );
+final bundledSkillCatalogProvider = FutureProvider<List<BundledSkillInfo>>(
+  (ref) => ref.watch(skillRegistryProvider).bundledCatalog(),
+);
 
 /// Skills manager (v1.49.0): install from URL / ZIP, one-tap install of
 /// the skills bundled with the binary, per-skill enable switch, config
@@ -162,9 +161,9 @@ class _SkillsScreenState extends ConsumerState<SkillsScreen> {
     if (_busy) return;
     setState(() => _busy = true);
     try {
-      await ref.read(skillRegistryProvider).installBundledAsset(
-            info.bundledName,
-          );
+      await ref
+          .read(skillRegistryProvider)
+          .installBundledAsset(info.bundledName);
       await _refresh();
       ref.invalidate(bundledSkillCatalogProvider);
     } catch (_) {
@@ -233,13 +232,13 @@ class _SkillsScreenState extends ConsumerState<SkillsScreen> {
     final SkillRegistry registry = ref.read(skillRegistryProvider);
     final Map<String, String> stored = await registry.readConfig(skill);
     if (!mounted) return;
-    final Map<String, TextEditingController> controllers = <String,
-        TextEditingController>{
-      for (final SkillConfigField f in skill.configFields)
-        f.name: TextEditingController(
-          text: f.secret ? '' : (stored[f.name] ?? ''),
-        ),
-    };
+    final Map<String, TextEditingController> controllers =
+        <String, TextEditingController>{
+          for (final SkillConfigField f in skill.configFields)
+            f.name: TextEditingController(
+              text: f.secret ? '' : (stored[f.name] ?? ''),
+            ),
+        };
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
@@ -495,23 +494,24 @@ class _SkillsScreenState extends ConsumerState<SkillsScreen> {
                             ]),
                           )
                           .toList();
-                final List<BundledSkillInfo> pendingBundled = (bundled.value ??
-                        const <BundledSkillInfo>[])
-                    .where(
-                      (BundledSkillInfo b) =>
-                          items.every((InstalledSkill s) => s.name != b.name),
-                    )
-                    .where(
-                      (BundledSkillInfo b) =>
-                          q.isEmpty ||
-                          _matchesQuery(q, <String>[
-                            b.bundledName,
-                            b.name,
-                            b.title,
-                            b.description,
-                          ]),
-                    )
-                    .toList();
+                final List<BundledSkillInfo> pendingBundled =
+                    (bundled.value ?? const <BundledSkillInfo>[])
+                        .where(
+                          (BundledSkillInfo b) => items.every(
+                            (InstalledSkill s) => s.name != b.name,
+                          ),
+                        )
+                        .where(
+                          (BundledSkillInfo b) =>
+                              q.isEmpty ||
+                              _matchesQuery(q, <String>[
+                                b.bundledName,
+                                b.name,
+                                b.title,
+                                b.description,
+                              ]),
+                        )
+                        .toList();
                 return PagedList<InstalledSkill>(
                   items: filtered,
                   showSearch: false,
@@ -557,11 +557,7 @@ class _EmptySkills extends StatelessWidget {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: <Widget>[
-          Icon(
-            Icons.extension_rounded,
-            size: 40,
-            color: context.zMuted,
-          ),
+          Icon(Icons.extension_rounded, size: 40, color: context.zMuted),
           const SizedBox(height: 8),
           Text(
             strings.skillsEmptyTitle,
@@ -670,7 +666,8 @@ class _SkillTile extends StatelessWidget {
     final AppStrings strings = stringsOf(context);
     // Bundled (builtin:) and local-file installs cannot be re-downloaded —
     // the registry refuses them honestly, so the action is hidden.
-    final bool canUpdate = !SkillRegistry.isBuiltinSource(skill.source) &&
+    final bool canUpdate =
+        !SkillRegistry.isBuiltinSource(skill.source) &&
         !skill.source.startsWith('file:');
     return Card(
       key: Key('skill-tile-${skill.name}'),
@@ -749,7 +746,9 @@ class _SkillTile extends StatelessWidget {
                   onPressed: onRemove,
                   child: Text(
                     strings.skillRemove,
-                    style: TextStyle(color: Theme.of(context).colorScheme.error),
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.error,
+                    ),
                   ),
                 ),
               ],

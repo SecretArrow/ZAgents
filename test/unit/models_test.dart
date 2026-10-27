@@ -400,9 +400,7 @@ void main() {
     });
 
     test('depends_on is clamped to 10 unique non-empty ids', () {
-      final List<String> deps = <String>[
-        for (var i = 0; i < 20; i++) 'd$i',
-      ];
+      final List<String> deps = <String>[for (var i = 0; i < 20; i++) 'd$i'];
       final List<TodoItem> todos = parseTodoList(<dynamic>[
         <String, dynamic>{
           'content': 'step',
@@ -411,10 +409,10 @@ void main() {
         },
       ]);
       expect(todos.single.dependsOn, hasLength(maxTodoDependencies));
-      expect(
-        clampTodoDependencies(<String>[' a ', '', 'a', 'b']),
-        <String>['a', 'b'],
-      );
+      expect(clampTodoDependencies(<String>[' a ', '', 'a', 'b']), <String>[
+        'a',
+        'b',
+      ]);
       expect(clampTodoDependencies(null), isEmpty);
     });
 
@@ -460,8 +458,7 @@ void main() {
       expect(todoProgressSummary(plan), '1 done, 1 blocked, 1 remaining');
     });
 
-    test('readyTodos returns only steps whose dependencies are completed',
-        () {
+    test('readyTodos returns only steps whose dependencies are completed', () {
       final List<TodoItem> plan = <TodoItem>[
         const TodoItem(content: 'setup', id: '1'),
         const TodoItem(content: 'build', id: '2', dependsOn: <String>['1']),

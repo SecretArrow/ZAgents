@@ -111,9 +111,7 @@ class TodoPlanCard extends StatelessWidget {
                                 height: 1.35,
                                 color: switch (items[i].status) {
                                   TodoStatus.completed => palette.muted,
-                                  TodoStatus.blocked => const Color(
-                                    0xFFF59E0B,
-                                  ),
+                                  TodoStatus.blocked => const Color(0xFFF59E0B),
                                   TodoStatus.inProgress => Theme.of(
                                     context,
                                   ).colorScheme.onSurface,
@@ -343,10 +341,12 @@ class TodoPlanView extends StatelessWidget {
                                 ).colorScheme.onSurface,
                                 TodoStatus.pending => palette.muted,
                               },
-                              decoration: todos[i].status == TodoStatus.completed
+                              decoration:
+                                  todos[i].status == TodoStatus.completed
                                   ? TextDecoration.lineThrough
                                   : null,
-                              fontWeight: todos[i].status == TodoStatus.inProgress
+                              fontWeight:
+                                  todos[i].status == TodoStatus.inProgress
                                   ? FontWeight.w600
                                   : FontWeight.w400,
                             ),

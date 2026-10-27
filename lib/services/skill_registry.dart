@@ -1085,9 +1085,7 @@ class SkillRegistry {
       _readPlainConfig(skill),
     );
     for (final String field in _secretFields(skill)) {
-      final String? boxed = await _safeBoxRead(
-        secretBoxKey(skill.name, field),
-      );
+      final String? boxed = await _safeBoxRead(secretBoxKey(skill.name, field));
       if (boxed == null) continue; // unset, or plaintext-fallback mode
       out[field] = revealSecrets ? boxed : secretMask;
     }
@@ -1135,7 +1133,10 @@ class SkillRegistry {
         continue;
       }
       if (secretFields.contains(field)) {
-        if (await _safeBoxWrite(secretBoxKey(skill.name, field), entry.value!)) {
+        if (await _safeBoxWrite(
+          secretBoxKey(skill.name, field),
+          entry.value!,
+        )) {
           // Encrypted — the plaintext copy must not survive it.
           if (fileMap.remove(field) != null) changed = true;
         } else if (fileMap[field] != entry.value) {

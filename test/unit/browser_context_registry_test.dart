@@ -272,7 +272,10 @@ void main() {
     );
 
     test('keyFor builds nctx:<sessionId>:<name>; nameFromKey parses back', () {
-      expect(BrowserContextRegistry.keyFor('sess-1', 'work'), 'nctx:sess-1:work');
+      expect(
+        BrowserContextRegistry.keyFor('sess-1', 'work'),
+        'nctx:sess-1:work',
+      );
       // Session ids may contain separators themselves: the NAME is the
       // segment after the LAST colon.
       expect(BrowserContextRegistry.nameFromKey('nctx:chat:1:work'), 'work');
@@ -283,27 +286,30 @@ void main() {
       );
     });
 
-    test('register fills key/label/timestamps with the documented defaults', () {
-      final _Clock clock = _Clock();
-      final BrowserContextRegistry registry = BrowserContextRegistry(
-        now: clock.call,
-      );
-      final BrowserContextInfo info = registry.register(
-        sessionId: 's1',
-        name: 'work',
-        persistent: true,
-      );
-      expect(info.key, 'nctx:s1:work');
-      expect(info.label, 'work', reason: 'label defaults to the name');
-      expect(info.persistent, isTrue);
-      expect(info.ownerSessionId, 's1');
-      expect(info.createdAt, clock.now);
-      expect(info.lastUsedAt, clock.now, reason: 'createdAt == lastUsedAt');
-      expect(info.lastUrl, isEmpty);
-      expect(info.originCount, 0);
-      expect(registry.isRegistered(info.key), isTrue);
-      expect(registry.length, 1);
-    });
+    test(
+      'register fills key/label/timestamps with the documented defaults',
+      () {
+        final _Clock clock = _Clock();
+        final BrowserContextRegistry registry = BrowserContextRegistry(
+          now: clock.call,
+        );
+        final BrowserContextInfo info = registry.register(
+          sessionId: 's1',
+          name: 'work',
+          persistent: true,
+        );
+        expect(info.key, 'nctx:s1:work');
+        expect(info.label, 'work', reason: 'label defaults to the name');
+        expect(info.persistent, isTrue);
+        expect(info.ownerSessionId, 's1');
+        expect(info.createdAt, clock.now);
+        expect(info.lastUsedAt, clock.now, reason: 'createdAt == lastUsedAt');
+        expect(info.lastUrl, isEmpty);
+        expect(info.originCount, 0);
+        expect(registry.isRegistered(info.key), isTrue);
+        expect(registry.length, 1);
+      },
+    );
 
     test(
       'duplicate name in ONE session throws StateError; other sessions coexist',
@@ -340,10 +346,7 @@ void main() {
       clock.advance();
       registry.register(sessionId: 's1', name: 'b', persistent: false);
       expect(
-        registry
-            .list('s1')
-            .map((BrowserContextInfo i) => i.label)
-            .toList(),
+        registry.list('s1').map((BrowserContextInfo i) => i.label).toList(),
         <String>['a', 'b'],
         reason: 'sorted by createdAt ascending',
       );
@@ -362,7 +365,11 @@ void main() {
         persistent: false,
       );
       clock.advance();
-      registry.touch(created.key, lastUrl: 'https://x.test/home', originCount: 2);
+      registry.touch(
+        created.key,
+        lastUrl: 'https://x.test/home',
+        originCount: 2,
+      );
       final BrowserContextInfo touched = registry.info(created.key)!;
       expect(touched.lastUsedAt, clock.now);
       expect(touched.lastUrl, 'https://x.test/home');
@@ -409,19 +416,22 @@ void main() {
       ]);
     });
 
-    test('unregister returns the row and clears it; second call yields null', () {
-      final BrowserContextRegistry registry = BrowserContextRegistry();
-      final BrowserContextInfo created = registry.register(
-        sessionId: 's1',
-        name: 'work',
-        persistent: false,
-      );
-      final BrowserContextInfo? removed = registry.unregister(created.key);
-      expect(identical(removed, created), isTrue);
-      expect(registry.isRegistered(created.key), isFalse);
-      expect(registry.unregister(created.key), isNull);
-      expect(registry.length, 0);
-    });
+    test(
+      'unregister returns the row and clears it; second call yields null',
+      () {
+        final BrowserContextRegistry registry = BrowserContextRegistry();
+        final BrowserContextInfo created = registry.register(
+          sessionId: 's1',
+          name: 'work',
+          persistent: false,
+        );
+        final BrowserContextInfo? removed = registry.unregister(created.key);
+        expect(identical(removed, created), isTrue);
+        expect(registry.isRegistered(created.key), isFalse);
+        expect(registry.unregister(created.key), isNull);
+        expect(registry.length, 0);
+      },
+    );
 
     test('clear forgets every registration', () {
       final BrowserContextRegistry registry = BrowserContextRegistry();
@@ -451,10 +461,8 @@ void main() {
         expect(h.registry.isRegistered('nctx:s1:work'), isTrue);
         expect(h.registry.info('nctx:s1:work')!.persistent, isTrue);
 
-        final Map<String, dynamic> ephemeralInfo = await h.manager.createContext(
-          'shop',
-          sessionId: 's1',
-        );
+        final Map<String, dynamic> ephemeralInfo = await h.manager
+            .createContext('shop', sessionId: 's1');
         expect(
           ephemeralInfo['persistent'],
           isFalse,
@@ -496,19 +504,22 @@ void main() {
       h.manager.dispose();
     });
 
-    test('duplicate createContext throws StateError and keeps ONE row', () async {
-      final _Harness h = _Harness(store);
-      await h.manager.createContext('work', sessionId: 's1');
-      await expectLater(
-        h.manager.createContext('work', sessionId: 's1'),
-        throwsStateError,
-      );
-      expect(h.registry.list('s1'), hasLength(1));
-      // Another session may still claim the same name.
-      await h.manager.createContext('work', sessionId: 's2');
-      expect(h.registry.length, 2);
-      h.manager.dispose();
-    });
+    test(
+      'duplicate createContext throws StateError and keeps ONE row',
+      () async {
+        final _Harness h = _Harness(store);
+        await h.manager.createContext('work', sessionId: 's1');
+        await expectLater(
+          h.manager.createContext('work', sessionId: 's1'),
+          throwsStateError,
+        );
+        expect(h.registry.list('s1'), hasLength(1));
+        // Another session may still claim the same name.
+        await h.manager.createContext('work', sessionId: 's2');
+        expect(h.registry.length, 2);
+        h.manager.dispose();
+      },
+    );
 
     test(
       'navigate(contextName:) routes to a dedicated slot and touches the row',
@@ -540,55 +551,61 @@ void main() {
       },
     );
 
-    test('navigate(contextName:) rejects unknown, foreign, anonymous calls', () async {
-      final _Harness h = _Harness(store);
-      await h.manager.createContext('work', sessionId: 's1');
-      // Never created for this chat.
-      await expectLater(
-        h.manager.navigate(
-          'https://x.test/',
-          sessionId: 's1',
-          contextName: 'ghost',
-        ),
-        throwsArgumentError,
-      );
-      // Same name but a DIFFERENT chat: keys are per-session namespaces.
-      await expectLater(
-        h.manager.navigate(
-          'https://x.test/',
-          sessionId: 's2',
-          contextName: 'work',
-        ),
-        throwsArgumentError,
-      );
-      // Named routing without the owning session is rejected instead of
-      // leaking into the legacy slot.
-      await expectLater(
-        h.manager.navigate('https://x.test/', contextName: 'work'),
-        throwsArgumentError,
-      );
-      expect(h.shared.created, isEmpty, reason: 'no engine was booted');
-      expect(h.registry.length, 1);
-      h.manager.dispose();
-    });
+    test(
+      'navigate(contextName:) rejects unknown, foreign, anonymous calls',
+      () async {
+        final _Harness h = _Harness(store);
+        await h.manager.createContext('work', sessionId: 's1');
+        // Never created for this chat.
+        await expectLater(
+          h.manager.navigate(
+            'https://x.test/',
+            sessionId: 's1',
+            contextName: 'ghost',
+          ),
+          throwsArgumentError,
+        );
+        // Same name but a DIFFERENT chat: keys are per-session namespaces.
+        await expectLater(
+          h.manager.navigate(
+            'https://x.test/',
+            sessionId: 's2',
+            contextName: 'work',
+          ),
+          throwsArgumentError,
+        );
+        // Named routing without the owning session is rejected instead of
+        // leaking into the legacy slot.
+        await expectLater(
+          h.manager.navigate('https://x.test/', contextName: 'work'),
+          throwsArgumentError,
+        );
+        expect(h.shared.created, isEmpty, reason: 'no engine was booted');
+        expect(h.registry.length, 1);
+        h.manager.dispose();
+      },
+    );
 
-    test('closeContext protects reserved names and rejects unknown ones', () async {
-      final _Harness h = _Harness(store);
-      await expectLater(
-        h.manager.closeContext('default', sessionId: 's1'),
-        throwsArgumentError,
-        reason: "'default' is the chat's own slot and must stay unclosable",
-      );
-      await expectLater(
-        h.manager.closeContext('_legacy', sessionId: 's1'),
-        throwsArgumentError,
-      );
-      await expectLater(
-        h.manager.closeContext('ghost', sessionId: 's1'),
-        throwsStateError,
-      );
-      h.manager.dispose();
-    });
+    test(
+      'closeContext protects reserved names and rejects unknown ones',
+      () async {
+        final _Harness h = _Harness(store);
+        await expectLater(
+          h.manager.closeContext('default', sessionId: 's1'),
+          throwsArgumentError,
+          reason: "'default' is the chat's own slot and must stay unclosable",
+        );
+        await expectLater(
+          h.manager.closeContext('_legacy', sessionId: 's1'),
+          throwsArgumentError,
+        );
+        await expectLater(
+          h.manager.closeContext('ghost', sessionId: 's1'),
+          throwsStateError,
+        );
+        h.manager.dispose();
+      },
+    );
 
     test(
       'closeContext unregisters, disposes the engine, deletes the file',
@@ -599,20 +616,31 @@ void main() {
             if (n == 0) e.siteCookies = <String, String>{'sid': 'login'};
           },
         );
-        await h.manager.createContext('work', persistent: true, sessionId: 's1');
+        await h.manager.createContext(
+          'work',
+          persistent: true,
+          sessionId: 's1',
+        );
         await h.manager.navigate(
           'https://x.test/home',
           sessionId: 's1',
           contextName: 'work',
         );
         final File file = _namedFile(temp, 's1', 'work');
-        expect(file.existsSync(), isTrue,
-            reason: 'a persistent context hibernates after every op');
+        expect(
+          file.existsSync(),
+          isTrue,
+          reason: 'a persistent context hibernates after every op',
+        );
 
         await h.manager.closeContext('work', sessionId: 's1');
         expect(h.registry.isRegistered('nctx:s1:work'), isFalse);
         expect(await h.manager.contextInfo('work', sessionId: 's1'), isNull);
-        expect(file.existsSync(), isFalse, reason: 'close deletes the snapshot');
+        expect(
+          file.existsSync(),
+          isFalse,
+          reason: 'close deletes the snapshot',
+        );
         // Engine teardown is async — let it land.
         await Future<void>.delayed(const Duration(milliseconds: 50));
         expect(h.engine(0).disposed, isTrue);
@@ -631,8 +659,11 @@ void main() {
         );
         expect(freshInfo['lastUrl'], isEmpty);
         expect(freshInfo['originCount'], 0);
-        expect(h.registry.info('nctx:s1:work')!.createdAt, h.clock.now,
-            reason: 'fresh timeline — the old snapshot was deleted');
+        expect(
+          h.registry.info('nctx:s1:work')!.createdAt,
+          h.clock.now,
+          reason: 'fresh timeline — the old snapshot was deleted',
+        );
         h.manager.dispose();
       },
     );
@@ -649,7 +680,11 @@ void main() {
           },
         );
         final DateTime originalCreatedAt = clock.now;
-        await h.manager.createContext('work', persistent: true, sessionId: 's1');
+        await h.manager.createContext(
+          'work',
+          persistent: true,
+          sessionId: 's1',
+        );
         await h.manager.navigate(
           'https://x.test/home',
           sessionId: 's1',
@@ -669,8 +704,11 @@ void main() {
           reason: 'the LRU context gave up its slot to the overflow',
         );
         final File file = _namedFile(temp, 's1', 'work');
-        expect(file.existsSync(), isTrue,
-            reason: 'a persistent evictee hibernates BEFORE teardown');
+        expect(
+          file.existsSync(),
+          isTrue,
+          reason: 'a persistent evictee hibernates BEFORE teardown',
+        );
         // Async teardown of the hibernated slot (jar release + dispose).
         await Future<void>.delayed(const Duration(milliseconds: 50));
         expect(h.engine(0).disposed, isTrue);
@@ -733,8 +771,11 @@ void main() {
       clock.advance();
       await h.manager.createContext('e', sessionId: 's1');
       expect(await h.manager.contextInfo('shop', sessionId: 's1'), isNull);
-      expect(_namedFile(temp, 's1', 'shop').existsSync(), isFalse,
-          reason: 'an ephemeral evictee drops fully');
+      expect(
+        _namedFile(temp, 's1', 'shop').existsSync(),
+        isFalse,
+        reason: 'an ephemeral evictee drops fully',
+      );
       await Future<void>.delayed(const Duration(milliseconds: 50));
       h.manager.dispose();
     });
@@ -840,37 +881,34 @@ void main() {
       },
     );
 
-    test(
-      'single-engine automations answer the named-context API with '
-      'UnsupportedError',
-      () async {
-        final _Shared shared = _Shared()..cookies = _Jar();
-        final IsolatedBrowserAutomation isolated = IsolatedBrowserAutomation(
-          inner: _FakeEngine(shared),
-          store: store,
-          cookies: shared.cookies,
-        );
-        await expectLater(isolated.createContext('x'), throwsUnsupportedError);
-        await expectLater(isolated.closeContext('x'), throwsUnsupportedError);
-        await expectLater(isolated.contextInfo('x'), throwsUnsupportedError);
-        expect(WebViewAutomation().withContext('a') is WebViewAutomation, isTrue);
-        await expectLater(
-          WebViewAutomation().createContext('x'),
-          throwsUnsupportedError,
-        );
+    test('single-engine automations answer the named-context API with '
+        'UnsupportedError', () async {
+      final _Shared shared = _Shared()..cookies = _Jar();
+      final IsolatedBrowserAutomation isolated = IsolatedBrowserAutomation(
+        inner: _FakeEngine(shared),
+        store: store,
+        cookies: shared.cookies,
+      );
+      await expectLater(isolated.createContext('x'), throwsUnsupportedError);
+      await expectLater(isolated.closeContext('x'), throwsUnsupportedError);
+      await expectLater(isolated.contextInfo('x'), throwsUnsupportedError);
+      expect(WebViewAutomation().withContext('a') is WebViewAutomation, isTrue);
+      await expectLater(
+        WebViewAutomation().createContext('x'),
+        throwsUnsupportedError,
+      );
 
-        // The pinned subagent view of the multi-context engine shares the
-        // same "unsupported" contract: named contexts belong to the manager.
-        final _Harness h = _Harness(store);
-        final BrowserAutomation view = h.manager.withContext('sub-1');
-        expect(view, isA<UnsupportedNamedBrowserContexts>());
-        final UnsupportedNamedBrowserContexts stub =
-            view as UnsupportedNamedBrowserContexts;
-        await expectLater(stub.createContext('x'), throwsUnsupportedError);
-        await expectLater(stub.closeContext('x'), throwsUnsupportedError);
-        await expectLater(stub.contextInfo('x'), throwsUnsupportedError);
-        h.manager.dispose();
-      },
-    );
+      // The pinned subagent view of the multi-context engine shares the
+      // same "unsupported" contract: named contexts belong to the manager.
+      final _Harness h = _Harness(store);
+      final BrowserAutomation view = h.manager.withContext('sub-1');
+      expect(view, isA<UnsupportedNamedBrowserContexts>());
+      final UnsupportedNamedBrowserContexts stub =
+          view as UnsupportedNamedBrowserContexts;
+      await expectLater(stub.createContext('x'), throwsUnsupportedError);
+      await expectLater(stub.closeContext('x'), throwsUnsupportedError);
+      await expectLater(stub.contextInfo('x'), throwsUnsupportedError);
+      h.manager.dispose();
+    });
   });
 }

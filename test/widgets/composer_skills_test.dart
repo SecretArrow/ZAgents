@@ -131,7 +131,10 @@ void main() {
     // The sheet is up. demo-skill is missing its required API_KEY config
     // → NOT offerable; helper-skill is ready → offered.
     expect(find.byKey(const Key('skill-sheet-search-field')), findsOneWidget);
-    expect(find.byKey(const Key('skill-sheet-item-helper-skill')), findsOneWidget);
+    expect(
+      find.byKey(const Key('skill-sheet-item-helper-skill')),
+      findsOneWidget,
+    );
     expect(
       find.byKey(const Key('skill-sheet-item-demo-skill')),
       findsNothing,
@@ -144,11 +147,9 @@ void main() {
     await tester.tap(find.byKey(const Key('skill-sheet-apply')));
     await tester.pumpAndSettle();
 
-    expect(
-      container.read(chatControllerProvider).activeSkills,
-      <String>['helper-skill'],
-      reason: 'Apply must persist the selection into the chat state',
-    );
+    expect(container.read(chatControllerProvider).activeSkills, <String>[
+      'helper-skill',
+    ], reason: 'Apply must persist the selection into the chat state');
     // The sheet is gone.
     expect(find.byKey(const Key('skill-sheet-apply')), findsNothing);
 

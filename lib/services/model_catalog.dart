@@ -107,9 +107,7 @@ class ModelCatalogClient {
       );
     }
 
-    return agentRouter
-        ? parseAgentRouterCatalog(body)
-        : parseCatalog(body);
+    return agentRouter ? parseAgentRouterCatalog(body) : parseCatalog(body);
   }
 
   /// Parses a catalog payload. Kept public for tests. Signature must stay

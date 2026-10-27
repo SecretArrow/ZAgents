@@ -452,40 +452,47 @@ void main() {
       return container;
     }
 
-    test('a non-empty selection REPLACES the global set for that chat',
-        () async {
-      final ScriptedLlmClient llm = ScriptedLlmClient(<AssistantTurn>[
-        AssistantTurn(content: 'ok'),
-      ]);
-      final ProviderContainer container = await pinnedContainer(llm);
-      // Draft-stage the selection BEFORE the first message: the session
-      // created by send() adopts it and the wire is built from it.
-      await container
-          .read(chatControllerProvider.notifier)
-          .setActiveSkills(<String>['demo-skill']);
-      await container.read(chatControllerProvider.notifier).send('hi');
-      final String system = llm.calls.last.first['content'] as String;
-      expect(system, contains('# Installed skills (pinned to THIS chat'));
-      expect(system, contains('demo-skill v1.0.0'));
-      expect(
-        system,
-        isNot(contains('other-skill')),
-        reason: 'the per-chat selection replaces the global default set',
-      );
-    });
+    test(
+      'a non-empty selection REPLACES the global set for that chat',
+      () async {
+        final ScriptedLlmClient llm = ScriptedLlmClient(<AssistantTurn>[
+          AssistantTurn(content: 'ok'),
+        ]);
+        final ProviderContainer container = await pinnedContainer(llm);
+        // Draft-stage the selection BEFORE the first message: the session
+        // created by send() adopts it and the wire is built from it.
+        await container.read(chatControllerProvider.notifier).setActiveSkills(
+          <String>['demo-skill'],
+        );
+        await container.read(chatControllerProvider.notifier).send('hi');
+        final String system = llm.calls.last.first['content'] as String;
+        expect(system, contains('# Installed skills (pinned to THIS chat'));
+        expect(system, contains('demo-skill v1.0.0'));
+        expect(
+          system,
+          isNot(contains('other-skill')),
+          reason: 'the per-chat selection replaces the global default set',
+        );
+      },
+    );
 
-    test('an empty selection keeps the global default wire unchanged',
-        () async {
-      final ScriptedLlmClient llm = ScriptedLlmClient(<AssistantTurn>[
-        AssistantTurn(content: 'ok'),
-      ]);
-      final ProviderContainer container = await pinnedContainer(llm);
-      await container.read(chatControllerProvider.notifier).send('hi');
-      final String system = llm.calls.last.first['content'] as String;
-      expect(system, contains('# Installed skills (available in every chat)'));
-      expect(system, contains('demo-skill v1.0.0'));
-      expect(system, contains('other-skill v1.0.0'));
-    });
+    test(
+      'an empty selection keeps the global default wire unchanged',
+      () async {
+        final ScriptedLlmClient llm = ScriptedLlmClient(<AssistantTurn>[
+          AssistantTurn(content: 'ok'),
+        ]);
+        final ProviderContainer container = await pinnedContainer(llm);
+        await container.read(chatControllerProvider.notifier).send('hi');
+        final String system = llm.calls.last.first['content'] as String;
+        expect(
+          system,
+          contains('# Installed skills (available in every chat)'),
+        );
+        expect(system, contains('demo-skill v1.0.0'));
+        expect(system, contains('other-skill v1.0.0'));
+      },
+    );
 
     test('pinned-but-disabled skills are not advertised', () async {
       final ScriptedLlmClient llm = ScriptedLlmClient(<AssistantTurn>[
@@ -495,9 +502,9 @@ void main() {
       await container
           .read(skillRegistryProvider)
           .setEnabled('demo-skill', false);
-      await container
-          .read(chatControllerProvider.notifier)
-          .setActiveSkills(<String>['demo-skill']);
+      await container.read(chatControllerProvider.notifier).setActiveSkills(
+        <String>['demo-skill'],
+      );
       await container.read(chatControllerProvider.notifier).send('hi');
       final String system = llm.calls.last.first['content'] as String;
       expect(
@@ -524,8 +531,7 @@ void main() {
     test('skill_run injects the REAL secret values, not the mask', () async {
       await registry.installFromArchiveBytes(
         zipSkill(
-          extraFrontMatter:
-              'config:\n  - name: API_KEY\n    secret: true\n    required: true\n',
+          extraFrontMatter: 'config:\n  - name: API_KEY\n    secret: true\n    required: true\n',
         ),
         source: 'test',
       );

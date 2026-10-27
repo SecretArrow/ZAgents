@@ -44,8 +44,7 @@ void main() {
       expect(isAgentRouterHost('  agentrouter.org  '), isTrue);
     });
 
-    test('rejects typosquats, IPs, underscores, empties and trailing dots',
-        () {
+    test('rejects typosquats, IPs, underscores, empties and trailing dots', () {
       expect(isAgentRouterHost('evil-agentrouter.org'), isFalse);
       expect(isAgentRouterHost('agentrouter.org.evil.com'), isFalse);
       expect(isAgentRouterHost('agentrouter.community'), isFalse);
@@ -60,8 +59,10 @@ void main() {
     test('hostOf extracts the host, null for unusable base URLs', () {
       expect(hostOf('https://agentrouter.org/v1'), 'agentrouter.org');
       expect(hostOf('https://api.agentrouter.org/v1/'), 'api.agentrouter.org');
-      expect(hostOf('https://agentrouter.org.evil.com/v1'),
-          'agentrouter.org.evil.com');
+      expect(
+        hostOf('https://agentrouter.org.evil.com/v1'),
+        'agentrouter.org.evil.com',
+      );
       expect(hostOf(''), isNull);
       expect(hostOf('   '), isNull);
       expect(hostOf('https://'), isNull);
@@ -77,8 +78,9 @@ void main() {
 
     test('suggestions carry no hardcoded agentrouter model ids', () {
       expect(
-        suggestedModels
-            .where((String id) => id.toLowerCase().startsWith('agentrouter')),
+        suggestedModels.where(
+          (String id) => id.toLowerCase().startsWith('agentrouter'),
+        ),
         isEmpty,
       );
     });
@@ -190,44 +192,46 @@ void main() {
       expect(paths, hasLength(1));
     });
 
-    test('404 on /messages probes then falls back; cache skips re-probe',
-        () async {
-      final List<String> paths = <String>[];
-      final AgentRouterLlmClient client = AgentRouterLlmClient(
-        client: MockClient.streaming((request, bodyStream) async {
-          paths.add(request.url.path);
-          if (request.url.path.endsWith('/messages')) {
-            return _jsonResponse('not found', status: 404);
-          }
-          return _sseResponse(
-            'data: {"choices":[{"delta":{"content":"OpenAI turn"}}]}\n\n'
-            'data: [DONE]\n\n',
-          );
-        }),
-      );
+    test(
+      '404 on /messages probes then falls back; cache skips re-probe',
+      () async {
+        final List<String> paths = <String>[];
+        final AgentRouterLlmClient client = AgentRouterLlmClient(
+          client: MockClient.streaming((request, bodyStream) async {
+            paths.add(request.url.path);
+            if (request.url.path.endsWith('/messages')) {
+              return _jsonResponse('not found', status: 404);
+            }
+            return _sseResponse(
+              'data: {"choices":[{"delta":{"content":"OpenAI turn"}}]}\n\n'
+              'data: [DONE]\n\n',
+            );
+          }),
+        );
 
-      final AssistantTurn turn = await client.complete(
-        config: _agentConfig,
-        messages: const <Map<String, dynamic>>[
-          <String, dynamic>{'role': 'user', 'content': 'hi'},
-        ],
-      );
-      expect(turn.content, 'OpenAI turn');
-      expect(paths, <String>['/v1/messages', '/v1/chat/completions']);
+        final AssistantTurn turn = await client.complete(
+          config: _agentConfig,
+          messages: const <Map<String, dynamic>>[
+            <String, dynamic>{'role': 'user', 'content': 'hi'},
+          ],
+        );
+        expect(turn.content, 'OpenAI turn');
+        expect(paths, <String>['/v1/messages', '/v1/chat/completions']);
 
-      // Second call: straight to OpenAI, no repeated probe.
-      await client.complete(
-        config: _agentConfig,
-        messages: const <Map<String, dynamic>>[
-          <String, dynamic>{'role': 'user', 'content': 'hi'},
-        ],
-      );
-      expect(
-        paths,
-        <String>['/v1/messages', '/v1/chat/completions',
-            '/v1/chat/completions'],
-      );
-    });
+        // Second call: straight to OpenAI, no repeated probe.
+        await client.complete(
+          config: _agentConfig,
+          messages: const <Map<String, dynamic>>[
+            <String, dynamic>{'role': 'user', 'content': 'hi'},
+          ],
+        );
+        expect(paths, <String>[
+          '/v1/messages',
+          '/v1/chat/completions',
+          '/v1/chat/completions',
+        ]);
+      },
+    );
 
     test('405 on /messages falls back the same way', () async {
       AgentRouterLlmClient? client;
@@ -252,47 +256,49 @@ void main() {
       expect(turn.content, 'via 405');
     });
 
-    test('OpenAI-shaped 200 on /messages is consumed without re-sending',
-        () async {
-      final List<String> paths = <String>[];
-      Map<String, dynamic> openAiBody(String content) => <String, dynamic>{
-        'choices': <Map<String, dynamic>>[
-          <String, dynamic>{
-            'message': <String, dynamic>{
-              'role': 'assistant',
-              'content': content,
+    test(
+      'OpenAI-shaped 200 on /messages is consumed without re-sending',
+      () async {
+        final List<String> paths = <String>[];
+        Map<String, dynamic> openAiBody(String content) => <String, dynamic>{
+          'choices': <Map<String, dynamic>>[
+            <String, dynamic>{
+              'message': <String, dynamic>{
+                'role': 'assistant',
+                'content': content,
+              },
             },
-          },
-        ],
-      };
-      final AgentRouterLlmClient client = AgentRouterLlmClient(
-        client: MockClient.streaming((request, bodyStream) async {
-          paths.add(request.url.path);
-          if (request.url.path.endsWith('/messages')) {
-            return _jsonResponse(jsonEncode(openAiBody('Hi there')));
-          }
-          return _jsonResponse(jsonEncode(openAiBody('Second')));
-        }),
-      );
+          ],
+        };
+        final AgentRouterLlmClient client = AgentRouterLlmClient(
+          client: MockClient.streaming((request, bodyStream) async {
+            paths.add(request.url.path);
+            if (request.url.path.endsWith('/messages')) {
+              return _jsonResponse(jsonEncode(openAiBody('Hi there')));
+            }
+            return _jsonResponse(jsonEncode(openAiBody('Second')));
+          }),
+        );
 
-      final AssistantTurn turn = await client.complete(
-        config: _agentConfig,
-        messages: const <Map<String, dynamic>>[
-          <String, dynamic>{'role': 'user', 'content': 'hi'},
-        ],
-      );
-      expect(turn.content, 'Hi there'); // parsed from THAT response only
-      expect(paths, hasLength(1)); // no duplicate output, no re-send
+        final AssistantTurn turn = await client.complete(
+          config: _agentConfig,
+          messages: const <Map<String, dynamic>>[
+            <String, dynamic>{'role': 'user', 'content': 'hi'},
+          ],
+        );
+        expect(turn.content, 'Hi there'); // parsed from THAT response only
+        expect(paths, hasLength(1)); // no duplicate output, no re-send
 
-      final AssistantTurn second = await client.complete(
-        config: _agentConfig,
-        messages: const <Map<String, dynamic>>[
-          <String, dynamic>{'role': 'user', 'content': 'hi'},
-        ],
-      );
-      expect(second.content, 'Second');
-      expect(paths, <String>['/v1/messages', '/v1/chat/completions']);
-    });
+        final AssistantTurn second = await client.complete(
+          config: _agentConfig,
+          messages: const <Map<String, dynamic>>[
+            <String, dynamic>{'role': 'user', 'content': 'hi'},
+          ],
+        );
+        expect(second.content, 'Second');
+        expect(paths, <String>['/v1/messages', '/v1/chat/completions']);
+      },
+    );
 
     test('SSE error event surfaces the provider message', () async {
       final AgentRouterLlmClient client = AgentRouterLlmClient(
@@ -321,8 +327,7 @@ void main() {
       );
     });
 
-    test('Anthropic SSE stream: deltas, tool_use accumulation, usage',
-        () async {
+    test('Anthropic SSE stream: deltas, tool_use accumulation, usage', () async {
       final String sse = <String>[
         'event: message_start',
         'data: {"type":"message_start","message":{"usage":{"input_tokens":42,'
@@ -378,9 +383,9 @@ void main() {
 
       expect(requests, hasLength(1));
       expect(requests.single.url.path, '/v1/messages');
-      final Map<String, dynamic> body =
-          jsonDecode((requests.single as http.Request).body)
-              as Map<String, dynamic>;
+      final Map<String, dynamic> body = jsonDecode(
+        (requests.single as http.Request).body,
+      ) as Map<String, dynamic>;
       expect(body['stream'], true);
       expect(body['max_tokens'], kAgentRouterMaxTokens);
       expect(body['model'], 'test-model');
@@ -395,8 +400,7 @@ void main() {
       expect(turn.usage!.completionTokens, 17);
     });
 
-    test('shouldAbort true from the start aborts before any request',
-        () async {
+    test('shouldAbort true from the start aborts before any request', () async {
       var calls = 0;
       final AgentRouterLlmClient client = AgentRouterLlmClient(
         client: MockClient.streaming((request, bodyStream) async {
@@ -420,41 +424,43 @@ void main() {
   });
 
   group('non-agentrouter hosts', () {
-    test('straight OpenAI request, no probing, no User-Agent override',
-        () async {
-      final List<http.BaseRequest> requests = <http.BaseRequest>[];
-      final AgentRouterLlmClient client = AgentRouterLlmClient(
-        client: MockClient.streaming((request, bodyStream) async {
-          requests.add(request);
-          return _sseResponse(
-            'data: {"choices":[{"delta":{"content":"Hey"}}]}\n\n'
-            'data: [DONE]\n\n',
-          );
-        }),
-      );
-      const LlmConfig config = LlmConfig(
-        baseUrl: 'https://provider.test/v1',
-        apiKey: 'test-key-xyz',
-        model: 'm',
-      );
+    test(
+      'straight OpenAI request, no probing, no User-Agent override',
+      () async {
+        final List<http.BaseRequest> requests = <http.BaseRequest>[];
+        final AgentRouterLlmClient client = AgentRouterLlmClient(
+          client: MockClient.streaming((request, bodyStream) async {
+            requests.add(request);
+            return _sseResponse(
+              'data: {"choices":[{"delta":{"content":"Hey"}}]}\n\n'
+              'data: [DONE]\n\n',
+            );
+          }),
+        );
+        const LlmConfig config = LlmConfig(
+          baseUrl: 'https://provider.test/v1',
+          apiKey: 'test-key-xyz',
+          model: 'm',
+        );
 
-      final AssistantTurn turn = await client.complete(
-        config: config,
-        messages: const <Map<String, dynamic>>[
-          <String, dynamic>{'role': 'user', 'content': 'hi'},
-        ],
-      );
+        final AssistantTurn turn = await client.complete(
+          config: config,
+          messages: const <Map<String, dynamic>>[
+            <String, dynamic>{'role': 'user', 'content': 'hi'},
+          ],
+        );
 
-      expect(requests, hasLength(1)); // no probe request
-      expect(
-        requests.single.url.toString(),
-        'https://provider.test/v1/chat/completions',
-      );
-      final Map<String, String> headers = _lower(requests.single.headers);
-      expect(headers['authorization'], 'Bearer test-key-xyz');
-      expect(headers.containsKey('user-agent'), isFalse);
-      expect(turn.content, 'Hey');
-    });
+        expect(requests, hasLength(1)); // no probe request
+        expect(
+          requests.single.url.toString(),
+          'https://provider.test/v1/chat/completions',
+        );
+        final Map<String, String> headers = _lower(requests.single.headers);
+        expect(headers['authorization'], 'Bearer test-key-xyz');
+        expect(headers.containsKey('user-agent'), isFalse);
+        expect(turn.content, 'Hey');
+      },
+    );
   });
 
   group('request translation', () {
@@ -518,32 +524,32 @@ void main() {
 
       expect(messages[0]['role'], 'user');
       final List<Map<String, dynamic>> userBlocks =
-          (messages[0]['content'] as List<dynamic>).cast<Map<String, dynamic>>();
+          (messages[0]['content'] as List<dynamic>)
+              .cast<Map<String, dynamic>>();
       expect(userBlocks.single['type'], 'text');
       expect(userBlocks.single['text'], 'Navigate please');
 
       final List<Map<String, dynamic>> assistantBlocks =
-          (messages[1]['content'] as List<dynamic>).cast<Map<String, dynamic>>();
+          (messages[1]['content'] as List<dynamic>)
+              .cast<Map<String, dynamic>>();
       expect(messages[1]['role'], 'assistant');
       final Map<String, dynamic> toolUse = assistantBlocks.single;
       expect(toolUse['type'], 'tool_use');
       expect(toolUse['id'], 'call_1');
       expect(toolUse['name'], 'browser_navigate');
-      expect(
-        toolUse['input'],
-        <String, dynamic>{'url': 'https://example.com'},
-      );
+      expect(toolUse['input'], <String, dynamic>{'url': 'https://example.com'});
 
       expect(messages[2]['role'], 'user'); // tool result rides a user message
       final List<Map<String, dynamic>> resultBlocks =
-          (messages[2]['content'] as List<dynamic>).cast<Map<String, dynamic>>();
+          (messages[2]['content'] as List<dynamic>)
+              .cast<Map<String, dynamic>>();
       final Map<String, dynamic> toolResult = resultBlocks.single;
       expect(toolResult['type'], 'tool_result');
       expect(toolResult['tool_use_id'], 'call_1');
       expect(toolResult['content'], 'page loaded');
 
-      final List<Map<String, dynamic>> tools =
-          (body['tools'] as List<dynamic>).cast<Map<String, dynamic>>();
+      final List<Map<String, dynamic>> tools = (body['tools'] as List<dynamic>)
+          .cast<Map<String, dynamic>>();
       expect(tools, hasLength(1));
       expect(tools.single['name'], 'browser_navigate');
       expect(tools.single['description'], 'Open a URL');
@@ -606,14 +612,11 @@ void main() {
       expect(blocks, hasLength(3));
       expect(blocks[0]['type'], 'text');
       expect(blocks[1]['type'], 'image');
-      expect(
-        blocks[1]['source'],
-        <String, dynamic>{
-          'type': 'base64',
-          'media_type': 'image/png',
-          'data': 'QUJDREU=',
-        },
-      );
+      expect(blocks[1]['source'], <String, dynamic>{
+        'type': 'base64',
+        'media_type': 'image/png',
+        'data': 'QUJDREU=',
+      });
       // Remote URLs degrade to a text placeholder — never a crash.
       expect(blocks[2]['type'], 'text');
       expect(blocks[2]['text'], 'https://example.com/cat.png');
@@ -658,10 +661,10 @@ void main() {
         apiKey: 'test-key-xyz',
       );
 
-      expect(
-        models.map((RemoteModel m) => m.id),
-        <String>['claude-sonnet-4', 'Display Only'],
-      );
+      expect(models.map((RemoteModel m) => m.id), <String>[
+        'claude-sonnet-4',
+        'Display Only',
+      ]);
       final Map<String, String> headers = _lower(requests.single.headers);
       expect(headers['authorization'], 'Bearer test-key-xyz');
       expect(headers['x-api-key'], 'test-key-xyz');
@@ -669,47 +672,51 @@ void main() {
       expect(headers['user-agent'], 'claude-cli/1.0.60 (external, cli)');
     });
 
-    test('other providers keep the bearer-only behavior byte-for-byte',
-        () async {
-      final List<http.BaseRequest> requests = <http.BaseRequest>[];
-      final ModelCatalogClient client = ModelCatalogClient(
-        client: MockClient.streaming((request, bodyStream) async {
-          requests.add(request);
-          return _jsonResponse(
-            jsonEncode(<String, dynamic>{
-              'data': <Map<String, dynamic>>[
-                <String, dynamic>{'id': 'zai/glm-5.3'},
-              ],
-            }),
-          );
-        }),
-      );
+    test(
+      'other providers keep the bearer-only behavior byte-for-byte',
+      () async {
+        final List<http.BaseRequest> requests = <http.BaseRequest>[];
+        final ModelCatalogClient client = ModelCatalogClient(
+          client: MockClient.streaming((request, bodyStream) async {
+            requests.add(request);
+            return _jsonResponse(
+              jsonEncode(<String, dynamic>{
+                'data': <Map<String, dynamic>>[
+                  <String, dynamic>{'id': 'zai/glm-5.3'},
+                ],
+              }),
+            );
+          }),
+        );
 
-      final List<RemoteModel> models = await client.fetchModels(
-        baseUrl: 'https://api.inferhub.dev/v1',
-        apiKey: 'test-key-xyz',
-      );
+        final List<RemoteModel> models = await client.fetchModels(
+          baseUrl: 'https://api.inferhub.dev/v1',
+          apiKey: 'test-key-xyz',
+        );
 
-      expect(models.single.id, 'zai/glm-5.3');
-      final Map<String, String> headers = _lower(requests.single.headers);
-      expect(headers['authorization'], 'Bearer test-key-xyz');
-      expect(headers.containsKey('x-api-key'), isFalse);
-      expect(headers.containsKey('anthropic-version'), isFalse);
-      expect(headers.containsKey('user-agent'), isFalse);
-    });
+        expect(models.single.id, 'zai/glm-5.3');
+        final Map<String, String> headers = _lower(requests.single.headers);
+        expect(headers['authorization'], 'Bearer test-key-xyz');
+        expect(headers.containsKey('x-api-key'), isFalse);
+        expect(headers.containsKey('anthropic-version'), isFalse);
+        expect(headers.containsKey('user-agent'), isFalse);
+      },
+    );
 
-    test('display_name fallback is strictly opt-in via the Anthropic parser',
-        () {
-      final ModelCatalogClient client = ModelCatalogClient();
-      // OpenAI parsing (default): display_name-only entries are skipped.
-      expect(client.parseCatalog('{"data":[{"display_name":"X"}]}'), isEmpty);
-      // Anthropic parsing: display_name becomes the id.
-      expect(
-        ModelCatalogClient.parseAgentRouterCatalog(
-          '{"data":[{"display_name":"X"}]}',
-        ).single.id,
-        'X',
-      );
-    });
+    test(
+      'display_name fallback is strictly opt-in via the Anthropic parser',
+      () {
+        final ModelCatalogClient client = ModelCatalogClient();
+        // OpenAI parsing (default): display_name-only entries are skipped.
+        expect(client.parseCatalog('{"data":[{"display_name":"X"}]}'), isEmpty);
+        // Anthropic parsing: display_name becomes the id.
+        expect(
+          ModelCatalogClient.parseAgentRouterCatalog(
+            '{"data":[{"display_name":"X"}]}',
+          ).single.id,
+          'X',
+        );
+      },
+    );
   });
 }

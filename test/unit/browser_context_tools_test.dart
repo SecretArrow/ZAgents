@@ -193,11 +193,9 @@ void main() {
     });
 
     test('duplicate name is an honest error, not a crash', () async {
-      await executor.execute(
-        'browser_context_create',
-        <String, dynamic>{'name': 'work'},
-        sessionId: 'chat-1',
-      );
+      await executor.execute('browser_context_create', <String, dynamic>{
+        'name': 'work',
+      }, sessionId: 'chat-1');
       final ToolResult again = await executor.execute(
         'browser_context_create',
         <String, dynamic>{'name': 'work'},
@@ -219,8 +217,7 @@ void main() {
       }
     });
 
-    test('the same name coexists across DIFFERENT chats (isolation)',
-        () async {
+    test('the same name coexists across DIFFERENT chats (isolation)', () async {
       final ToolResult a = await executor.execute(
         'browser_context_create',
         <String, dynamic>{'name': 'work'},
@@ -237,36 +234,32 @@ void main() {
   });
 
   group('browser_context_list', () {
-    test('scopes the rows to THIS chat and always includes the default',
-        () async {
-      await executor.execute(
-        'browser_context_create',
-        <String, dynamic>{'name': 'a-of-chat-1'},
-        sessionId: 'chat-1',
-      );
-      await executor.execute(
-        'browser_context_create',
-        <String, dynamic>{'name': 'b-of-chat-2'},
-        sessionId: 'chat-2',
-      );
-      final ToolResult list1 = await executor.execute(
-        'browser_context_list',
-        <String, dynamic>{},
-        sessionId: 'chat-1',
-      );
-      expect(list1.llmOutput, contains('a-of-chat-1'));
-      expect(list1.llmOutput, isNot(contains('b-of-chat-2')));
-      expect(list1.displayText, '2 context(s)');
-    });
+    test(
+      'scopes the rows to THIS chat and always includes the default',
+      () async {
+        await executor.execute('browser_context_create', <String, dynamic>{
+          'name': 'a-of-chat-1',
+        }, sessionId: 'chat-1');
+        await executor.execute('browser_context_create', <String, dynamic>{
+          'name': 'b-of-chat-2',
+        }, sessionId: 'chat-2');
+        final ToolResult list1 = await executor.execute(
+          'browser_context_list',
+          <String, dynamic>{},
+          sessionId: 'chat-1',
+        );
+        expect(list1.llmOutput, contains('a-of-chat-1'));
+        expect(list1.llmOutput, isNot(contains('b-of-chat-2')));
+        expect(list1.displayText, '2 context(s)');
+      },
+    );
   });
 
   group('browser_context_close', () {
     test('closes an existing named context', () async {
-      await executor.execute(
-        'browser_context_create',
-        <String, dynamic>{'name': 'temp'},
-        sessionId: 'chat-1',
-      );
+      await executor.execute('browser_context_create', <String, dynamic>{
+        'name': 'temp',
+      }, sessionId: 'chat-1');
       final ToolResult closed = await executor.execute(
         'browser_context_close',
         <String, dynamic>{'name': 'temp'},
@@ -302,11 +295,9 @@ void main() {
 
   group('browser_navigate with a named context', () {
     test('routes the page into the DEDICATED context engine', () async {
-      await executor.execute(
-        'browser_context_create',
-        <String, dynamic>{'name': 'work'},
-        sessionId: 'chat-1',
-      );
+      await executor.execute('browser_context_create', <String, dynamic>{
+        'name': 'work',
+      }, sessionId: 'chat-1');
       final int before = h.shared.created.length;
       final ToolResult nav = await executor.execute(
         'browser_navigate',
@@ -327,52 +318,54 @@ void main() {
       expect(list.llmOutput, contains('lastUrl: https://example.test/'));
     });
 
-    test('an unknown context name is an honest error, no engine booted',
-        () async {
-      final int before = h.shared.created.length;
-      final ToolResult nav = await executor.execute(
-        'browser_navigate',
-        <String, dynamic>{'url': 'https://example.test/', 'context': 'ghost'},
-        sessionId: 'chat-1',
-      );
-      expect(nav.ok, isFalse);
-      expect(nav.llmOutput, contains('ghost'));
-      expect(h.shared.created.length, before);
-    });
+    test(
+      'an unknown context name is an honest error, no engine booted',
+      () async {
+        final int before = h.shared.created.length;
+        final ToolResult nav = await executor.execute(
+          'browser_navigate',
+          <String, dynamic>{'url': 'https://example.test/', 'context': 'ghost'},
+          sessionId: 'chat-1',
+        );
+        expect(nav.ok, isFalse);
+        expect(nav.llmOutput, contains('ghost'));
+        expect(h.shared.created.length, before);
+      },
+    );
   });
 
   group('single-engine automations', () {
-    test('answer every context tool with an honest unsupported error',
-        () async {
-      final ToolExecutor single = ToolExecutor(
-        browser: ScriptedBrowserAutomation(workspace.path),
-        resolveBaseDir: (_) async => workspace,
-        isAutomationEnabled: () => true,
-      );
-      for (final (String tool, Map<String, dynamic> args) in <(
-        String,
-        Map<String, dynamic>
-      )>[
-        ('browser_context_create', <String, dynamic>{'name': 'work'}),
-        ('browser_context_list', <String, dynamic>{}),
-        ('browser_context_close', <String, dynamic>{'name': 'work'}),
-      ]) {
-        final ToolResult result = await single.execute(
-          tool,
-          args,
+    test(
+      'answer every context tool with an honest unsupported error',
+      () async {
+        final ToolExecutor single = ToolExecutor(
+          browser: ScriptedBrowserAutomation(workspace.path),
+          resolveBaseDir: (_) async => workspace,
+          isAutomationEnabled: () => true,
+        );
+        for (final (String tool, Map<String, dynamic> args)
+            in <(String, Map<String, dynamic>)>[
+              ('browser_context_create', <String, dynamic>{'name': 'work'}),
+              ('browser_context_list', <String, dynamic>{}),
+              ('browser_context_close', <String, dynamic>{'name': 'work'}),
+            ]) {
+          final ToolResult result = await single.execute(
+            tool,
+            args,
+            sessionId: 'chat-1',
+          );
+          expect(result.ok, isFalse, reason: tool);
+          expect(result.llmOutput, contains('not supported'), reason: tool);
+        }
+        // And browser_navigate with a context refuses honestly, too.
+        final ToolResult nav = await single.execute(
+          'browser_navigate',
+          <String, dynamic>{'url': 'https://example.test/', 'context': 'work'},
           sessionId: 'chat-1',
         );
-        expect(result.ok, isFalse, reason: tool);
-        expect(result.llmOutput, contains('not supported'), reason: tool);
-      }
-      // And browser_navigate with a context refuses honestly, too.
-      final ToolResult nav = await single.execute(
-        'browser_navigate',
-        <String, dynamic>{'url': 'https://example.test/', 'context': 'work'},
-        sessionId: 'chat-1',
-      );
-      expect(nav.ok, isFalse);
-      expect(nav.llmOutput, contains('not supported'));
-    });
+        expect(nav.ok, isFalse);
+        expect(nav.llmOutput, contains('not supported'));
+      },
+    );
   });
 }

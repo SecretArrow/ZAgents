@@ -379,8 +379,7 @@ class _Mutex {
 /// every other chat.
 class IsolatedBrowserAutomation
     with UnsupportedNamedBrowserContexts
-    implements
-        BrowserAutomation {
+    implements BrowserAutomation {
   IsolatedBrowserAutomation({
     required this.inner,
     required this.store,
@@ -1262,10 +1261,10 @@ class ContextualBrowserAutomation implements BrowserAutomation {
     final String key =
         slotKey ??
         (contextId != null && contextId.isNotEmpty
-        ? 'ctx:$contextId'
-        : sessionId != null
-        ? 's:$sessionId'
-        : _legacyKey);
+            ? 'ctx:$contextId'
+            : sessionId != null
+            ? 's:$sessionId'
+            : _legacyKey);
     _opsInFlight++;
     _stamp++;
     final int stamp = _stamp;
@@ -1641,8 +1640,7 @@ class ContextualBrowserAutomation implements BrowserAutomation {
 /// parent's or sibling contexts.
 class _PinnedContextAutomation
     with UnsupportedNamedBrowserContexts
-    implements
-        BrowserAutomation {
+    implements BrowserAutomation {
   _PinnedContextAutomation(this._manager, this._contextId);
 
   final ContextualBrowserAutomation _manager;

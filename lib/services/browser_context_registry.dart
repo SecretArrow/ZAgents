@@ -153,13 +153,16 @@ class BrowserContextRegistry {
 
   /// Contexts owned by [sessionId], oldest creation first.
   List<BrowserContextInfo> list(String sessionId) {
-    final List<BrowserContextInfo> rows = _contexts.values
-        .where((BrowserContextInfo info) => info.ownerSessionId == sessionId)
-        .toList()
-      ..sort(
-        (BrowserContextInfo a, BrowserContextInfo b) =>
-            a.createdAt.compareTo(b.createdAt),
-      );
+    final List<BrowserContextInfo> rows =
+        _contexts.values
+            .where(
+              (BrowserContextInfo info) => info.ownerSessionId == sessionId,
+            )
+            .toList()
+          ..sort(
+            (BrowserContextInfo a, BrowserContextInfo b) =>
+                a.createdAt.compareTo(b.createdAt),
+          );
     return rows;
   }
 

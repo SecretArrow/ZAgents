@@ -227,8 +227,8 @@ class AgentRouterLlmClient extends LlmClient {
         );
       }
 
-      final String contentType =
-          (response.headers['content-type'] ?? '').toLowerCase();
+      final String contentType = (response.headers['content-type'] ?? '')
+          .toLowerCase();
       if (!contentType.contains('text/event-stream')) {
         final String raw = await response.stream.bytesToString();
         final Object? decoded = _tryDecode(raw);
@@ -677,8 +677,9 @@ final RegExp _dataUriPattern = RegExp(
 /// tool schema (`{name,description,input_schema}`).
 Map<String, dynamic> _anthropicToolSchema(Map<String, dynamic> tool) {
   final Object? function = tool['function'];
-  final Map<String, dynamic> fn =
-      function is Map<String, dynamic> ? function : <String, dynamic>{};
+  final Map<String, dynamic> fn = function is Map<String, dynamic>
+      ? function
+      : <String, dynamic>{};
   final Object? parameters = fn['parameters'];
   return <String, dynamic>{
     'name': fn['name']?.toString() ?? '',
