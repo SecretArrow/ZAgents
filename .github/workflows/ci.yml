@@ -49,8 +49,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [0, 1]
-        total: [2]
+        # 3 shards keep the slowest shard under ~6 min even for the full
+        # ~1.1k-case suite — faster than 2 shards and cheaper than 4.
+        shard: [0, 1, 2]
+        total: [3]
     steps:
       - uses: actions/checkout@v4
 
