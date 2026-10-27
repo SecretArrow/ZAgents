@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 
 import 'browser_automation.dart';
+import 'browser_context_registry.dart';
 
 /// Per-origin browser state owned by ONE chat session: the last URL loaded
 /// on that origin, the login cookies captured there, and the web storage
@@ -60,7 +61,8 @@ class OriginState {
 
 /// Everything one chat session owns in the embedded browser, keyed by
 /// origin ("https://example.com"). Serialized into the session's own
-/// sandbox as `browser_state.json`.
+/// sandbox as `browser_state.json` — named browser contexts serialize
+/// their own state the same way under `browser_contexts/<name>.json`.
 class BrowserState {
   BrowserState({Map<String, OriginState>? origins})
     : origins = origins ?? <String, OriginState>{};
@@ -152,6 +154,106 @@ class BrowserStateStore {
       // Best effort.
     }
   }
+
+  // ---- named browser contexts (task 2-c) ---------------------------------
+
+  // The context [name] MUST have passed
+  // BrowserContextRegistry.isValidName before reaching these methods
+  // (1-32 chars, [a-z0-9_-]) — it is used as a file name verbatim, so the
+  // validation also rules out any path traversal.
+
+  static const String _namedDirName = 'browser_contexts';
+
+  File _namedFile(Directory sessionRoot, String name) => File(
+    '${sessionRoot.path}${Platform.pathSeparator}$_namedDirName'
+    '${Platform.pathSeparator}$name.json',
+  );
+
+  /// Loads a persistent named context's hibernated snapshot from
+  /// `<sandbox>/browser_contexts/<name>.json`; null when the context was
+  /// never persisted or the file is corrupt (defensive parse, never a
+  /// crash — same contract as [load]).
+  Future<NamedContextSnapshot?> loadNamed(String sessionId, String name) async {
+    try {
+      final dir = await rootFor(sessionId);
+      final file = _namedFile(dir, name);
+      if (!file.existsSync()) return null;
+      final Object? raw = jsonDecode(file.readAsStringSync());
+      if (raw is! Map) return null;
+      final Object? count = raw['originCount'];
+      return NamedContextSnapshot(
+        state: BrowserState.fromJson(raw['state']),
+        createdAt: DateTime.tryParse(raw['createdAt']?.toString() ?? ''),
+        lastUrl: raw['lastUrl']?.toString(),
+        originCount: count is int ? count : int.tryParse('$count'),
+      );
+    } catch (_) {
+      // Corrupt state = fresh context, never a crash.
+      return null;
+    }
+  }
+
+  /// Hibernates a persistent named context's [state] (plus metadata) into
+  /// its sandbox file. Best effort: losing a snapshot degrades to a
+  /// logged-out context on the next restore.
+  Future<void> saveNamed(
+    String sessionId,
+    String name,
+    BrowserState state, {
+    DateTime? createdAt,
+    String? lastUrl,
+    int? originCount,
+  }) async {
+    try {
+      final dir = await rootFor(sessionId);
+      final File file = _namedFile(dir, name);
+      file.parent.createSync(recursive: true);
+      final String? createdAtIso = createdAt?.toIso8601String();
+      file.writeAsStringSync(
+        jsonEncode(<String, dynamic>{
+          'v': 1,
+          'name': name,
+          'createdAt': ?createdAtIso,
+          'lastUrl': ?lastUrl,
+          'originCount': ?originCount,
+          'state': state.toJson(),
+        }),
+      );
+    } catch (_) {
+      // Best effort.
+    }
+  }
+
+  /// Deletes a named context's hibernation file, if any ("close context").
+  Future<void> deleteNamed(String sessionId, String name) async {
+    try {
+      final dir = await rootFor(sessionId);
+      final file = _namedFile(dir, name);
+      if (file.existsSync()) file.deleteSync();
+    } catch (_) {
+      // Best effort.
+    }
+  }
+}
+
+/// Hibernated snapshot of a PERSISTENT named browser context (task 2-c):
+/// the captured browser state plus the metadata a re-creating
+/// `createContext` needs to restore the context with its original age.
+class NamedContextSnapshot {
+  const NamedContextSnapshot({
+    required this.state,
+    this.createdAt,
+    this.lastUrl,
+    this.originCount,
+  });
+
+  final BrowserState state;
+
+  /// Original creation time, null when the file predates the field or is
+  /// missing it (the context then simply starts a fresh timeline).
+  final DateTime? createdAt;
+  final String? lastUrl;
+  final int? originCount;
 }
 
 /// Read/write access to the platform cookie jar. On Android the
@@ -275,7 +377,10 @@ class _Mutex {
 /// State lives in [BrowserStateStore] (per-session sandbox file), so a
 /// chat keeps its logins across app restarts while remaining invisible to
 /// every other chat.
-class IsolatedBrowserAutomation implements BrowserAutomation {
+class IsolatedBrowserAutomation
+    with UnsupportedNamedBrowserContexts
+    implements
+        BrowserAutomation {
   IsolatedBrowserAutomation({
     required this.inner,
     required this.store,
@@ -580,11 +685,14 @@ class _ContextSlot {
     required this.key,
     required this.inner,
     required this.ephemeral,
+    this.namedContext,
+    this.namedPersistent = false,
   }) : mutex = _Mutex();
 
   /// Identity of the slot inside the manager (`s:<sessionId>` for chat
-  /// sessions, `ctx:<id>` for named parallel contexts, `_legacy` when no
-  /// scope was supplied).
+  /// sessions, `ctx:<id>` for named parallel contexts,
+  /// `nctx:<sessionId>:<name>` for named browser contexts, `_legacy` when
+  /// no scope was supplied).
   final String key;
 
   /// The private WebView engine backing this context.
@@ -594,6 +702,20 @@ class _ContextSlot {
   /// browsing identity dies with the task. Chat-session slots persist
   /// their state through the [BrowserStateStore] like v1.19.0 did.
   final bool ephemeral;
+
+  /// Named browser context (task 2-c): the context name inside its chat
+  /// session, null for chat-default, legacy and subagent-fan slots.
+  final String? namedContext;
+
+  /// Whether the named context hibernates to
+  /// `<sandbox>/browser_contexts/<name>.json` (persistent) or lives for
+  /// the run only (ephemeral). Always false when [namedContext] is null.
+  final bool namedPersistent;
+
+  /// Original creation time of a persistent named context, restored from
+  /// its hibernation file and written back on every save so a re-created
+  /// context keeps its original age.
+  DateTime? namedCreatedAt;
 
   /// v1.38.0: ops that have ENTERED _run for this slot but not finished
   /// their mutex turn (queued included). Eviction must never dispose a
@@ -648,21 +770,39 @@ class _ContextSlot {
 /// Known soft edge (documented): two contexts actively using the SAME
 /// origin at the same moment share that origin's jar slice for the
 /// overlap window — same as two real browser windows of one profile.
+///
+/// Named browser contexts (task 2-c) extend the same machinery to
+/// user-created contexts: `createContext` registers an isolated slot
+/// under the key `nctx:<sessionId>:<name>` in a [BrowserContextRegistry],
+/// `navigate` can route a URL into one via `contextName`, and persistent
+/// contexts hibernate their captured state to
+/// `<sandbox>/browser_contexts/<name>.json` so they survive restarts and
+/// evictions. Closing a context tears its slot down fully (cookies leave
+/// the shared jar, engine disposed, hibernation file deleted); the
+/// chat-default slot and the legacy slot can never be closed through
+/// that API.
 class ContextualBrowserAutomation implements BrowserAutomation {
   ContextualBrowserAutomation({
     required this._makeInner,
     required this.store,
     required this.cookies,
     this.maxContexts = 4,
-  });
+    BrowserContextRegistry? contextRegistry,
+  }) : contextRegistry = contextRegistry ?? BrowserContextRegistry();
 
   final BrowserAutomation Function() _makeInner;
   final BrowserStateStore store;
   final CookieGateway cookies;
 
+  /// Registry of NAMED browser contexts (task 2-c) — one row per
+  /// `createContext`, keyed `nctx:<sessionId>:<name>`. Injected for
+  /// tests; defaults to a private instance.
+  final BrowserContextRegistry contextRegistry;
+
   /// Live WebView cap. The fan of subagents uses maxParallel=3 plus the
   /// chat's own context; beyond this cap the least-recently-used idle
-  /// context is disposed and recreated on demand.
+  /// context is disposed and recreated on demand. Named browser contexts
+  /// respect the same cap per chat session (see [createContext]).
   final int maxContexts;
 
   final Map<String, _ContextSlot> _slots = <String, _ContextSlot>{};
@@ -678,9 +818,188 @@ class ContextualBrowserAutomation implements BrowserAutomation {
 
   static const String _legacyKey = '_legacy';
 
+  /// Slot-key prefix of named browser contexts (task 2-c).
+  static const String _namedKeyPrefix = 'nctx:';
+
   @override
   BrowserAutomation withContext(String contextId) =>
       _PinnedContextAutomation(this, contextId);
+
+  // ---- named browser contexts (task 2-c) ---------------------------------
+  //
+  // These run on the MANAGER (chat-level instance), not on `withContext`
+  // views: the owning chat session must be known, so every method takes
+  // the chat [sessionId]. Keys are `nctx:<sessionId>:<name>` — a
+  // namespace that never collides with chat-default (`s:...`),
+  // subagent-fan (`ctx:...`) or legacy slots.
+
+  Future<Map<String, dynamic>> createContext(
+    String name, {
+    bool persistent = false,
+    String? sessionId,
+  }) async {
+    if (sessionId == null || sessionId.isEmpty) {
+      throw ArgumentError(
+        'named browser contexts need the owning chat sessionId',
+      );
+    }
+    if (!BrowserContextRegistry.isValidName(name) ||
+        BrowserContextRegistry.reservedNames.contains(name)) {
+      throw ArgumentError('invalid browser context name');
+    }
+    final String key = BrowserContextRegistry.keyFor(sessionId, name);
+    if (contextRegistry.isRegistered(key)) {
+      throw StateError('browser context already exists: $name');
+    }
+    // Cap: named contexts of ONE chat are bounded by [maxContexts].
+    // Overflow hibernates this chat's least-recently-used contexts
+    // (registry evictionOrder): persistent victims flush their state to
+    // the sandbox file so a later createContext restores it, ephemeral
+    // victims are dropped fully.
+    while (contextRegistry.list(sessionId).length >= maxContexts) {
+      final Set<String> owned = contextRegistry
+          .list(sessionId)
+          .map((BrowserContextInfo info) => info.key)
+          .toSet();
+      final List<String> order = contextRegistry
+          .evictionOrder()
+          .where(owned.contains)
+          .toList(growable: false);
+      if (order.isEmpty) break;
+      _hibernateNamedContext(order.first);
+    }
+    // Restore-on-restart: a persistent context hibernated by an eviction
+    // or a previous app run resumes with its captured state and its
+    // original creation time.
+    NamedContextSnapshot? saved;
+    if (persistent) {
+      saved = await store.loadNamed(sessionId, name);
+    }
+    final BrowserContextInfo info = contextRegistry.register(
+      sessionId: sessionId,
+      name: name,
+      persistent: persistent,
+      createdAt: saved?.createdAt,
+      lastUrl: saved?.lastUrl,
+      originCount: saved?.originCount,
+    );
+    return _namedContextInfo(info);
+  }
+
+  Future<void> closeContext(String name, {String? sessionId}) async {
+    if (sessionId == null || sessionId.isEmpty) {
+      throw ArgumentError(
+        'named browser contexts need the owning chat sessionId',
+      );
+    }
+    if (BrowserContextRegistry.reservedNames.contains(name)) {
+      throw ArgumentError('reserved browser context cannot be closed: $name');
+    }
+    final String key = BrowserContextRegistry.keyFor(sessionId, name);
+    if (!contextRegistry.isRegistered(key)) {
+      throw StateError('no such browser context: $name');
+    }
+    // Unregister + drop the hibernation file first: an operation still
+    // finishing on the slot sees disposed=true and stops persisting.
+    contextRegistry.unregister(key);
+    await store.deleteNamed(sessionId, name);
+    final _ContextSlot? slot = _slots[key];
+    if (slot != null) {
+      slot.disposed = true;
+      _slots.remove(key);
+      // Full teardown (async, like eviction): the context's recorded
+      // cookie names leave the shared jar and its engine is disposed.
+      Future<void>(() async {
+        await _releaseCookies(slot);
+        try {
+          slot.inner.dispose();
+        } catch (_) {
+          // Best effort.
+        }
+      });
+    }
+  }
+
+  Future<Map<String, dynamic>?> contextInfo(
+    String name, {
+    String? sessionId,
+  }) async {
+    if (sessionId == null || sessionId.isEmpty) {
+      throw ArgumentError(
+        'named browser contexts need the owning chat sessionId',
+      );
+    }
+    final BrowserContextInfo? info = contextRegistry.info(
+      BrowserContextRegistry.keyFor(sessionId, name),
+    );
+    if (info == null) return null;
+    return _namedContextInfo(info);
+  }
+
+  /// All named contexts owned by [sessionId], oldest creation first —
+  /// the rows `browser_context_list` reports (the executor prepends the
+  /// chat's default context itself).
+  Future<List<Map<String, dynamic>>> listContexts(String sessionId) async =>
+      <Map<String, dynamic>>[
+        for (final BrowserContextInfo info in contextRegistry.list(sessionId))
+          _namedContextInfo(info),
+      ];
+
+  /// Info map for the tool surface: registry row enriched with the live
+  /// slot's origin count when the context currently holds an engine.
+  Map<String, dynamic> _namedContextInfo(BrowserContextInfo info) {
+    final _ContextSlot? slot = _slots[info.key];
+    final bool live = slot != null && !slot.disposed;
+    return <String, dynamic>{
+      'name': info.label,
+      'label': info.label,
+      'persistent': info.persistent,
+      'lastUrl': info.lastUrl,
+      'lastUsedAt': info.lastUsedAt.toIso8601String(),
+      'originCount': live ? slot.state.origins.length : info.originCount,
+    };
+  }
+
+  /// Evicts one named context: a persistent context's live state is
+  /// flushed to its hibernation file BEFORE teardown, then its slot is
+  /// disposed (cookies released from the shared jar) and unregistered.
+  /// A later `createContext` with the same name restores the file.
+  void _hibernateNamedContext(String key) {
+    final BrowserContextInfo? info = contextRegistry.info(key);
+    final _ContextSlot? slot = _slots[key];
+    if (slot != null) {
+      final String? sid = slot.sessionId;
+      if ((info?.persistent ?? false) &&
+          slot.namedPersistent &&
+          sid != null &&
+          slot.namedContext != null) {
+        try {
+          store.saveNamed(
+            sid,
+            slot.namedContext!,
+            slot.state,
+            createdAt: info?.createdAt ?? slot.namedCreatedAt,
+            lastUrl: info?.lastUrl,
+            originCount: slot.state.origins.length,
+          );
+        } catch (_) {
+          // Best effort: losing a snapshot degrades to a logged-out
+          // context on revive, never a crash.
+        }
+      }
+      slot.disposed = true;
+      _slots.remove(key);
+      Future<void>(() async {
+        await _releaseCookies(slot);
+        try {
+          slot.inner.dispose();
+        } catch (_) {
+          // Best effort.
+        }
+      });
+    }
+    contextRegistry.unregister(key);
+  }
 
   // ---- public API (context resolved from sessionId) -----------------------
 
@@ -689,7 +1008,8 @@ class ContextualBrowserAutomation implements BrowserAutomation {
     String url, {
     Duration timeout = const Duration(seconds: 25),
     String? sessionId,
-  }) => _navigate(url, timeout: timeout, sessionId: sessionId);
+    String? contextName,
+  }) => _navigate(url, timeout: timeout, sessionId: sessionId, contextName: contextName);
 
   @override
   Future<Map<String, dynamic>> click({
@@ -791,11 +1111,39 @@ class ContextualBrowserAutomation implements BrowserAutomation {
     required Duration timeout,
     String? sessionId,
     String? contextId,
-  }) => _run<BrowserPageInfo>(
-    contextId,
-    sessionId: sessionId,
-    op: (slot) => _navigateOp(slot, url, timeout),
-  );
+    String? contextName,
+  }) async {
+    if (contextName != null && contextName.isNotEmpty) {
+      // Named-context routing (task 2-c): the context must have been
+      // created with [createContext] for THIS chat session, otherwise the
+      // navigation is rejected instead of silently leaking into the
+      // chat's default slot.
+      if (sessionId == null || sessionId.isEmpty) {
+        throw ArgumentError(
+          'navigating in a named browser context needs the chat sessionId',
+        );
+      }
+      final String key = BrowserContextRegistry.keyFor(sessionId, contextName);
+      if (!contextRegistry.isRegistered(key)) {
+        throw ArgumentError('no such browser context: $contextName');
+      }
+      return _run<BrowserPageInfo>(
+        null,
+        sessionId: sessionId,
+        slotKey: key,
+        op: (_ContextSlot slot) async {
+          final BrowserPageInfo result = await _navigateOp(slot, url, timeout);
+          contextRegistry.touch(key, lastUrl: url);
+          return result;
+        },
+      );
+    }
+    return _run<BrowserPageInfo>(
+      contextId,
+      sessionId: sessionId,
+      op: (slot) => _navigateOp(slot, url, timeout),
+    );
+  }
 
   Future<Map<String, dynamic>> _click({
     String? selector,
@@ -896,19 +1244,23 @@ class ContextualBrowserAutomation implements BrowserAutomation {
     return reloaded;
   }
 
-  /// Runs [op] against the slot for [contextId] (named parallel context)
-  /// or the calling [sessionId] (chat session), serialized per slot but
-  /// parallel across slots.
+  /// Runs [op] against the slot for [contextId] (named parallel context),
+  /// the calling [sessionId] (chat session), the explicitly given
+  /// [slotKey] (named browser context routing), or the legacy global
+  /// slot; serialized per slot but parallel across slots.
   Future<T> _run<T>(
     String? contextId, {
     String? sessionId,
+    String? slotKey,
     required Future<T> Function(_ContextSlot slot) op,
   }) async {
-    final String key = contextId != null && contextId.isNotEmpty
+    final String key =
+        slotKey ??
+        (contextId != null && contextId.isNotEmpty
         ? 'ctx:$contextId'
         : sessionId != null
         ? 's:$sessionId'
-        : _legacyKey;
+        : _legacyKey);
     _opsInFlight++;
     _stamp++;
     final int stamp = _stamp;
@@ -957,11 +1309,23 @@ class ContextualBrowserAutomation implements BrowserAutomation {
   _ContextSlot _slotFor(String key, String? sessionId) {
     final _ContextSlot? existing = _slots[key];
     if (existing != null && !existing.disposed) return existing;
-    final bool ephemeral = !key.startsWith('s:');
+    String? namedContext;
+    var namedPersistent = false;
+    var ephemeral = !key.startsWith('s:');
+    if (key.startsWith(_namedKeyPrefix)) {
+      // Named browser context: persistence comes from the registry (the
+      // entry must exist — routing validates that before reaching here).
+      final BrowserContextInfo? info = contextRegistry.info(key);
+      namedPersistent = info?.persistent ?? false;
+      namedContext = info?.label ?? BrowserContextRegistry.nameFromKey(key);
+      ephemeral = !namedPersistent;
+    }
     final _ContextSlot slot = _ContextSlot(
       key: key,
       inner: _makeInner(),
       ephemeral: ephemeral,
+      namedContext: namedContext,
+      namedPersistent: namedPersistent,
     );
     _slots[key] = slot;
     return slot;
@@ -973,7 +1337,23 @@ class ContextualBrowserAutomation implements BrowserAutomation {
   Future<void> _ensureLoaded(_ContextSlot slot, String? sessionId) async {
     if (slot.loaded) return;
     slot.loaded = true;
-    if (slot.ephemeral) {
+    if (slot.namedContext != null) {
+      // Named browser context (task 2-c): persistent contexts restore
+      // their hibernated state (<sandbox>/browser_contexts/<name>.json)
+      // so a restart or an eviction keeps the login; ephemeral ones
+      // start fresh every time.
+      slot.sessionId = sessionId;
+      if (slot.namedPersistent && sessionId != null) {
+        final NamedContextSnapshot? saved = await store.loadNamed(
+          sessionId,
+          slot.namedContext!,
+        );
+        slot.namedCreatedAt = saved?.createdAt;
+        slot.state = saved?.state ?? BrowserState();
+      } else {
+        slot.state = BrowserState();
+      }
+    } else if (slot.ephemeral) {
       slot.state = BrowserState();
     } else {
       slot.sessionId = sessionId;
@@ -1108,13 +1488,37 @@ class ContextualBrowserAutomation implements BrowserAutomation {
   }
 
   Future<void> _persist(_ContextSlot slot, BrowserState state) async {
+    final String? named = slot.namedContext;
+    if (named != null) {
+      if (slot.disposed) return; // closed/evicted while an op finished.
+      final String? sid = slot.sessionId;
+      if (sid == null) return;
+      if (slot.namedPersistent) {
+        final BrowserContextInfo? entry = contextRegistry.info(slot.key);
+        await store.saveNamed(
+          sid,
+          named,
+          state,
+          createdAt: entry?.createdAt ?? slot.namedCreatedAt,
+          lastUrl: entry?.lastUrl,
+          originCount: state.origins.length,
+        );
+      }
+      // Keep the registry's LRU + origin telemetry fresh for
+      // contextInfo / evictionOrder.
+      contextRegistry.touch(slot.key, originCount: state.origins.length);
+      return;
+    }
     if (slot.ephemeral || slot.sessionId == null) return;
     await store.save(slot.sessionId, state);
   }
 
   /// Disposes idle slots beyond [maxContexts] (LRU, ephemeral first).
   /// Disposed contexts' recorded cookie names leave the shared jar — an
-  /// ephemeral subagent's login does not outlive its task.
+  /// ephemeral subagent's login does not outlive its task. Named browser
+  /// context slots hibernate instead: persistent ones flush their state
+  /// to the sandbox file and are unregistered, so a later
+  /// `createContext` restores them.
   void _evictIdleSlots() {
     var excess = _slots.length - maxContexts;
     if (excess <= 0) return;
@@ -1130,9 +1534,16 @@ class ContextualBrowserAutomation implements BrowserAutomation {
           });
     for (final _ContextSlot victim in candidates) {
       if (excess <= 0) break;
+      excess--;
+      if (victim.key.startsWith(_namedKeyPrefix)) {
+        // Named context: hibernating flushes a persistent context's state
+        // to its sandbox file and unregisters it, so the registry never
+        // advertises a context whose engine is gone.
+        _hibernateNamedContext(victim.key);
+        continue;
+      }
       victim.disposed = true;
       _slots.remove(victim.key);
-      excess--;
       // Async cleanup — eviction must not block the completing operation.
       Future<void>(() async {
         await _releaseCookies(victim);
@@ -1223,7 +1634,10 @@ class ContextualBrowserAutomation implements BrowserAutomation {
 /// [ContextualBrowserAutomation] — what the executor hands to a subagent
 /// so its browser tools run in its own engine without touching the
 /// parent's or sibling contexts.
-class _PinnedContextAutomation implements BrowserAutomation {
+class _PinnedContextAutomation
+    with UnsupportedNamedBrowserContexts
+    implements
+        BrowserAutomation {
   _PinnedContextAutomation(this._manager, this._contextId);
 
   final ContextualBrowserAutomation _manager;

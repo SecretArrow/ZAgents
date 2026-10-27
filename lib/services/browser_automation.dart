@@ -100,6 +100,44 @@ abstract class BrowserAutomation {
   void dispose();
 }
 
+/// Default implementation of the named-browser-context API (task 2-c) for
+/// automations that do NOT support it: every call throws
+/// [UnsupportedError].
+///
+/// The stubs live in a mixin instead of as concrete bodies on
+/// [BrowserAutomation] itself on purpose: classes relate to the
+/// abstraction with `implements` (single-engine implementations AND the
+/// test doubles), and an `implements` class must implement EVERY member
+/// of the interface — concrete bodies on the abstract class would NOT be
+/// inherited by them and would break their compilation. Mixing this in
+/// gives single-engine automations the documented "unsupported" answer
+/// instead of a NoSuchMethodError, while doubles stay untouched.
+mixin UnsupportedNamedBrowserContexts {
+  /// Named browser contexts are unsupported here — always throws.
+  Future<Map<String, dynamic>> createContext(
+    String name, {
+    bool persistent = false,
+  }) async {
+    throw UnsupportedError(
+      'named browser contexts not supported by this automation',
+    );
+  }
+
+  /// Named browser contexts are unsupported here — always throws.
+  Future<void> closeContext(String name) async {
+    throw UnsupportedError(
+      'named browser contexts not supported by this automation',
+    );
+  }
+
+  /// Named browser contexts are unsupported here — always throws.
+  Future<Map<String, dynamic>?> contextInfo(String name) async {
+    throw UnsupportedError(
+      'named browser contexts not supported by this automation',
+    );
+  }
+}
+
 /// Production implementation backed by a headless InAppWebView.
 ///
 /// The User-Agent comes from Settings → User Agent through the injected
@@ -108,7 +146,7 @@ abstract class BrowserAutomation {
 /// restarting the app. Desktop picks also switch the viewport into wide
 /// ("desktop site") rendering so the page layout matches the identity —
 /// the environment is adjusted together with the UA, never the UA alone.
-class WebViewAutomation implements BrowserAutomation {
+class WebViewAutomation with UnsupportedNamedBrowserContexts implements BrowserAutomation {
   WebViewAutomation({UserAgentRecord? Function()? pickUserAgent})
     : _resolveUserAgent = pickUserAgent;
 
