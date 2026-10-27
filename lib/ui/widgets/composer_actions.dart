@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:file_selector/file_selector.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -8,9 +9,11 @@ import '../../di.dart';
 import '../../l10n/app_strings.dart';
 import '../../models/models.dart';
 import '../../services/attachment_service.dart';
+import '../../services/skill_registry.dart';
 import '../../services/speech_service.dart';
 import '../screens/prompt_library_screen.dart';
 import '../theme.dart';
+import 'skill_selector_sheet.dart';
 
 /// Immutable in-flight state of the composer TOOL actions (v1.48.0).
 class ComposerActionsState {
@@ -382,6 +385,43 @@ class ComposerActionsController extends Notifier<ComposerActionsState> {
     );
   }
 
+  /// v1.49.0 (wave-2) — the per-chat ACTIVE SKILLS selector: offers the
+  /// enabled+ready skills from the registry (wallet skills carry the
+  /// badge) and applies the result to the ACTIVE chat through
+  /// [ChatController.setActiveSkills]. The sheet's null sentinel ("use
+  /// global default") and the explicit empty list both clear the chat's
+  /// pinned set — an empty pinned set IS the global default.
+  Future<void> openSkillSheet(BuildContext context) async {
+    final SkillRegistry registry = ref.read(skillRegistryProvider);
+    await registry.ensureCacheLoaded();
+    final List<SkillOption> options = <SkillOption>[];
+    for (final InstalledSkill skill in registry.listSync()) {
+      if (!skill.enabled) continue;
+      if (await registry.statusOf(skill) != SkillStatus.ready) continue;
+      options.add(
+        SkillOption(
+          name: skill.name,
+          title: skill.title.isEmpty ? skill.name : skill.title,
+          description: skill.description,
+          wallet: skill.wallet,
+        ),
+      );
+    }
+    final List<String> current = ref.read(chatControllerProvider).activeSkills;
+    if (!context.mounted) return;
+    final List<String>? result = await SkillSelectorSheet.show(
+      context,
+      options: options,
+      currentSelection: current,
+    );
+    // Barrier dismiss resolves with the caller's selection — nothing to
+    // save in that case (the sheet contract guarantees it).
+    if (result != null && listEquals(result, current)) return;
+    await ref
+        .read(chatControllerProvider.notifier)
+        .setActiveSkills(result ?? const <String>[]);
+  }
+
   /// Localized snackbar for the image-attachment failure kinds.
   void _showAttachmentError(BuildContext context, AttachmentResult result) {
     final AppStrings strings = stringsOf(context);
@@ -411,10 +451,11 @@ final composerActionsProvider =
       ComposerActionsController.new,
     );
 
-/// The three composer TOOL icons — attach file / prompt library / mic —
-/// with their stable test keys ('attach-button', 'prompt-insert-button',
-/// 'mic-button') and the v1.46.0 visual states (picking spinner, red
-/// listening stop).
+/// The four composer TOOL icons — skills / attach file / prompt library /
+/// mic — with their stable test keys ('composer-skills', 'attach-button',
+/// 'prompt-insert-button', 'mic-button') and the v1.46.0 visual states
+/// (picking spinner, red listening stop). The skills multi-select sits
+/// EXACTLY LEFT of the attach icon (v1.49.0 user requirement).
 ///
 /// Rendered by the idle composer toolbar AND (compact) by the thinking
 /// footer's row during a run — same behaviour everywhere, driven by the
@@ -436,6 +477,23 @@ class ComposerToolIcons extends ConsumerWidget {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: <Widget>[
+        // v1.49.0 (wave-2): per-chat skill multi-select — placed EXACTLY
+        // LEFT of the upload/attach icon (user requirement).
+        IconButton(
+          key: const Key('composer-skills'),
+          tooltip: strings.composerSkillsTooltip,
+          onPressed: () => controller.openSkillSheet(context),
+          visualDensity: compact ? VisualDensity.compact : null,
+          constraints: compact
+              ? const BoxConstraints(minWidth: 32, minHeight: 32)
+              : null,
+          padding: compact ? const EdgeInsets.all(6) : null,
+          icon: Icon(
+            Icons.auto_awesome_rounded,
+            size: compact ? 16 : null,
+            color: context.zMuted,
+          ),
+        ),
         IconButton(
           key: const Key('attach-button'),
           tooltip: strings.attachFile,

@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -78,8 +79,62 @@ void main() {
       expect(bundle, isNotNull);
       expect(bundle!.messages, hasLength(1));
       expect(bundle.modules, isEmpty);
+      expect(bundle.skills, isEmpty);
       expect(bundle.waitingForSetup, isFalse);
       expect(bundle.todos, isEmpty);
+    },
+  );
+
+  // -- v1.49.0 (wave-2): per-chat pinned skills ---------------------------
+
+  test('skills round-trip through save → loadBundle', () async {
+    final ChatStore st = store();
+    const String id = 'session-skills-1';
+    await st.save(
+      id: id,
+      title: 'Skills test',
+      messages: <ChatMessage>[ChatMessage.user('hi')],
+      skills: <String>['web3-wallet-basics', 'binance-agentic-wallet'],
+    );
+    final SessionBundle? bundle = await st.loadBundle(id);
+    expect(bundle, isNotNull);
+    expect(bundle!.skills, <String>[
+      'web3-wallet-basics',
+      'binance-agentic-wallet',
+    ]);
+    // Re-saving with a DIFFERENT selection replaces it (apply = replace).
+    await st.save(
+      id: id,
+      title: 'Skills test',
+      messages: <ChatMessage>[ChatMessage.user('hi')],
+      skills: <String>['web3-wallet-basics'],
+    );
+    final SessionBundle? updated = await st.loadBundle(id);
+    expect(updated!.skills, <String>['web3-wallet-basics']);
+  });
+
+  test(
+    'a stored file without the skills key loads empty (legacy tolerant)',
+    () async {
+      final ChatStore st = store();
+      const String id = 'session-skills-legacy';
+      await st.save(
+        id: id,
+        title: 'Legacy',
+        messages: <ChatMessage>[ChatMessage.user('hi')],
+      );
+      // Rewrite the payload WITHOUT the skills key, exactly like a transcript
+      // written by an older app version.
+      final File file = File('${tempDir.path}/chats/$id.json');
+      final dynamic decoded = const JsonDecoder().convert(
+        file.readAsStringSync(),
+      );
+      (decoded as Map<String, dynamic>).remove('skills');
+      file.writeAsStringSync(jsonEncode(decoded));
+      final SessionBundle? bundle = await st.loadBundle(id);
+      expect(bundle, isNotNull);
+      expect(bundle!.skills, isEmpty);
+      expect(bundle.messages, hasLength(1));
     },
   );
 }

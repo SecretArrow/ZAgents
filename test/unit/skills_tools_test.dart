@@ -432,4 +432,122 @@ void main() {
       expect(system2, isNot(contains('# Installed skills')));
     });
   });
+
+  group('per-chat active skills (v1.49.0 wave-2)', () {
+    Future<ProviderContainer> pinnedContainer(ScriptedLlmClient llm) async {
+      final ProviderContainer container = ProviderContainer(
+        overrides: testOverrides(
+          llm: llm,
+          dir: docs,
+          settings: AppSettings(apiKey: 'k', autoTitle: false),
+        ),
+      );
+      addTearDown(container.dispose);
+      final SkillRegistry appRegistry = container.read(skillRegistryProvider);
+      await appRegistry.installFromArchiveBytes(zipSkill(), source: 'test');
+      await appRegistry.installFromArchiveBytes(
+        zipSkill(name: 'other-skill'),
+        source: 'test',
+      );
+      return container;
+    }
+
+    test('a non-empty selection REPLACES the global set for that chat',
+        () async {
+      final ScriptedLlmClient llm = ScriptedLlmClient(<AssistantTurn>[
+        AssistantTurn(content: 'ok'),
+      ]);
+      final ProviderContainer container = await pinnedContainer(llm);
+      // Draft-stage the selection BEFORE the first message: the session
+      // created by send() adopts it and the wire is built from it.
+      await container
+          .read(chatControllerProvider.notifier)
+          .setActiveSkills(<String>['demo-skill']);
+      await container.read(chatControllerProvider.notifier).send('hi');
+      final String system = llm.calls.last.first['content'] as String;
+      expect(system, contains('# Installed skills (pinned to THIS chat'));
+      expect(system, contains('demo-skill v1.0.0'));
+      expect(
+        system,
+        isNot(contains('other-skill')),
+        reason: 'the per-chat selection replaces the global default set',
+      );
+    });
+
+    test('an empty selection keeps the global default wire unchanged',
+        () async {
+      final ScriptedLlmClient llm = ScriptedLlmClient(<AssistantTurn>[
+        AssistantTurn(content: 'ok'),
+      ]);
+      final ProviderContainer container = await pinnedContainer(llm);
+      await container.read(chatControllerProvider.notifier).send('hi');
+      final String system = llm.calls.last.first['content'] as String;
+      expect(system, contains('# Installed skills (available in every chat)'));
+      expect(system, contains('demo-skill v1.0.0'));
+      expect(system, contains('other-skill v1.0.0'));
+    });
+
+    test('pinned-but-disabled skills are not advertised', () async {
+      final ScriptedLlmClient llm = ScriptedLlmClient(<AssistantTurn>[
+        AssistantTurn(content: 'ok'),
+      ]);
+      final ProviderContainer container = await pinnedContainer(llm);
+      await container
+          .read(skillRegistryProvider)
+          .setEnabled('demo-skill', false);
+      await container
+          .read(chatControllerProvider.notifier)
+          .setActiveSkills(<String>['demo-skill']);
+      await container.read(chatControllerProvider.notifier).send('hi');
+      final String system = llm.calls.last.first['content'] as String;
+      expect(
+        system,
+        isNot(contains('# Installed skills')),
+        reason: 'every pinned skill is disabled → no skill section at all',
+      );
+    });
+
+    test('skill_run refuses a skill disabled in the Skills manager', () async {
+      await registry.installFromArchiveBytes(zipSkill(), source: 'test');
+      await registry.setEnabled('demo-skill', false);
+      final ToolResult result = await executor.execute(
+        'skill_run',
+        <String, dynamic>{'name': 'demo-skill', 'script': 'scripts/main.js'},
+        sessionId: 's1',
+      );
+      expect(result.ok, isFalse);
+      expect(result.llmOutput, contains('DISABLED'));
+      expect(result.llmOutput, contains('Skills manager'));
+      expect(js.runs, isEmpty, reason: 'a disabled skill never executes');
+    });
+
+    test('skill_run injects the REAL secret values, not the mask', () async {
+      await registry.installFromArchiveBytes(
+        zipSkill(
+          extraFrontMatter:
+              'config:\n  - name: API_KEY\n    secret: true\n    required: true\n',
+        ),
+        source: 'test',
+      );
+      await registry.writeConfig(
+        (await registry.list()).first,
+        <String, String>{'API_KEY': 'real-secret-42'},
+      );
+      final ToolResult result = await executor.execute(
+        'skill_run',
+        <String, dynamic>{'name': 'demo-skill', 'script': 'scripts/main.js'},
+        sessionId: 's1',
+      );
+      expect(result.ok, isTrue);
+      expect(js.runs, hasLength(1));
+      expect(js.runs.first, contains('"API_KEY":"real-secret-42"'));
+      expect(
+        js.runs.first,
+        isNot(contains(SkillRegistry.secretMask)),
+        reason: 'the masked value must never reach the skill',
+      );
+      // And the conversation-facing result never echoes the revealed value.
+      expect(result.llmOutput, isNot(contains('real-secret-42')));
+    });
+  });
 }

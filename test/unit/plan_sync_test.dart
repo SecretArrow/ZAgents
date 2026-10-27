@@ -390,4 +390,51 @@ void main() {
       },
     );
   });
+
+  group('blocked-aware nudges (v1.49.0 wave-2)', () {
+    test('planNudgeText reports blocked steps with their reason', () {
+      final String nudge = planNudgeText(<TodoItem>[
+        const TodoItem(
+          content: 'buy coins',
+          status: TodoStatus.blocked,
+          blockedReason: 'user has not funded the wallet',
+        ),
+        const TodoItem(content: 'idle step', status: TodoStatus.pending),
+        const TodoItem(content: 'working step', status: TodoStatus.inProgress),
+        const TodoItem(content: 'done step', status: TodoStatus.completed),
+      ]);
+      expect(
+        nudge,
+        contains('- [blocked — user has not funded the wallet] buy coins'),
+      );
+      expect(nudge, contains('- [pending] idle step'));
+      expect(nudge, contains('- [in_progress] working step'));
+      expect(
+        nudge,
+        isNot(contains('done step')),
+        reason: 'completed steps are not listed',
+      );
+    });
+
+    test('a blocked step without a reason still reads as blocked', () {
+      final String nudge = planNudgeText(<TodoItem>[
+        const TodoItem(content: 'stalled', status: TodoStatus.blocked),
+      ]);
+      expect(nudge, contains('- [blocked] stalled'));
+    });
+
+    test('todoSyncReminderText keeps completed steps visible and marks '
+        'blocked ones', () {
+      final String reminder = todoSyncReminderText(<TodoItem>[
+        const TodoItem(content: 'done', status: TodoStatus.completed),
+        const TodoItem(
+          content: 'waiting on user',
+          status: TodoStatus.blocked,
+          blockedReason: 'needs API key',
+        ),
+      ]);
+      expect(reminder, contains('- [completed] done'));
+      expect(reminder, contains('- [blocked — needs API key] waiting on user'));
+    });
+  });
 }

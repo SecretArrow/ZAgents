@@ -258,6 +258,9 @@ class AppStringsEs implements AppStrings {
   String get skillSheetApply => 'Aplicar';
 
   @override
+  String get composerSkillsTooltip => 'Habilidades para este chat';
+
+  @override
   String get drawerSkills => 'Habilidades';
 
   @override

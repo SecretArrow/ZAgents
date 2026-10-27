@@ -31,9 +31,15 @@ String planNudgeText(List<TodoItem> todos) {
   );
   for (final TodoItem todo in todos) {
     if (todo.status == TodoStatus.completed) continue;
-    final String status = todo.status == TodoStatus.inProgress
-        ? 'in_progress'
-        : 'pending';
+    // v1.49.0 (wave-2): blocked-aware — the model must see WHICH steps are
+    // stalled (and why) so it keeps working on the unblocked ones instead
+    // of treating them as plain pending.
+    final String status = switch (todo.status) {
+      TodoStatus.inProgress => 'in_progress',
+      TodoStatus.blocked =>
+        'blocked${todo.blockedReason.isEmpty ? '' : ' — ${todo.blockedReason}'}',
+      _ => 'pending',
+    };
     buffer.writeln('- [$status] ${todo.content}');
   }
   buffer
@@ -65,11 +71,13 @@ String todoSyncReminderText(List<TodoItem> todos) {
     'updates at the end. Current plan:\n',
   );
   for (final TodoItem todo in todos) {
-    final String status = todo.status == TodoStatus.inProgress
-        ? 'in_progress'
-        : todo.status == TodoStatus.completed
-        ? 'completed'
-        : 'pending';
+    final String status = switch (todo.status) {
+      TodoStatus.inProgress => 'in_progress',
+      TodoStatus.blocked =>
+        'blocked${todo.blockedReason.isEmpty ? '' : ' — ${todo.blockedReason}'}',
+      TodoStatus.completed => 'completed',
+      _ => 'pending',
+    };
     buffer.writeln('- [$status] ${todo.content}');
   }
   return buffer.toString();
@@ -87,6 +95,7 @@ class ChatState {
     this.todos = const <TodoItem>[],
     this.pendingModule,
     this.activeModules = const <String>[],
+    this.activeSkills = const <String>[],
     this.setupRequest,
     this.waitingForSetup = false,
     this.pendingModuleInstall,
@@ -117,6 +126,13 @@ class ChatState {
   /// Modules currently active for the displayed session (per-chat
   /// private-window scope).
   final List<String> activeModules;
+
+  /// v1.49.0 (wave-2): skills the user pinned to THIS chat through the
+  /// composer's skill sheet. Non-empty replaces the global installed-skills
+  /// set in the system prompt for this chat only; empty follows the global
+  /// default. Isolated per chat like [activeModules] — one chat's selection
+  /// never appears in another.
+  final List<String> activeSkills;
 
   /// Module waiting for its per-chat setup form in THIS session — the UI
   /// shows a banner + form; submitting re-runs the module automatically.
@@ -152,6 +168,7 @@ class ChatState {
     List<TodoItem>? todos,
     Object? pendingModule = _unset,
     List<String>? activeModules,
+    List<String>? activeSkills,
     Object? setupRequest = _unset,
     bool? waitingForSetup,
     Object? pendingModuleInstall = _unset,
@@ -168,6 +185,7 @@ class ChatState {
         ? this.pendingModule
         : pendingModule as String?,
     activeModules: activeModules ?? this.activeModules,
+    activeSkills: activeSkills ?? this.activeSkills,
     setupRequest: setupRequest == _unset
         ? this.setupRequest
         : setupRequest as ModuleSetupRequest?,
@@ -352,6 +370,11 @@ class _SessionRun {
   /// this run is queued behind the previous one (ordering guarantee for
   /// the fire-and-forget persist-at-start vs the final save).
   Future<void> persistChain = Future<void>.value();
+
+  /// Skills the user pinned to THIS chat (v1.49.0 wave-2) — per-chat
+  /// scope like [activeModules]. Non-empty replaces the global skill set
+  /// in the next system prompt built for this session.
+  final List<String> activeSkills = <String>[];
 
   /// Module activation currently blocked behind its per-chat setup form
   /// (null when nothing waits). Mirrored into the UI state on every sync.
@@ -562,6 +585,12 @@ class ChatController extends Notifier<ChatState> {
     // Module staged on the draft (module chip on the empty state) —
     // captured BEFORE the session-state reset below can drop it.
     final String? stagedModule = state.pendingModule;
+    // v1.49.0 (wave-2): skills applied on a FRESH DRAFT (no open chat yet)
+    // travel into the session created by this first message. An existing
+    // chat keeps its own persisted selection instead.
+    final List<String> stagedSkills = _activeSessionId == null
+        ? state.activeSkills
+        : const <String>[];
 
     // Continue the active session, or create a new one. An OPEN but not
     // currently-running session (opened from history, or one whose run has
@@ -587,6 +616,7 @@ class ChatController extends Notifier<ChatState> {
             // continuation run takes over (a crash-interrupted task keeps
             // its plan instead of starting from a blank panel).
             todos: [...run.latestTodos],
+            activeSkills: [...run.activeSkills],
             isRunning: true,
           );
         }
@@ -600,6 +630,9 @@ class ChatController extends Notifier<ChatState> {
           sessionId: sessionId,
           title: run.title,
           messages: run.messages,
+          // Skills staged on the draft land in run.activeSkills below; the
+          // fresh state mirrors them so the composer chip stays truthful.
+          activeSkills: [...stagedSkills],
           isRunning: true,
         );
       }
@@ -611,6 +644,7 @@ class ChatController extends Notifier<ChatState> {
     // session — inside _executeRun, right after the user message lands, so
     // the transcript reads: user → module output → agent reply.
     run.pendingModule ??= stagedModule;
+    if (stagedSkills.isNotEmpty) run.activeSkills.addAll(stagedSkills);
     if (_activeSessionId == run.sessionId) {
       state = state.copyWith(pendingModule: null);
     }
@@ -660,6 +694,52 @@ class ChatController extends Notifier<ChatState> {
   void stageNoModule() {
     if (state.pendingModule == null) return;
     state = state.copyWith(pendingModule: null);
+  }
+
+  /// v1.49.0 (wave-2) — the per-chat ACTIVE SKILLS selection from the
+  /// composer's skill sheet. Replaces the whole selection; an empty list
+  /// means "follow the global default" (the system prompt then advertises
+  /// every installed skill again).
+  ///
+  /// Applies to the ACTIVE chat only:
+  /// * fresh draft (no session yet) → stored on the draft state and
+  ///   adopted by the session created with the next message;
+  /// * open session → mirrored into the session's run + persisted with the
+  ///   transcript, so it survives restarts and never leaks to other chats.
+  ///
+  /// Takes effect on the NEXT system-prompt build (the next agent turn);
+  /// a run already streaming keeps its current prompt.
+  Future<void> setActiveSkills(List<String> skills) async {
+    final List<String> cleaned = <String>[
+      for (final String name in skills)
+        if (name.trim().isNotEmpty) name.trim(),
+    ];
+    final String? sessionId = _activeSessionId;
+    if (sessionId == null) {
+      if (listEquals(state.activeSkills, cleaned)) return;
+      state = state.copyWith(activeSkills: cleaned);
+      return;
+    }
+    _SessionRun? run = _runs[sessionId];
+    if (run == null) {
+      run = await _materializeSession(sessionId);
+      if (run == null) {
+        // Unreadable history: still keep the user's choice on screen.
+        state = state.copyWith(activeSkills: cleaned);
+        return;
+      }
+      _runs[sessionId] = run;
+    }
+    if (listEquals(run.activeSkills, cleaned)) return;
+    run.activeSkills
+      ..clear()
+      ..addAll(cleaned);
+    if (_activeSessionId == sessionId) {
+      state = state.copyWith(activeSkills: [...run.activeSkills]);
+    }
+    // Persisted even without a new message, so the choice survives an app
+    // restart (same lifecycle as the per-chat module list).
+    await _persist(run);
   }
 
   /// Activates a chat module for the CURRENT context:
@@ -1659,6 +1739,7 @@ class ChatController extends Notifier<ChatState> {
           .loadBundle(sessionId);
       if (bundle != null) {
         run.activeModules.addAll(bundle.modules);
+        run.activeSkills.addAll(bundle.skills);
         if (bundle.messages.isNotEmpty) {
           run.messages.addAll(bundle.messages);
           // Re-read attachment payloads so replayed attachments reach the
@@ -2530,16 +2611,34 @@ class ChatController extends Notifier<ChatState> {
     // v1.38.0: installed skills — global scope, injected so the agent
     // discovers its extended capabilities WITHOUT the user repeating the
     // install in every chat. Sync-cache read: no I/O on the wire path.
+    //
+    // v1.49.0 (wave-2): when THIS chat has pinned skills (composer skill
+    // sheet), the per-chat selection REPLACES the global default set —
+    // only the pinned, still-installed, still-enabled skills are
+    // advertised here. An empty selection keeps today's behavior.
     try {
       final SkillRegistry skillRegistry = ref.read(skillRegistryProvider);
       await skillRegistry.ensureCacheLoaded();
       final List<InstalledSkill> installed = skillRegistry.listSync();
-      if (installed.isNotEmpty) {
+      final bool perChat = run.activeSkills.isNotEmpty;
+      final List<InstalledSkill> advertised = perChat
+          ? installed
+                .where(
+                  (InstalledSkill s) =>
+                      run.activeSkills.contains(s.name) && s.enabled,
+                )
+                .toList(growable: false)
+          : installed;
+      if (advertised.isNotEmpty) {
         content
           ..writeln()
           ..writeln()
-          ..writeln('# Installed skills (available in every chat)');
-        for (final InstalledSkill skill in installed) {
+          ..writeln(
+            perChat
+                ? '# Installed skills (pinned to THIS chat — the user selected them for this conversation only)'
+                : '# Installed skills (available in every chat)',
+          );
+        for (final InstalledSkill skill in advertised) {
           final Map<String, String> config = await skillRegistry.readConfig(
             skill,
           );
@@ -2971,6 +3070,7 @@ class ChatController extends Notifier<ChatState> {
             title: run.title,
             messages: persisted,
             modules: run.activeModules,
+            skills: run.activeSkills,
             waitingForSetup: run.waitingForSetup,
             // v1.35.0 crash recovery: the plan travels with the transcript.
             todos: run.latestTodos,
@@ -3190,6 +3290,7 @@ class ChatController extends Notifier<ChatState> {
         // panel for a finished run (no further _sync would restore it).
         todos: [...run.latestTodos],
         activeModules: [...run.activeModules],
+        activeSkills: [...run.activeSkills],
         setupRequest: run.setupRequest,
         waitingForSetup: run.waitingForSetup,
         // A module build/repair awaiting the user's install decision belongs
@@ -3223,6 +3324,7 @@ class ChatController extends Notifier<ChatState> {
       final List<ChatMessage> messages =
           bundle?.messages ?? const <ChatMessage>[];
       final List<String> modules = bundle?.modules ?? const <String>[];
+      final List<String> skills = bundle?.skills ?? const <String>[];
       if (!_isCurrentLoad(generation, summary.id)) return;
       // A module left unconfigured in this chat resurfaces its per-chat
       // setup form right on reopen — before any failed re-run can happen.
@@ -3244,6 +3346,7 @@ class ChatController extends Notifier<ChatState> {
         // doing (and continuing the task picks the plan back up).
         todos: bundle?.todos ?? const <TodoItem>[],
         activeModules: modules,
+        activeSkills: skills,
         setupRequest: setupRequest,
         waitingForSetup: waitingForSetup,
       );

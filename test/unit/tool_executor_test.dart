@@ -320,6 +320,61 @@ void main() {
       );
       expect(result.ok, isTrue);
     });
+
+    test('v1.49.0: blocked steps + blocked_reason + depends_on are accepted '
+        'end-to-end (unknown dependency ids stay stored as-is)', () async {
+      final ToolResult result = await executor.execute(
+        'todo_write',
+        <String, dynamic>{
+          'todos': <dynamic>[
+            <String, dynamic>{
+              'content': 'buy coins',
+              'status': 'blocked',
+              'blocked_reason': 'user has not funded the wallet',
+              'depends_on': <String>['3', 'ghost-id'],
+            },
+            <String, dynamic>{'content': 'draft', 'status': 'in_progress'},
+          ],
+        },
+      );
+      expect(result.ok, isTrue);
+      expect(result.llmOutput, contains('"total":2'));
+      expect(result.llmOutput, contains('"blocked":1'));
+      expect(result.llmOutput, contains('"in_progress":1'));
+      expect(result.llmOutput, contains('"pending":0'));
+      // The transcript-side parser (same call path as the controller) keeps
+      // the blocked metadata verbatim — unknown depends_on ids included.
+      final ToolResult blockedOnly = await executor.execute(
+        'todo_write',
+        <String, dynamic>{
+          'todos': <dynamic>[
+            <String, dynamic>{
+              'content': 'hard stop',
+              'status': 'blocked',
+              'blocked_reason': 'x' * 500,
+            },
+          ],
+        },
+      );
+      expect(blockedOnly.ok, isTrue);
+    });
+
+    test(
+      'v1.49.0: a blocked todo WITHOUT a reason degrades to pending',
+      () async {
+        final ToolResult result = await executor.execute(
+          'todo_write',
+          <String, dynamic>{
+            'todos': <dynamic>[
+              <String, dynamic>{'content': 'mystery', 'status': 'blocked'},
+            ],
+          },
+        );
+        expect(result.ok, isTrue);
+        expect(result.llmOutput, contains('"blocked":0'));
+        expect(result.llmOutput, contains('"pending":1'));
+      },
+    );
   });
 
   group('archive tools (zip_file / unzip_file)', () {

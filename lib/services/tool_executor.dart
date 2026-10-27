@@ -3,6 +3,7 @@ import 'dart:io';
 
 import '../models/models.dart';
 import 'browser_automation.dart';
+import 'browser_session_isolation.dart';
 import 'device_shell.dart';
 import 'file_system_service.dart';
 import 'js_runtime.dart';
@@ -151,6 +152,12 @@ class ToolExecutor {
       switch (name) {
         case 'todo_write':
           return _todoWrite(args);
+        case 'browser_context_create':
+          return await _browserContextCreate(args, sessionId);
+        case 'browser_context_list':
+          return await _browserContextList(sessionId);
+        case 'browser_context_close':
+          return await _browserContextClose(args, sessionId);
         case 'browser_navigate':
           return await _navigate(args, sessionId, browserApi);
         case 'browser_click':
@@ -332,12 +339,217 @@ class ToolExecutor {
     final guard = _automationGuard('browser_navigate');
     if (guard != null) return guard;
     final url = args['url']?.toString() ?? '';
+    // v1.49.0 (wave-2): the model may target a NAMED context created with
+    // browser_context_create. Named contexts are a manager-level feature of
+    // the multi-context engine only — single-engine automations answer with
+    // an honest unsupported error instead of crashing.
+    final String contextName = args['context']?.toString().trim() ?? '';
+    if (contextName.isNotEmpty) {
+      final ContextualBrowserAutomation? manager = _contextManager;
+      if (manager == null) {
+        return const ToolResult(
+          ok: false,
+          llmOutput:
+              'browser_navigate: named browser contexts are not supported '
+              'by this browser engine. Browse in the default context '
+              'instead.',
+        );
+      }
+      try {
+        final info = await manager.navigate(
+          url,
+          sessionId: sessionId,
+          contextName: contextName,
+        );
+        return ToolResult(
+          ok: info.error == null,
+          llmOutput: jsonEncode(info.toJson()),
+          displayText: info.title.isEmpty ? info.url : info.title,
+        );
+      } on ArgumentError catch (e) {
+        return ToolResult(
+          ok: false,
+          llmOutput:
+              'browser_navigate: cannot open "$contextName" — '
+              '${_errorText(e)} (see browser_context_list).',
+        );
+      }
+    }
     final info = await browserApi.navigate(url, sessionId: sessionId);
     return ToolResult(
       ok: info.error == null,
       llmOutput: jsonEncode(info.toJson()),
       displayText: info.title.isEmpty ? info.url : info.title,
     );
+  }
+
+  // -- Named browser contexts (v1.49.0 wave-2) ------------------------------
+
+  /// The manager-level contextual automation behind the named-context
+  /// tools, or null when this build's automation is single-engine (the
+  /// tools then answer with an honest "unsupported" instead of crashing).
+  ///
+  /// Named contexts live on the MANAGER ([ContextualBrowserAutomation]),
+  /// not on [BrowserAutomation] views (withContext subagent pins), and
+  /// every call needs the owning chat's [sessionId].
+  ContextualBrowserAutomation? get _contextManager =>
+      browser is ContextualBrowserAutomation
+      ? browser as ContextualBrowserAutomation
+      : null;
+
+  ToolResult _contextsUnsupported(String tool) => ToolResult(
+    ok: false,
+    llmOutput:
+        '$tool: named browser contexts are not supported by this build\'s '
+        'browser engine (single-engine automation).',
+  );
+
+  /// Human-readable text of the registry/validation errors the contextual
+  /// automation throws by contract (ArgumentError / StateError /
+  /// UnsupportedError).
+  String _errorText(Object error) {
+    if (error is ArgumentError) {
+      return error.message?.toString() ?? 'invalid argument';
+    }
+    if (error is StateError) return error.message;
+    if (error is UnsupportedError) return error.message ?? 'unsupported';
+    return error.toString();
+  }
+
+  /// `browser_context_create`: a named, isolated browser context for THIS
+  /// chat (own cookies/storage/logins). Errors surface honestly: invalid
+  /// or reserved name and missing sessionId are ArgumentError; a duplicate
+  /// name is StateError; single-engine builds report "unsupported".
+  Future<ToolResult> _browserContextCreate(
+    Map<String, dynamic> args,
+    String? sessionId,
+  ) async {
+    final ContextualBrowserAutomation? manager = _contextManager;
+    if (manager == null) return _contextsUnsupported('browser_context_create');
+    final String name = args['name']?.toString().trim() ?? '';
+    final bool persistent = args['persistent'] == true;
+    try {
+      final Map<String, dynamic> info = await manager.createContext(
+        name,
+        persistent: persistent,
+        sessionId: sessionId,
+      );
+      return ToolResult(
+        ok: true,
+        llmOutput:
+            'Browser context "${info['name']}" created '
+            '(persistent: ${info['persistent']}). Open pages in it with '
+            'browser_navigate and context="${info['name']}".\n'
+            '${jsonEncode(info)}',
+        displayText: 'context +${info['name']}',
+      );
+    } on ArgumentError catch (e) {
+      return ToolResult(
+        ok: false,
+        llmOutput:
+            'browser_context_create: ${_errorText(e)}. Names must be 1-32 '
+            'chars: lowercase letters, digits, hyphen or underscore, '
+            'starting with a letter or digit.',
+        displayText: 'context rejected',
+      );
+    } on StateError catch (e) {
+      return ToolResult(
+        ok: false,
+        llmOutput:
+            'browser_context_create: ${_errorText(e)}. Use '
+            'browser_context_list to see the existing names.',
+        displayText: 'context exists',
+      );
+    }
+  }
+
+  /// `browser_context_list`: the chat's default context plus every named
+  /// context (oldest first), so the model can pick names before creating
+  /// duplicates.
+  Future<ToolResult> _browserContextList(String? sessionId) async {
+    final ContextualBrowserAutomation? manager = _contextManager;
+    if (manager == null) return _contextsUnsupported('browser_context_list');
+    if (sessionId == null || sessionId.isEmpty) {
+      return const ToolResult(
+        ok: false,
+        llmOutput:
+            'browser_context_list needs the owning chat session '
+            '(no sessionId is bound to this call).',
+      );
+    }
+    try {
+      final List<Map<String, dynamic>> named = await manager.listContexts(
+        sessionId,
+      );
+      final StringBuffer out = StringBuffer()
+        ..writeln(
+          'Browser contexts of THIS chat (the default context is always '
+          'present and cannot be closed):',
+        )
+        ..writeln(
+          '- default [persistent] — this chat\'s main isolated context',
+        );
+      if (named.isEmpty) {
+        out.writeln(
+          '- (no named contexts yet — create one with '
+          'browser_context_create)',
+        );
+      }
+      for (final Map<String, dynamic> info in named) {
+        out.writeln(
+          '- ${info['name']} [${info['persistent'] == true ? 'persistent' : 'ephemeral'}]'
+          ' lastUrl: ${info['lastUrl']}'
+          ' origins: ${info['originCount']}'
+          ' lastUsed: ${info['lastUsedAt']}',
+        );
+      }
+      return ToolResult(
+        ok: true,
+        llmOutput: out.toString().trim(),
+        displayText: '${named.length + 1} context(s)',
+      );
+    } on Error catch (e) {
+      return ToolResult(
+        ok: false,
+        llmOutput: 'browser_context_list failed: ${_errorText(e)}',
+      );
+    }
+  }
+
+  /// `browser_context_close`: full teardown of one named context (state
+  /// file deleted, engine disposed, cookies leave the shared jar). The
+  /// default context can never be closed (reserved name → ArgumentError).
+  Future<ToolResult> _browserContextClose(
+    Map<String, dynamic> args,
+    String? sessionId,
+  ) async {
+    final ContextualBrowserAutomation? manager = _contextManager;
+    if (manager == null) return _contextsUnsupported('browser_context_close');
+    final String name = args['name']?.toString().trim() ?? '';
+    try {
+      await manager.closeContext(name, sessionId: sessionId);
+      return ToolResult(
+        ok: true,
+        llmOutput:
+            'Browser context "$name" closed: its isolated state (cookies, '
+            'storage, logins) was deleted and its engine was released.',
+        displayText: 'context -$name',
+      );
+    } on ArgumentError catch (e) {
+      return ToolResult(
+        ok: false,
+        llmOutput: 'browser_context_close: ${_errorText(e)}',
+        displayText: 'context rejected',
+      );
+    } on StateError catch (e) {
+      return ToolResult(
+        ok: false,
+        llmOutput:
+            'browser_context_close: ${_errorText(e)} — see '
+            'browser_context_list for the existing names.',
+        displayText: 'no such context',
+      );
+    }
   }
 
   Future<ToolResult> _click(
@@ -657,6 +869,14 @@ class ToolExecutor {
     final int inProgress = todos
         .where((TodoItem t) => t.status == TodoStatus.inProgress)
         .length;
+    // v1.49.0 (wave-2): the blocked contract is accepted end-to-end here —
+    // parseTodoList already kept blocked + blocked_reason (≤200 chars) +
+    // depends_on (≤10 ids, stored as-is even when an id is unknown), so the
+    // progress report tells the model how much of the plan is stalled and
+    // nudges it to keep unblocked steps moving.
+    final int blocked = todos
+        .where((TodoItem t) => t.status == TodoStatus.blocked)
+        .length;
     return ToolResult(
       ok: true,
       llmOutput: jsonEncode(<String, dynamic>{
@@ -664,7 +884,8 @@ class ToolExecutor {
         'total': todos.length,
         'completed': completed,
         'in_progress': inProgress,
-        'pending': todos.length - completed - inProgress,
+        'pending': todos.length - completed - inProgress - blocked,
+        'blocked': blocked,
       }),
       displayText: 'plan $completed/${todos.length}',
     );
@@ -1201,6 +1422,19 @@ class ToolExecutor {
         llmOutput: 'Skill "${args['name']}" is not installed.',
       );
     }
+    // v1.49.0 (wave-2): a skill the user disabled in the Skills manager
+    // must refuse to run — honestly, with the way out. setEnabled
+    // refreshes the registry cache, so this reads the current switch.
+    if (!skill.enabled) {
+      return ToolResult(
+        ok: false,
+        llmOutput:
+            'Skill "${skill.name}" is currently DISABLED in the Skills '
+            'manager (Settings → Skills). Ask the user to enable it there, '
+            'then retry — do not pretend it ran.',
+        displayText: 'skill disabled',
+      );
+    }
     final String script = args['script']?.toString().trim() ?? '';
     if (script.isEmpty) {
       return const ToolResult(
@@ -1261,7 +1495,16 @@ class ToolExecutor {
     }
     // Required config must be complete before a run (skills gate on their
     // credentials, mirroring the module setup gate).
-    final Map<String, String> config = await registry.readConfig(skill);
+    //
+    // v1.49.0 (wave-2): the run path needs the REAL secret values — the
+    // masked '••••' placeholders used to be injected into process.env and
+    // the skill saw a useless mask. The reveal is scoped to this local:
+    // the values flow ONLY into the script's process.env preamble and are
+    // never logged, echoed into the tool result or persisted anywhere.
+    final Map<String, String> config = await registry.readConfig(
+      skill,
+      revealSecrets: true,
+    );
     final Set<String> missing = registry
         .missingRequiredConfig(skill)
         .where((String f) => !config.containsKey(f) || config[f]!.isEmpty)

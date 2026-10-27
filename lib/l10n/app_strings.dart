@@ -179,6 +179,7 @@ abstract class AppStrings {
   String get skillSheetUseGlobal;
   String get skillSheetClear;
   String get skillSheetApply;
+  String get composerSkillsTooltip;
   String get drawerSkills;
   String get settingsSkillsManager;
   String get agentRouterHint;
@@ -900,6 +901,9 @@ class AppStringsEn implements AppStrings {
 
   @override
   String get skillSheetApply => 'Apply';
+
+  @override
+  String get composerSkillsTooltip => 'Skills for this chat';
 
   @override
   String get drawerSkills => 'Skills';
@@ -2310,6 +2314,9 @@ class AppStringsId implements AppStrings {
 
   @override
   String get skillSheetApply => 'Terapkan';
+
+  @override
+  String get composerSkillsTooltip => 'Skill untuk chat ini';
 
   @override
   String get drawerSkills => 'Skills';

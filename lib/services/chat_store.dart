@@ -14,12 +14,16 @@ class SessionBundle {
   const SessionBundle({
     required this.messages,
     this.modules = const <String>[],
+    this.skills = const <String>[],
     this.waitingForSetup = false,
     this.todos = const <TodoItem>[],
   });
 
   final List<ChatMessage> messages;
   final List<String> modules;
+
+  /// v1.49.0 (wave-2): the per-chat pinned skills (composer skill sheet).
+  final List<String> skills;
   final bool waitingForSetup;
   final List<TodoItem> todos;
 }
@@ -236,6 +240,9 @@ class ChatStore {
     required String title,
     required List<ChatMessage> messages,
     List<String> modules = const <String>[],
+    // v1.49.0 (wave-2): the per-chat pinned skills, stored with the same
+    // lifecycle as [modules] (round-trips through loadBundle).
+    List<String> skills = const <String>[],
     bool waitingForSetup = false,
     // v1.35.0 crash recovery: the latest agent plan written via todo_write
     // is stored WITH the transcript, so a mid-run crash can no longer wipe
@@ -261,6 +268,8 @@ class ChatStore {
         'updatedAt': DateTime.now().toIso8601String(),
         'messages': messages.map((m) => m.toJson()).toList(),
         'modules': modules,
+        // v1.49.0 (wave-2): per-chat pinned skills (composer skill sheet).
+        'skills': skills,
         // v1.29.0: true while a sent message WAITS for a module's required
         // setup input — the agent must not process it until the form is
         // submitted. Persisted so the wait survives app restarts.
@@ -350,6 +359,12 @@ class ChatStore {
         modules: <String>[
           if (data['modules'] is List)
             for (final Object? name in (data['modules'] as List<dynamic>))
+              if (name != null && name.toString().trim().isNotEmpty)
+                name.toString().trim(),
+        ],
+        skills: <String>[
+          if (data['skills'] is List)
+            for (final Object? name in (data['skills'] as List<dynamic>))
               if (name != null && name.toString().trim().isNotEmpty)
                 name.toString().trim(),
         ],
