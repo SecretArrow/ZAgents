@@ -1009,7 +1009,12 @@ class ContextualBrowserAutomation implements BrowserAutomation {
     Duration timeout = const Duration(seconds: 25),
     String? sessionId,
     String? contextName,
-  }) => _navigate(url, timeout: timeout, sessionId: sessionId, contextName: contextName);
+  }) => _navigate(
+    url,
+    timeout: timeout,
+    sessionId: sessionId,
+    contextName: contextName,
+  );
 
   @override
   Future<Map<String, dynamic>> click({
