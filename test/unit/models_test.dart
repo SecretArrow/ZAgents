@@ -354,6 +354,178 @@ void main() {
     });
   });
 
+  group('todo blocked + depends_on (v1.49.0)', () {
+    test('todoStatusFromName maps blocked spellings', () {
+      expect(todoStatusFromName('blocked'), TodoStatus.blocked);
+      expect(todoStatusFromName('block'), TodoStatus.blocked);
+      expect(todoStatusFromName('terblokir'), TodoStatus.blocked);
+    });
+
+    test('parseTodoList keeps blocked todos that carry a reason', () {
+      final List<TodoItem> todos = parseTodoList(<dynamic>[
+        <String, dynamic>{
+          'content': 'deploy',
+          'status': 'blocked',
+          'blocked_reason': 'API key missing — ask the user',
+          'depends_on': <String>['1', ' 1 ', '3', ''],
+        },
+      ]);
+      expect(todos, hasLength(1));
+      expect(todos[0].status, TodoStatus.blocked);
+      expect(todos[0].blockedReason, 'API key missing — ask the user');
+      expect(todos[0].dependsOn, <String>['1', '3']);
+      expect(todos[0].id, '1', reason: 'positional id assigned in order');
+    });
+
+    test('a blocked todo WITHOUT a reason degrades to pending', () {
+      final List<TodoItem> todos = parseTodoList(<dynamic>[
+        <String, dynamic>{'content': 'blocked but silent', 'status': 'blocked'},
+      ]);
+      expect(todos.single.status, TodoStatus.pending);
+      expect(todos.single.blockedReason, isEmpty);
+    });
+
+    test('blocked reason is clamped to 200 chars', () {
+      final String long = 'x' * 500;
+      final List<TodoItem> todos = parseTodoList(<dynamic>[
+        <String, dynamic>{
+          'content': 'step',
+          'status': 'blocked',
+          'blocked_reason': long,
+        },
+      ]);
+      expect(todos.single.blockedReason, hasLength(maxBlockedReasonLength));
+      expect(clampBlockedReason('  hi  '), 'hi');
+      expect(clampBlockedReason(null), '');
+    });
+
+    test('depends_on is clamped to 10 unique non-empty ids', () {
+      final List<String> deps = <String>[
+        for (var i = 0; i < 20; i++) 'd$i',
+      ];
+      final List<TodoItem> todos = parseTodoList(<dynamic>[
+        <String, dynamic>{
+          'content': 'step',
+          'status': 'pending',
+          'depends_on': deps,
+        },
+      ]);
+      expect(todos.single.dependsOn, hasLength(maxTodoDependencies));
+      expect(
+        clampTodoDependencies(<String>[' a ', '', 'a', 'b']),
+        <String>['a', 'b'],
+      );
+      expect(clampTodoDependencies(null), isEmpty);
+    });
+
+    test('explicit ids are kept; duplicates are re-uniqued positionally', () {
+      final List<TodoItem> todos = parseTodoList(<dynamic>[
+        <String, dynamic>{'content': 'a', 'status': 'pending', 'id': 'src'},
+        <String, dynamic>{'content': 'b', 'status': 'pending', 'id': 'src'},
+        <String, dynamic>{'content': 'c', 'status': 'pending'},
+      ]);
+      expect(todos[0].id, 'src');
+      expect(todos[1].id, isNot('src'));
+      expect(todos[2].id, '3');
+    });
+
+    test('hasActionableTodos ignores completed and blocked steps', () {
+      final List<TodoItem> plan = <TodoItem>[
+        const TodoItem(content: 'done', status: TodoStatus.completed),
+        const TodoItem(content: 'stuck', status: TodoStatus.blocked),
+      ];
+      expect(hasActionableTodos(plan), isFalse);
+      expect(hasActionableTodos(<TodoItem>[]), isFalse);
+      expect(
+        hasActionableTodos(<TodoItem>[
+          ...plan,
+          const TodoItem(content: 'next', status: TodoStatus.pending),
+        ]),
+        isTrue,
+      );
+    });
+
+    test('hasBlockedTodos and todoProgressSummary report blocked steps', () {
+      final List<TodoItem> plan = <TodoItem>[
+        const TodoItem(content: 'a', status: TodoStatus.completed),
+        const TodoItem(
+          content: 'b',
+          status: TodoStatus.blocked,
+          blockedReason: 'missing key',
+        ),
+        const TodoItem(content: 'c', status: TodoStatus.pending),
+      ];
+      expect(hasBlockedTodos(plan), isTrue);
+      expect(hasBlockedTodos(<TodoItem>[plan[0]]), isFalse);
+      expect(todoProgressSummary(plan), '1 done, 1 blocked, 1 remaining');
+    });
+
+    test('readyTodos returns only steps whose dependencies are completed',
+        () {
+      final List<TodoItem> plan = <TodoItem>[
+        const TodoItem(content: 'setup', id: '1'),
+        const TodoItem(content: 'build', id: '2', dependsOn: <String>['1']),
+        const TodoItem(
+          content: 'test',
+          id: '3',
+          dependsOn: <String>['2', 'ghost'],
+        ),
+      ];
+      expect(readyTodos(plan).map((TodoItem t) => t.id), <String>['1']);
+      final List<TodoItem> after = <TodoItem>[
+        plan[0].copyWith(status: TodoStatus.completed),
+        plan[1],
+        plan[2],
+      ];
+      expect(readyTodos(after).map((TodoItem t) => t.id), <String>['2']);
+      final List<TodoItem> done = <TodoItem>[
+        after[0],
+        after[1].copyWith(status: TodoStatus.completed),
+        after[2],
+      ];
+      expect(readyTodos(done).map((TodoItem t) => t.id), <String>['3']);
+    });
+
+    test('blocked todos survive a json roundtrip with the reason', () {
+      const TodoItem item = TodoItem(
+        content: 'deploy',
+        status: TodoStatus.blocked,
+        blockedReason: 'no credentials',
+        dependsOn: <String>['1'],
+      );
+      final Map<String, dynamic> json = item.toJson();
+      expect(json['status'], 'blocked');
+      expect(json['blocked_reason'], 'no credentials');
+      expect(json['depends_on'], <String>['1']);
+      final TodoItem decoded = TodoItem.fromJson(json);
+      expect(decoded.status, TodoStatus.blocked);
+      expect(decoded.blockedReason, 'no credentials');
+      expect(decoded.dependsOn, <String>['1']);
+    });
+
+    test('toJson omits blocked_reason/depends_on when not applicable', () {
+      const TodoItem plain = TodoItem(content: 'plain');
+      final Map<String, dynamic> json = plain.toJson();
+      expect(json.containsKey('blocked_reason'), isFalse);
+      expect(json.containsKey('depends_on'), isFalse);
+    });
+
+    test('AgentRouter preset ships with a dynamic model list', () {
+      expect(providerPresets['AgentRouter'], 'https://agentrouter.org/v1');
+      expect(
+        providerDefaultModels['AgentRouter'],
+        isNull,
+        reason: 'model list must be fetched live, never hardcoded',
+      );
+      final ProviderPreset p = ProviderPreset(
+        id: 'ar',
+        name: 'AgentRouter',
+        baseUrl: providerPresets['AgentRouter']!,
+      );
+      expect(presetHostLabel(p.baseUrl), 'agentrouter.org');
+    });
+  });
+
   group('random user-agent prompt (askRandomUa)', () {
     test('askRandomUa defaults to true', () {
       expect(AppSettings().askRandomUa, isTrue);

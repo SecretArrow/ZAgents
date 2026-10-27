@@ -42,6 +42,9 @@ const String planFirstSystemPrompt = '''
 - todo_write replaces the whole plan, so always send the complete updated list, not a diff.
 - Never regress statuses: a todo that is completed stays completed in every subsequent todo_write; always carry statuses over when re-sending the full list.
 - If you realize you finished work without updating the plan, call todo_write at once before anything else.
+- VERIFY before you mark a todo completed: a step is only completed when its result is confirmed (command/test/tool output or observed state). If you cannot verify it, keep it in_progress or mark it blocked with a blocked_reason — never guess.
+- When a step cannot proceed, mark it blocked and ALWAYS set blocked_reason (what failed, what you tried, what unblocks it), then continue with steps that do NOT depend on it. Blocked steps do not stop the whole plan; when the blocker clears, move the step back to in_progress.
+- Use depends_on to declare order-critical steps (max 10 ids per step): a step must not start before its depends_on todos are completed. Keep dependencies minimal — only real blockers.
 - Keep working autonomously until EVERY todo is completed. Do not pause to ask for permission between steps.
 - Write the final summary only after all todos are completed (or after explaining in the summary why a todo cannot be completed). Never stop halfway through the plan.
 ''';
@@ -92,10 +95,30 @@ List<Map<String, dynamic>> buildAgentTools({
               },
               'status': <String, dynamic>{
                 'type': 'string',
-                'enum': <String>['pending', 'in_progress', 'completed'],
+                'enum': <String>[
+                  'pending',
+                  'in_progress',
+                  'completed',
+                  'blocked',
+                ],
                 'description':
                     'pending = not started, in_progress = currently '
-                    'working on, completed = fully done',
+                    'working on, completed = fully done AND verified, '
+                    'blocked = cannot proceed (blocked_reason REQUIRED)',
+              },
+              'blocked_reason': <String, dynamic>{
+                'type': 'string',
+                'description':
+                    'WHY the step is blocked (max 200 chars, required '
+                    'whenever status is blocked): what was tried, what '
+                    'is missing, what unblocks it. Ignored otherwise.',
+              },
+              'depends_on': <String, dynamic>{
+                'type': 'array',
+                'items': <String, dynamic>{'type': 'string'},
+                'description':
+                    'Ids of todos this step depends on (max 10). Never '
+                    'start a step before its dependencies are completed.',
               },
             },
             'required': <String>['content', 'status'],
@@ -131,12 +154,50 @@ List<Map<String, dynamic>> buildAgentTools({
     <String>['tasks'],
   ),
   _fn(
+    'browser_context_create',
+    'Create a NAMED, isolated browser context for this chat (own cookies, storage and logins; separate from the default context and from other named contexts). Use when the user asks for a second login (e.g. a different account on the same site) or a dedicated context for a job. Name must be 1-32 chars: lowercase letters, digits, hyphen or underscore, starting with a letter or digit. Pass persistent=true to keep the context across app restarts in this chat; persistent=false (default) makes it ephemeral for this session. Returns the created context info.',
+    <String, dynamic>{
+      'name': <String, dynamic>{
+        'type': 'string',
+        'description': 'Unique context name in this chat, e.g. work-account',
+      },
+      'persistent': <String, dynamic>{
+        'type': 'boolean',
+        'description':
+            'Keep this context (and its logins) across restarts of this chat (default false)',
+      },
+    },
+    <String>['name'],
+  ),
+  _fn(
+    'browser_context_list',
+    'List the browser contexts of THIS chat: the default context plus every named context with its label, persistence, last URL and last-used time. Use before creating one with the same name, and to report context state to the user.',
+    const <String, dynamic>{},
+    const <String>[],
+  ),
+  _fn(
+    'browser_context_close',
+    'Close a named browser context created with browser_context_create and delete its isolated state. The default context cannot be closed. Ask the user before closing a context that may hold their logins.',
+    <String, dynamic>{
+      'name': <String, dynamic>{
+        'type': 'string',
+        'description': 'Name of the context to close',
+      },
+    },
+    <String>['name'],
+  ),
+  _fn(
     'browser_navigate',
     'Open a URL in the embedded browser. Returns page title, URL and a text preview.',
     <String, dynamic>{
       'url': <String, dynamic>{
         'type': 'string',
         'description': 'Full URL, e.g. https://example.com',
+      },
+      'context': <String, dynamic>{
+        'type': 'string',
+        'description':
+            'Optional name of a context created with browser_context_create to open this URL in (default context when omitted)',
       },
     },
     <String>['url'],

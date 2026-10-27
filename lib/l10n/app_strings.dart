@@ -147,6 +147,42 @@ abstract class AppStrings {
   String get todoInProgress;
   String get todoPending;
 
+  // -- v1.49.0 plan (blocked/deps) + skills manager + agentrouter ------
+  String get todoBlocked;
+  String get todoDependsOn;
+  String get skillsTitle;
+  String get skillsSubtitle;
+  String get skillsInstallUrl;
+  String get skillsUrlTitle;
+  String get skillsUrlLabel;
+  String get skillsInstallZip;
+  String get skillsSearchHint;
+  String get skillsEmptyTitle;
+  String get skillsEmptyBody;
+  String get skillBundledInstall;
+  String get skillEnabled;
+  String get skillDisabled;
+  String get skillConfigure;
+  String get skillConfigSave;
+  String get skillConfigRequired;
+  String get skillConfigSecret;
+  String get skillInspect;
+  String get skillInstructions;
+  String get skillUpdate;
+  String get skillRemove;
+  String get skillRemoveTitle;
+  String get skillRemoveBody;
+  String get skillStatusChecking;
+  String get skillFiles;
+  String get skillSheetTitle;
+  String get skillSheetHint;
+  String get skillSheetUseGlobal;
+  String get skillSheetClear;
+  String get skillSheetApply;
+  String get drawerSkills;
+  String get settingsSkillsManager;
+  String get agentRouterHint;
+
   // -- Home / chat -----------------------------------------------------
   String get askAnything;
   String get attachFile;
@@ -768,6 +804,114 @@ class AppStringsEn implements AppStrings {
 
   @override
   String get todoPending => 'Pending';
+
+  @override
+  String get todoBlocked => 'Blocked';
+
+  @override
+  String get todoDependsOn => 'Depends on';
+
+  @override
+  String get skillsTitle => 'Skills';
+
+  @override
+  String get skillsSubtitle => 'Install once, use in every chat';
+
+  @override
+  String get skillsInstallUrl => 'Install from URL';
+
+  @override
+  String get skillsUrlTitle => 'Install from URL';
+
+  @override
+  String get skillsUrlLabel => 'Git URL or skill source';
+
+  @override
+  String get skillsInstallZip => 'Install from ZIP';
+
+  @override
+  String get skillsSearchHint => 'Search skills';
+
+  @override
+  String get skillsEmptyTitle => 'No skills yet';
+
+  @override
+  String get skillsEmptyBody =>
+      'Install a skill from a URL, ZIP or a bundled pack to extend the '
+      'agent.';
+
+  @override
+  String get skillBundledInstall => 'Install';
+
+  @override
+  String get skillEnabled => 'Enabled';
+
+  @override
+  String get skillDisabled => 'Disabled';
+
+  @override
+  String get skillConfigure => 'Configure';
+
+  @override
+  String get skillConfigSave => 'Save config';
+
+  @override
+  String get skillConfigRequired => 'Required';
+
+  @override
+  String get skillConfigSecret => 'Stored encrypted on this device';
+
+  @override
+  String get skillInspect => 'Inspect';
+
+  @override
+  String get skillInstructions => 'Instructions';
+
+  @override
+  String get skillUpdate => 'Update';
+
+  @override
+  String get skillRemove => 'Remove';
+
+  @override
+  String get skillRemoveTitle => 'Remove skill?';
+
+  @override
+  String get skillRemoveBody =>
+      'Its stored config is kept so you can roll back safely.';
+
+  @override
+  String get skillStatusChecking => 'Checking…';
+
+  @override
+  String get skillFiles => 'Files';
+
+  @override
+  String get skillSheetTitle => 'Attach skills';
+
+  @override
+  String get skillSheetHint => 'Selected skills guide this chat only.';
+
+  @override
+  String get skillSheetUseGlobal => 'Use global default';
+
+  @override
+  String get skillSheetClear => 'Clear selection';
+
+  @override
+  String get skillSheetApply => 'Apply';
+
+  @override
+  String get drawerSkills => 'Skills';
+
+  @override
+  String get settingsSkillsManager => 'Skills manager';
+
+  @override
+  String get agentRouterHint =>
+      'Anthropic Messages protocol with automatic OpenAI-compatible '
+      'fallback.';
+
   @override
   String get newChat => 'New chat';
   @override
@@ -2070,6 +2214,114 @@ class AppStringsId implements AppStrings {
 
   @override
   String get todoPending => 'Menunggu';
+
+  @override
+  String get todoBlocked => 'Terblokir';
+
+  @override
+  String get todoDependsOn => 'Bergantung pada';
+
+  @override
+  String get skillsTitle => 'Skills';
+
+  @override
+  String get skillsSubtitle => 'Pasang sekali, pakai di semua chat';
+
+  @override
+  String get skillsInstallUrl => 'Pasang dari URL';
+
+  @override
+  String get skillsUrlTitle => 'Pasang dari URL';
+
+  @override
+  String get skillsUrlLabel => 'URL Git atau sumber skill';
+
+  @override
+  String get skillsInstallZip => 'Pasang dari ZIP';
+
+  @override
+  String get skillsSearchHint => 'Cari skill';
+
+  @override
+  String get skillsEmptyTitle => 'Belum ada skill';
+
+  @override
+  String get skillsEmptyBody =>
+      'Pasang skill dari URL, ZIP atau paket bawaan untuk memperluas '
+      'kemampuan agent.';
+
+  @override
+  String get skillBundledInstall => 'Pasang';
+
+  @override
+  String get skillEnabled => 'Aktif';
+
+  @override
+  String get skillDisabled => 'Nonaktif';
+
+  @override
+  String get skillConfigure => 'Konfigurasi';
+
+  @override
+  String get skillConfigSave => 'Simpan konfigurasi';
+
+  @override
+  String get skillConfigRequired => 'Wajib';
+
+  @override
+  String get skillConfigSecret => 'Disimpan terenkripsi di perangkat ini';
+
+  @override
+  String get skillInspect => 'Inspeksi';
+
+  @override
+  String get skillInstructions => 'Instruksi';
+
+  @override
+  String get skillUpdate => 'Perbarui';
+
+  @override
+  String get skillRemove => 'Hapus';
+
+  @override
+  String get skillRemoveTitle => 'Hapus skill?';
+
+  @override
+  String get skillRemoveBody =>
+      'Konfigurasi tersimpan dipertahankan agar rollback tetap aman.';
+
+  @override
+  String get skillStatusChecking => 'Memeriksa…';
+
+  @override
+  String get skillFiles => 'File';
+
+  @override
+  String get skillSheetTitle => 'Lampirkan skill';
+
+  @override
+  String get skillSheetHint => 'Skill terpilih hanya berlaku di chat ini.';
+
+  @override
+  String get skillSheetUseGlobal => 'Pakai bawaan global';
+
+  @override
+  String get skillSheetClear => 'Kosongkan pilihan';
+
+  @override
+  String get skillSheetApply => 'Terapkan';
+
+  @override
+  String get drawerSkills => 'Skills';
+
+  @override
+  String get settingsSkillsManager => 'Pengelola skill';
+
+  @override
+  String get agentRouterHint =>
+      'Protokol Anthropic Messages dengan fallback otomatis '
+      'OpenAI-compatible.';
+
   @override
   String get newChat => 'Percakapan baru';
   @override

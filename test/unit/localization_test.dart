@@ -222,4 +222,62 @@ void main() {
     expect(id.moduleBuildInstalled('p'), contains('p'));
     expect(id.moduleBuildInstalled('p'), contains('/plugins'));
   });
+
+  test('v1.49 blocked/depends plan strings are localized in all bundles', () {
+    final AppStrings en = appStringsFor('en');
+    final AppStrings id = appStringsFor('id');
+    final AppStrings es = appStringsFor('es');
+    expect(en.todoBlocked, 'Blocked');
+    expect(id.todoBlocked, 'Terblokir');
+    expect(es.todoBlocked, 'Bloqueado');
+    expect(en.todoDependsOn, 'Depends on');
+    expect(id.todoDependsOn, 'Bergantung pada');
+    expect(es.todoDependsOn, 'Depende de');
+  });
+
+  test('v1.49 skills manager strings are localized in all bundles', () {
+    final AppStrings en = appStringsFor('en');
+    final AppStrings id = appStringsFor('id');
+    final AppStrings es = appStringsFor('es');
+    for (final AppStrings s in <AppStrings>[en, id, es]) {
+      expect(s.skillsTitle, isNotEmpty);
+      expect(s.skillsSubtitle, isNotEmpty);
+      expect(s.skillsInstallUrl, isNotEmpty);
+      expect(s.skillsUrlTitle, isNotEmpty);
+      expect(s.skillsUrlLabel, isNotEmpty);
+      expect(s.skillsInstallZip, isNotEmpty);
+      expect(s.skillsSearchHint, isNotEmpty);
+      expect(s.skillsEmptyTitle, isNotEmpty);
+      expect(s.skillsEmptyBody, isNotEmpty);
+      expect(s.skillBundledInstall, isNotEmpty);
+      expect(s.skillEnabled, isNotEmpty);
+      expect(s.skillDisabled, isNotEmpty);
+      expect(s.skillConfigure, isNotEmpty);
+      expect(s.skillConfigSave, isNotEmpty);
+      expect(s.skillConfigRequired, isNotEmpty);
+      expect(s.skillConfigSecret, isNotEmpty);
+      expect(s.skillInspect, isNotEmpty);
+      expect(s.skillInstructions, isNotEmpty);
+      expect(s.skillUpdate, isNotEmpty);
+      expect(s.skillRemove, isNotEmpty);
+      expect(s.skillRemoveTitle, isNotEmpty);
+      expect(s.skillRemoveBody, isNotEmpty);
+      expect(s.skillStatusChecking, isNotEmpty);
+      expect(s.skillFiles, isNotEmpty);
+      expect(s.skillSheetTitle, isNotEmpty);
+      expect(s.skillSheetHint, isNotEmpty);
+      expect(s.skillSheetUseGlobal, isNotEmpty);
+      expect(s.skillSheetClear, isNotEmpty);
+      expect(s.skillSheetApply, isNotEmpty);
+      expect(s.drawerSkills, isNotEmpty);
+      expect(s.settingsSkillsManager, isNotEmpty);
+      expect(s.agentRouterHint, isNotEmpty);
+    }
+    expect(en.skillsTitle, 'Skills');
+    expect(id.drawerSkills, 'Skills');
+    expect(es.drawerSkills, 'Habilidades');
+    expect(en.settingsSkillsManager, 'Skills manager');
+    expect(id.settingsSkillsManager, 'Pengelola skill');
+    expect(es.agentRouterHint, contains('Anthropic'));
+  });
 }

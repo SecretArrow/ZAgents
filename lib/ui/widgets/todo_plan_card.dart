@@ -87,41 +87,78 @@ class TodoPlanCard extends StatelessWidget {
               ),
             )
           else ...<Widget>[
-            for (final TodoItem todo in items)
+            for (int i = 0; i < items.length; i++)
               Padding(
                 padding: const EdgeInsets.only(top: 5),
                 child: MergeSemantics(
-                  // One TalkBack stop per todo: status + content.
-                  child: Row(
+                  // One TalkBack stop per todo: status + content + reason.
+                  child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: <Widget>[
-                      Padding(
-                        padding: const EdgeInsets.only(top: 1),
-                        child: _TodoStatusIcon(status: todo.status),
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: <Widget>[
+                          Padding(
+                            padding: const EdgeInsets.only(top: 1),
+                            child: _TodoStatusIcon(status: items[i].status),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              items[i].content,
+                              style: TextStyle(
+                                fontSize: 13,
+                                height: 1.35,
+                                color: switch (items[i].status) {
+                                  TodoStatus.completed => palette.muted,
+                                  TodoStatus.blocked => const Color(
+                                    0xFFF59E0B,
+                                  ),
+                                  TodoStatus.inProgress => Theme.of(
+                                    context,
+                                  ).colorScheme.onSurface,
+                                  TodoStatus.pending => palette.muted,
+                                },
+                                decoration:
+                                    items[i].status == TodoStatus.completed
+                                    ? TextDecoration.lineThrough
+                                    : null,
+                                fontWeight:
+                                    items[i].status == TodoStatus.inProgress
+                                    ? FontWeight.w600
+                                    : FontWeight.w400,
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          todo.content,
-                          style: TextStyle(
-                            fontSize: 13,
-                            height: 1.35,
-                            color: switch (todo.status) {
-                              TodoStatus.completed => palette.muted,
-                              TodoStatus.inProgress => Theme.of(
-                                context,
-                              ).colorScheme.onSurface,
-                              TodoStatus.pending => palette.muted,
-                            },
-                            decoration: todo.status == TodoStatus.completed
-                                ? TextDecoration.lineThrough
-                                : null,
-                            fontWeight: todo.status == TodoStatus.inProgress
-                                ? FontWeight.w600
-                                : FontWeight.w400,
+                      if (items[i].status == TodoStatus.blocked &&
+                          items[i].blockedReason.isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(left: 23, top: 2),
+                          child: Text(
+                            '${strings.todoBlocked}: ${items[i].blockedReason}',
+                            key: Key('todo-blocked-reason-$i'),
+                            style: TextStyle(
+                              fontSize: 11.5,
+                              height: 1.3,
+                              color: const Color(0xFFF59E0B),
+                            ),
                           ),
                         ),
-                      ),
+                      if (items[i].dependsOn.isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(left: 23, top: 2),
+                          child: Text(
+                            '${strings.todoDependsOn} ${items[i].dependsOn.join(', ')}',
+                            key: Key('todo-depends-$i'),
+                            style: TextStyle(
+                              fontSize: 11.5,
+                              height: 1.3,
+                              color: palette.muted,
+                            ),
+                          ),
+                        ),
                     ],
                   ),
                 ),
@@ -163,6 +200,13 @@ class _TodoStatusIcon extends StatelessWidget {
           size: 15,
           color: context.palette.muted,
           semanticLabel: stringsOf(context).todoPending,
+        );
+      case TodoStatus.blocked:
+        return Icon(
+          Icons.block_rounded,
+          size: 15,
+          color: const Color(0xFFF59E0B),
+          semanticLabel: stringsOf(context).todoBlocked,
         );
     }
   }
@@ -266,44 +310,77 @@ class TodoPlanView extends StatelessWidget {
               ),
             ),
           ),
-          for (final TodoItem todo in todos)
+          for (int i = 0; i < todos.length; i++)
             Padding(
               padding: const EdgeInsets.only(top: 5),
               child: MergeSemantics(
-                // One TalkBack stop per todo: status + content.
-                child: Row(
+                // One TalkBack stop per todo: status + content + reason.
+                child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: <Widget>[
-                    Padding(
-                      padding: const EdgeInsets.only(top: 1),
-                      child: _LiveTodoStatusIcon(
-                        status: todo.status,
-                        live: live,
-                      ),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <Widget>[
+                        Padding(
+                          padding: const EdgeInsets.only(top: 1),
+                          child: _LiveTodoStatusIcon(
+                            status: todos[i].status,
+                            live: live,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            todos[i].content,
+                            style: TextStyle(
+                              fontSize: 13,
+                              height: 1.35,
+                              color: switch (todos[i].status) {
+                                TodoStatus.completed => palette.muted,
+                                TodoStatus.blocked => const Color(0xFFF59E0B),
+                                TodoStatus.inProgress => Theme.of(
+                                  context,
+                                ).colorScheme.onSurface,
+                                TodoStatus.pending => palette.muted,
+                              },
+                              decoration: todos[i].status == TodoStatus.completed
+                                  ? TextDecoration.lineThrough
+                                  : null,
+                              fontWeight: todos[i].status == TodoStatus.inProgress
+                                  ? FontWeight.w600
+                                  : FontWeight.w400,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        todo.content,
-                        style: TextStyle(
-                          fontSize: 13,
-                          height: 1.35,
-                          color: switch (todo.status) {
-                            TodoStatus.completed => palette.muted,
-                            TodoStatus.inProgress => Theme.of(
-                              context,
-                            ).colorScheme.onSurface,
-                            TodoStatus.pending => palette.muted,
-                          },
-                          decoration: todo.status == TodoStatus.completed
-                              ? TextDecoration.lineThrough
-                              : null,
-                          fontWeight: todo.status == TodoStatus.inProgress
-                              ? FontWeight.w600
-                              : FontWeight.w400,
+                    if (todos[i].status == TodoStatus.blocked &&
+                        todos[i].blockedReason.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(left: 23, top: 2),
+                        child: Text(
+                          '${strings.todoBlocked}: ${todos[i].blockedReason}',
+                          key: Key('todo-blocked-reason-$i'),
+                          style: TextStyle(
+                            fontSize: 11.5,
+                            height: 1.3,
+                            color: const Color(0xFFF59E0B),
+                          ),
                         ),
                       ),
-                    ),
+                    if (todos[i].dependsOn.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(left: 23, top: 2),
+                        child: Text(
+                          '${strings.todoDependsOn} ${todos[i].dependsOn.join(', ')}',
+                          key: Key('todo-depends-$i'),
+                          style: TextStyle(
+                            fontSize: 11.5,
+                            height: 1.3,
+                            color: palette.muted,
+                          ),
+                        ),
+                      ),
                   ],
                 ),
               ),

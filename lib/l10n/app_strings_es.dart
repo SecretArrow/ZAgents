@@ -158,6 +158,116 @@ class AppStringsEs implements AppStrings {
 
   @override
   String get todoPending => 'Pendiente';
+
+  @override
+  String get todoBlocked => 'Bloqueado';
+
+  @override
+  String get todoDependsOn => 'Depende de';
+
+  @override
+  String get skillsTitle => 'Habilidades';
+
+  @override
+  String get skillsSubtitle => 'Instala una vez, usa en todos los chats';
+
+  @override
+  String get skillsInstallUrl => 'Instalar desde URL';
+
+  @override
+  String get skillsUrlTitle => 'Instalar desde URL';
+
+  @override
+  String get skillsUrlLabel => 'URL de Git o fuente de la habilidad';
+
+  @override
+  String get skillsInstallZip => 'Instalar desde ZIP';
+
+  @override
+  String get skillsSearchHint => 'Buscar habilidades';
+
+  @override
+  String get skillsEmptyTitle => 'Aún no hay habilidades';
+
+  @override
+  String get skillsEmptyBody =>
+      'Instala una habilidad desde URL, ZIP o un paquete incluido para '
+      'ampliar el agente.';
+
+  @override
+  String get skillBundledInstall => 'Instalar';
+
+  @override
+  String get skillEnabled => 'Activado';
+
+  @override
+  String get skillDisabled => 'Desactivado';
+
+  @override
+  String get skillConfigure => 'Configurar';
+
+  @override
+  String get skillConfigSave => 'Guardar configuración';
+
+  @override
+  String get skillConfigRequired => 'Obligatorio';
+
+  @override
+  String get skillConfigSecret => 'Se guarda cifrado en este dispositivo';
+
+  @override
+  String get skillInspect => 'Inspeccionar';
+
+  @override
+  String get skillInstructions => 'Instrucciones';
+
+  @override
+  String get skillUpdate => 'Actualizar';
+
+  @override
+  String get skillRemove => 'Eliminar';
+
+  @override
+  String get skillRemoveTitle => '¿Eliminar habilidad?';
+
+  @override
+  String get skillRemoveBody =>
+      'Su configuración se conserva para que puedas revertir con '
+      'seguridad.';
+
+  @override
+  String get skillStatusChecking => 'Comprobando…';
+
+  @override
+  String get skillFiles => 'Archivos';
+
+  @override
+  String get skillSheetTitle => 'Adjuntar habilidades';
+
+  @override
+  String get skillSheetHint =>
+      'Las habilidades seleccionadas aplican solo a este chat.';
+
+  @override
+  String get skillSheetUseGlobal => 'Usar predeterminado global';
+
+  @override
+  String get skillSheetClear => 'Quitar selección';
+
+  @override
+  String get skillSheetApply => 'Aplicar';
+
+  @override
+  String get drawerSkills => 'Habilidades';
+
+  @override
+  String get settingsSkillsManager => 'Gestor de habilidades';
+
+  @override
+  String get agentRouterHint =>
+      'Protocolo Anthropic Messages con respaldo automático compatible '
+      'con OpenAI.';
+
   @override
   String get newChat => 'Nuevo chat';
   @override

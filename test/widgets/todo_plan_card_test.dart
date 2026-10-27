@@ -90,6 +90,54 @@ void main() {
     expect(find.byIcon(Icons.radio_button_unchecked_rounded), findsOneWidget);
   });
 
+  testWidgets('v1.49: blocked todo shows reason line and depends-on row', (
+    WidgetTester tester,
+  ) async {
+    final ChatMessage message = _assistantWith(<String, dynamic>{
+      'todos': <dynamic>[
+        <String, dynamic>{'content': 'setup env', 'status': 'completed'},
+        <String, dynamic>{
+          'content': 'deploy service',
+          'status': 'blocked',
+          'blocked_reason': 'API key missing — ask the user',
+          'depends_on': <String>['1'],
+        },
+      ],
+    });
+
+    await tester.pumpWidget(wrap(MessageBubble(message: message)));
+
+    expect(find.byType(TodoPlanCard), findsOneWidget);
+    expect(find.byIcon(Icons.block_rounded), findsOneWidget);
+    const AppStrings strings = AppStringsEn();
+    expect(
+      find.text('Blocked: API key missing — ask the user'),
+      findsOneWidget,
+    );
+    expect(find.byKey(const Key('todo-blocked-reason-1')), findsOneWidget);
+    expect(find.text('Depends on 1'), findsOneWidget);
+    expect(find.byKey(const Key('todo-depends-1')), findsOneWidget);
+    expect(find.text(strings.todoBlocked), findsNothing);
+  });
+
+  testWidgets('v1.49: blocked step without reason renders no reason row', (
+    WidgetTester tester,
+  ) async {
+    final ChatMessage message = _assistantWith(<String, dynamic>{
+      'todos': <dynamic>[
+        <String, dynamic>{'content': 'silent block', 'status': 'blocked'},
+      ],
+    });
+
+    await tester.pumpWidget(wrap(MessageBubble(message: message)));
+
+    expect(find.byType(TodoPlanCard), findsOneWidget);
+    // Parser degrades a reasonless blocked todo to pending: no block icon.
+    expect(find.byIcon(Icons.block_rounded), findsNothing);
+    expect(find.byKey(const Key('todo-blocked-reason-0')), findsNothing);
+    expect(find.byKey(const Key('todo-depends-0')), findsNothing);
+  });
+
   testWidgets('todo_write with malformed args falls back to ToolCallCard', (
     WidgetTester tester,
   ) async {

@@ -360,12 +360,12 @@ class ChatMessage {
 }
 
 /// Execution status of one todo in the agent's task plan.
-enum TodoStatus { pending, inProgress, completed }
+enum TodoStatus { pending, inProgress, completed, blocked }
 
 /// Accepts the wire spelling (`in_progress`), the Dart spelling
 /// (`inProgress`) and common model typos/synonyms for done (`completed`,
-/// `done`, `complete`, `finished`, `selesai`); anything unknown degrades
-/// to [TodoStatus.pending].
+/// `done`, `complete`, `finished`, `selesai`); `blocked` spellings map to
+/// [TodoStatus.blocked]; anything unknown degrades to [TodoStatus.pending].
 TodoStatus todoStatusFromName(String? name) {
   switch (name) {
     case 'in_progress':
@@ -377,29 +377,108 @@ TodoStatus todoStatusFromName(String? name) {
     case 'selesai':
     case 'done':
       return TodoStatus.completed;
+    case 'blocked':
+    case 'block':
+    case 'terblokir':
+      return TodoStatus.blocked;
     default:
       return TodoStatus.pending;
   }
 }
 
+String todoStatusToWire(TodoStatus status) =>
+    status == TodoStatus.inProgress ? 'in_progress' : status.name;
+
 /// One step of the agent's task plan, written by the model through the
 /// `todo_write` tool. The full list is re-sent on every update, so the
 /// latest `todo_write` call always describes the current plan state.
 class TodoItem {
-  const TodoItem({required this.content, this.status = TodoStatus.pending});
+  const TodoItem({
+    required this.content,
+    this.status = TodoStatus.pending,
+    this.id = '',
+    this.blockedReason = '',
+    this.dependsOn = const <String>[],
+  });
 
+  /// Stable identity across plan rewrites: positional ('1', '2', ...)
+  /// assigned by [parseTodoList] when the model did not send ids, so the
+  /// UI, nudges and the coordinator can reference steps even when the
+  /// model re-sends the whole list. Empty for hand-built items.
+  final String id;
   final String content;
   final TodoStatus status;
 
+  /// Why the step is [TodoStatus.blocked] — required by the todo_write
+  /// contract when a step is blocked. Clamped to [maxBlockedReasonLength]
+  /// by [parseTodoList]/[clampBlockedReason].
+  final String blockedReason;
+
+  /// Ids of todos this one depends on (max [maxTodoDependencies]). The
+  /// agent must not start this step before they are completed.
+  final List<String> dependsOn;
+
+  TodoItem copyWith({
+    String? content,
+    TodoStatus? status,
+    String? id,
+    String? blockedReason,
+    List<String>? dependsOn,
+  }) => TodoItem(
+    content: content ?? this.content,
+    status: status ?? this.status,
+    id: id ?? this.id,
+    blockedReason: blockedReason ?? this.blockedReason,
+    dependsOn: dependsOn ?? this.dependsOn,
+  );
+
   Map<String, dynamic> toJson() => <String, dynamic>{
+    'id': id,
     'content': content,
-    'status': status == TodoStatus.inProgress ? 'in_progress' : status.name,
+    'status': todoStatusToWire(status),
+    if (status == TodoStatus.blocked && blockedReason.isNotEmpty)
+      'blocked_reason': blockedReason,
+    if (dependsOn.isNotEmpty) 'depends_on': dependsOn,
   };
 
   factory TodoItem.fromJson(Map<String, dynamic> json) => TodoItem(
+    id: json['id']?.toString() ?? '',
     content: json['content']?.toString() ?? '',
     status: todoStatusFromName(json['status']?.toString()),
+    blockedReason: clampBlockedReason(json['blocked_reason']?.toString()),
+    dependsOn: clampTodoDependencies(
+      (json['depends_on'] as List<dynamic>? ??
+              json['dependsOn'] as List<dynamic>?)
+          ?.map((Object? e) => e.toString())
+          .toList(),
+    ),
   );
+}
+
+/// Wire/storage cap for a todo's blocked reason (model verbosity guard).
+const int maxBlockedReasonLength = 200;
+
+/// Cap for how many dependencies a single todo may declare.
+const int maxTodoDependencies = 10;
+
+/// Trims [raw] and clamps it to [maxBlockedReasonLength] characters.
+String clampBlockedReason(String? raw) {
+  final String v = (raw ?? '').trim();
+  if (v.length <= maxBlockedReasonLength) return v;
+  return v.substring(0, maxBlockedReasonLength);
+}
+
+/// Normalizes a todo's dependency list: trims entries, drops empties and
+/// duplicates, caps the list at [maxTodoDependencies] entries.
+List<String> clampTodoDependencies(List<String>? raw) {
+  if (raw == null) return const <String>[];
+  final List<String> out = <String>[];
+  for (final String dep in raw) {
+    final String v = dep.trim();
+    if (v.isNotEmpty && !out.contains(v)) out.add(v);
+    if (out.length >= maxTodoDependencies) break;
+  }
+  return out;
 }
 
 /// Upper bound for plan size: keeps a runaway model from flooding the
@@ -413,7 +492,8 @@ const int maxPlanNudges = 20;
 
 /// Parses the `todos` argument of a `todo_write` tool call defensively:
 /// accepts the decoded JSON array, skips malformed entries, trims content
-/// and normalizes statuses. Returns only valid items (may be empty).
+/// and normalizes statuses, then assigns stable positional ids ('1','2',
+/// ...) to entries that did not carry one. Returns only valid items.
 List<TodoItem> parseTodoList(Object? raw) {
   if (raw is! List<dynamic>) return const <TodoItem>[];
   final List<TodoItem> out = <TodoItem>[];
@@ -430,12 +510,44 @@ List<TodoItem> parseTodoList(Object? raw) {
         .toString()
         .trim();
     if (content.isEmpty) continue;
+    final TodoStatus status = todoStatusFromName(entry['status']?.toString());
+    final String reason = clampBlockedReason(
+      entry['blocked_reason']?.toString(),
+    );
+    // Contract: a blocked todo without a reason is degraded to pending —
+    // a blocked step the user cannot understand is worse than one that
+    // simply looks not-started.
+    final TodoStatus effective =
+        (status == TodoStatus.blocked && reason.isEmpty)
+        ? TodoStatus.pending
+        : status;
     out.add(
       TodoItem(
         content: content.length > 500 ? content.substring(0, 500) : content,
-        status: todoStatusFromName(entry['status']?.toString()),
+        status: effective,
+        id: entry['id']?.toString() ?? '',
+        blockedReason: reason,
+        dependsOn: clampTodoDependencies(
+          (entry['depends_on'] as List<dynamic>? ??
+                  entry['dependsOn'] as List<dynamic>?)
+              ?.map((Object? e) => e.toString())
+              .toList(),
+        ),
       ),
     );
+  }
+  // Stable positional ids: entries without an explicit id inherit their
+  // 1-based position, and duplicates are re-uniqued, so UI keys, the
+  // coordinator and depends_on references stay meaningful.
+  final Set<String> seen = <String>{};
+  for (int i = 0; i < out.length; i++) {
+    String id = out[i].id;
+    if (id.isEmpty || seen.contains(id)) id = '${i + 1}';
+    while (seen.contains(id)) {
+      id = '$id.';
+    }
+    seen.add(id);
+    out[i] = out[i].copyWith(id: id);
   }
   return out;
 }
@@ -444,9 +556,25 @@ TodoItem? _todoItemFromLoose(Map<Object?, Object?> entry) {
   final Object? content = entry['content'] ?? entry['text'];
   final String text = content?.toString().trim() ?? '';
   if (text.isEmpty) return null;
+  final TodoStatus status = todoStatusFromName(
+    entry['status']?.toString(),
+  );
+  final String reason = clampBlockedReason(
+    entry['blocked_reason']?.toString(),
+  );
   return TodoItem(
     content: text.length > 500 ? text.substring(0, 500) : text,
-    status: todoStatusFromName(entry['status']?.toString()),
+    status: (status == TodoStatus.blocked && reason.isEmpty)
+        ? TodoStatus.pending
+        : status,
+    id: entry['id']?.toString() ?? '',
+    blockedReason: reason,
+    dependsOn: clampTodoDependencies(
+      (entry['depends_on'] as List<dynamic>? ??
+              entry['dependsOn'] as List<dynamic>?)
+          ?.map((Object? e) => e.toString())
+          .toList(),
+    ),
   );
 }
 
@@ -454,6 +582,52 @@ TodoItem? _todoItemFromLoose(Map<Object?, Object?> entry) {
 /// agent loop uses to keep working instead of stopping early.
 bool hasIncompleteTodos(List<TodoItem> todos) =>
     todos.any((TodoItem t) => t.status != TodoStatus.completed);
+
+/// True when the plan still contains work the agent can act on right
+/// now: pending or in-progress steps. Blocked steps are NOT actionable —
+/// they must not keep the loop spinning forever.
+bool hasActionableTodos(List<TodoItem> todos) =>
+    todos.any(
+      (TodoItem t) =>
+          t.status == TodoStatus.pending || t.status == TodoStatus.inProgress,
+    );
+
+/// True when at least one todo is blocked (with a reason) — the signal
+/// for the UI to surface a warning and for the loop to ask the user.
+bool hasBlockedTodos(List<TodoItem> todos) =>
+    todos.any((TodoItem t) => t.status == TodoStatus.blocked);
+
+/// Summarizes the plan state for nudge prompts: completed/total plus how
+/// many steps are blocked, e.g. `3 done, 1 blocked, 2 remaining`.
+String todoProgressSummary(List<TodoItem> todos) {
+  final int done = todos
+      .where((TodoItem t) => t.status == TodoStatus.completed)
+      .length;
+  final int blocked = todos
+      .where((TodoItem t) => t.status == TodoStatus.blocked)
+      .length;
+  final int remaining = todos.length - done - blocked;
+  return '$done done, $blocked blocked, $remaining remaining';
+}
+
+/// Returns the ids of [todos] whose dependencies are all completed —
+/// the steps the coordinator may hand to subagents next.
+List<TodoItem> readyTodos(List<TodoItem> todos) {
+  final Map<String, TodoItem> byId = <String, TodoItem>{
+    for (final TodoItem t in todos) t.id: t,
+  };
+  return todos
+      .where(
+        (TodoItem t) =>
+            t.status != TodoStatus.completed &&
+            t.dependsOn.every(
+              (String dep) =>
+                  !byId.containsKey(dep) ||
+                  byId[dep]!.status == TodoStatus.completed,
+            ),
+      )
+      .toList();
+}
 
 /// Lightweight entry shown in the drawer history.
 class ChatSummary {
@@ -1140,6 +1314,7 @@ const Map<String, String> providerPresets = <String, String>{
   'OpenRouter': 'https://openrouter.ai/api/v1',
   'InferHub': 'https://api.inferhub.dev/v1',
   'Z.AI': 'https://api.z.ai/api/paas/v4',
+  'AgentRouter': 'https://agentrouter.org/v1',
   'OpenAI': 'https://api.openai.com/v1',
   'DeepSeek': 'https://api.deepseek.com/v1',
   'Groq': 'https://api.groq.com/openai/v1',
@@ -1154,6 +1329,9 @@ const Map<String, String?> providerDefaultModels = <String, String?>{
   'OpenRouter': 'z-ai/glm-4.6',
   'InferHub': null,
   'Z.AI': 'glm-4.6',
+  // AgentRouter (https://agentrouter.org): model list MUST be fetched
+  // live from GET /models — never hardcoded.
+  'AgentRouter': null,
   'OpenAI': 'gpt-4.1',
   'DeepSeek': 'deepseek-chat',
   'Groq': 'llama-3.3-70b-versatile',
