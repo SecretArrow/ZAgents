@@ -507,12 +507,14 @@ void main() {
       expect(json.containsKey('depends_on'), isFalse);
     });
 
-    test('AgentRouter preset ships with a dynamic model list', () {
+    test('AgentRouter preset ships the working default model', () {
       expect(providerPresets['AgentRouter'], 'https://agentrouter.org/v1');
       expect(
         providerDefaultModels['AgentRouter'],
-        isNull,
-        reason: 'model list must be fetched live, never hardcoded',
+        'gpt-6-astra',
+        reason:
+            'room-browser-proven default so the provider answers on the '
+            'first try; the live list is still fetchable from GET /models',
       );
       final ProviderPreset p = ProviderPreset(
         id: 'ar',

@@ -917,8 +917,11 @@ class AppStringsEn implements AppStrings {
 
   @override
   String get agentRouterHint =>
-      'Anthropic Messages protocol with automatic OpenAI-compatible '
-      'fallback.';
+      'agentrouter.org gateway: every request carries the claude-cli '
+      'identity the gateway requires. Claude models speak Anthropic '
+      'Messages; GPT and other models speak OpenAI-compatible. If the '
+      'gateway bot-challenges the connection, switch to mobile data and '
+      'retry.';
 
   @override
   String get newChat => 'New chat';
@@ -2333,8 +2336,10 @@ class AppStringsId implements AppStrings {
 
   @override
   String get agentRouterHint =>
-      'Protokol Anthropic Messages dengan fallback otomatis '
-      'OpenAI-compatible.';
+      'Gateway agentrouter.org: setiap request membawa identitas claude-cli '
+      'yang diwajibkan gateway. Model Claude memakai Anthropic Messages; '
+      'GPT dan model lain memakai OpenAI-compatible. Jika gateway '
+      'menantang bot (WAF), pindah ke data seluler lalu coba lagi.';
 
   @override
   String get newChat => 'Percakapan baru';

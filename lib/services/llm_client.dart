@@ -363,7 +363,12 @@ class LlmClient {
     } on LlmException {
       rethrow;
     } catch (e) {
-      throw LlmException('Failed to read response: $e');
+      // Non-JSON bodies (WAF challenge pages, HTML error pages) MUST keep
+      // their content in the error: downstream AgentRouter detection
+      // (looksLikeWafChallenge / looksLikeInvalidApiKey) and user
+      // diagnostics both read this snippet. 600 chars — WAF markers live
+      // in the page head/scripts.
+      throw LlmException('Failed to read response: ${_truncate(raw, 600)}');
     }
   }
 

@@ -360,6 +360,26 @@ OpenAI-compatible: **OpenRouter, InferHub, Z.AI, OpenAI, DeepSeek, Groq, dan lai
   sendiri saat run selesai — flag buka/tutup tetap global sehingga
   perpindahan langkah, akhir run, dan pindah chat tidak pernah
   menutupnya.
+- **v1.49.3 — AgentRouter benar-benar jalan: resep teruji room-browser diterapkan penuh**: (1)
+  **Wiring production yang selama ini hilang** — transport khusus AgentRouter sebelumnya hanya
+  pernah dipakai di test; provider LLM global kini memakai `AgentRouterLlmClient`, jadi chat ke
+  agentrouter.org sungguhan melewati transport itu (provider lain 100% tak berubah). (2) **User-Agent
+  claude-cli yang diwajibkan gateway** (`claude-cli/1.0.60 (external, cli)`) kini terkirim di semua
+  request AgentRouter — chat maupun fetch models; tanpa ini gateway membalas 401
+  unauthorized_client_error / halaman tantangan. (3) **Routing protokol per-model** (pola
+  room-browser): model Claude bicara Anthropic Messages lebih dulu, GPT dan model lain bicara
+  OpenAI-compatible lebih dulu; 404/405 masih jatuh sekali ke protokol satunya (anti-loop), dan
+  protokol yang terkonfirmasi di-cache per (base URL, keluarga model) sehingga panggilan berikutnya
+  tanpa tebakan. (4) **Preset apex resmi** `https://agentrouter.org/v1` + default model
+  **gpt-6-astra** (URL tanpa segmen versi dinormalisasi otomatis ke `/v1`). (5) **Error yang bisa
+  ditindaklanjuti**: halaman tantangan Aliyun WAF (HTTP 200/403 HTML) kini dikenali dan diterjemahkan
+  menjadi "pindah ke data seluler — gateway memblokir IP datacenter"; body "Invalid API Key"
+  diterjemahkan menjadi penjelasan mismatch deployment (agentrouter.org vs co.agentrouter.org
+  punya basis data key terpisah); kegagalan parse non-JSON kini selalu menyertakan potongan body
+  (diagnosis lapangan tak lagi buta). (6) **Alat verifikasi berdiri sendiri**
+  (`tool/agentrouter_standalone_check.dart` + wrapper test) — mock gateway dual-deployment + mode WAF
+  dengan assertion kawat (path, UA, dual-auth, anthropic-version), plus probe live opt-in
+  (`AGENTROUTER_LIVE=1`).
 - **v1.49.1 — perbaikan lapangan: konten tidak menabrak bar sistem Android, Skills Manager kini
   terjangkau, peringatan IP saat pindah chat benar-benar bekerja**: (1) **Inset guard menyeluruh** —
   Android 15+ mewajibkan edge-to-edge dan v1.49.0 masih menyisakan konten yang masuk ke area bar

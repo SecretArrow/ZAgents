@@ -8,15 +8,23 @@ import 'llm_client.dart';
 
 /// AgentRouter (https://agentrouter.org) transport.
 ///
-/// AgentRouter exposes an **Anthropic Messages** protocol on
-/// `{baseUrl}/messages` while the rest of the app speaks the OpenAI wire
-/// format. [AgentRouterLlmClient] translates the app's OpenAI-style
-/// messages into Anthropic shape, streams the Anthropic SSE event stream
-/// back into the same [AssistantTurn] the agent loop consumes, and
-/// auto-probes: when the endpoint turns out to be OpenAI-compatible
-/// (404/405 on `/messages`, or an OpenAI-shaped JSON body), the very same
-/// turn is served through the base OpenAI transport and the choice is
-/// cached per normalized base URL so later calls skip the probe.
+/// The gateway serves BOTH wire protocols on the version-segmented base
+/// (`…/v1/chat/completions` OpenAI-compatible, `…/v1/messages` Anthropic
+/// Messages). Which one speaks FIRST is decided per model family — the
+/// room-browser-proven recipe: Claude models speak Anthropic Messages
+/// natively, GPT and every other family speaks OpenAI-compatible
+/// ([prefersAnthropic]). A 404/405 on the first-choice path still falls
+/// back ONCE to the other protocol for single-protocol deployments, and
+/// the confirmed protocol is cached per (normalized base URL, family) so
+/// later calls skip the guess entirely.
+///
+/// [AgentRouterLlmClient] also carries the claude-cli User-Agent the
+/// gateway REQUIRES on every request (missing it yields 401
+/// unauthorized_client_error / WAF challenges), sends dual auth headers
+/// (x-api-key + Bearer) on the Anthropic path, and translates two gateway
+/// failure modes into actionable messages: Aliyun WAF bot-challenge pages
+/// ("switch to mobile data") and the "Invalid API Key" deployment
+/// mismatch (apex vs co. consoles have separate key databases).
 ///
 /// Everything outside agentrouter.org (and its subdomains) goes through
 /// `super.complete()` unchanged — zero behavior change for OpenRouter,
@@ -65,6 +73,70 @@ bool isAgentRouterHost(String host) {
 String normalizeBaseUrl(String baseUrl) =>
     baseUrl.replaceAll(RegExp(r'/+$'), '');
 
+/// AgentRouter's official paths live under the version segment
+/// (`…/v1/chat/completions`, `…/v1/messages`). Base URLs without any
+/// version segment get `/v1` appended; URLs that already carry one pass
+/// through untouched. Pure function — unit-tested directly.
+String normalizeAgentRouterBase(String baseUrl) {
+  final String trimmed = normalizeBaseUrl(baseUrl.trim());
+  final Uri? uri = Uri.tryParse(trimmed);
+  final bool hasVersionSegment = <String>[
+    for (final String s in uri?.pathSegments ?? const <String>[])
+      if (s.trim().isNotEmpty) s,
+  ].any((String s) => RegExp(r'^v\d+$').hasMatch(s.toLowerCase()));
+  return hasVersionSegment ? trimmed : '$trimmed/v1';
+}
+
+/// Room-browser-proven per-model routing: the gateway serves both wire
+/// protocols, and the model family has a natural first choice — Claude
+/// models speak Anthropic Messages natively, GPT and every other family
+/// speaks OpenAI-compatible. A wrong first guess costs one dead request
+/// (or a WAF page on guarded deployments), so the family decides. Pure
+/// function — unit-tested directly.
+bool prefersAnthropic(String model) =>
+    model.trim().toLowerCase().startsWith('claude');
+
+/// Detects Aliyun WAF bot-challenge pages (slider captcha / JS challenge)
+/// served instead of API responses to datacenter IPs. Runs on response
+/// bodies and on error messages that embed a body snippet — the markers
+/// (`acw_tc`, `acw_sc__v2`, captcha scripts) live in the first bytes of
+/// the page. Pure function — unit-tested directly.
+bool looksLikeWafChallenge(String body) {
+  final String s = body.toLowerCase();
+  return s.contains('acw_tc') ||
+      s.contains('acw_sc') ||
+      s.contains('aliyunwaf') ||
+      s.contains('aliyun waf') ||
+      s.contains('anti-bot') ||
+      s.contains('captcha') ||
+      (s.contains('aliyun') && (s.contains('waf') || s.contains('slider')));
+}
+
+/// Actionable guidance for [looksLikeWafChallenge]: the fix is a network
+/// switch (phone networks pass, datacenter IPs are challenged), never a
+/// key or URL change.
+String agentRouterWafMessage() =>
+    'AgentRouter is bot-challenging this connection (Aliyun WAF). The '
+    'gateway blocks datacenter IPs but normally allows phone networks — '
+    'switch to mobile data (or another WiFi) and retry. No API key or '
+    'URL change is needed.';
+
+/// The gateway's own rejection string ("Invalid API Key!"). agentrouter.org
+/// and co.agentrouter.org run SEPARATE key databases, so a valid-looking
+/// key from the wrong console is rejected exactly like a dead one.
+bool looksLikeInvalidApiKey(String body) =>
+    body.toLowerCase().contains('invalid api key');
+
+/// Actionable guidance for [looksLikeInvalidApiKey].
+String agentRouterInvalidKeyMessage() =>
+    'AgentRouter rejected this API key ("Invalid API Key"). agentrouter.org '
+    'and co.agentrouter.org are separate deployments with separate key '
+    'databases — generate the key on the same host you are calling and '
+    'check that it is still active.';
+
+/// Confirmed wire protocol per (normalized base URL, model family).
+enum _WireProtocol { anthropic, openAi }
+
 /// Streaming client for AgentRouter: Anthropic Messages protocol with an
 /// automatic OpenAI-compatible fallback. See the library doc comment.
 class AgentRouterLlmClient extends LlmClient {
@@ -80,16 +152,17 @@ class AgentRouterLlmClient extends LlmClient {
   /// Anthropic path reuses the same test double the OpenAI path gets.
   final http.Client? _injected;
 
-  /// Probe result per normalized base URL: an entry means the endpoint was
-  /// confirmed OpenAI-compatible (404/405 on /messages or an OpenAI-shaped
-  /// 200 body) — later calls skip the Anthropic probe entirely. Anthropic
-  /// confirmation is implicit (no entry = try /messages again? No: only
-  /// OpenAI confirmations are cached, the Anthropic path is the default
-  /// attempt every time it is not overridden).
-  static final Map<String, bool> _openAiCompatible = <String, bool>{};
+  /// Confirmed wire protocol per `base|family` key: an entry means the
+  /// gateway answered a REAL turn through that protocol — later calls for
+  /// the same family skip the first-choice guessing entirely.
+  static final Map<String, _WireProtocol> _confirmedProtocol =
+      <String, _WireProtocol>{};
 
-  /// Test hook: clears the per-baseUrl protocol probe cache.
-  static void clearProtocolCache() => _openAiCompatible.clear();
+  static String _protocolCacheKey(String base, bool anthropicFirst) =>
+      '$base|${anthropicFirst ? 'anthropic-first' : 'openai-first'}';
+
+  /// Test hook: clears the confirmed-protocol cache.
+  static void clearProtocolCache() => _confirmedProtocol.clear();
 
   @override
   Future<AssistantTurn> complete({
@@ -113,26 +186,66 @@ class AgentRouterLlmClient extends LlmClient {
         cancelKey: cancelKey,
       );
     }
-    final String base = normalizeBaseUrl(config.baseUrl);
-    if (_openAiCompatible[base] ?? false) {
+    final String base = normalizeAgentRouterBase(config.baseUrl);
+    // Both official paths are served under the version segment; hand the
+    // normalized base to the OpenAI path too (super builds
+    // `{base}/chat/completions`).
+    final LlmConfig normalized = LlmConfig(
+      baseUrl: base,
+      apiKey: config.apiKey,
+      model: config.model,
+      maxTokens: config.maxTokens,
+    );
+    final bool anthropicFirst = prefersAnthropic(config.model);
+    final String cacheKey = _protocolCacheKey(base, anthropicFirst);
+    final _WireProtocol? confirmed = _confirmedProtocol[cacheKey];
+    if (confirmed == _WireProtocol.openAi) {
       return _completeOpenAi(
-        config: config,
+        config: normalized,
         messages: messages,
         tools: tools,
         onDelta: onDelta,
         shouldAbort: shouldAbort,
         cancelKey: cancelKey,
+        allowFallback: false,
+        cacheKey: cacheKey,
       );
     }
-    return _completeAnthropic(
-      config: config,
-      base: base,
-      messages: messages,
-      tools: tools,
-      onDelta: onDelta,
-      shouldAbort: shouldAbort,
-      cancelKey: cancelKey,
-    );
+    if (confirmed == _WireProtocol.anthropic) {
+      return _completeAnthropic(
+        config: normalized,
+        base: base,
+        messages: messages,
+        tools: tools,
+        onDelta: onDelta,
+        shouldAbort: shouldAbort,
+        cancelKey: cancelKey,
+        allowFallback: false,
+        cacheKey: cacheKey,
+      );
+    }
+    return anthropicFirst
+        ? _completeAnthropic(
+            config: normalized,
+            base: base,
+            messages: messages,
+            tools: tools,
+            onDelta: onDelta,
+            shouldAbort: shouldAbort,
+            cancelKey: cancelKey,
+            allowFallback: true,
+            cacheKey: cacheKey,
+          )
+        : _completeOpenAi(
+            config: normalized,
+            messages: messages,
+            tools: tools,
+            onDelta: onDelta,
+            shouldAbort: shouldAbort,
+            cancelKey: cancelKey,
+            allowFallback: true,
+            cacheKey: cacheKey,
+          );
   }
 
   /// Brands every agentrouter-host request of the OpenAI-compatible
@@ -148,7 +261,10 @@ class AgentRouterLlmClient extends LlmClient {
 
   /// The OpenAI-compatible path IS the base transport — same request
   /// building, SSE parsing, retry semantics — with the AgentRouter
-  /// User-Agent merged in via the constructor-injected header hook.
+  /// User-Agent merged in via the constructor-injected header hook. A
+  /// successful turn confirms the protocol for this (base, family) pair;
+  /// 404/405 falls back once to the Anthropic path when allowed; WAF
+  /// pages and key/deployment mismatches become actionable errors.
   Future<AssistantTurn> _completeOpenAi({
     required LlmConfig config,
     required List<Map<String, dynamic>> messages,
@@ -156,15 +272,49 @@ class AgentRouterLlmClient extends LlmClient {
     void Function(String delta)? onDelta,
     bool Function()? shouldAbort,
     Object? cancelKey,
-  }) {
-    return super.complete(
-      config: config,
-      messages: messages,
-      tools: tools,
-      onDelta: onDelta,
-      shouldAbort: shouldAbort,
-      cancelKey: cancelKey,
-    );
+    required bool allowFallback,
+    required String cacheKey,
+  }) async {
+    try {
+      final AssistantTurn turn = await super.complete(
+        config: config,
+        messages: messages,
+        tools: tools,
+        onDelta: onDelta,
+        shouldAbort: shouldAbort,
+        cancelKey: cancelKey,
+      );
+      _confirmedProtocol[cacheKey] = _WireProtocol.openAi;
+      return turn;
+    } on LlmException catch (e) {
+      // Non-200 errors embed the body snippet; parse failures embed it
+      // too (the base transport includes the raw body since v1.49.3) —
+      // which is exactly what makes WAF/invalid-key detection possible
+      // on this path.
+      if (looksLikeWafChallenge(e.message)) {
+        throw LlmException(agentRouterWafMessage(), statusCode: e.statusCode);
+      }
+      if (looksLikeInvalidApiKey(e.message)) {
+        throw LlmException(
+          agentRouterInvalidKeyMessage(),
+          statusCode: e.statusCode,
+        );
+      }
+      if (allowFallback && (e.statusCode == 404 || e.statusCode == 405)) {
+        return _completeAnthropic(
+          config: config,
+          base: normalizeBaseUrl(config.baseUrl),
+          messages: messages,
+          tools: tools,
+          onDelta: onDelta,
+          shouldAbort: shouldAbort,
+          cancelKey: cancelKey,
+          allowFallback: false,
+          cacheKey: cacheKey,
+        );
+      }
+      rethrow;
+    }
   }
 
   Future<AssistantTurn> _completeAnthropic({
@@ -175,6 +325,8 @@ class AgentRouterLlmClient extends LlmClient {
     void Function(String delta)? onDelta,
     bool Function()? shouldAbort,
     Object? cancelKey,
+    required bool allowFallback,
+    required String cacheKey,
   }) async {
     if (shouldAbort?.call() ?? false) {
       throw const LlmAbortedException('');
@@ -205,15 +357,25 @@ class AgentRouterLlmClient extends LlmClient {
       }
 
       if (response.statusCode == 404 || response.statusCode == 405) {
-        // No /messages endpoint: this base URL is OpenAI-compatible.
-        _openAiCompatible[base] = true;
-        return await _completeOpenAi(
-          config: config,
-          messages: messages,
-          tools: tools,
-          onDelta: onDelta,
-          shouldAbort: shouldAbort,
-          cancelKey: cancelKey,
+        // No /messages endpoint on this base: OpenAI-compatible gateway.
+        if (allowFallback) {
+          return _completeOpenAi(
+            config: config,
+            messages: messages,
+            tools: tools,
+            onDelta: onDelta,
+            shouldAbort: shouldAbort,
+            cancelKey: cancelKey,
+            allowFallback: false,
+            cacheKey: cacheKey,
+          );
+        }
+        // The confirmed route suddenly 404s — surface a hard error. The
+        // two-way fallback is strictly one-shot: never flip back and
+        // forth (guard anti-loop).
+        throw LlmException(
+          'HTTP ${response.statusCode}: /messages unavailable on $base',
+          statusCode: response.statusCode,
         );
       }
 
@@ -221,27 +383,32 @@ class AgentRouterLlmClient extends LlmClient {
         final String raw = await response.stream.bytesToString();
         // Auth/API errors keep the provider's own message — these NEVER
         // trigger a protocol fallback (only 404/405 above may).
-        throw LlmException(
-          'HTTP ${response.statusCode}: ${anthropicErrorMessage(raw)}',
-          statusCode: response.statusCode,
-        );
+        throw agentRouterHttpError(raw, response.statusCode);
       }
 
       final String contentType = (response.headers['content-type'] ?? '')
           .toLowerCase();
       if (!contentType.contains('text/event-stream')) {
         final String raw = await response.stream.bytesToString();
+        if (looksLikeWafChallenge(raw)) {
+          throw LlmException(agentRouterWafMessage());
+        }
+        if (looksLikeInvalidApiKey(raw)) {
+          throw LlmException(agentRouterInvalidKeyMessage());
+        }
         final Object? decoded = _tryDecode(raw);
         if (decoded is Map<String, dynamic> && decoded['choices'] is List) {
           // OpenAI-shaped answer on the Anthropic endpoint: consume THIS
           // response (no re-send — no duplicate output) and remember the
           // protocol for the following calls.
-          _openAiCompatible[base] = true;
+          _confirmedProtocol[cacheKey] = _WireProtocol.openAi;
           return _parseOpenAiMessage(raw);
         }
+        _confirmedProtocol[cacheKey] = _WireProtocol.anthropic;
         return _parseAnthropicMessage(raw);
       }
 
+      _confirmedProtocol[cacheKey] = _WireProtocol.anthropic;
       return await _parseAnthropicSse(response, onDelta, shouldAbort);
     } finally {
       if (cancelKey != null) {
@@ -320,6 +487,12 @@ class AgentRouterLlmClient extends LlmClient {
           final String type = decoded['type']?.toString() ?? '';
 
           if (type == 'error') {
+            if (looksLikeWafChallenge(data)) {
+              throw LlmException(agentRouterWafMessage());
+            }
+            if (looksLikeInvalidApiKey(data)) {
+              throw LlmException(agentRouterInvalidKeyMessage());
+            }
             throw LlmException(anthropicErrorMessage(data));
           }
 
@@ -509,6 +682,22 @@ String anthropicErrorMessage(String raw) {
     }
   }
   return truncateForError(raw);
+}
+
+/// Non-200 on an AgentRouter path: WAF challenges and key/deployment
+/// mismatches become actionable errors; everything else keeps the
+/// provider's own error text (Anthropic-shaped payloads are unwrapped).
+LlmException agentRouterHttpError(String raw, int statusCode) {
+  if (looksLikeWafChallenge(raw)) {
+    return LlmException(agentRouterWafMessage(), statusCode: statusCode);
+  }
+  if (looksLikeInvalidApiKey(raw)) {
+    return LlmException(agentRouterInvalidKeyMessage(), statusCode: statusCode);
+  }
+  return LlmException(
+    'HTTP $statusCode: ${anthropicErrorMessage(raw)}',
+    statusCode: statusCode,
+  );
 }
 
 /// Builds the Anthropic Messages request body from the app's OpenAI-style

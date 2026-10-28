@@ -11,7 +11,17 @@ import 'package:zagents/services/model_catalog.dart';
 const LlmConfig _agentConfig = LlmConfig(
   baseUrl: 'https://agentrouter.org/v1',
   apiKey: 'test-key-xyz',
-  model: 'test-model',
+  // Claude-family model: keeps the Anthropic-path tests on their natural
+  // first-choice protocol (room-browser per-model routing, v1.49.3).
+  model: 'claude-test-model',
+);
+
+const LlmConfig _gptConfig = LlmConfig(
+  baseUrl: 'https://agentrouter.org/v1',
+  apiKey: 'test-key-xyz',
+  // Non-Claude family: the OpenAI-compatible path is the natural first
+  // choice (room-browser per-model routing, v1.49.3).
+  model: 'gpt-6-astra',
 );
 
 http.StreamedResponse _jsonResponse(String body, {int status = 200}) =>
@@ -71,9 +81,9 @@ void main() {
   });
 
   group('preset', () {
-    test('AgentRouter preset: base URL preset, no default model', () {
+    test('AgentRouter preset: apex base URL + working default model', () {
       expect(providerPresets['AgentRouter'], 'https://agentrouter.org/v1');
-      expect(providerDefaultModels['AgentRouter'], isNull);
+      expect(providerDefaultModels['AgentRouter'], 'gpt-6-astra');
     });
 
     test('suggestions carry no hardcoded agentrouter model ids', () {
@@ -388,7 +398,7 @@ void main() {
       ) as Map<String, dynamic>;
       expect(body['stream'], true);
       expect(body['max_tokens'], kAgentRouterMaxTokens);
-      expect(body['model'], 'test-model');
+      expect(body['model'], 'claude-test-model');
 
       expect(turn.content, 'Hello world');
       expect(deltas, <String>['Hello', ' world']);
@@ -718,5 +728,278 @@ void main() {
         );
       },
     );
+  });
+
+  group('room-browser recipe (v1.49.3)', () {
+    test('prefersAnthropic: claude family vs everything else', () {
+      expect(prefersAnthropic('claude-sonnet-4'), isTrue);
+      expect(prefersAnthropic('  Claude-3-Haiku '), isTrue);
+      expect(prefersAnthropic('gpt-6-astra'), isFalse);
+      expect(prefersAnthropic('glm-4.6'), isFalse);
+      expect(prefersAnthropic(''), isFalse);
+    });
+
+    test('normalizeAgentRouterBase appends /v1 only when missing', () {
+      expect(
+        normalizeAgentRouterBase('https://agentrouter.org'),
+        'https://agentrouter.org/v1',
+      );
+      expect(
+        normalizeAgentRouterBase('https://agentrouter.org/'),
+        'https://agentrouter.org/v1',
+      );
+      expect(
+        normalizeAgentRouterBase('https://agentrouter.org/v1'),
+        'https://agentrouter.org/v1',
+      );
+      expect(
+        normalizeAgentRouterBase('https://agentrouter.org/v1/'),
+        'https://agentrouter.org/v1',
+      );
+      expect(
+        normalizeAgentRouterBase('https://api.agentrouter.org/v2'),
+        'https://api.agentrouter.org/v2',
+      );
+    });
+
+    test('gpt models take the OpenAI-compatible path first', () async {
+      final List<http.BaseRequest> requests = <http.BaseRequest>[];
+      final AgentRouterLlmClient client = AgentRouterLlmClient(
+        client: MockClient.streaming((request, bodyStream) async {
+          requests.add(request);
+          return _sseResponse(
+            'data: {"choices":[{"delta":{"content":"gpt via openai"}}]}\n\n'
+            'data: [DONE]\n\n',
+          );
+        }),
+      );
+
+      final AssistantTurn turn = await client.complete(
+        config: _gptConfig,
+        messages: const <Map<String, dynamic>>[
+          <String, dynamic>{'role': 'user', 'content': 'hi'},
+        ],
+      );
+
+      expect(turn.content, 'gpt via openai');
+      expect(requests, hasLength(1));
+      expect(requests.single.url.path, '/v1/chat/completions');
+      final Map<String, String> headers = _lower(requests.single.headers);
+      // The gateway REQUIRES the claude-cli identity on every wire —
+      // OpenAI-compatible path included.
+      expect(headers['user-agent'], 'claude-cli/1.0.60 (external, cli)');
+      expect(headers['authorization'], 'Bearer test-key-xyz');
+    });
+
+    test('gpt 404 on chat/completions falls back once to /messages', () async {
+      final List<String> paths = <String>[];
+      final AgentRouterLlmClient client = AgentRouterLlmClient(
+        client: MockClient.streaming((request, bodyStream) async {
+          paths.add(request.url.path);
+          if (request.url.path.endsWith('/chat/completions')) {
+            return _jsonResponse('not found', status: 404);
+          }
+          return _jsonResponse(
+            jsonEncode(<String, dynamic>{
+              'content': <Map<String, dynamic>>[
+                <String, dynamic>{
+                  'type': 'text',
+                  'text': 'anthropic path saved the turn',
+                },
+              ],
+            }),
+          );
+        }),
+      );
+
+      final AssistantTurn turn = await client.complete(
+        config: _gptConfig,
+        messages: const <Map<String, dynamic>>[
+          <String, dynamic>{'role': 'user', 'content': 'hi'},
+        ],
+      );
+
+      expect(turn.content, 'anthropic path saved the turn');
+      expect(paths, <String>['/v1/chat/completions', '/v1/messages']);
+    });
+
+    test(
+      'anti-loop: both protocols 404 → error after exactly 2 requests',
+      () async {
+        final List<String> paths = <String>[];
+        final AgentRouterLlmClient client = AgentRouterLlmClient(
+          client: MockClient.streaming((request, bodyStream) async {
+            paths.add(request.url.path);
+            return _jsonResponse('not found', status: 404);
+          }),
+        );
+
+        await expectLater(
+          client.complete(
+            config: _gptConfig,
+            messages: const <Map<String, dynamic>>[
+              <String, dynamic>{'role': 'user', 'content': 'hi'},
+            ],
+          ),
+          throwsA(isA<LlmException>()),
+        );
+        // chat/completions then messages — never flip back a third time.
+        expect(paths, hasLength(2));
+      },
+    );
+
+    test('confirmed protocol cache: later gpt calls skip the guess', () async {
+      final List<String> paths = <String>[];
+      final AgentRouterLlmClient client = AgentRouterLlmClient(
+        client: MockClient.streaming((request, bodyStream) async {
+          paths.add(request.url.path);
+          return _sseResponse(
+            'data: {"choices":[{"delta":{"content":"ok"}}]}\n\n'
+            'data: [DONE]\n\n',
+          );
+        }),
+      );
+
+      for (var i = 0; i < 2; i++) {
+        await client.complete(
+          config: _gptConfig,
+          messages: const <Map<String, dynamic>>[
+            <String, dynamic>{'role': 'user', 'content': 'hi'},
+          ],
+        );
+      }
+      expect(paths, <String>[
+        '/v1/chat/completions',
+        '/v1/chat/completions',
+      ]);
+    });
+
+    test('WAF challenge page (200 HTML) becomes an actionable error', () async {
+      final AgentRouterLlmClient client = AgentRouterLlmClient(
+        client: MockClient.streaming((request, bodyStream) async {
+          return http.StreamedResponse(
+            Stream<List<int>>.value(utf8.encode(
+              '<!DOCTYPE html><html><head>'
+              '<script>var acw_sc__v2="challenge";</script></head>'
+              '<body>Aliyun anti-bot slider</body></html>')),
+            200,
+            headers: <String, String>{'content-type': 'text/html'},
+          );
+        }),
+      );
+
+      await expectLater(
+        client.complete(
+          config: _gptConfig,
+          messages: const <Map<String, dynamic>>[
+            <String, dynamic>{'role': 'user', 'content': 'hi'},
+          ],
+        ),
+        throwsA(
+          isA<LlmException>().having(
+            (LlmException e) => e.message,
+            'message',
+            contains('mobile data'),
+          ),
+        ),
+      );
+    });
+
+    test('WAF 403 on the Anthropic path keeps the status code', () async {
+      final AgentRouterLlmClient client = AgentRouterLlmClient(
+        client: MockClient.streaming((request, bodyStream) async {
+          return http.StreamedResponse(
+            Stream<List<int>>.value(utf8.encode(
+              '<html><body>Aliyun WAF captcha verify</body></html>')),
+            403,
+            headers: <String, String>{'content-type': 'text/html'},
+          );
+        }),
+      );
+
+      await expectLater(
+        client.complete(
+          config: _agentConfig,
+          messages: const <Map<String, dynamic>>[
+            <String, dynamic>{'role': 'user', 'content': 'hi'},
+          ],
+        ),
+        throwsA(
+          isA<LlmException>()
+              .having((LlmException e) => e.statusCode, 'statusCode', 403)
+              .having(
+                (LlmException e) => e.message,
+                'message',
+                contains('mobile data'),
+              ),
+        ),
+      );
+    });
+
+    test('Invalid API Key explains the deployment mismatch', () async {
+      final AgentRouterLlmClient client = AgentRouterLlmClient(
+        client: MockClient.streaming((request, bodyStream) async {
+          return _jsonResponse('Invalid API Key!', status: 401);
+        }),
+      );
+
+      await expectLater(
+        client.complete(
+          config: _gptConfig,
+          messages: const <Map<String, dynamic>>[
+            <String, dynamic>{'role': 'user', 'content': 'hi'},
+          ],
+        ),
+        throwsA(
+          isA<LlmException>()
+              .having((LlmException e) => e.statusCode, 'statusCode', 401)
+              .having(
+                (LlmException e) => e.message,
+                'message',
+                contains('separate deployments'),
+              ),
+        ),
+      );
+    });
+
+    test('WAF / invalid-key detectors: hits and misses', () {
+      expect(looksLikeWafChallenge('<html>acw_tc=1</html>'), isTrue);
+      expect(looksLikeWafChallenge('Aliyun WAF challenge'), isTrue);
+      expect(looksLikeWafChallenge('please slide the captcha'), isTrue);
+      expect(looksLikeWafChallenge('{"error":"overloaded"}'), isFalse);
+      expect(looksLikeWafChallenge('rate limited'), isFalse);
+      expect(looksLikeInvalidApiKey('Invalid API Key!'), isTrue);
+      expect(looksLikeInvalidApiKey('invalid api key'), isTrue);
+      expect(looksLikeInvalidApiKey('invalid x-api-key'), isFalse);
+      expect(looksLikeInvalidApiKey('{"error":"quota"}'), isFalse);
+    });
+
+    test('base URL without /v1 lands on the versioned paths', () async {
+      final List<http.BaseRequest> requests = <http.BaseRequest>[];
+      final AgentRouterLlmClient client = AgentRouterLlmClient(
+        client: MockClient.streaming((request, bodyStream) async {
+          requests.add(request);
+          return _sseResponse(
+            'data: {"choices":[{"delta":{"content":"v1 normalized"}}]}\n\n'
+            'data: [DONE]\n\n',
+          );
+        }),
+      );
+      const LlmConfig bare = LlmConfig(
+        baseUrl: 'https://agentrouter.org',
+        apiKey: 'test-key-xyz',
+        model: 'gpt-6-astra',
+      );
+
+      final AssistantTurn turn = await client.complete(
+        config: bare,
+        messages: const <Map<String, dynamic>>[
+          <String, dynamic>{'role': 'user', 'content': 'hi'},
+        ],
+      );
+
+      expect(turn.content, 'v1 normalized');
+      expect(requests.single.url.path, '/v1/chat/completions');
+    });
   });
 }

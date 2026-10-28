@@ -95,19 +95,56 @@ class ModelCatalogClient {
 
     final String body = await response.stream.bytesToString();
     if (response.statusCode == 401 || response.statusCode == 403) {
+      if (agentRouter) {
+        // The gateway answers auth failures with its own strings; WAF
+        // challenges and key/deployment mismatches deserve actionable
+        // messages instead of a bare "Unauthorized".
+        if (looksLikeWafChallenge(body)) {
+          throw ModelCatalogException(
+            agentRouterWafMessage(),
+            statusCode: response.statusCode,
+          );
+        }
+        if (looksLikeInvalidApiKey(body)) {
+          throw ModelCatalogException(
+            agentRouterInvalidKeyMessage(),
+            statusCode: response.statusCode,
+          );
+        }
+      }
       throw ModelCatalogException(
         'Unauthorized — check the API key for this provider.',
         statusCode: response.statusCode,
       );
     }
     if (response.statusCode != 200) {
+      if (agentRouter && looksLikeWafChallenge(body)) {
+        throw ModelCatalogException(
+          agentRouterWafMessage(),
+          statusCode: response.statusCode,
+        );
+      }
       throw ModelCatalogException(
         'HTTP ${response.statusCode}: ${_truncate(body)}',
         statusCode: response.statusCode,
       );
     }
 
-    return agentRouter ? parseAgentRouterCatalog(body) : parseCatalog(body);
+    if (agentRouter) {
+      // A 200 with an Aliyun WAF page (datacenter IP) parses as garbage —
+      // surface the actionable message instead of a cryptic format error.
+      if (looksLikeWafChallenge(body)) {
+        throw ModelCatalogException(agentRouterWafMessage());
+      }
+      try {
+        return parseAgentRouterCatalog(body);
+      } on FormatException catch (e) {
+        throw ModelCatalogException(
+          'Unknown response format: ${_truncate(body)} ($e)',
+        );
+      }
+    }
+    return parseCatalog(body);
   }
 
   /// Parses a catalog payload. Kept public for tests. Signature must stay

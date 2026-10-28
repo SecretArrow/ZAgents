@@ -271,8 +271,11 @@ class AppStringsEs implements AppStrings {
 
   @override
   String get agentRouterHint =>
-      'Protocolo Anthropic Messages con respaldo automático compatible '
-      'con OpenAI.';
+      'Gateway agentrouter.org: las peticiones llevan la identidad '
+      'claude-cli que exige el gateway. Los modelos Claude hablan '
+      'Anthropic Messages; GPT y demás modelos hablan OpenAI-compatible. '
+      'Si el gateway desafía el bot (WAF), cambia a datos móviles y '
+      'reintenta.';
 
   @override
   String get newChat => 'Nuevo chat';

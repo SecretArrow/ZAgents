@@ -1324,9 +1324,11 @@ const Map<String, String?> providerDefaultModels = <String, String?>{
   'OpenRouter': 'z-ai/glm-4.6',
   'InferHub': null,
   'Z.AI': 'glm-4.6',
-  // AgentRouter (https://agentrouter.org): model list MUST be fetched
-  // live from GET /models — never hardcoded.
-  'AgentRouter': null,
+  // AgentRouter: ships the room-browser-proven working default so the
+  // provider answers on the very first try (user-reported working
+  // configuration: gpt-6-astra). The model list is still fetchable live
+  // from GET /models — this is only the pre-filled suggestion.
+  'AgentRouter': 'gpt-6-astra',
   'OpenAI': 'gpt-4.1',
   'DeepSeek': 'deepseek-chat',
   'Groq': 'llama-3.3-70b-versatile',

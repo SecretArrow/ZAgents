@@ -12,6 +12,7 @@ import 'models/models.dart';
 import 'services/agent_composer.dart';
 import 'services/agent_controller.dart';
 import 'services/agent_polisher.dart';
+import 'services/agentrouter_client.dart';
 import 'services/app_lock_service.dart';
 import 'services/attachment_service.dart';
 import 'services/backup_service.dart';
@@ -76,7 +77,12 @@ final documentsDirProvider = Provider<DocumentsDirResolver>(
   (ref) => getApplicationDocumentsDirectory,
 );
 
-final llmClientProvider = Provider<LlmClient>((ref) => LlmClient());
+/// v1.49.3 — the AgentRouter-aware transport serves EVERY provider: hosts
+/// outside agentrouter.org (and subdomains) flow through the base
+/// OpenAI-compatible transport unchanged, while agentrouter hosts get the
+/// room-browser-proven per-model protocol routing, the required claude-cli
+/// User-Agent, dual-auth headers, and WAF/invalid-key actionable errors.
+final llmClientProvider = Provider<LlmClient>((ref) => AgentRouterLlmClient());
 
 final modelCatalogProvider = Provider<ModelCatalogClient>(
   (ref) => ModelCatalogClient(),
