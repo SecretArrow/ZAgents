@@ -7,6 +7,7 @@ import '../../models/models.dart';
 import '../../services/agentrouter_client.dart';
 import '../theme.dart';
 import '../widgets/paged_list.dart';
+import '../widgets/toast.dart';
 import 'preset_editor_screen.dart';
 
 /// Full-screen provider management: every preset is a card with its key
@@ -27,13 +28,16 @@ class ProvidersScreen extends ConsumerWidget {
             baseUrl: preset.baseUrl,
             apiKey: preset.apiKey,
             model: preset.model,
+            // v1.49.5 fix: activation must carry the preset's engine, or a
+            // preset pinned to Anthropic/Responses silently reverts to the
+            // previous provider's engine after switching.
+            engine: preset.engine,
           ),
         );
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(
-        SnackBar(content: Text(strings.providerActivatedSnack(preset.name))),
-      );
+    showToast(
+      context,
+      strings.providerActivatedSnack(preset.name),
+    );
   }
 
   /// Long-press shortcut: ask for confirmation before switching the

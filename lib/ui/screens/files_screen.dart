@@ -10,6 +10,7 @@ import '../../services/device_export.dart';
 import '../../services/file_system_service.dart';
 import '../theme.dart';
 import '../widgets/paged_list.dart';
+import '../widgets/toast.dart';
 
 /// In-app file manager over the app documents directory: browse, preview,
 /// share, rename, delete, copy/cut/paste, zip and unzip.
@@ -59,16 +60,14 @@ class _FilesScreenState extends ConsumerState<FilesScreen> {
     }
   }
 
+  /// v1.49.5: subtle overlay toast instead of a SnackBar — a floating
+  /// toast never pushes the file list or the preview sheet around.
   void _toast(String message) {
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(content: Text(message)));
+    showToast(context, message);
   }
 
   void _snack(String text) {
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(content: Text(text)));
+    _toast(text);
   }
 
   Future<void> _guard(Future<void> Function() op, String? success) async {

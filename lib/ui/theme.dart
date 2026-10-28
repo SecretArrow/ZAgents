@@ -123,12 +123,8 @@ ThemeData _baseTheme(Brightness brightness) {
         backgroundColor: WidgetStatePropertyAll(p.surfaceAlt),
       ),
     ),
-    snackBarTheme: SnackBarThemeData(
-      backgroundColor: isDark ? kSurfaceAltColor : const Color(0xFF2A2D3A),
-      contentTextStyle: const TextStyle(color: Colors.white),
-      behavior: SnackBarBehavior.floating,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-    ),
+    // v1.49.5: snackBarTheme removed — feedback now uses the subtle
+    // overlay toast (see ui/widgets/toast.dart) instead of SnackBars.
   );
 }
 

@@ -12,6 +12,7 @@ import '../../services/module_registry.dart';
 import '../../services/module_remote.dart';
 import '../../l10n/app_strings.dart';
 import '../theme.dart';
+import '../widgets/toast.dart';
 
 /// Modules (plugins) manager: install from ZIP or URL, one-tap
 /// install/update from the official samples repository, list installed
@@ -122,21 +123,17 @@ class _ModulesScreenState extends ConsumerState<ModulesScreen> {
     ref.invalidate(moduleListProvider);
     if (!mounted) return;
     final AppStrings strings = stringsOf(context);
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(
-        SnackBar(
-          content: Text(
-            result.ok
-                ? (result.message.startsWith('Updated')
-                      // v1.44.0: version-aware reinstall — surface
-                      // "Updated name vX → vY" verbatim.
-                      ? result.message
-                      : strings.moduleInstallSuccess(result.module!.name))
-                : strings.moduleInstallFailed(result.message),
-          ),
-        ),
-      );
+    // v1.49.5: subtle overlay toast instead of a SnackBar.
+    showToast(
+      context,
+      result.ok
+          ? (result.message.startsWith('Updated')
+                // v1.44.0: version-aware reinstall — surface
+                // "Updated name vX → vY" verbatim.
+                ? result.message
+                : strings.moduleInstallSuccess(result.module!.name))
+          : strings.moduleInstallFailed(result.message),
+    );
   }
 
   /// v1.46.0: the ZIP pick shared by the FAB (fresh install) and the
@@ -158,13 +155,10 @@ class _ModulesScreenState extends ConsumerState<ModulesScreen> {
       );
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context)
-          ..hideCurrentSnackBar()
-          ..showSnackBar(
-            SnackBar(
-              content: Text(stringsOf(context).moduleInstallFailed('$e')),
-            ),
-          );
+        showToast(
+          context,
+          stringsOf(context).moduleInstallFailed('$e'),
+        );
       }
     } finally {
       if (mounted) setState(() => _installing = false);
@@ -225,14 +219,12 @@ class _ModulesScreenState extends ConsumerState<ModulesScreen> {
     if (url == null || url.isEmpty) return;
     if (!mounted) return;
     setState(() => _downloading = true);
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(
-        SnackBar(
-          key: const Key('module-downloading-snack'),
-          content: Text(strings.moduleDownloading),
-        ),
-      );
+    // v1.49.5: subtle overlay toast instead of a SnackBar.
+    showToast(
+      context,
+      strings.moduleDownloading,
+      key: const Key('module-downloading-snack'),
+    );
     try {
       await _reportInstall(ref.read(moduleRemoteProvider).installFromUrl(url));
     } finally {
@@ -433,9 +425,7 @@ class _ModulesScreenState extends ConsumerState<ModulesScreen> {
           .exportToZip(module.name, target);
       if (!result.ok || result.zipPath == null) {
         if (!mounted) return;
-        ScaffoldMessenger.of(context)
-          ..hideCurrentSnackBar()
-          ..showSnackBar(SnackBar(content: Text(strings.operationFailed)));
+        showToast(context, strings.operationFailed);
         return;
       }
       await SharePlus.instance.share(
@@ -443,9 +433,7 @@ class _ModulesScreenState extends ConsumerState<ModulesScreen> {
       );
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context)
-        ..hideCurrentSnackBar()
-        ..showSnackBar(SnackBar(content: Text(strings.operationFailed)));
+      showToast(context, strings.operationFailed);
     } finally {
       nameController.dispose();
       nameFocus.dispose();
@@ -894,29 +882,24 @@ class _OfficialCatalogState extends ConsumerState<_OfficialCatalog> {
     } catch (e) {
       if (!mounted) return;
       setState(() => _busyName = null);
-      ScaffoldMessenger.of(context)
-        ..hideCurrentSnackBar()
-        ..showSnackBar(
-          SnackBar(content: Text(stringsOf(context).moduleInstallFailed('$e'))),
-        );
+      showToast(
+        context,
+        stringsOf(context).moduleInstallFailed('$e'),
+      );
       return;
     }
     ref.invalidate(moduleListProvider);
     if (!mounted) return;
     final AppStrings strings = stringsOf(context);
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(
-        SnackBar(
-          content: Text(
-            result.ok
-                ? (result.message.startsWith('Updated')
-                      ? result.message
-                      : strings.moduleInstallSuccess(result.module!.name))
-                : strings.moduleInstallFailed(result.message),
-          ),
-        ),
-      );
+    // v1.49.5: subtle overlay toast instead of a SnackBar.
+    showToast(
+      context,
+      result.ok
+          ? (result.message.startsWith('Updated')
+                ? result.message
+                : strings.moduleInstallSuccess(result.module!.name))
+          : strings.moduleInstallFailed(result.message),
+    );
     setState(() {
       _busyName = null;
       if (result.ok && result.module != null) {

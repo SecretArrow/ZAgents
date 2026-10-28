@@ -14,6 +14,7 @@ import '../screens/settings_screen.dart';
 import '../screens/stats_screen.dart';
 import '../theme.dart';
 import 'paged_list.dart';
+import 'toast.dart';
 
 /// Navigation drawer: brand header, new chat, files, history list
 /// (long-press to rename, running badge for parallel sessions),
@@ -21,10 +22,10 @@ import 'paged_list.dart';
 class ChatDrawer extends ConsumerWidget {
   const ChatDrawer({super.key});
 
+  /// v1.49.5: subtle overlay toast — a SnackBar would push the whole
+  /// drawer/chat layout up, which users found disruptive.
   void _snack(BuildContext context, String message) {
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(content: Text(message)));
+    showToast(context, message);
   }
 
   Future<void> _confirmDelete(

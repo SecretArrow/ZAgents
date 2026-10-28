@@ -360,6 +360,15 @@ OpenAI-compatible: **OpenRouter, InferHub, Z.AI, OpenAI, DeepSeek, Groq, dan lai
   sendiri saat run selesai — flag buka/tutup tetap global sehingga
   perpindahan langkah, akhir run, dan pindah chat tidak pernah
   menutupnya.
+- **v1.49.5 — UX: semua notifikasi SnackBar diganti toast overlay halus + fix engine saat aktivasi provider**: (1) **SnackBar dihapus total** — SnackBar
+  mendorong seluruh layout (transcript, composer, form) naik setiap kali muncul dan mengganggu saat mengetik/scroll; penggantinya toast kecil semi-transparan
+  melayang dekat dasar layar (`ui/widgets/toast.dart`): fade in/out, `IgnorePointer` (tidak pernah memblokir sentuhan), tanpa memakan ruang layout, hilang
+  sendiri ±2,6 detik, melayang di atas keyboard bila keyboard terbuka, dan toast baru menggantikan toast lama — 26 titik notifikasi di 12 layar/widget
+  (error chat, salin URL rilis, install/download/remove modul, prompt tersimpan/hapus, file manager, skills, settings termasuk validasi PIN di dialog,
+  provider aktif, editor preset, Node runtime, drawer). (2) **Dua toast stop-button mempertahankan key test** (`stop-hint-snack`, `force-stop-done-snack`) —
+  masa hidup toast digerakkan `AnimationController` tanpa `Timer` sehingga test widget tetap deterministik dan tidak ada timer menggantung di akhir test.
+  (3) **Fix v1.49.4: aktivasi provider kini menyalin `engine` preset** — sebelumnya preset yang engine-nya dikunci (Anthropic/Responses) diam-diam kembali ke
+  engine provider sebelumnya setelah diaktifkan. (4) `snackBarTheme` dibuang dari tema aplikasi.
 - **v1.49.4 — opsi Engine per provider: Anthropic Messages / OpenAI Chat Completions / OpenAI
   Responses / Auto**: (1) **Masalah lapangan yang diperbaiki** — model seperti `gpt-6.1-sol` menolak
   `/v1/chat/completions` dengan HTTP 400 ("model does not support /v1/chat/completions, please use

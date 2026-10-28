@@ -15,6 +15,7 @@ import '../widgets/composer.dart';
 import '../widgets/model_picker.dart';
 import '../widgets/module_repair_card.dart';
 import '../widgets/module_setup_sheet.dart';
+import '../widgets/toast.dart';
 import '../../services/update_checker.dart' show UpdateCheckResult;
 import 'settings_screen.dart';
 
@@ -85,9 +86,10 @@ class _HomeShellState extends ConsumerState<HomeShell> {
       chatControllerProvider.select((ChatState s) => s.error),
       (String? prev, String? next) {
         if (next == null || next == prev) return;
-        ScaffoldMessenger.of(context)
-          ..hideCurrentSnackBar()
-          ..showSnackBar(SnackBar(content: Text(next)));
+        // v1.49.5: subtle overlay toast instead of a SnackBar — a SnackBar
+        // shoved the streaming transcript up on every error, which users
+        // found disruptive mid-scroll.
+        showToast(context, next);
       },
     );
     // A module waiting for its per-chat setup form: open the sheet once
@@ -491,13 +493,10 @@ class _UpdateBanner extends ConsumerWidget {
                     result.releaseUrl ?? result.apkDownloadUrl ?? '';
                 if (url.isEmpty) return;
                 Clipboard.setData(ClipboardData(text: url));
-                ScaffoldMessenger.of(context)
-                  ..hideCurrentSnackBar()
-                  ..showSnackBar(
-                    SnackBar(
-                      content: Text('${strings.updateOpenRelease}: $url'),
-                    ),
-                  );
+                showToast(
+                  context,
+                  '${strings.updateOpenRelease}: $url',
+                );
               },
               child: Text(strings.updateOpenRelease),
             ),

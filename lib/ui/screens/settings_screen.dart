@@ -13,6 +13,7 @@ import '../../l10n/app_strings.dart';
 import '../../models/models.dart';
 import '../../models/user_agent.dart';
 import '../theme.dart';
+import '../widgets/toast.dart';
 import 'about_screen.dart';
 import 'context_screen.dart';
 import 'files_screen.dart';
@@ -169,10 +170,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     );
   }
 
+  /// v1.49.5: subtle overlay toast instead of a SnackBar — settings rows
+  /// no longer jump when feedback arrives.
   void _snackHere(BuildContext context, String message) {
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(content: Text(message)));
+    showToast(context, message);
   }
 
   Future<void> _createBackup(BuildContext context) async {
@@ -346,14 +347,16 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             onPressed: () {
               final String value = pin.text.trim();
               if (value.length < 4 || value.length > 8) {
-                ScaffoldMessenger.of(dialogContext).showSnackBar(
-                  SnackBar(content: Text(strings.appLockPinTooShort)),
+                showToast(
+                  dialogContext,
+                  strings.appLockPinTooShort,
                 );
                 return;
               }
               if (value != confirm.text.trim()) {
-                ScaffoldMessenger.of(dialogContext).showSnackBar(
-                  SnackBar(content: Text(strings.appLockPinMismatch)),
+                showToast(
+                  dialogContext,
+                  strings.appLockPinMismatch,
                 );
                 return;
               }

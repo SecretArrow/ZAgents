@@ -8,6 +8,7 @@ import '../../models/models.dart' show listPageSize;
 import '../../services/skill_registry.dart';
 import '../theme.dart';
 import '../widgets/paged_list.dart';
+import '../widgets/toast.dart';
 
 /// Installed-skills snapshot (reactive across the manager like
 /// [moduleListProvider] is for modules). Disabled skills ARE listed —
@@ -76,13 +77,10 @@ class _SkillsScreenState extends ConsumerState<SkillsScreen> {
   /// intakes disable themselves (ModulesScreen pattern).
   bool _busy = false;
 
+  /// v1.49.5: subtle overlay toast instead of a SnackBar.
   void _showFailure() {
     if (!mounted) return;
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(
-        SnackBar(content: Text(stringsOf(context).operationFailed)),
-      );
+    showToast(context, stringsOf(context).operationFailed);
   }
 
   Future<void> _refresh() async => ref.invalidate(skillsListProvider);

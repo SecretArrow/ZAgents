@@ -14,6 +14,7 @@ import '../../services/speech_service.dart';
 import '../screens/prompt_library_screen.dart';
 import '../theme.dart';
 import 'skill_selector_sheet.dart';
+import 'toast.dart';
 
 /// Immutable in-flight state of the composer TOOL actions (v1.48.0).
 class ComposerActionsState {
@@ -208,11 +209,8 @@ class ComposerActionsController extends Notifier<ComposerActionsState> {
       ];
     } catch (_) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context)
-          ..hideCurrentSnackBar()
-          ..showSnackBar(
-            SnackBar(content: Text(stringsOf(context).operationFailed)),
-          );
+        // v1.49.5: subtle overlay toast instead of a SnackBar.
+        showToast(context, stringsOf(context).operationFailed);
       }
     } finally {
       state = state.copyWith(picking: false);
@@ -439,9 +437,10 @@ class ComposerActionsController extends Notifier<ComposerActionsState> {
   }
 
   void _snack(BuildContext context, String message) {
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(content: Text(message)));
+    if (context.mounted) {
+      // v1.49.5: subtle overlay toast instead of a SnackBar.
+      showToast(context, message);
+    }
   }
 }
 

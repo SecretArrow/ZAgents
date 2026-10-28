@@ -8,6 +8,7 @@ import '../../models/models.dart';
 import '../screens/modules_screen.dart';
 import 'composer_actions.dart';
 import '../theme.dart';
+import 'toast.dart';
 
 /// Bottom composer: attachment chips, rounded input, gradient send /
 /// stop button. The paperclip copies the picked file into the app's
@@ -124,9 +125,7 @@ class _ComposerState extends ConsumerState<Composer> {
     final ChatModule? module = await ref.read(moduleRegistryProvider).get(name);
     if (!mounted) return;
     if (module == null) {
-      ScaffoldMessenger.of(context)
-        ..hideCurrentSnackBar()
-        ..showSnackBar(SnackBar(content: Text(strings.moduleNotFound(name))));
+      showToast(context, strings.moduleNotFound(name));
       return;
     }
     if (!await ModulesScreen.confirmPermissions(context, ref, module)) {
@@ -360,11 +359,9 @@ class _ComposerState extends ConsumerState<Composer> {
     }
     sheetRef.invalidate(moduleListProvider);
     if (!mounted) return;
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(
-        SnackBar(content: Text(strings.moduleRemoved(module.name))),
-      );
+    // v1.49.5: subtle overlay toast instead of a SnackBar — the composer
+    // must not jump while the keyboard is open.
+    showToast(context, strings.moduleRemoved(module.name));
   }
 
   @override
@@ -550,15 +547,12 @@ class _ComposerState extends ConsumerState<Composer> {
       _stopTaps = 0;
       _showForceStopDialog();
     } else if (_stopTaps == 2) {
-      ScaffoldMessenger.of(context)
-        ..hideCurrentSnackBar()
-        ..showSnackBar(
-          SnackBar(
-            key: const Key('stop-hint-snack'),
-            content: Text(stringsOf(context).stopHintForce),
-            duration: const Duration(seconds: 3),
-          ),
-        );
+      showToast(
+        context,
+        stringsOf(context).stopHintForce,
+        key: const Key('stop-hint-snack'),
+        duration: const Duration(seconds: 3),
+      );
     }
   }
 
@@ -591,14 +585,11 @@ class _ComposerState extends ConsumerState<Composer> {
     );
     if (confirmed != true || !mounted) return;
     ref.read(chatControllerProvider.notifier).forceStop();
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(
-        SnackBar(
-          key: const Key('force-stop-done-snack'),
-          content: Text(stringsOf(context).forceStopDone),
-          duration: const Duration(seconds: 3),
-        ),
-      );
+    showToast(
+      context,
+      stringsOf(context).forceStopDone,
+      key: const Key('force-stop-done-snack'),
+      duration: const Duration(seconds: 3),
+    );
   }
 }
