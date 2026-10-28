@@ -6,6 +6,7 @@ import 'dart:isolate';
 import 'package:http/http.dart' as http;
 
 import '../models/models.dart';
+import 'wire_transports.dart';
 
 /// Connection settings for an OpenAI-compatible endpoint.
 class LlmConfig {
@@ -14,6 +15,7 @@ class LlmConfig {
     required this.apiKey,
     required this.model,
     this.maxTokens,
+    this.engine = LlmEngine.auto,
   });
 
   final String baseUrl;
@@ -25,6 +27,14 @@ class LlmConfig {
   /// REQUIRED `max_tokens` request field; OpenAI-compatible providers
   /// ignore it.
   final int? maxTokens;
+
+  /// v1.49.4 — wire protocol used to reach this provider. [LlmEngine.auto]
+  /// keeps the historical behavior (Chat Completions, with the AgentRouter
+  /// subclass adding its per-model routing + one-shot fallbacks); the
+  /// pinned values force one transport for providers whose models speak a
+  /// specific protocol (e.g. gpt-6.1-sol only serves the OpenAI Responses
+  /// API, native Anthropic deployments only serve Messages).
+  final LlmEngine engine;
 }
 
 /// A tool call requested by the model (arguments still raw JSON string).
@@ -189,6 +199,12 @@ class LlmClient {
   /// [shouldAbort] is polled while streaming; when it returns true the
   /// connection is torn down immediately and [LlmAbortedException] is
   /// thrown with the partial content — Stop must feel instant.
+  ///
+  /// v1.49.4: [LlmConfig.engine] routes the turn — `anthropic` speaks the
+  /// Messages protocol on `{base}/messages`, `openaiResponses` speaks the
+  /// OpenAI Responses API on `{base}/responses`, `openai`/`auto` keep the
+  /// Chat Completions transport below (auto additionally retries once
+  /// through Responses when the provider's own 400 names `/v1/responses`).
   Future<AssistantTurn> complete({
     required LlmConfig config,
     required List<Map<String, dynamic>> messages,
@@ -200,6 +216,47 @@ class LlmClient {
     if (shouldAbort?.call() ?? false) {
       throw const LlmAbortedException('');
     }
+    switch (config.engine) {
+      case LlmEngine.anthropic:
+        return _completeViaAnthropic(
+          config,
+          messages,
+          tools,
+          onDelta,
+          shouldAbort,
+          cancelKey,
+        );
+      case LlmEngine.openaiResponses:
+        return _completeViaResponses(
+          config,
+          messages,
+          tools,
+          onDelta,
+          shouldAbort,
+          cancelKey,
+        );
+      case LlmEngine.auto:
+      case LlmEngine.openai:
+        return _completeViaChatCompletions(
+          config,
+          messages,
+          tools,
+          onDelta,
+          shouldAbort,
+          cancelKey,
+        );
+    }
+  }
+
+  /// The historical Chat Completions transport (engine `openai` / `auto`).
+  Future<AssistantTurn> _completeViaChatCompletions(
+    LlmConfig config,
+    List<Map<String, dynamic>> messages,
+    List<Map<String, dynamic>>? tools,
+    void Function(String delta)? onDelta,
+    bool Function()? shouldAbort,
+    Object? cancelKey,
+  ) async {
     final url = Uri.parse(
       '${config.baseUrl.replaceAll(RegExp(r'/+$'), '')}/chat/completions',
     );
@@ -230,7 +287,123 @@ class LlmClient {
         requestBody,
         onDelta,
         shouldAbort,
+        messages: messages,
+        tools: tools,
+        cancelKey: cancelKey,
       );
+    } finally {
+      if (cancelKey != null) unregisterLiveStream(cancelKey, callClient);
+      if (ownsClient) {
+        try {
+          callClient.close();
+        } catch (_) {
+          // Never let transport cleanup mask the actual result.
+        }
+      }
+    }
+  }
+
+  /// Anthropic Messages transport for engine `anthropic`: POSTs the
+  /// mapped body to `{base}/messages` with the protocol headers, dual
+  /// auth and the shared SSE/JSON consumer.
+  Future<AssistantTurn> _completeViaAnthropic(
+    LlmConfig config,
+    List<Map<String, dynamic>> messages,
+    List<Map<String, dynamic>>? tools,
+    void Function(String delta)? onDelta,
+    bool Function()? shouldAbort,
+    Object? cancelKey,
+  ) async {
+    final Uri url = Uri.parse(
+      '${config.baseUrl.replaceAll(RegExp(r'/+$'), '')}/messages',
+    );
+    final Map<String, dynamic> requestBody = buildAnthropicRequestBody(
+      config: config,
+      messages: messages,
+      tools: tools,
+    );
+
+    final http.Client callClient = _clientForCall();
+    final bool ownsClient = _injectedClient == null;
+    if (cancelKey != null) registerLiveStream(cancelKey, callClient);
+    try {
+      http.StreamedResponse response;
+      try {
+        final http.Request request = http.Request('POST', url)
+          ..headers.addAll(anthropicHeaders(config.apiKey))
+          ..headers.addAll(
+            _extraRequestHeaders?.call(url) ?? const <String, String>{},
+          )
+          ..body = await encodeBodyOffIsolate(requestBody);
+        response = await callClient.send(request);
+      } catch (e) {
+        throw LlmException('Could not connect to provider: $e');
+      }
+      if (response.statusCode != 200) {
+        final String raw = await response.stream.bytesToString();
+        throw LlmException(
+          'HTTP ${response.statusCode}: ${_truncate(raw, 300)}',
+          statusCode: response.statusCode,
+        );
+      }
+      return await consumeAnthropicResponse(response, onDelta, shouldAbort);
+    } finally {
+      if (cancelKey != null) unregisterLiveStream(cancelKey, callClient);
+      if (ownsClient) {
+        try {
+          callClient.close();
+        } catch (_) {
+          // Never let transport cleanup mask the actual result.
+        }
+      }
+    }
+  }
+
+  /// OpenAI Responses transport for engine `openaiResponses`: POSTs the
+  /// mapped body to `{base}/responses` with Bearer auth and the shared
+  /// SSE/JSON consumer. Also the one-shot landing spot for the auto
+  /// engine when a provider's 400 names `/v1/responses`.
+  Future<AssistantTurn> _completeViaResponses(
+    LlmConfig config,
+    List<Map<String, dynamic>> messages,
+    List<Map<String, dynamic>>? tools,
+    void Function(String delta)? onDelta,
+    bool Function()? shouldAbort,
+    Object? cancelKey,
+  ) async {
+    final Uri url = Uri.parse(
+      '${config.baseUrl.replaceAll(RegExp(r'/+$'), '')}/responses',
+    );
+    final Map<String, dynamic> requestBody = buildResponsesRequestBody(
+      config: config,
+      messages: messages,
+      tools: tools,
+    );
+
+    final http.Client callClient = _clientForCall();
+    final bool ownsClient = _injectedClient == null;
+    if (cancelKey != null) registerLiveStream(cancelKey, callClient);
+    try {
+      http.StreamedResponse response;
+      try {
+        final http.Request request = http.Request('POST', url)
+          ..headers.addAll(responsesHeaders(config.apiKey))
+          ..headers.addAll(
+            _extraRequestHeaders?.call(url) ?? const <String, String>{},
+          )
+          ..body = await encodeBodyOffIsolate(requestBody);
+        response = await callClient.send(request);
+      } catch (e) {
+        throw LlmException('Could not connect to provider: $e');
+      }
+      if (response.statusCode != 200) {
+        final String raw = await response.stream.bytesToString();
+        throw LlmException(
+          'HTTP ${response.statusCode}: ${_truncate(raw, 300)}',
+          statusCode: response.statusCode,
+        );
+      }
+      return await consumeResponsesResponse(response, onDelta, shouldAbort);
     } finally {
       if (cancelKey != null) unregisterLiveStream(cancelKey, callClient);
       if (ownsClient) {
@@ -249,8 +422,11 @@ class LlmClient {
     Uri url,
     Map<String, dynamic> requestBody,
     void Function(String delta)? onDelta,
-    bool Function()? shouldAbort,
-  ) async {
+    bool Function()? shouldAbort, {
+    required List<Map<String, dynamic>> messages,
+    List<Map<String, dynamic>>? tools,
+    Object? cancelKey,
+  }) async {
     final http.StreamedResponse response;
     try {
       response = await callClient.send(
@@ -278,6 +454,21 @@ class LlmClient {
         } catch (_) {
           // Fall through to the normal error path below.
         }
+      }
+      if (config.engine == LlmEngine.auto && needsResponsesApi(errorBody)) {
+        // The provider itself names the protocol that serves this model
+        // ("does not support /v1/chat/completions, please use
+        // /v1/responses instead") — one deterministic retry through the
+        // Responses transport (v1.49.4). Pinned OpenAI engines keep the
+        // error (with the engine hint from the AgentRouter wrapper).
+        return _completeViaResponses(
+          config,
+          messages,
+          tools,
+          onDelta,
+          shouldAbort,
+          cancelKey,
+        );
       }
       throw LlmException(
         'HTTP ${response.statusCode}: ${_truncate(errorBody, 300)}',

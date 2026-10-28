@@ -318,6 +318,7 @@ final moduleRuntimeProvider = Provider<ModuleRuntime>(
           baseUrl: settings.baseUrl,
           apiKey: settings.apiKey,
           model: settings.model,
+          engine: settings.engine,
         ),
       );
     },
@@ -335,6 +336,7 @@ final moduleRuntimeProvider = Provider<ModuleRuntime>(
           baseUrl: settings.baseUrl,
           apiKey: settings.apiKey,
           model: settings.model,
+          engine: settings.engine,
         ),
       );
     },
@@ -457,6 +459,7 @@ final toolExecutorProvider = Provider<ToolExecutor>((ref) {
           baseUrl: settings.baseUrl,
           apiKey: settings.apiKey,
           model: settings.model,
+          engine: settings.engine,
         );
       },
       executeTool:

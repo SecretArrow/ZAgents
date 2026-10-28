@@ -360,6 +360,24 @@ OpenAI-compatible: **OpenRouter, InferHub, Z.AI, OpenAI, DeepSeek, Groq, dan lai
   sendiri saat run selesai — flag buka/tutup tetap global sehingga
   perpindahan langkah, akhir run, dan pindah chat tidak pernah
   menutupnya.
+- **v1.49.4 — opsi Engine per provider: Anthropic Messages / OpenAI Chat Completions / OpenAI
+  Responses / Auto**: (1) **Masalah lapangan yang diperbaiki** — model seperti `gpt-6.1-sol` menolak
+  `/v1/chat/completions` dengan HTTP 400 ("model does not support /v1/chat/completions, please use
+  /v1/responses instead", tipe `new_api_error`): kini mode Auto otomatis mencoba sekali lewat
+  **OpenAI Responses API** (`POST {base}/responses`) dan protokol yang terkonfirmasi di-cache **per
+  model** (bukan per keluarga — model Responses-only tidak lagi saling menular dengan model Chat
+  Completions di base yang sama). (2) **Transport OpenAI Responses penuh**: mapping pesan
+  (system → `instructions`, teks → `input_text`/`output_text`, gambar data-URI → `input_image`,
+  tool_calls → item `function_call` + `function_call_output`, tool flat schema), parser SSE
+  (`response.output_text.delta`, akumulasi `function_call_arguments` per `item_id`,
+  `response.completed` untuk usage) dan parser JSON non-streaming. (3) **Pengaturan Engine per
+  provider** di editor Provider (Settings → Providers): Auto (default — perilaku lama + fallback
+  baru) atau kunci protokol Anthropic Messages / OpenAI Chat Completions / OpenAI Responses; engine
+  terkunci tidak pernah fallback diam-diam — kesalahan pin dilaporkan dengan petunjuk switch engine,
+  dan semua jalur LLM (chat, compose, polish, subagent) mengikuti engine provider aktif. (4)
+  **Transport Anthropic Messages dipindah ke modul bersama** (`wire_transports.dart`) sehingga
+  provider mana pun (bukan hanya AgentRouter) bisa memakai protokol Anthropic/Responses. (5) String
+  baru EN/ID/ES + uji unit baru (`engine_options_test.dart`).
 - **v1.49.3 — AgentRouter benar-benar jalan: resep teruji room-browser diterapkan penuh**: (1)
   **Wiring production yang selama ini hilang** — transport khusus AgentRouter sebelumnya hanya
   pernah dipakai di test; provider LLM global kini memakai `AgentRouterLlmClient`, jadi chat ke

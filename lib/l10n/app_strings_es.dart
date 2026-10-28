@@ -278,6 +278,29 @@ class AppStringsEs implements AppStrings {
       'reintenta.';
 
   @override
+  String get settingsEngineLabel => 'Motor';
+
+  @override
+  String get engineAuto => 'Automático — detectar por modelo';
+
+  @override
+  String get engineAnthropic => 'Anthropic Messages';
+
+  @override
+  String get engineOpenai => 'OpenAI Chat Completions';
+
+  @override
+  String get engineOpenaiResponses => 'OpenAI Responses';
+
+  @override
+  String get engineHint =>
+      'Protocolo usado para contactar este proveedor. Automático elige '
+      'por modelo (Claude → Anthropic Messages, el resto → OpenAI Chat '
+      'Completions) y reintenta vía la API de Responses de OpenAI cuando '
+      'el modelo lo exige. Fija un motor si el proveedor solo sirve un '
+      'protocolo.';
+
+  @override
   String get newChat => 'Nuevo chat';
   @override
   String get historyTitle => 'Historial';

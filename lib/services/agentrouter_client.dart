@@ -1,30 +1,49 @@
-import 'dart:convert';
-import 'dart:isolate';
-
 import 'package:http/http.dart' as http;
 
 import '../models/models.dart';
 import 'llm_client.dart';
+import 'wire_transports.dart';
+
+export 'wire_transports.dart'
+    show
+        kAnthropicVersion,
+        kAgentRouterMaxTokens,
+        buildAnthropicRequestBody,
+        parseAnthropicMessage,
+        anthropicErrorMessage,
+        truncateForError,
+        needsResponsesApi,
+        responsesEngineHint;
 
 /// AgentRouter (https://agentrouter.org) transport.
 ///
-/// The gateway serves BOTH wire protocols on the version-segmented base
-/// (`…/v1/chat/completions` OpenAI-compatible, `…/v1/messages` Anthropic
-/// Messages). Which one speaks FIRST is decided per model family — the
-/// room-browser-proven recipe: Claude models speak Anthropic Messages
-/// natively, GPT and every other family speaks OpenAI-compatible
-/// ([prefersAnthropic]). A 404/405 on the first-choice path still falls
-/// back ONCE to the other protocol for single-protocol deployments, and
-/// the confirmed protocol is cached per (normalized base URL, family) so
-/// later calls skip the guess entirely.
+/// The gateway serves THREE wire protocols on the version-segmented base
+/// (`…/v1/messages` Anthropic Messages, `…/v1/chat/completions` OpenAI
+/// Chat Completions and `…/v1/responses` OpenAI Responses). Which one
+/// speaks FIRST is decided per model family — the room-browser-proven
+/// recipe: Claude models speak Anthropic Messages natively, GPT and every
+/// other family speaks OpenAI-compatible ([prefersAnthropic]). A 404/405
+/// on the first-choice path still falls back ONCE to the Anthropic
+/// protocol for single-protocol deployments, a 400 whose body names
+/// `/v1/responses` ("model does not support /v1/chat/completions") falls
+/// back ONCE to the Responses protocol, and the confirmed protocol is
+/// cached per (normalized base URL, MODEL — not family, so a Responses-
+/// only model never poisons a Chat Completions model on the same base)
+/// so later calls skip the guess entirely.
+///
+/// A provider preset can also PIN the wire protocol explicitly
+/// ([LlmEngine.anthropic] / [LlmEngine.openai] /
+/// [LlmEngine.openaiResponses]): pinned engines never fall back silently
+/// — a wrong pin surfaces the provider error plus the engine hint.
 ///
 /// [AgentRouterLlmClient] also carries the claude-cli User-Agent the
 /// gateway REQUIRES on every request (missing it yields 401
 /// unauthorized_client_error / WAF challenges), sends dual auth headers
-/// (x-api-key + Bearer) on the Anthropic path, and translates two gateway
+/// (x-api-key + Bearer) on the Anthropic path, and translates three gateway
 /// failure modes into actionable messages: Aliyun WAF bot-challenge pages
-/// ("switch to mobile data") and the "Invalid API Key" deployment
-/// mismatch (apex vs co. consoles have separate key databases).
+/// ("switch to mobile data"), the "Invalid API Key" deployment mismatch
+/// (apex vs co. consoles have separate key databases) and the
+/// Responses-only model mismatch ("set the Engine to OpenAI Responses").
 ///
 /// Everything outside agentrouter.org (and its subdomains) goes through
 /// `super.complete()` unchanged — zero behavior change for OpenRouter,
@@ -33,13 +52,6 @@ import 'llm_client.dart';
 /// Exact User-Agent every AgentRouter request must carry — the Anthropic
 /// transport AND the OpenAI-compatible fallback alike.
 const String kAgentRouterUserAgent = 'claude-cli/1.0.60 (external, cli)';
-
-/// Anthropic API version header sent on every AgentRouter request.
-const String kAnthropicVersion = '2023-06-01';
-
-/// `max_tokens` is REQUIRED by the Anthropic Messages protocol; used when
-/// [LlmConfig.maxTokens] is not set.
-const int kAgentRouterMaxTokens = 8192;
 
 const String _agentRouterDomain = 'agentrouter.org';
 
@@ -69,14 +81,15 @@ bool isAgentRouterHost(String host) {
 }
 
 /// Normalized base URL used as the protocol-probe cache key (and for
-/// building `{base}/messages` / `{base}/chat/completions` URLs).
+/// building `{base}/messages` / `{base}/chat/completions` /
+/// `{base}/responses` URLs).
 String normalizeBaseUrl(String baseUrl) =>
     baseUrl.replaceAll(RegExp(r'/+$'), '');
 
 /// AgentRouter's official paths live under the version segment
-/// (`…/v1/chat/completions`, `…/v1/messages`). Base URLs without any
-/// version segment get `/v1` appended; URLs that already carry one pass
-/// through untouched. Pure function — unit-tested directly.
+/// (`…/v1/chat/completions`, `…/v1/messages`, `…/v1/responses`). Base URLs
+/// without any version segment get `/v1` appended; URLs that already
+/// carry one pass through untouched. Pure function — unit-tested directly.
 String normalizeAgentRouterBase(String baseUrl) {
   final String trimmed = normalizeBaseUrl(baseUrl.trim());
   final Uri? uri = Uri.tryParse(trimmed);
@@ -87,12 +100,12 @@ String normalizeAgentRouterBase(String baseUrl) {
   return hasVersionSegment ? trimmed : '$trimmed/v1';
 }
 
-/// Room-browser-proven per-model routing: the gateway serves both wire
-/// protocols, and the model family has a natural first choice — Claude
-/// models speak Anthropic Messages natively, GPT and every other family
-/// speaks OpenAI-compatible. A wrong first guess costs one dead request
-/// (or a WAF page on guarded deployments), so the family decides. Pure
-/// function — unit-tested directly.
+/// Room-browser-proven per-model routing: the gateway serves all three
+/// wire protocols, and the model family has a natural first choice —
+/// Claude models speak Anthropic Messages natively, GPT and every other
+/// family speaks OpenAI-compatible. A wrong first guess costs one dead
+/// request (or a WAF page on guarded deployments), so the family decides.
+/// Pure function — unit-tested directly.
 bool prefersAnthropic(String model) =>
     model.trim().toLowerCase().startsWith('claude');
 
@@ -134,11 +147,12 @@ String agentRouterInvalidKeyMessage() =>
     'databases — generate the key on the same host you are calling and '
     'check that it is still active.';
 
-/// Confirmed wire protocol per (normalized base URL, model family).
-enum _WireProtocol { anthropic, openAi }
+/// Confirmed wire protocol per (normalized base URL, model).
+enum _WireProtocol { anthropic, openAi, openAiResponses }
 
-/// Streaming client for AgentRouter: Anthropic Messages protocol with an
-/// automatic OpenAI-compatible fallback. See the library doc comment.
+/// Streaming client for AgentRouter: per-model protocol routing with
+/// one-shot fallbacks and the pinned per-provider engine override. See
+/// the library doc comment.
 class AgentRouterLlmClient extends LlmClient {
   // `client` must be forwarded to the super constructor AND mirrored into
   // `_injected` below — one parameter, two destinations, so it cannot be a
@@ -149,17 +163,21 @@ class AgentRouterLlmClient extends LlmClient {
       super(client: client, extraHeaders: _userAgentForUrl);
 
   /// Mirrors the base class's private injected-transport field so the
-  /// Anthropic path reuses the same test double the OpenAI path gets.
+  /// Anthropic/Responses paths reuse the same test double the OpenAI path
+  /// gets.
   final http.Client? _injected;
 
-  /// Confirmed wire protocol per `base|family` key: an entry means the
+  /// Confirmed wire protocol per `base|model` key: an entry means the
   /// gateway answered a REAL turn through that protocol — later calls for
-  /// the same family skip the first-choice guessing entirely.
+  /// the same MODEL skip the first-choice guessing entirely. Keyed per
+  /// model (not per family) since v1.49.4: a Responses-only model
+  /// (gpt-6.1-sol) and a Chat Completions model (gpt-6-astra) share the
+  /// family prefix but not the protocol.
   static final Map<String, _WireProtocol> _confirmedProtocol =
       <String, _WireProtocol>{};
 
-  static String _protocolCacheKey(String base, bool anthropicFirst) =>
-      '$base|${anthropicFirst ? 'anthropic-first' : 'openai-first'}';
+  static String _protocolCacheKey(String base, String model) =>
+      '$base|${model.trim()}';
 
   /// Test hook: clears the confirmed-protocol cache.
   static void clearProtocolCache() => _confirmedProtocol.clear();
@@ -187,44 +205,99 @@ class AgentRouterLlmClient extends LlmClient {
       );
     }
     final String base = normalizeAgentRouterBase(config.baseUrl);
-    // Both official paths are served under the version segment; hand the
-    // normalized base to the OpenAI path too (super builds
-    // `{base}/chat/completions`).
+    // All official paths are served under the version segment; hand the
+    // normalized base to every transport.
     final LlmConfig normalized = LlmConfig(
       baseUrl: base,
       apiKey: config.apiKey,
       model: config.model,
       maxTokens: config.maxTokens,
+      engine: config.engine,
     );
-    final bool anthropicFirst = prefersAnthropic(config.model);
-    final String cacheKey = _protocolCacheKey(base, anthropicFirst);
+    final String cacheKey = _protocolCacheKey(base, config.model);
+
+    // Pinned engine: exactly one transport, never a silent fallback.
+    switch (config.engine) {
+      case LlmEngine.anthropic:
+        return _completeAnthropic(
+          config: normalized,
+          base: base,
+          messages: messages,
+          tools: tools,
+          onDelta: onDelta,
+          shouldAbort: shouldAbort,
+          cancelKey: cancelKey,
+          allowFallback: false,
+          cacheKey: cacheKey,
+        );
+      case LlmEngine.openai:
+        return _completeOpenAi(
+          config: normalized,
+          messages: messages,
+          tools: tools,
+          onDelta: onDelta,
+          shouldAbort: shouldAbort,
+          cancelKey: cancelKey,
+          allowFallback: false,
+          responsesHint: false,
+          cacheKey: cacheKey,
+        );
+      case LlmEngine.openaiResponses:
+        return _completeResponses(
+          config: normalized,
+          messages: messages,
+          tools: tools,
+          onDelta: onDelta,
+          shouldAbort: shouldAbort,
+          cancelKey: cancelKey,
+          cacheKey: cacheKey,
+        );
+      case LlmEngine.auto:
+        break;
+    }
+
+    // Auto: confirmed protocol short-circuits the guess; otherwise the
+    // model family picks the first choice.
     final _WireProtocol? confirmed = _confirmedProtocol[cacheKey];
-    if (confirmed == _WireProtocol.openAi) {
-      return _completeOpenAi(
-        config: normalized,
-        messages: messages,
-        tools: tools,
-        onDelta: onDelta,
-        shouldAbort: shouldAbort,
-        cancelKey: cancelKey,
-        allowFallback: false,
-        cacheKey: cacheKey,
-      );
+    switch (confirmed) {
+      case _WireProtocol.openAi:
+        return _completeOpenAi(
+          config: normalized,
+          messages: messages,
+          tools: tools,
+          onDelta: onDelta,
+          shouldAbort: shouldAbort,
+          cancelKey: cancelKey,
+          allowFallback: false,
+          responsesHint: true,
+          cacheKey: cacheKey,
+        );
+      case _WireProtocol.anthropic:
+        return _completeAnthropic(
+          config: normalized,
+          base: base,
+          messages: messages,
+          tools: tools,
+          onDelta: onDelta,
+          shouldAbort: shouldAbort,
+          cancelKey: cancelKey,
+          allowFallback: false,
+          cacheKey: cacheKey,
+        );
+      case _WireProtocol.openAiResponses:
+        return _completeResponses(
+          config: normalized,
+          messages: messages,
+          tools: tools,
+          onDelta: onDelta,
+          shouldAbort: shouldAbort,
+          cancelKey: cancelKey,
+          cacheKey: cacheKey,
+        );
+      case null:
+        break;
     }
-    if (confirmed == _WireProtocol.anthropic) {
-      return _completeAnthropic(
-        config: normalized,
-        base: base,
-        messages: messages,
-        tools: tools,
-        onDelta: onDelta,
-        shouldAbort: shouldAbort,
-        cancelKey: cancelKey,
-        allowFallback: false,
-        cacheKey: cacheKey,
-      );
-    }
-    return anthropicFirst
+    return prefersAnthropic(config.model)
         ? _completeAnthropic(
             config: normalized,
             base: base,
@@ -244,14 +317,16 @@ class AgentRouterLlmClient extends LlmClient {
             shouldAbort: shouldAbort,
             cancelKey: cancelKey,
             allowFallback: true,
+            responsesHint: true,
             cacheKey: cacheKey,
           );
   }
 
   /// Brands every agentrouter-host request of the OpenAI-compatible
-  /// fallback path with the required User-Agent (the Anthropic path sets
-  /// it on its own request builder). Plain LlmClient instances and other
-  /// hosts get no extra headers, keeping the base behavior untouched.
+  /// fallback path with the required User-Agent (the Anthropic/Responses
+  /// paths set it on their own request builders). Plain LlmClient
+  /// instances and other hosts get no extra headers, keeping the base
+  /// behavior untouched.
   static Map<String, String> _userAgentForUrl(Uri url) {
     if (isAgentRouterHost(url.host)) {
       return const <String, String>{'User-Agent': kAgentRouterUserAgent};
@@ -259,12 +334,29 @@ class AgentRouterLlmClient extends LlmClient {
     return const <String, String>{};
   }
 
+  /// Translates the two gateway failure modes embedded in error messages
+  /// into actionable guidance; passes everything else through.
+  LlmException _translate(LlmException e) {
+    if (looksLikeWafChallenge(e.message)) {
+      return LlmException(agentRouterWafMessage(), statusCode: e.statusCode);
+    }
+    if (looksLikeInvalidApiKey(e.message)) {
+      return LlmException(
+        agentRouterInvalidKeyMessage(),
+        statusCode: e.statusCode,
+      );
+    }
+    return e;
+  }
+
   /// The OpenAI-compatible path IS the base transport — same request
   /// building, SSE parsing, retry semantics — with the AgentRouter
   /// User-Agent merged in via the constructor-injected header hook. A
-  /// successful turn confirms the protocol for this (base, family) pair;
-  /// 404/405 falls back once to the Anthropic path when allowed; WAF
-  /// pages and key/deployment mismatches become actionable errors.
+  /// successful turn confirms the protocol for this (base, model) pair;
+  /// 404/405 falls back once to the Anthropic path when allowed; a 400
+  /// whose body names `/v1/responses` falls back once to the Responses
+  /// path (auto mode) or fails with the engine hint (pinned OpenAI);
+  /// WAF pages and key/deployment mismatches become actionable errors.
   Future<AssistantTurn> _completeOpenAi({
     required LlmConfig config,
     required List<Map<String, dynamic>> messages,
@@ -273,11 +365,24 @@ class AgentRouterLlmClient extends LlmClient {
     bool Function()? shouldAbort,
     Object? cancelKey,
     required bool allowFallback,
+    required bool responsesHint,
     required String cacheKey,
   }) async {
     try {
+      // Pinned to `openai` for THIS call: the base transport must stay on
+      // Chat Completions — its auto-engine responses-hint retry would
+      // otherwise answer the 400 through the PLAIN Responses transport
+      // (no claude-cli User-Agent, no WAF translation) and cache the
+      // wrong protocol. Cross-protocol fallbacks belong to this wrapper.
+      final LlmConfig pinned = LlmConfig(
+        baseUrl: config.baseUrl,
+        apiKey: config.apiKey,
+        model: config.model,
+        maxTokens: config.maxTokens,
+        engine: LlmEngine.openai,
+      );
       final AssistantTurn turn = await super.complete(
-        config: config,
+        config: pinned,
         messages: messages,
         tools: tools,
         onDelta: onDelta,
@@ -297,6 +402,26 @@ class AgentRouterLlmClient extends LlmClient {
       if (looksLikeInvalidApiKey(e.message)) {
         throw LlmException(
           agentRouterInvalidKeyMessage(),
+          statusCode: e.statusCode,
+        );
+      }
+      if (e.statusCode == 400 && needsResponsesApi(e.message)) {
+        if (responsesHint) {
+          // Auto mode: the gateway itself says which protocol serves this
+          // model — one deterministic extra hop (Responses never falls
+          // back further, so the chain always terminates).
+          return _completeResponses(
+            config: config,
+            messages: messages,
+            tools: tools,
+            onDelta: onDelta,
+            shouldAbort: shouldAbort,
+            cancelKey: cancelKey,
+            cacheKey: cacheKey,
+          );
+        }
+        throw LlmException(
+          '${e.message} ${responsesEngineHint()}',
           statusCode: e.statusCode,
         );
       }
@@ -369,6 +494,7 @@ class AgentRouterLlmClient extends LlmClient {
             shouldAbort: shouldAbort,
             cancelKey: cancelKey,
             allowFallback: false,
+            responsesHint: true,
             cacheKey: cacheKey,
           );
         }
@@ -398,7 +524,7 @@ class AgentRouterLlmClient extends LlmClient {
         if (looksLikeInvalidApiKey(raw)) {
           throw LlmException(agentRouterInvalidKeyMessage());
         }
-        final Object? decoded = _tryDecode(raw);
+        final Object? decoded = tryDecodeJson(raw);
         if (decoded is Map<String, dynamic> && decoded['choices'] is List) {
           // OpenAI-shaped answer on the Anthropic endpoint: consume THIS
           // response (no re-send — no duplicate output) and remember the
@@ -407,11 +533,102 @@ class AgentRouterLlmClient extends LlmClient {
           return _parseOpenAiMessage(raw);
         }
         _confirmedProtocol[cacheKey] = _WireProtocol.anthropic;
-        return _parseAnthropicMessage(raw);
+        return parseAnthropicMessage(raw);
       }
 
       _confirmedProtocol[cacheKey] = _WireProtocol.anthropic;
-      return await _parseAnthropicSse(response, onDelta, shouldAbort);
+      try {
+        return await consumeAnthropicStream(
+          response.stream,
+          onDelta,
+          shouldAbort,
+        );
+      } on LlmException catch (e) {
+        throw _translate(e);
+      }
+    } finally {
+      if (cancelKey != null) {
+        LlmClient.unregisterLiveStream(cancelKey, callClient);
+      }
+      if (ownsClient) {
+        try {
+          callClient.close();
+        } catch (_) {
+          // Never let transport cleanup mask the actual result.
+        }
+      }
+    }
+  }
+
+  /// The Responses-protocol path (`POST {base}/responses`, OpenAI
+  /// Responses API as relayed by new-api gateways). Never falls back:
+  /// reached through a pinned engine, a confirmed-protocol cache hit or
+  /// the one-shot Responses hint — so a dead endpoint surfaces as a hard
+  /// error instead of a protocol ping-pong.
+  Future<AssistantTurn> _completeResponses({
+    required LlmConfig config,
+    required List<Map<String, dynamic>> messages,
+    List<Map<String, dynamic>>? tools,
+    void Function(String delta)? onDelta,
+    bool Function()? shouldAbort,
+    Object? cancelKey,
+    required String cacheKey,
+  }) async {
+    if (shouldAbort?.call() ?? false) {
+      throw const LlmAbortedException('');
+    }
+    final String base = normalizeBaseUrl(config.baseUrl);
+    final Uri url = Uri.parse('$base/responses');
+    final Map<String, dynamic> body = buildResponsesRequestBody(
+      config: config,
+      messages: messages,
+      tools: tools,
+    );
+
+    final http.Client callClient = _injected ?? http.Client();
+    final bool ownsClient = _injected == null;
+    if (cancelKey != null) LlmClient.registerLiveStream(cancelKey, callClient);
+    try {
+      final http.StreamedResponse response;
+      try {
+        response = await callClient.send(
+          await _buildResponsesRequest(config, url, body),
+        );
+      } catch (e) {
+        throw LlmException('Could not connect to provider: $e');
+      }
+
+      if (response.statusCode == 404 || response.statusCode == 405) {
+        throw LlmException(
+          'HTTP ${response.statusCode}: /responses unavailable on $base',
+          statusCode: response.statusCode,
+        );
+      }
+      if (response.statusCode != 200) {
+        final String raw = await response.stream.bytesToString();
+        throw agentRouterHttpError(raw, response.statusCode);
+      }
+
+      final String contentType = (response.headers['content-type'] ?? '')
+          .toLowerCase();
+      if (!contentType.contains('text/event-stream')) {
+        final String raw = await response.stream.bytesToString();
+        if (looksLikeWafChallenge(raw)) {
+          throw LlmException(agentRouterWafMessage());
+        }
+        if (looksLikeInvalidApiKey(raw)) {
+          throw LlmException(agentRouterInvalidKeyMessage());
+        }
+        _confirmedProtocol[cacheKey] = _WireProtocol.openAiResponses;
+        return parseResponsesMessage(raw);
+      }
+
+      _confirmedProtocol[cacheKey] = _WireProtocol.openAiResponses;
+      try {
+        return await consumeResponsesStream(response.stream, onDelta, shouldAbort);
+      } on LlmException catch (e) {
+        throw _translate(e);
+      }
     } finally {
       if (cancelKey != null) {
         LlmClient.unregisterLiveStream(cancelKey, callClient);
@@ -438,198 +655,26 @@ class AgentRouterLlmClient extends LlmClient {
     ..headers['Accept'] = 'text/event-stream'
     ..headers['User-Agent'] = kAgentRouterUserAgent
     // Encoded OFF the UI isolate — same rationale as the base transport.
-    ..body = await Isolate.run(() => jsonEncode(body));
+    ..body = await encodeBodyOffIsolate(body);
 
-  /// Anthropic SSE consumption. Mirrors the robustness of the base
-  /// `_parseSse`: line-buffered, CRLF-tolerant, malformed JSON events are
-  /// ignored, Stop aborts mid-stream keeping the partial text.
-  Future<AssistantTurn> _parseAnthropicSse(
-    http.StreamedResponse response,
-    void Function(String delta)? onDelta,
-    bool Function()? shouldAbort,
-  ) async {
-    final StringBuffer contentBuffer = StringBuffer();
-    final Map<int, _AnthropicToolBlock> toolBlocks =
-        <int, _AnthropicToolBlock>{};
-    int? inputTokens;
-    int? outputTokens;
-    var lineBuffer = '';
-    var done = false;
-    var aborted = false;
-
-    try {
-      await for (final chunk in response.stream.transform(utf8.decoder)) {
-        // Stop must interrupt DURING generation: bail out of the stream at
-        // the first chance, cancelling the HTTP subscription with it.
-        if (shouldAbort?.call() ?? false) {
-          aborted = true;
-          break;
-        }
-        lineBuffer += chunk;
-        while (true) {
-          final int newlineIndex = lineBuffer.indexOf('\n');
-          if (newlineIndex < 0) break;
-          // trim() also strips the '\r' of CRLF line endings.
-          final String line = lineBuffer.substring(0, newlineIndex).trim();
-          lineBuffer = lineBuffer.substring(newlineIndex + 1);
-
-          if (line.isEmpty || line.startsWith(':')) continue;
-          // `event:`/`id:` lines carry no payload — the JSON itself has
-          // the event `type`.
-          if (!line.startsWith('data:')) continue;
-          final String data = line.substring(5).trim();
-          if (data.isEmpty) continue;
-          if (data == '[DONE]') {
-            done = true;
-            break;
-          }
-
-          final Object? decoded = _tryDecode(data);
-          if (decoded is! Map<String, dynamic>) continue; // malformed JSON
-          final String type = decoded['type']?.toString() ?? '';
-
-          if (type == 'error') {
-            if (looksLikeWafChallenge(data)) {
-              throw LlmException(agentRouterWafMessage());
-            }
-            if (looksLikeInvalidApiKey(data)) {
-              throw LlmException(agentRouterInvalidKeyMessage());
-            }
-            throw LlmException(anthropicErrorMessage(data));
-          }
-
-          if (type == 'message_start') {
-            final Map<String, dynamic>? message = _asMap(decoded['message']);
-            final Map<String, dynamic>? usage = _asMap(message?['usage']);
-            if (usage != null) {
-              inputTokens = _asInt(usage['input_tokens']) ?? inputTokens;
-              outputTokens = _asInt(usage['output_tokens']) ?? outputTokens;
-            }
-          } else if (type == 'content_block_start') {
-            final int index = _asInt(decoded['index']) ?? toolBlocks.length;
-            final Map<String, dynamic>? block = _asMap(
-              decoded['content_block'],
-            );
-            // Tool call id/name arrive ONLY here; arguments come later via
-            // input_json_delta accumulation.
-            if (block != null && block['type']?.toString() == 'tool_use') {
-              toolBlocks[index] = _AnthropicToolBlock(
-                id: block['id']?.toString(),
-                name: block['name']?.toString(),
-              );
-            }
-          } else if (type == 'content_block_delta') {
-            final Map<String, dynamic>? delta = _asMap(decoded['delta']);
-            if (delta == null) continue;
-            final String deltaType = delta['type']?.toString() ?? '';
-            if (deltaType == 'text_delta') {
-              final String text = delta['text']?.toString() ?? '';
-              if (text.isNotEmpty) {
-                contentBuffer.write(text);
-                onDelta?.call(text);
-              }
-            } else if (deltaType == 'input_json_delta') {
-              final int index = _asInt(decoded['index']) ?? 0;
-              toolBlocks
-                  .putIfAbsent(index, _AnthropicToolBlock.new)
-                  .arguments
-                  .write(delta['partial_json']?.toString() ?? '');
-            }
-          } else if (type == 'message_delta') {
-            final Map<String, dynamic>? usage = _asMap(decoded['usage']);
-            if (usage != null) {
-              inputTokens = _asInt(usage['input_tokens']) ?? inputTokens;
-              outputTokens = _asInt(usage['output_tokens']) ?? outputTokens;
-            }
-            // delta.stop_reason is informational: the turn shape (content
-            // + tool calls) already tells the agent loop what happened.
-          } else if (type == 'message_stop') {
-            done = true;
-          }
-          // 'content_block_stop' and 'ping' need no handling.
-        }
-        if (done) break;
-      }
-    } on LlmException {
-      rethrow;
-    } catch (e) {
-      // A dropped socket mid-stream must not crash the app: keep partial
-      // plain-text content, but never return half-received tool calls
-      // (their JSON arguments would be truncated and unusable).
-      if (toolBlocks.isEmpty && contentBuffer.isNotEmpty) {
-        return AssistantTurn(content: contentBuffer.toString());
-      }
-      throw LlmException('Connection lost while streaming: $e');
-    }
-    if (aborted) {
-      throw LlmAbortedException(contentBuffer.toString());
-    }
-
-    final List<int> indexes = toolBlocks.keys.toList()..sort();
-    return AssistantTurn(
-      content: contentBuffer.toString(),
-      usage: (inputTokens != null || outputTokens != null)
-          ? TokenUsage(
-              promptTokens: inputTokens ?? 0,
-              completionTokens: outputTokens ?? 0,
-            )
-          : null,
-      toolCalls: <ToolCallRequest>[
-        for (final int index in indexes)
-          if (toolBlocks[index]!.hasName) toolBlocks[index]!.toRequest(),
-      ],
-    );
-  }
-
-  /// Full (non-SSE) Anthropic message:
-  /// `{content:[{type:'text'|'tool_use',...}],usage,stop_reason}`.
-  AssistantTurn _parseAnthropicMessage(String raw) {
-    final Object? decoded = _tryDecode(raw);
-    if (decoded is! Map<String, dynamic>) {
-      throw LlmException('Unknown response format: ${truncateForError(raw)}');
-    }
-    final StringBuffer text = StringBuffer();
-    final List<ToolCallRequest> toolCalls = <ToolCallRequest>[];
-    final Object? content = decoded['content'];
-    if (content is List) {
-      for (final Object? block in content) {
-        if (block is! Map<String, dynamic>) continue;
-        final String type = block['type']?.toString() ?? '';
-        if (type == 'text') {
-          text.write(block['text']?.toString() ?? '');
-        } else if (type == 'tool_use') {
-          final String name = block['name']?.toString() ?? '';
-          // A glitched entry (missing name) must not crash the app.
-          if (name.isEmpty) continue;
-          final String id = block['id']?.toString() ?? '';
-          toolCalls.add(
-            ToolCallRequest(
-              id: id.isEmpty ? newCallId() : id,
-              name: name,
-              argumentsJson: jsonEncode(
-                _asMap(block['input']) ?? <String, dynamic>{},
-              ),
-            ),
-          );
-        }
-      }
-    }
-    final Map<String, dynamic>? usage = _asMap(decoded['usage']);
-    final int? input = _asInt(usage?['input_tokens']);
-    final int? output = _asInt(usage?['output_tokens']);
-    return AssistantTurn(
-      content: text.toString(),
-      toolCalls: toolCalls,
-      usage: (input != null || output != null)
-          ? TokenUsage(promptTokens: input ?? 0, completionTokens: output ?? 0)
-          : null,
-    );
-  }
+  Future<http.Request> _buildResponsesRequest(
+    LlmConfig config,
+    Uri url,
+    Map<String, dynamic> body,
+  ) async => http.Request('POST', url)
+    // Dual-auth parity with the Anthropic path: the gateway accepts
+    // either credential header on every version-segmented endpoint.
+    ..headers['x-api-key'] = config.apiKey
+    ..headers['Authorization'] = 'Bearer ${config.apiKey}'
+    ..headers['Content-Type'] = 'application/json'
+    ..headers['Accept'] = 'text/event-stream'
+    ..headers['User-Agent'] = kAgentRouterUserAgent
+    ..body = await encodeBodyOffIsolate(body);
 
   /// OpenAI-shaped JSON that arrived on the Anthropic endpoint — parsed
   /// exactly like the base transport's non-streaming parser would.
   AssistantTurn _parseOpenAiMessage(String raw) {
-    final Object? decoded = _tryDecode(raw);
+    final Object? decoded = tryDecodeJson(raw);
     if (decoded is! Map<String, dynamic>) {
       throw LlmException('Unknown response format: ${truncateForError(raw)}');
     }
@@ -671,21 +716,6 @@ class AgentRouterLlmClient extends LlmClient {
   }
 }
 
-/// Extracts the provider's own error message from an Anthropic-shaped
-/// error payload (`{"type":"error","error":{"type":...,"message":...}}`);
-/// falls back to the truncated raw body.
-String anthropicErrorMessage(String raw) {
-  final Object? decoded = _tryDecode(raw);
-  if (decoded is Map<String, dynamic>) {
-    final Object? error = decoded['error'];
-    if (error is Map<String, dynamic>) {
-      final String message = error['message']?.toString() ?? '';
-      if (message.isNotEmpty) return message;
-    }
-  }
-  return truncateForError(raw);
-}
-
 /// Non-200 on an AgentRouter path: WAF challenges and key/deployment
 /// mismatches become actionable errors; everything else keeps the
 /// provider's own error text (Anthropic-shaped payloads are unwrapped).
@@ -699,239 +729,5 @@ LlmException agentRouterHttpError(String raw, int statusCode) {
   return LlmException(
     'HTTP $statusCode: ${anthropicErrorMessage(raw)}',
     statusCode: statusCode,
-  );
-}
-
-/// Builds the Anthropic Messages request body from the app's OpenAI-style
-/// wire messages. Pure function — unit-tested directly.
-///
-/// Mapping:
-/// * all `system` messages join with '\n\n' into the top-level `system`
-///   string (omitted when there are none);
-/// * `user` string content becomes a single text block; array content maps
-///   text parts to text blocks and `image_url` data URIs to base64 image
-///   blocks (non-data URLs degrade to a text placeholder — never a crash);
-/// * `assistant` text becomes a text block and each `tool_calls` entry a
-///   `tool_use` block with `input` = the decoded arguments JSON;
-/// * each `tool` message becomes its own `user` message carrying one
-///   `tool_result` block.
-Map<String, dynamic> buildAnthropicRequestBody({
-  required LlmConfig config,
-  required List<Map<String, dynamic>> messages,
-  List<Map<String, dynamic>>? tools,
-}) {
-  final List<String> systemParts = <String>[];
-  final List<Map<String, dynamic>> anthropicMessages = <Map<String, dynamic>>[];
-
-  for (final Map<String, dynamic> message in messages) {
-    final String role = message['role']?.toString() ?? '';
-    if (role == 'system') {
-      systemParts.add(_contentToText(message['content']));
-    } else if (role == 'tool') {
-      anthropicMessages.add(<String, dynamic>{
-        'role': 'user',
-        'content': <Map<String, dynamic>>[
-          <String, dynamic>{
-            'type': 'tool_result',
-            'tool_use_id': message['tool_call_id']?.toString() ?? '',
-            'content': _contentToText(message['content']),
-          },
-        ],
-      });
-    } else if (role == 'assistant') {
-      final List<Map<String, dynamic>> blocks = <Map<String, dynamic>>[];
-      final String text = _contentToText(message['content']);
-      if (text.isNotEmpty) {
-        blocks.add(<String, dynamic>{'type': 'text', 'text': text});
-      }
-      final Object? toolCalls = message['tool_calls'];
-      if (toolCalls is List) {
-        for (final Object? raw in toolCalls) {
-          if (raw is! Map<String, dynamic>) continue;
-          final Object? function = raw['function'];
-          if (function is! Map<String, dynamic>) continue;
-          final String name = function['name']?.toString() ?? '';
-          if (name.isEmpty) continue;
-          final String id = raw['id']?.toString() ?? '';
-          blocks.add(<String, dynamic>{
-            'type': 'tool_use',
-            'id': id.isEmpty ? newCallId() : id,
-            'name': name,
-            'input': _decodeArguments(function['arguments']),
-          });
-        }
-      }
-      if (blocks.isNotEmpty) {
-        anthropicMessages.add(<String, dynamic>{
-          'role': 'assistant',
-          'content': blocks,
-        });
-      }
-    } else {
-      anthropicMessages.add(<String, dynamic>{
-        'role': 'user',
-        'content': _userContentBlocks(message['content']),
-      });
-    }
-  }
-
-  return <String, dynamic>{
-    'model': config.model,
-    // Anthropic REQUIRES max_tokens — config override or the default cap.
-    'max_tokens': config.maxTokens ?? kAgentRouterMaxTokens,
-    'stream': true,
-    if (systemParts.isNotEmpty) 'system': systemParts.join('\n\n'),
-    'messages': anthropicMessages,
-    if (tools != null && tools.isNotEmpty)
-      'tools': <Map<String, dynamic>>[
-        for (final Map<String, dynamic> tool in tools)
-          _anthropicToolSchema(tool),
-      ],
-  };
-}
-
-String _contentToText(Object? content) {
-  if (content is String) return content;
-  if (content is List) {
-    // Concatenate the text parts of array-shaped content.
-    final StringBuffer buffer = StringBuffer();
-    for (final Object? part in content) {
-      if (part is Map<String, dynamic>) {
-        final Object? text = part['text'];
-        if (text != null) buffer.write(text.toString());
-      } else if (part is String) {
-        buffer.write(part);
-      }
-    }
-    return buffer.toString();
-  }
-  return content?.toString() ?? '';
-}
-
-List<Map<String, dynamic>> _userContentBlocks(Object? content) {
-  if (content is List) {
-    final List<Map<String, dynamic>> blocks = <Map<String, dynamic>>[];
-    for (final Object? part in content) {
-      final Map<String, dynamic>? block = _userContentBlock(part);
-      if (block != null) blocks.add(block);
-    }
-    if (blocks.isNotEmpty) return blocks;
-  }
-  // String (or unusable) content: a single text block.
-  return <Map<String, dynamic>>[
-    <String, dynamic>{'type': 'text', 'text': _contentToText(content)},
-  ];
-}
-
-Map<String, dynamic>? _userContentBlock(Object? part) {
-  if (part is String) {
-    return <String, dynamic>{'type': 'text', 'text': part};
-  }
-  if (part is! Map<String, dynamic>) return null;
-  final String type = part['type']?.toString() ?? '';
-  if (type == 'image_url') {
-    final Object? imageUrl = part['image_url'];
-    final String? url = imageUrl is Map<String, dynamic>
-        ? imageUrl['url']?.toString()
-        : (imageUrl is String ? imageUrl : null);
-    final RegExpMatch? dataUri = url == null
-        ? null
-        : _dataUriPattern.firstMatch(url);
-    if (dataUri != null) {
-      return <String, dynamic>{
-        'type': 'image',
-        'source': <String, dynamic>{
-          'type': 'base64',
-          'media_type': dataUri.group(1)!,
-          'data': dataUri.group(2)!,
-        },
-      };
-    }
-    // Anthropic accepts no remote image URL here: keep the URL text as a
-    // placeholder instead of crashing.
-    return <String, dynamic>{'type': 'text', 'text': url ?? ''};
-  }
-  final Object? text = part['text'];
-  if (text != null) {
-    return <String, dynamic>{'type': 'text', 'text': text.toString()};
-  }
-  return null;
-}
-
-final RegExp _dataUriPattern = RegExp(
-  r'^data:([^;,]+);base64,(.+)$',
-  dotAll: true,
-);
-
-/// OpenAI tool definition
-/// (`{type:'function',function:{name,description,parameters}}`) → Anthropic
-/// tool schema (`{name,description,input_schema}`).
-Map<String, dynamic> _anthropicToolSchema(Map<String, dynamic> tool) {
-  final Object? function = tool['function'];
-  final Map<String, dynamic> fn = function is Map<String, dynamic>
-      ? function
-      : <String, dynamic>{};
-  final Object? parameters = fn['parameters'];
-  return <String, dynamic>{
-    'name': fn['name']?.toString() ?? '',
-    'description': fn['description']?.toString() ?? '',
-    // Anthropic requires a JSON schema; an absent one degrades to the
-    // empty object schema instead of breaking the request.
-    'input_schema': parameters is Map<String, dynamic>
-        ? parameters
-        : <String, dynamic>{
-            'type': 'object',
-            'properties': <String, dynamic>{},
-          },
-  };
-}
-
-Map<String, dynamic> _decodeArguments(Object? raw) {
-  if (raw is Map<String, dynamic>) return raw;
-  if (raw is String && raw.trim().isNotEmpty) {
-    final Object? decoded = _tryDecode(raw);
-    if (decoded is Map<String, dynamic>) return decoded;
-  }
-  // Malformed arguments must not break the whole request.
-  return <String, dynamic>{};
-}
-
-Object? _tryDecode(String raw) {
-  try {
-    return jsonDecode(raw);
-  } catch (_) {
-    return null;
-  }
-}
-
-Map<String, dynamic>? _asMap(Object? raw) =>
-    raw is Map<String, dynamic> ? raw : null;
-
-int? _asInt(Object? raw) {
-  if (raw is int) return raw;
-  if (raw is num) return raw.toInt();
-  if (raw is String) return int.tryParse(raw.trim());
-  return null;
-}
-
-String truncateForError(String text, [int max = 300]) =>
-    text.length <= max ? text : '${text.substring(0, max)}...';
-
-/// Accumulator for one Anthropic `tool_use` content block: id/name arrive
-/// in `content_block_start`, the arguments JSON accumulates from
-/// `input_json_delta` chunks.
-class _AnthropicToolBlock {
-  _AnthropicToolBlock({this.id, this.name});
-
-  final String? id;
-  final String? name;
-  final StringBuffer arguments = StringBuffer();
-
-  bool get hasName => name != null && name!.isNotEmpty;
-
-  ToolCallRequest toRequest() => ToolCallRequest(
-    id: (id == null || id!.isEmpty) ? newCallId() : id!,
-    name: name!,
-    argumentsJson: arguments.toString(),
   );
 }

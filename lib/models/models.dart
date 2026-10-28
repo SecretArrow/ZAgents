@@ -709,6 +709,40 @@ ThemeModeSetting themeModeSettingFromName(String? name) {
 
 /// A named provider configuration. Every preset carries its own API key
 /// (and base URL / model) so switching providers is a single tap.
+/// Wire protocol used to talk to a provider (v1.49.4, per-provider
+/// Engine setting in Settings → Providers).
+enum LlmEngine {
+  /// Per-model routing: Chat Completions first for most models, Anthropic
+  /// Messages for Claude-family models, with the AgentRouter one-shot
+  /// fallbacks (404/405 → Messages, 400 "use /v1/responses" → Responses).
+  auto,
+
+  /// Anthropic Messages protocol (POST `{base}/messages`).
+  anthropic,
+
+  /// OpenAI Chat Completions protocol (POST `{base}/chat/completions`).
+  openai,
+
+  /// OpenAI Responses API (POST `{base}/responses`) — required by models
+  /// like gpt-6.1-sol that reject Chat Completions.
+  openaiResponses,
+}
+
+/// Parses a persisted [LlmEngine] name; unknown/legacy values degrade to
+/// [LlmEngine.auto] instead of crashing old installs. Pure function.
+LlmEngine llmEngineFromName(String? name) {
+  switch (name) {
+    case 'anthropic':
+      return LlmEngine.anthropic;
+    case 'openai':
+      return LlmEngine.openai;
+    case 'openaiResponses':
+      return LlmEngine.openaiResponses;
+    default:
+      return LlmEngine.auto;
+  }
+}
+
 class ProviderPreset {
   const ProviderPreset({
     required this.id,
@@ -717,6 +751,7 @@ class ProviderPreset {
     this.apiKey = '',
     this.model = '',
     this.modelsCache = const <String>[],
+    this.engine = LlmEngine.auto,
   });
 
   final String id;
@@ -730,6 +765,12 @@ class ProviderPreset {
   /// models that actually exist on this provider.
   final List<String> modelsCache;
 
+  /// Wire protocol for this provider (v1.49.4). Persisted per preset so
+  /// switching providers also switches the engine; [LlmEngine.auto] is
+  /// the default and keeps every existing provider behaving exactly as
+  /// before.
+  final LlmEngine engine;
+
   bool get hasKey => apiKey.trim().isNotEmpty;
 
   bool get hasModelsCache => modelsCache.isNotEmpty;
@@ -740,6 +781,7 @@ class ProviderPreset {
     String? apiKey,
     String? model,
     List<String>? modelsCache,
+    LlmEngine? engine,
   }) => ProviderPreset(
     id: id,
     name: name ?? this.name,
@@ -747,6 +789,7 @@ class ProviderPreset {
     apiKey: apiKey ?? this.apiKey,
     model: model ?? this.model,
     modelsCache: modelsCache ?? this.modelsCache,
+    engine: engine ?? this.engine,
   );
 
   Map<String, dynamic> toJson() => <String, dynamic>{
@@ -756,6 +799,7 @@ class ProviderPreset {
     'apiKey': apiKey,
     'model': model,
     'modelsCache': modelsCache,
+    'engine': engine.name,
   };
 
   factory ProviderPreset.fromJson(Map<String, dynamic> json) => ProviderPreset(
@@ -767,6 +811,7 @@ class ProviderPreset {
     modelsCache: ((json['modelsCache'] as List<dynamic>?) ?? const <dynamic>[])
         .map((Object? e) => e.toString())
         .toList(),
+    engine: llmEngineFromName(json['engine'] as String?),
   );
 }
 
@@ -965,6 +1010,7 @@ class AppSettings {
     this.baseUrl = 'https://openrouter.ai/api/v1',
     this.apiKey = '',
     this.model = 'z-ai/glm-4.6',
+    this.engine = LlmEngine.auto,
     this.agentMode = true,
     this.automationEnabled = true,
     this.maxSteps = defaultMaxSteps,
@@ -993,6 +1039,13 @@ class AppSettings {
   final String baseUrl;
   final String apiKey;
   final String model;
+
+  /// v1.49.4 — wire protocol of the ACTIVE provider, synced from the
+  /// preset when the user saves/switches providers. Every LlmConfig built
+  /// from settings carries it so all transports (chat, agent compose,
+  /// polish, subagents) speak the same protocol.
+  final LlmEngine engine;
+
   final bool agentMode;
   final bool automationEnabled;
   final int maxSteps;
@@ -1104,6 +1157,7 @@ class AppSettings {
     String? baseUrl,
     String? apiKey,
     String? model,
+    LlmEngine? engine,
     bool? agentMode,
     bool? automationEnabled,
     Object? maxSteps,
@@ -1131,6 +1185,7 @@ class AppSettings {
     baseUrl: baseUrl ?? this.baseUrl,
     apiKey: apiKey ?? this.apiKey,
     model: model ?? this.model,
+    engine: engine ?? this.engine,
     agentMode: agentMode ?? this.agentMode,
     automationEnabled: automationEnabled ?? this.automationEnabled,
     maxSteps: clampMaxSteps(maxSteps ?? this.maxSteps),
@@ -1162,6 +1217,7 @@ class AppSettings {
     'baseUrl': baseUrl,
     'apiKey': apiKey,
     'model': model,
+    'engine': engine.name,
     'agentMode': agentMode,
     'automationEnabled': automationEnabled,
     'maxSteps': maxSteps,
@@ -1192,6 +1248,7 @@ class AppSettings {
       baseUrl: json['baseUrl'] as String? ?? 'https://openrouter.ai/api/v1',
       apiKey: json['apiKey'] as String? ?? '',
       model: json['model'] as String? ?? 'z-ai/glm-4.6',
+      engine: llmEngineFromName(json['engine'] as String?),
       agentMode: json['agentMode'] as bool? ?? true,
       automationEnabled: json['automationEnabled'] as bool? ?? true,
       maxSteps: clampMaxSteps(json['maxSteps'] ?? defaultMaxSteps),
@@ -1262,6 +1319,10 @@ class AppSettings {
       baseUrl: baseUrl,
       apiKey: apiKey,
       model: model,
+      // RULE (v1.48.0 audit): EVERY AppSettings field must be forwarded
+      // here too — this reconstruction rebuilds the object after fromJson,
+      // so a missing line silently resets that field on every restart.
+      engine: engine,
       agentMode: agentMode,
       automationEnabled: automationEnabled,
       maxSteps: maxSteps,

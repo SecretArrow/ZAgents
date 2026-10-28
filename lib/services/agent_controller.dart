@@ -1962,6 +1962,7 @@ class ChatController extends Notifier<ChatState> {
       baseUrl: settings.baseUrl,
       apiKey: settings.apiKey,
       model: settings.model,
+      engine: settings.engine,
     );
     final tools = settings.agentMode
         ? buildAgentTools(planFirst: settings.planFirst)
@@ -3123,6 +3124,7 @@ class ChatController extends Notifier<ChatState> {
               baseUrl: settings.baseUrl,
               apiKey: settings.apiKey,
               model: settings.model,
+              engine: settings.engine,
             ),
             tools: null,
             messages: <Map<String, dynamic>>[

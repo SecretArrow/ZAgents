@@ -184,6 +184,12 @@ abstract class AppStrings {
   String get drawerSkills;
   String get settingsSkillsManager;
   String get agentRouterHint;
+  String get settingsEngineLabel;
+  String get engineAuto;
+  String get engineAnthropic;
+  String get engineOpenai;
+  String get engineOpenaiResponses;
+  String get engineHint;
 
   // -- Home / chat -----------------------------------------------------
   String get askAnything;
@@ -922,6 +928,29 @@ class AppStringsEn implements AppStrings {
       'Messages; GPT and other models speak OpenAI-compatible. If the '
       'gateway bot-challenges the connection, switch to mobile data and '
       'retry.';
+
+  @override
+  String get settingsEngineLabel => 'Engine';
+
+  @override
+  String get engineAuto => 'Auto — detect per model';
+
+  @override
+  String get engineAnthropic => 'Anthropic Messages';
+
+  @override
+  String get engineOpenai => 'OpenAI Chat Completions';
+
+  @override
+  String get engineOpenaiResponses => 'OpenAI Responses';
+
+  @override
+  String get engineHint =>
+      'Wire protocol used to reach this provider. Auto picks per model '
+      '(Claude models → Anthropic Messages, the rest → OpenAI Chat '
+      'Completions) and retries through the OpenAI Responses API when a '
+      'model requires it. Pin an engine when a provider only serves one '
+      'protocol.';
 
   @override
   String get newChat => 'New chat';
@@ -2340,6 +2369,29 @@ class AppStringsId implements AppStrings {
       'yang diwajibkan gateway. Model Claude memakai Anthropic Messages; '
       'GPT dan model lain memakai OpenAI-compatible. Jika gateway '
       'menantang bot (WAF), pindah ke data seluler lalu coba lagi.';
+
+  @override
+  String get settingsEngineLabel => 'Mesin';
+
+  @override
+  String get engineAuto => 'Otomatis — deteksi per model';
+
+  @override
+  String get engineAnthropic => 'Anthropic Messages';
+
+  @override
+  String get engineOpenai => 'OpenAI Chat Completions';
+
+  @override
+  String get engineOpenaiResponses => 'OpenAI Responses';
+
+  @override
+  String get engineHint =>
+      'Protokol yang dipakai untuk menghubungi provider ini. Otomatis '
+      'memilih per model (model Claude → Anthropic Messages, lainnya → '
+      'OpenAI Chat Completions) dan mencoba ulang lewat OpenAI Responses '
+      'API saat model menuntutnya. Kunci mesin bila provider hanya '
+      'melayani satu protokol.';
 
   @override
   String get newChat => 'Percakapan baru';

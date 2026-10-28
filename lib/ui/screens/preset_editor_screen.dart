@@ -37,6 +37,10 @@ class _PresetEditorScreenState extends ConsumerState<PresetEditorScreen> {
   late final TextEditingController _apiKey;
   late final TextEditingController _model;
 
+  /// v1.49.4 — wire protocol (engine) this provider speaks. Auto keeps the
+  /// historical per-model routing; the pinned values force one transport.
+  late LlmEngine _engine;
+
   /// Last known persisted snapshot of this preset. Field edits stay local
   /// until an explicit save; [_stored] is what the settings list holds.
   late ProviderPreset _stored;
@@ -72,6 +76,7 @@ class _PresetEditorScreenState extends ConsumerState<PresetEditorScreen> {
     _baseUrl = TextEditingController(text: widget.preset.baseUrl);
     _apiKey = TextEditingController(text: widget.preset.apiKey);
     _model = TextEditingController(text: widget.preset.model);
+    _engine = widget.preset.engine;
     _models = <RemoteModel>[
       for (final String id in widget.preset.modelsCache)
         RemoteModel(id: id, name: id),
@@ -131,6 +136,7 @@ class _PresetEditorScreenState extends ConsumerState<PresetEditorScreen> {
         baseUrl: updated.baseUrl,
         apiKey: updated.apiKey,
         model: syncModel ? updated.model : null,
+        engine: updated.engine,
         presets: presets,
       );
     }
@@ -151,6 +157,7 @@ class _PresetEditorScreenState extends ConsumerState<PresetEditorScreen> {
       apiKey: _apiKey.text,
       model: _model.text.trim(),
       modelsCache: <String>[for (final RemoteModel m in _models) m.id],
+      engine: _engine,
     );
     await ref
         .read(settingsProvider.notifier)
@@ -387,6 +394,34 @@ class _PresetEditorScreenState extends ConsumerState<PresetEditorScreen> {
                     label: Text(strings.saveApiKey),
                     onPressed: _saveApiKey,
                   ),
+                  const SizedBox(height: 12),
+                  // v1.49.4 — per-provider wire protocol: Anthropic
+                  // Messages / OpenAI Chat Completions / OpenAI Responses
+                  // / Auto (per-model routing + one-shot fallbacks).
+                  // Placed BELOW the key-save button so the existing
+                  // editor layout (and every test that taps it) keeps its
+                  // exact geometry.
+                  DropdownButtonFormField<LlmEngine>(
+                    key: const Key('editor-engine-dropdown'),
+                    initialValue: _engine,
+                    decoration: InputDecoration(
+                      labelText: strings.settingsEngineLabel,
+                      helperText: strings.engineHint,
+                      helperMaxLines: 5,
+                    ),
+                    items: <DropdownMenuItem<LlmEngine>>[
+                      for (final LlmEngine e in LlmEngine.values)
+                        DropdownMenuItem<LlmEngine>(
+                          value: e,
+                          child: Text(
+                            _engineLabel(e, strings),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                    ],
+                    onChanged: (LlmEngine? value) =>
+                        setState(() => _engine = value ?? LlmEngine.auto),
+                  ),
                   if (_validationError != null) ...<Widget>[
                     const SizedBox(height: 8),
                     Row(
@@ -470,6 +505,19 @@ class _PresetEditorScreenState extends ConsumerState<PresetEditorScreen> {
         ),
       ),
     );
+  }
+
+  String _engineLabel(LlmEngine engine, AppStrings strings) {
+    switch (engine) {
+      case LlmEngine.auto:
+        return strings.engineAuto;
+      case LlmEngine.anthropic:
+        return strings.engineAnthropic;
+      case LlmEngine.openai:
+        return strings.engineOpenai;
+      case LlmEngine.openaiResponses:
+        return strings.engineOpenaiResponses;
+    }
   }
 
   Widget _modelsSection(AppStrings strings, ZPalette palette) {
