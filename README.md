@@ -360,6 +360,33 @@ OpenAI-compatible: **OpenRouter, InferHub, Z.AI, OpenAI, DeepSeek, Groq, dan lai
   sendiri saat run selesai — flag buka/tutup tetap global sehingga
   perpindahan langkah, akhir run, dan pindah chat tidak pernah
   menutupnya.
+- **v1.49.1 — perbaikan lapangan: konten tidak menabrak bar sistem Android, Skills Manager kini
+  terjangkau, peringatan IP saat pindah chat benar-benar bekerja**: (1) **Inset guard menyeluruh** —
+  Android 15+ mewajibkan edge-to-edge dan v1.49.0 masih menyisakan konten yang masuk ke area bar
+  notifikasi atas / menu navigasi bawaan bawah (7 layar tanpa SafeArea, dialog, snackbar). Kini seluruh
+  navigator dipadding sekali di MaterialApp.builder: semua layar (termasuk yang tanpa SafeArea),
+  dialog, bottom sheet, drawer, dan snackbar dijamin mulai di bawah bar notifikasi dan berakhir di
+  atas menu navigasi sistem; inset yang dipakai dilaporkan nol ke tree (SafeArea lama tidak
+  menghasilkan jarak ganda), keyboard tak tersentuh (padding otomatis collapse saat keyboard menimpa
+  nav bar), dan strip di belakang bar transparan diwarnai warna latar app agar menyatu di tema
+  gelap/terang. (2) **Skills Manager kini terjangkau dari 2 jalur** — layar managernya sudah ada di
+  v1.49.0 tapi TIDAK terhubung ke navigasi mana pun: kini ada tile **Settings → Skills** (persis
+  seperti menu Modules) dan tombol pintasan **"Kelola skills"** di header sheet pemilih skill per-chat
+  (pop sheet → langsung ke manager, tanpa mengubah seleksi chat). (3) **Peringatan IP saat pindah chat
+  (v1.48.0 "ga work" di lapangan)**: probe kini beruntun ke 4 layanan echo teks-polos (api.ipify.org →
+  checkip.amazonaws.com → icanhazip.com → ifconfig.me/ip) dalam satu budget 5 detik yang dibagi rata
+  ke endpoint tersisa — satu endpoint mati/nyangkut tidak lagi mematikan fitur secara senyap; dan
+  setiap probe mengirim **User-Agent pilihan pengguna** (Settings → User Agent; interaksi web biasa,
+  bukan API AgentRouter, jadi tidak pernah identitas claude-cli yang khusus agentrouter.org) —
+  sebelumnya probe polos mengirim UA default Dart yang kerap ditolak middlebox/layanan echo. (4)
+  **`kAppVersion` disinkronkan** (tertinggal di 1.44.0 selama 5 rilis): pemburu-update kini
+  membandingkan versi yang benar sehangkan perangkat yang sudah di versi terbaru tidak lagi diberi
+  banner "ada update". (5) **User-Agent per permukaan dipertegas**: pusat API agentrouter.org (kedua
+  transport, Anthropic + fallback OpenAI) selalu `claude-cli/1.0.60 (external, cli)` — selain itu
+  DITOLAK oleh servernya; WebView/browser, web fetcher, script proxy, modul, dan probe IP memakai
+  User-Agent pilihan pengguna; provider lain tidak disentuh (verified oleh test hostname-boundary +
+  UA header di kedua jalur). Test: 1133/1133 lokal; +4 test geometri inset guard, +2 test navigasi
+  Skills Manager, +5 test probe IP (fallback chain, budget split, UA header).
 - **v1.49.0 — Skills Manager, browser multi-context, todo blocked/depends_on, AgentRouter & dompet
   agentic Binance**: gelombang upgrade besar aplikasi agent. (1) **Skills Manager penuh** (Settings →
   Skills): browse/cari skill terpasang + katalog bundled, install dari URL/GitHub shorthand/ZIP,
@@ -391,20 +418,8 @@ OpenAI-compatible: **OpenRouter, InferHub, Z.AI, OpenAI, DeepSeek, Groq, dan lai
   draf spend → `request_confirmation` → history, reset dua-langkah) TANPA kunci, tanpa signing, tanpa
   jaringan — eksekusi dana selalu di aplikasi/web resmi Binance oleh user; bundled skill
   `binance-agentic-wallet` direfresh dan CLI `baw` didokumentasikan tidak runnable on-device (butuh
-  Node native). (7) **Konten tidak pernah menabrak bar sistem Android**: edge-to-edge Android 15+
-  wajib, kini seluruh navigator diberi padding inset guard di MaterialApp.builder — semua layar
-  (termasuk yang tanpa SafeArea), dialog, bottom sheet, drawer, dan snackbar dijamin mulai di bawah
-  bar notifikasi atas dan berakhir di atas menu navigasi bawaan sistem di bawah; inset yang sudah
-  dipakai dilaporkan nol ke tree sehingga SafeArea lama tidak menghasilkan jarak ganda, dan area di
-  belakang bar transparan diwarnai warna latar app agar menyatu di tema gelap/terang. (8) **Perbaikan
-  peringatan IP saat pindah chat (v1.48.0 "ga work" di lapangan)**: probe kini beruntun ke 4 layanan
-  echo teks-polos (api.ipify.org → checkip.amazonaws.com → icanhazip.com → ifconfig.me/ip) dalam satu
-  budget 5 detik yang dibagi rata ke endpoint tersisa — satu endpoint mati/nyangkut tidak lagi
-  mematikan fitur secara senyap; dan setiap probe mengirim **User-Agent pilihan pengguna** (Settings →
-  User Agent; interaksi web biasa, bukan API AgentRouter, jadi tidak pernah identitas claude-cli) —
-  sebelumnya probe polos mengirim UA default Dart yang kerap ditolak middlebox/layanan. (9) Test: total
-  suite CI 1.1k+ kasus hijau (unit 3 shard), termasuk +24 test browser context, +33 test skills,
-  +39 test hub/wave-2, +4 test geometri inset guard, +5 test probe IP (fallback chain + UA header).
+  Node native). (7) Test: total suite CI 1.1k+ kasus hijau (unit 3 shard), termasuk +24 test browser
+  context, +33 test skills, +39 test hub/wave-2.
 - **v1.48.1 — Plan (todos) kini selalu ter-update setiap task selesai**: (1) **Perbaikan bug: plan tidak
   lagi terhapus oleh todo_write yang gagal** — sebelumnya satu todo_write kosong/argumen rusak langsung
   menghapus rencana berjalan di UI, mematikan nudge, bahkan menimpa JSON plan yang benar di disk; kini
