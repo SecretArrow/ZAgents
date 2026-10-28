@@ -158,9 +158,9 @@ Future<void> _expectWafError(Future<AssistantTurn> future) async {
 Future<void> runChecks() async {
   // ── 1. gpt model → OpenAI-compatible path first, full UA branding ──
   {
-    final _Gateway g = await _Gateway.start()
-      ..bodyOf = (String p) =>
-          p.endsWith('/chat/completions') ? _openAiSse('via openai') : '';
+    final _Gateway g = await _Gateway.start();
+    g.bodyOf = (String p) =>
+        p.endsWith('/chat/completions') ? _openAiSse('via openai') : '';
     final _HostRewriteClient httpc = _HostRewriteClient(Uri.parse(g.base));
     final AgentRouterLlmClient client = AgentRouterLlmClient(client: httpc);
     final AssistantTurn turn = await client.complete(
@@ -187,9 +187,9 @@ Future<void> runChecks() async {
 
   // ── 2. claude model → Anthropic path first, dual-auth + version ──
   {
-    final _Gateway g = await _Gateway.start()
-      ..bodyOf = (String p) =>
-          p.endsWith('/messages') ? _anthropicJson('via anthropic') : '';
+    final _Gateway g = await _Gateway.start();
+    g.bodyOf = (String p) =>
+        p.endsWith('/messages') ? _anthropicJson('via anthropic') : '';
     final _HostRewriteClient httpc = _HostRewriteClient(Uri.parse(g.base));
     final AgentRouterLlmClient client = AgentRouterLlmClient(client: httpc);
     final AssistantTurn turn = await client.complete(
@@ -223,10 +223,11 @@ Future<void> runChecks() async {
 
   // ── 3. OpenAI 404 → one-shot Anthropic fallback ──
   {
-    final _Gateway g = await _Gateway.start()
-      ..statusOf = (String p) => p.endsWith('/chat/completions') ? 404 : 200
-      ..bodyOf = (String p) =>
-          p.endsWith('/messages') ? _anthropicJson('saved') : 'not found';
+    final _Gateway g = await _Gateway.start();
+    g.statusOf = (String p) =>
+        p.endsWith('/chat/completions') ? 404 : 200;
+    g.bodyOf = (String p) =>
+        p.endsWith('/messages') ? _anthropicJson('saved') : 'not found';
     final _HostRewriteClient httpc = _HostRewriteClient(Uri.parse(g.base));
     final AgentRouterLlmClient client = AgentRouterLlmClient(client: httpc);
     final AssistantTurn turn = await client.complete(
@@ -243,10 +244,10 @@ Future<void> runChecks() async {
 
   // ── 4. Anthropic 404 → one-shot OpenAI fallback ──
   {
-    final _Gateway g = await _Gateway.start()
-      ..statusOf = (String p) => p.endsWith('/messages') ? 404 : 200
-      ..bodyOf = (String p) =>
-          p.endsWith('/chat/completions') ? _openAiSse('via openai') : '';
+    final _Gateway g = await _Gateway.start();
+    g.statusOf = (String p) => p.endsWith('/messages') ? 404 : 200;
+    g.bodyOf = (String p) =>
+        p.endsWith('/chat/completions') ? _openAiSse('via openai') : '';
     final _HostRewriteClient httpc = _HostRewriteClient(Uri.parse(g.base));
     final AgentRouterLlmClient client = AgentRouterLlmClient(client: httpc);
     final AssistantTurn turn = await client.complete(
@@ -285,9 +286,9 @@ Future<void> runChecks() async {
 
   // ── 6. WAF 200 HTML on the OpenAI path → actionable error ──
   {
-    final _Gateway g = await _Gateway.start()
-      ..contentTypeOf = (String p) => 'text/html'
-      ..bodyOf = (String p) => _wafHtml;
+    final _Gateway g = await _Gateway.start();
+    g.contentTypeOf = (String p) => 'text/html';
+    g.bodyOf = (String p) => _wafHtml;
     final _HostRewriteClient httpc = _HostRewriteClient(Uri.parse(g.base));
     final AgentRouterLlmClient client = AgentRouterLlmClient(client: httpc);
     await _expectWafError(
@@ -301,10 +302,10 @@ Future<void> runChecks() async {
 
   // ── 7. WAF 403 on the Anthropic path → actionable error + 403 ──
   {
-    final _Gateway g = await _Gateway.start()
-      ..statusOf = (String p) => p.endsWith('/messages') ? 403 : 200
-      ..contentTypeOf = (String p) => 'text/html'
-      ..bodyOf = (String p) => _wafHtml;
+    final _Gateway g = await _Gateway.start();
+    g.statusOf = (String p) => p.endsWith('/messages') ? 403 : 200;
+    g.contentTypeOf = (String p) => 'text/html';
+    g.bodyOf = (String p) => _wafHtml;
     final _HostRewriteClient httpc = _HostRewriteClient(Uri.parse(g.base));
     final AgentRouterLlmClient client = AgentRouterLlmClient(client: httpc);
     try {
@@ -325,9 +326,10 @@ Future<void> runChecks() async {
 
   // ── 8. "Invalid API Key" → deployment-mismatch message ──
   {
-    final _Gateway g = await _Gateway.start()
-      ..statusOf = (String p) => p.endsWith('/chat/completions') ? 401 : 200
-      ..bodyOf = (String p) => 'Invalid API Key!';
+    final _Gateway g = await _Gateway.start();
+    g.statusOf = (String p) =>
+        p.endsWith('/chat/completions') ? 401 : 200;
+    g.bodyOf = (String p) => 'Invalid API Key!';
     final _HostRewriteClient httpc = _HostRewriteClient(Uri.parse(g.base));
     final AgentRouterLlmClient client = AgentRouterLlmClient(client: httpc);
     try {
@@ -348,9 +350,9 @@ Future<void> runChecks() async {
 
   // ── 9. confirmed protocol cache: second call skips the guess ──
   {
-    final _Gateway g = await _Gateway.start()
-      ..bodyOf = (String p) =>
-          p.endsWith('/chat/completions') ? _openAiSse('ok') : '';
+    final _Gateway g = await _Gateway.start();
+    g.bodyOf = (String p) =>
+        p.endsWith('/chat/completions') ? _openAiSse('ok') : '';
     final _HostRewriteClient httpc = _HostRewriteClient(Uri.parse(g.base));
     final AgentRouterLlmClient client = AgentRouterLlmClient(client: httpc);
     for (var i = 0; i < 2; i++) {
@@ -369,9 +371,9 @@ Future<void> runChecks() async {
 
   // ── 10. base URL without /v1 normalized onto the versioned paths ──
   {
-    final _Gateway g = await _Gateway.start()
-      ..bodyOf = (String p) =>
-          p.endsWith('/chat/completions') ? _openAiSse('v1 ok') : '';
+    final _Gateway g = await _Gateway.start();
+    g.bodyOf = (String p) =>
+        p.endsWith('/chat/completions') ? _openAiSse('v1 ok') : '';
     final _HostRewriteClient httpc = _HostRewriteClient(Uri.parse(g.base));
     final AgentRouterLlmClient client = AgentRouterLlmClient(client: httpc);
     final AssistantTurn turn = await client.complete(
@@ -388,9 +390,9 @@ Future<void> runChecks() async {
 
   // ── 11. non-agentrouter host: passthrough, no UA branding ──
   {
-    final _Gateway g = await _Gateway.start()
-      ..bodyOf = (String p) =>
-          p.endsWith('/chat/completions') ? _openAiSse('plain') : '';
+    final _Gateway g = await _Gateway.start();
+    g.bodyOf = (String p) =>
+        p.endsWith('/chat/completions') ? _openAiSse('plain') : '';
     final _HostRewriteClient httpc = _HostRewriteClient(Uri.parse(g.base));
     final AgentRouterLlmClient client = AgentRouterLlmClient(client: httpc);
     final AssistantTurn turn = await client.complete(
@@ -408,16 +410,16 @@ Future<void> runChecks() async {
 
   // ── 12. discovery: dual auth + Anthropic-shaped catalog ──
   {
-    final _Gateway g = await _Gateway.start()
-      ..bodyOf = (String p) => jsonEncode(<String, dynamic>{
-        'data': <Map<String, dynamic>>[
-          <String, dynamic>{
-            'type': 'model',
-            'id': 'gpt-6-astra',
-            'display_name': 'GPT 6 Astra',
-          },
-        ],
-      });
+    final _Gateway g = await _Gateway.start();
+    g.bodyOf = (String p) => jsonEncode(<String, dynamic>{
+      'data': <Map<String, dynamic>>[
+        <String, dynamic>{
+          'type': 'model',
+          'id': 'gpt-6-astra',
+          'display_name': 'GPT 6 Astra',
+        },
+      ],
+    });
     final _HostRewriteClient httpc = _HostRewriteClient(Uri.parse(g.base));
     final ModelCatalogClient catalog = ModelCatalogClient(client: httpc);
     final List<RemoteModel> models = await catalog.fetchModels(
