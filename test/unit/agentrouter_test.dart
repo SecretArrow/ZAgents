@@ -868,20 +868,20 @@ void main() {
           ],
         );
       }
-      expect(paths, <String>[
-        '/v1/chat/completions',
-        '/v1/chat/completions',
-      ]);
+      expect(paths, <String>['/v1/chat/completions', '/v1/chat/completions']);
     });
 
     test('WAF challenge page (200 HTML) becomes an actionable error', () async {
       final AgentRouterLlmClient client = AgentRouterLlmClient(
         client: MockClient.streaming((request, bodyStream) async {
           return http.StreamedResponse(
-            Stream<List<int>>.value(utf8.encode(
-              '<!DOCTYPE html><html><head>'
-              '<script>var acw_sc__v2="challenge";</script></head>'
-              '<body>Aliyun anti-bot slider</body></html>')),
+            Stream<List<int>>.value(
+              utf8.encode(
+                '<!DOCTYPE html><html><head>'
+                '<script>var acw_sc__v2="challenge";</script></head>'
+                '<body>Aliyun anti-bot slider</body></html>',
+              ),
+            ),
             200,
             headers: <String, String>{'content-type': 'text/html'},
           );
@@ -909,8 +909,11 @@ void main() {
       final AgentRouterLlmClient client = AgentRouterLlmClient(
         client: MockClient.streaming((request, bodyStream) async {
           return http.StreamedResponse(
-            Stream<List<int>>.value(utf8.encode(
-              '<html><body>Aliyun WAF captcha verify</body></html>')),
+            Stream<List<int>>.value(
+              utf8.encode(
+                '<html><body>Aliyun WAF captcha verify</body></html>',
+              ),
+            ),
             403,
             headers: <String, String>{'content-type': 'text/html'},
           );

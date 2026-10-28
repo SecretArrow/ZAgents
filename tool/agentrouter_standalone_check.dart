@@ -59,16 +59,17 @@ class _HostRewriteClient extends http.BaseClient {
 
   @override
   Future<http.StreamedResponse> send(http.BaseRequest request) async {
-    final http.Request copy = http.Request(
-      request.method,
-      request.url.replace(
-        scheme: _targetBase.scheme,
-        host: _targetBase.host,
-        port: _targetBase.port,
-      ),
-    )
-      ..headers.addAll(request.headers)
-      ..followRedirects = request.followRedirects;
+    final http.Request copy =
+        http.Request(
+            request.method,
+            request.url.replace(
+              scheme: _targetBase.scheme,
+              host: _targetBase.host,
+              port: _targetBase.port,
+            ),
+          )
+          ..headers.addAll(request.headers)
+          ..followRedirects = request.followRedirects;
     if (request is http.Request) copy.bodyBytes = request.bodyBytes;
     seen.add(_Seen(copy.method, copy.url.path, copy.headers, copy.body));
     return _inner.send(copy);
@@ -130,11 +131,8 @@ const List<Map<String, dynamic>> _messages = <Map<String, dynamic>>[
   <String, dynamic>{'role': 'user', 'content': 'hi'},
 ];
 
-LlmConfig _cfg(String base, String model) => LlmConfig(
-  baseUrl: base,
-  apiKey: 'test-key-xyz',
-  model: model,
-);
+LlmConfig _cfg(String base, String model) =>
+    LlmConfig(baseUrl: base, apiKey: 'test-key-xyz', model: model);
 
 void _check(bool condition, String message) {
   if (!condition) throw StateError(message);
@@ -224,8 +222,7 @@ Future<void> runChecks() async {
   // ── 3. OpenAI 404 → one-shot Anthropic fallback ──
   {
     final _Gateway g = await _Gateway.start();
-    g.statusOf = (String p) =>
-        p.endsWith('/chat/completions') ? 404 : 200;
+    g.statusOf = (String p) => p.endsWith('/chat/completions') ? 404 : 200;
     g.bodyOf = (String p) =>
         p.endsWith('/messages') ? _anthropicJson('saved') : 'not found';
     final _HostRewriteClient httpc = _HostRewriteClient(Uri.parse(g.base));
@@ -327,8 +324,7 @@ Future<void> runChecks() async {
   // ── 8. "Invalid API Key" → deployment-mismatch message ──
   {
     final _Gateway g = await _Gateway.start();
-    g.statusOf = (String p) =>
-        p.endsWith('/chat/completions') ? 401 : 200;
+    g.statusOf = (String p) => p.endsWith('/chat/completions') ? 401 : 200;
     g.bodyOf = (String p) => 'Invalid API Key!';
     final _HostRewriteClient httpc = _HostRewriteClient(Uri.parse(g.base));
     final AgentRouterLlmClient client = AgentRouterLlmClient(client: httpc);
@@ -503,10 +499,12 @@ Future<void> _liveProbes() async {
 }
 
 void main() {
-  runChecks().then((_) {
-    print('standalone check finished OK.');
-  }).catchError((Object e) {
-    print('standalone check FAILED: $e');
-    exitCode = 1;
-  });
+  runChecks()
+      .then((_) {
+        print('standalone check finished OK.');
+      })
+      .catchError((Object e) {
+        print('standalone check FAILED: $e');
+        exitCode = 1;
+      });
 }
