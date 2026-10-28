@@ -378,7 +378,8 @@ void main() {
       final Map<String, String> headers = _lower(requests.single.headers);
       expect(headers['authorization'], 'Bearer key-r');
       final Map<String, dynamic> body =
-          jsonDecode(requests.single.body) as Map<String, dynamic>;
+          jsonDecode((requests.single as http.Request).body)
+              as Map<String, dynamic>;
       expect(body['model'], 'gpt-6.1-sol');
       expect(body['store'], isFalse);
     });
@@ -493,7 +494,8 @@ void main() {
         final AgentRouterLlmClient client = AgentRouterLlmClient(
           client: MockClient.streaming((request, bodyStream) async {
             final Map<String, dynamic> body =
-                jsonDecode(request.body) as Map<String, dynamic>;
+                jsonDecode((request as http.Request).body)
+                    as Map<String, dynamic>;
             if (request.url.path.endsWith('/responses')) {
               return _sseResponse(_responsesSse('via responses'));
             }
@@ -647,7 +649,8 @@ void main() {
       expect(headers['authorization'], 'Bearer test-key-xyz');
       expect(headers['user-agent'], 'claude-cli/1.0.60 (external, cli)');
       final Map<String, dynamic> body =
-          jsonDecode(requests.single.body) as Map<String, dynamic>;
+          jsonDecode((requests.single as http.Request).body)
+              as Map<String, dynamic>;
       expect(body['model'], 'gpt-6.1-sol');
       expect(body['store'], isFalse);
       expect(body['stream'], isTrue);

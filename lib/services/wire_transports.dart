@@ -3,6 +3,7 @@ import 'dart:isolate';
 
 import 'package:http/http.dart' as http;
 
+import '../models/models.dart';
 import 'llm_client.dart';
 
 /// Shared wire-protocol transports used by BOTH the plain [LlmClient]
@@ -654,7 +655,7 @@ List<Map<String, dynamic>> responsesUserContent(Object? content) {
     }
     if (parts.isNotEmpty) return parts;
   }
-  return <String, dynamic>[
+  return <Map<String, dynamic>>[
     <String, dynamic>{'type': 'input_text', 'text': contentToText(content)},
   ];
 }
