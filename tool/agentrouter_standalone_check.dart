@@ -88,7 +88,7 @@ class _Gateway {
 
   late final HttpServer _server;
 
-  /// handler(path) → status (default 404).
+  /// handler(path) → status (default 200).
   int Function(String path)? statusOf;
   String Function(String path)? contentTypeOf;
   String Function(String path)? bodyOf;
@@ -101,7 +101,9 @@ class _Gateway {
       final String path = req.uri.path;
       gateway.hits.add(path);
       final String body = gateway.bodyOf?.call(path) ?? 'not found';
-      final int status = gateway.statusOf?.call(path) ?? 404;
+      // Default 200: cases that only program bodyOf expect a healthy
+      // endpoint; failure cases set statusOf explicitly.
+      final int status = gateway.statusOf?.call(path) ?? 200;
       final String type =
           gateway.contentTypeOf?.call(path) ?? 'application/json';
       req.response.statusCode = status;
@@ -266,7 +268,8 @@ Future<void> runChecks() async {
   // ── 5. anti-loop: both protocols 404 → exactly 2 requests ──
   {
     AgentRouterLlmClient.clearProtocolCache();
-    final _Gateway g = await _Gateway.start(); // 404 everywhere by default
+    final _Gateway g = await _Gateway.start();
+    g.statusOf = (String p) => 404; // both protocols dead
     final _HostRewriteClient httpc = _HostRewriteClient(Uri.parse(g.base));
     final AgentRouterLlmClient client = AgentRouterLlmClient(client: httpc);
     Object? error;
