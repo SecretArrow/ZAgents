@@ -5,6 +5,16 @@ import 'package:zagents/ui/widgets/toast.dart';
 /// Widget tests for the v1.49.5 overlay toast that replaced SnackBars:
 /// appears, replaces itself, expires on its own and — the reason it exists
 /// — NEVER intercepts taps (IgnorePointer), unlike a SnackBar.
+/// The toast ticker starts on the frame AFTER insertion, so expiry needs
+/// two phase pumps: the first completes the fade-in (and schedules the
+/// hold timer), the second fires the hold timer and runs the fade-out,
+/// the last mops up the removal frame.
+Future<void> flushToast(WidgetTester tester) async {
+  await tester.pump(const Duration(seconds: 4));
+  await tester.pump(const Duration(seconds: 4));
+  await tester.pump(const Duration(milliseconds: 400));
+}
+
 void main() {
   testWidgets('toast appears after the fade-in and expires on its own', (
     WidgetTester tester,
@@ -37,8 +47,7 @@ void main() {
     expect(find.text('Saved!'), findsOneWidget);
 
     // Hold expires (2.6s) → fade-out → removal.
-    await tester.pump(const Duration(seconds: 4));
-    await tester.pump(const Duration(milliseconds: 400));
+    await flushToast(tester);
     expect(find.text('Saved!'), findsNothing);
     expect(find.byKey(const Key('toast-under-test')), findsNothing);
   });
@@ -80,8 +89,7 @@ void main() {
     expect(find.text('second'), findsOneWidget);
 
     // Flush the replacement toast's full lifetime.
-    await tester.pump(const Duration(seconds: 4));
-    await tester.pump(const Duration(milliseconds: 400));
+    await flushToast(tester);
     expect(find.text('second'), findsNothing);
   });
 
@@ -127,8 +135,7 @@ void main() {
     await tester.pump();
     expect(hiddenTapped, isTrue);
 
-    await tester.pump(const Duration(seconds: 4));
-    await tester.pump(const Duration(milliseconds: 400));
+    await flushToast(tester);
     expect(find.text('overlay toast'), findsNothing);
   });
 }
