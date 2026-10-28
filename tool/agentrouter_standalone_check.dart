@@ -129,6 +129,15 @@ String _anthropicJson(String text) => jsonEncode(<String, dynamic>{
 String _openAiSse(String text) =>
     'data: {"choices":[{"delta":{"content":"$text"}}]}\n\ndata: [DONE]\n\n';
 
+/// SSE bodies MUST travel as text/event-stream — the client's _consume
+/// branches on the content-type, exactly like the real gateway does.
+String _sseOrJson(String path) {
+  if (path.endsWith('/chat/completions')) {
+    return 'text/event-stream';
+  }
+  return 'application/json';
+}
+
 const List<Map<String, dynamic>> _messages = <Map<String, dynamic>>[
   <String, dynamic>{'role': 'user', 'content': 'hi'},
 ];
@@ -162,6 +171,7 @@ Future<void> runChecks() async {
     final _Gateway g = await _Gateway.start();
     g.bodyOf = (String p) =>
         p.endsWith('/chat/completions') ? _openAiSse('via openai') : '';
+    g.contentTypeOf = _sseOrJson;
     final _HostRewriteClient httpc = _HostRewriteClient(Uri.parse(g.base));
     final AgentRouterLlmClient client = AgentRouterLlmClient(client: httpc);
     final AssistantTurn turn = await client.complete(
@@ -251,6 +261,7 @@ Future<void> runChecks() async {
     g.statusOf = (String p) => p.endsWith('/messages') ? 404 : 200;
     g.bodyOf = (String p) =>
         p.endsWith('/chat/completions') ? _openAiSse('via openai') : '';
+    g.contentTypeOf = _sseOrJson;
     final _HostRewriteClient httpc = _HostRewriteClient(Uri.parse(g.base));
     final AgentRouterLlmClient client = AgentRouterLlmClient(client: httpc);
     final AssistantTurn turn = await client.complete(
@@ -361,6 +372,7 @@ Future<void> runChecks() async {
     final _Gateway g = await _Gateway.start();
     g.bodyOf = (String p) =>
         p.endsWith('/chat/completions') ? _openAiSse('ok') : '';
+    g.contentTypeOf = _sseOrJson;
     final _HostRewriteClient httpc = _HostRewriteClient(Uri.parse(g.base));
     final AgentRouterLlmClient client = AgentRouterLlmClient(client: httpc);
     for (var i = 0; i < 2; i++) {
@@ -383,6 +395,7 @@ Future<void> runChecks() async {
     final _Gateway g = await _Gateway.start();
     g.bodyOf = (String p) =>
         p.endsWith('/chat/completions') ? _openAiSse('v1 ok') : '';
+    g.contentTypeOf = _sseOrJson;
     final _HostRewriteClient httpc = _HostRewriteClient(Uri.parse(g.base));
     final AgentRouterLlmClient client = AgentRouterLlmClient(client: httpc);
     final AssistantTurn turn = await client.complete(
@@ -403,6 +416,7 @@ Future<void> runChecks() async {
     final _Gateway g = await _Gateway.start();
     g.bodyOf = (String p) =>
         p.endsWith('/chat/completions') ? _openAiSse('plain') : '';
+    g.contentTypeOf = _sseOrJson;
     final _HostRewriteClient httpc = _HostRewriteClient(Uri.parse(g.base));
     final AgentRouterLlmClient client = AgentRouterLlmClient(client: httpc);
     final AssistantTurn turn = await client.complete(
