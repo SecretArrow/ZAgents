@@ -396,9 +396,15 @@ OpenAI-compatible: **OpenRouter, InferHub, Z.AI, OpenAI, DeepSeek, Groq, dan lai
   (termasuk yang tanpa SafeArea), dialog, bottom sheet, drawer, dan snackbar dijamin mulai di bawah
   bar notifikasi atas dan berakhir di atas menu navigasi bawaan sistem di bawah; inset yang sudah
   dipakai dilaporkan nol ke tree sehingga SafeArea lama tidak menghasilkan jarak ganda, dan area di
-  belakang bar transparan diwarnai warna latar app agar menyatu di tema gelap/terang. (8) Test: total
+  belakang bar transparan diwarnai warna latar app agar menyatu di tema gelap/terang. (8) **Perbaikan
+  peringatan IP saat pindah chat (v1.48.0 "ga work" di lapangan)**: probe kini beruntun ke 4 layanan
+  echo teks-polos (api.ipify.org → checkip.amazonaws.com → icanhazip.com → ifconfig.me/ip) dalam satu
+  budget 5 detik yang dibagi rata ke endpoint tersisa — satu endpoint mati/nyangkut tidak lagi
+  mematikan fitur secara senyap; dan setiap probe mengirim **User-Agent pilihan pengguna** (Settings →
+  User Agent; interaksi web biasa, bukan API AgentRouter, jadi tidak pernah identitas claude-cli) —
+  sebelumnya probe polos mengirim UA default Dart yang kerap ditolak middlebox/layanan. (9) Test: total
   suite CI 1.1k+ kasus hijau (unit 3 shard), termasuk +24 test browser context, +33 test skills,
-  +39 test hub/wave-2, +4 test geometri inset guard.
+  +39 test hub/wave-2, +4 test geometri inset guard, +5 test probe IP (fallback chain + UA header).
 - **v1.48.1 — Plan (todos) kini selalu ter-update setiap task selesai**: (1) **Perbaikan bug: plan tidak
   lagi terhapus oleh todo_write yang gagal** — sebelumnya satu todo_write kosong/argumen rusak langsung
   menghapus rencana berjalan di UI, mematikan nudge, bahkan menimpa JSON plan yang benar di disk; kini

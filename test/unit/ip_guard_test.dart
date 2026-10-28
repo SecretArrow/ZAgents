@@ -128,6 +128,85 @@ void main() {
 
       expect(await guard.fetchPublicIp(), isNull);
     });
+
+    test('falls back to the next echo endpoint when the primary misbehaves '
+        '(v1.49.0 reliability fix)', () async {
+      final List<http.Request> seen = <http.Request>[];
+      final IpGuard guard = IpGuard.withClient(
+        prefs: await mockPrefs(),
+        client: MockClient((http.Request request) async {
+          seen.add(request);
+          // Primary endpoint answers garbage (captive portal), the
+          // first fallback answers a clean literal.
+          if (request.url.host == 'api.ipify.org') {
+            return http.Response('<html>login</html>', 200);
+          }
+          return http.Response('198.51.100.77\n', 200);
+        }),
+      );
+
+      expect(await guard.fetchPublicIp(), '198.51.100.77');
+      expect(seen.map((http.Request r) => r.url.host).toList(), <String>[
+        'api.ipify.org',
+        'checkip.amazonaws.com',
+      ]);
+    });
+
+    test(
+      'a stalled primary does not starve the fallbacks (budget split)',
+      () async {
+        final IpGuard guard = IpGuard.withClient(
+          prefs: await mockPrefs(),
+          timeout: const Duration(milliseconds: 600),
+          client: MockClient((http.Request request) {
+            if (request.url.host == 'api.ipify.org') {
+              return Completer<http.Response>().future; // hangs forever
+            }
+            return Future<http.Response>.value(
+              http.Response('203.0.113.9\n', 200),
+            );
+          }),
+        );
+
+        expect(await guard.fetchPublicIp(), '203.0.113.9');
+      },
+    );
+
+    test(
+      'the probe carries the User-Agent chosen in Settings '
+      '(plain web interaction — never the AgentRouter claude-cli identity)',
+      () async {
+        final List<http.Request> seen = <http.Request>[];
+        final IpGuard guard = IpGuard.withClient(
+          prefs: await mockPrefs(),
+          resolveUserAgent: () => 'Mozilla/5.0 (Linux; Android 15) Chosen/1',
+          client: MockClient((http.Request request) async {
+            seen.add(request);
+            return http.Response('203.0.113.5', 200);
+          }),
+        );
+
+        expect(await guard.fetchPublicIp(), '203.0.113.5');
+        expect(
+          seen.single.headers['User-Agent'],
+          'Mozilla/5.0 (Linux; Android 15) Chosen/1',
+        );
+      },
+    );
+
+    test('without a resolver the probe sends no explicit User-Agent', () async {
+      final List<http.Request> seen = <http.Request>[];
+      final IpGuard guard = IpGuard.withClient(
+        prefs: await mockPrefs(),
+        client: MockClient((http.Request request) async {
+          seen.add(request);
+          return http.Response('203.0.113.5', 200);
+        }),
+      );
+
+      expect(await guard.fetchPublicIp(), '203.0.113.5');
+      expect(seen.single.headers.containsKey('User-Agent'), isFalse);
+    });
   });
 
   group('IpGuard memo', () {

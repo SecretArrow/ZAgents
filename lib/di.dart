@@ -368,9 +368,15 @@ final ipMemoPrefsProvider = Provider<SharedPreferences>((ref) {
 });
 
 /// Chat-switch IP guard (v1.48.0): overridable in tests with a scripted
-/// fetchIp and/or mock SharedPreferences.
+/// fetchIp and/or mock SharedPreferences. The probe chain carries the
+/// User-Agent picked in Settings (plain web interaction — NOT an
+/// AgentRouter API call, so it never gets the claude-cli identity).
 final ipGuardProvider = Provider<IpGuard>(
-  (ref) => IpGuard.withClient(prefs: ref.watch(ipMemoPrefsProvider)),
+  (ref) => IpGuard.withClient(
+    prefs: ref.watch(ipMemoPrefsProvider),
+    resolveUserAgent: () =>
+        ref.read(userAgentManagerProvider).resolveCurrent().ua,
+  ),
 );
 
 /// Whether the Flutter app is currently visible to the user. Updated by

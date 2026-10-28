@@ -22,15 +22,22 @@ class IpGuard {
   IpGuard({required this.prefs, Future<String?> Function()? fetchIp})
     : _fetchIpOverride = fetchIp,
       client = null,
+      resolveUserAgent = null,
       timeout = defaultTimeout;
 
-  /// Creates the production guard with the default HTTP probe.
+  /// Creates the production guard with the default HTTP probe chain.
   ///
   /// [timeout] is injectable so tests can exercise the abort-on-stall path
-  /// without waiting out the real 5 s budget.
+  /// without waiting out the real 5 s budget. [resolveUserAgent] injects
+  /// the User-Agent picked in Settings → User Agent — the probe is a
+  /// plain web interaction (NOT the AgentRouter API), so it must present
+  /// the chosen browser identity instead of Dart's default `Dart/x.y`
+  /// string, which several echo services and middleboxes treat with
+  /// suspicion.
   IpGuard.withClient({
     required this.prefs,
     this.client,
+    this.resolveUserAgent,
     this.timeout = defaultTimeout,
   }) : _fetchIpOverride = null;
 
@@ -39,17 +46,33 @@ class IpGuard {
   /// Optional HTTP client override (tests inject a MockClient here).
   final http.Client? client;
 
+  /// Resolves the User-Agent header for probe requests — the identity
+  /// the user picked in Settings (injected from di.dart in production;
+  /// null means "send no explicit UA", e.g. in old-style unit tests).
+  final String? Function()? resolveUserAgent;
+
   /// SharedPreferences holding the per-chat last-IP memo (injected via
   /// ipMemoPrefsProvider in production; a mock instance in tests).
   final SharedPreferences prefs;
 
-  /// Plain-text public-IP echo service (no JSON, no HTML — the response
-  /// body IS the address).
-  static const String _ipEchoUrl = 'https://api.ipify.org';
+  /// Plain-text public-IP echo services, tried IN ORDER until one answers
+  /// with a plausible literal — no JSON, no HTML: the response body IS the
+  /// address. The first entry is the primary; the rest are fallbacks for
+  /// networks that block, misroute or mangle the primary (the single-endpoint
+  /// v1.48.0 probe degraded silently on such networks, which made the whole
+  /// guard look dead even with the toggle ON).
+  static const List<String> probeUrls = <String>[
+    'https://api.ipify.org',
+    'https://checkip.amazonaws.com',
+    'https://icanhazip.com',
+    'https://ifconfig.me/ip',
+  ];
 
-  /// Production connect + response budget. A chat switch must stay snappy;
-  /// when the probe cannot answer in time the switch simply proceeds
-  /// unguarded.
+  /// Production connect + response budget FOR THE WHOLE CHAIN. A chat
+  /// switch must stay snappy; when no endpoint answers in time the
+  /// switch simply proceeds unguarded. Each attempt gets its share of
+  /// the remaining budget (remaining ÷ endpoints still untried), so one
+  /// hanging endpoint can never starve the fallbacks.
   static const Duration defaultTimeout = Duration(seconds: 5);
 
   /// Per-instance budget (see [IpGuard.withClient]).
@@ -67,22 +90,63 @@ class IpGuard {
   /// cannot be determined — callers must treat null as "skip the check".
   Future<String?> fetchPublicIp() async {
     if (_fetchIpOverride != null) return _fetchIpOverride();
-    return _fetchIpFromClient(client ?? http.Client());
+    return _fetchIpFromChain();
   }
 
-  Future<String?> _fetchIpFromClient(http.Client client) async {
+  /// Walks [probeUrls] inside the overall [timeout] budget. The injected
+  /// [client] (tests) is reused for every attempt; production opens one
+  /// short-lived client for the whole chain.
+  Future<String?> _fetchIpFromChain() async {
+    final Stopwatch clock = Stopwatch()..start();
+    final http.Client probeClient = client ?? http.Client();
     try {
-      final http.Response response = await client
-          .get(
-            Uri.parse(_ipEchoUrl),
-            headers: <String, String>{'Accept': 'text/plain'},
-          )
-          .timeout(timeout);
+      for (int index = 0; index < probeUrls.length; index++) {
+        final Duration remaining = timeout - clock.elapsed;
+        if (remaining <= Duration.zero) return null;
+        // Split the remaining budget over the endpoints still untried so
+        // every fallback gets a fair slice even if the primary stalls.
+        final Duration attempt = remaining ~/ (probeUrls.length - index);
+        final String? ip = await _probeOnce(
+          probeClient,
+          probeUrls[index],
+          attempt,
+        );
+        if (ip != null) return ip;
+      }
+      return null;
+    } finally {
+      // Only close a client THIS call created (test clients stay open).
+      if (client == null) {
+        probeClient.close();
+      }
+    }
+  }
+
+  /// One echo attempt: chosen User-Agent, plain-text Accept, strict body
+  /// validation via [normalizeIp]. ANY failure (socket, timeout, status,
+  /// garbage body) degrades to null so the chain can try the next
+  /// endpoint — and so a fully unreachable network never blocks a switch.
+  Future<String?> _probeOnce(
+    http.Client probeClient,
+    String url,
+    Duration attempt,
+  ) async {
+    try {
+      final Map<String, String> headers = <String, String>{
+        'Accept': 'text/plain',
+      };
+      final String? ua = resolveUserAgent?.call();
+      if (ua != null && ua.isNotEmpty) {
+        headers['User-Agent'] = ua;
+      }
+      final http.Response response = await probeClient
+          .get(Uri.parse(url), headers: headers)
+          .timeout(attempt);
       if (response.statusCode != 200) return null;
       return normalizeIp(response.body);
     } catch (_) {
-      // Offline / timeout / socket error / redirect-to-portal: the guard
-      // degrades to "no warning, proceed".
+      // Offline / timeout / socket error / redirect-to-portal: this
+      // endpoint failed — the chain decides whether to try another.
       return null;
     }
   }
