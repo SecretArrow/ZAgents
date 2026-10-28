@@ -18,9 +18,8 @@ import 'ui/theme.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   // Android 15+ (targetSdk 35/36) enforces edge-to-edge: declare it
-  // explicitly so system bars never overlap app content and the insets
-  // (status bar top, navigation bar bottom) are always reported to
-  // Scaffold/SafeArea.
+  // explicitly, then [insetGuardBuilder] (below, wired as MaterialApp
+  // builder) keeps all content strictly between the system bars.
   try {
     await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     // Per-theme icon brightness (dark/light) is declared in the AppBarTheme
@@ -53,6 +52,48 @@ Future<void> main() async {
   );
 }
 
+/// v1.49.0 — keeps EVERY screen, dialog, bottom sheet, drawer and
+/// snackbar strictly between the Android status bar (notification bar,
+/// top) and the navigation bar (system back-home area, bottom).
+///
+/// Android 15+ (targetSdk 35/36) enforces edge-to-edge: the window always
+/// extends under both system bars and there is no manifest opt-out.
+/// Padding each screen by hand is fragile — any new route without
+/// SafeArea regresses (list bottoms and dialog buttons slid under the
+/// bars exactly this way). Instead the WHOLE Navigator is padded once
+/// here and the consumed insets are reported as zero to the tree below:
+///   * app content can never reach the notification bar or the system
+///     navigation area, on any route, including dialogs/sheets/drawers
+///     and snackbars;
+///   * existing SafeArea widgets see zero extra padding (no double
+///     spacing) — they keep working unchanged;
+///   * the keyboard stays untouched: MediaQuery.padding collapses when
+///     the keyboard overlaps the nav bar (padding = viewPadding −
+///     viewInsets), so no phantom gap appears while typing;
+///   * the strip behind the transparent system bars is painted with the
+///     scaffold background color, so the bars blend with the app in both
+///     themes.
+Widget insetGuardBuilder(BuildContext context, Widget? child) {
+  final MediaQueryData mq = MediaQuery.of(context);
+  final double top = mq.padding.top;
+  final double bottom = mq.padding.bottom;
+  if (top <= 0 && bottom <= 0) {
+    return child ?? const SizedBox.shrink();
+  }
+  return ColoredBox(
+    color: Theme.of(context).scaffoldBackgroundColor,
+    child: Padding(
+      padding: EdgeInsets.only(top: top, bottom: bottom),
+      child: MediaQuery(
+        data: mq
+            .removePadding(removeTop: true, removeBottom: true)
+            .removeViewPadding(removeTop: true, removeBottom: true),
+        child: child ?? const SizedBox.shrink(),
+      ),
+    ),
+  );
+}
+
 class ZAgentsApp extends ConsumerWidget {
   const ZAgentsApp({super.key});
 
@@ -74,6 +115,7 @@ class ZAgentsApp extends ConsumerWidget {
     return MaterialApp(
       title: 'ZAgents',
       debugShowCheckedModeBanner: false,
+      builder: insetGuardBuilder,
       theme: buildLightTheme(),
       darkTheme: buildDarkTheme(),
       themeMode: themeMode,

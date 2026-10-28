@@ -391,8 +391,14 @@ OpenAI-compatible: **OpenRouter, InferHub, Z.AI, OpenAI, DeepSeek, Groq, dan lai
   draf spend → `request_confirmation` → history, reset dua-langkah) TANPA kunci, tanpa signing, tanpa
   jaringan — eksekusi dana selalu di aplikasi/web resmi Binance oleh user; bundled skill
   `binance-agentic-wallet` direfresh dan CLI `baw` didokumentasikan tidak runnable on-device (butuh
-  Node native). (7) Test: total suite CI 1.1k+ kasus hijau (unit 3 shard), termasuk +24 test browser
-  context, +33 test skills, +39 test hub/wave-2.
+  Node native). (7) **Konten tidak pernah menabrak bar sistem Android**: edge-to-edge Android 15+
+  wajib, kini seluruh navigator diberi padding inset guard di MaterialApp.builder — semua layar
+  (termasuk yang tanpa SafeArea), dialog, bottom sheet, drawer, dan snackbar dijamin mulai di bawah
+  bar notifikasi atas dan berakhir di atas menu navigasi bawaan sistem di bawah; inset yang sudah
+  dipakai dilaporkan nol ke tree sehingga SafeArea lama tidak menghasilkan jarak ganda, dan area di
+  belakang bar transparan diwarnai warna latar app agar menyatu di tema gelap/terang. (8) Test: total
+  suite CI 1.1k+ kasus hijau (unit 3 shard), termasuk +24 test browser context, +33 test skills,
+  +39 test hub/wave-2, +4 test geometri inset guard.
 - **v1.48.1 — Plan (todos) kini selalu ter-update setiap task selesai**: (1) **Perbaikan bug: plan tidak
   lagi terhapus oleh todo_write yang gagal** — sebelumnya satu todo_write kosong/argumen rusak langsung
   menghapus rencana berjalan di UI, mematikan nudge, bahkan menimpa JSON plan yang benar di disk; kini
