@@ -156,6 +156,7 @@ Future<void> _expectWafError(Future<AssistantTurn> future) async {
 Future<void> runChecks() async {
   // ── 1. gpt model → OpenAI-compatible path first, full UA branding ──
   {
+    AgentRouterLlmClient.clearProtocolCache();
     final _Gateway g = await _Gateway.start();
     g.bodyOf = (String p) =>
         p.endsWith('/chat/completions') ? _openAiSse('via openai') : '';
@@ -185,6 +186,7 @@ Future<void> runChecks() async {
 
   // ── 2. claude model → Anthropic path first, dual-auth + version ──
   {
+    AgentRouterLlmClient.clearProtocolCache();
     final _Gateway g = await _Gateway.start();
     g.bodyOf = (String p) =>
         p.endsWith('/messages') ? _anthropicJson('via anthropic') : '';
@@ -221,6 +223,7 @@ Future<void> runChecks() async {
 
   // ── 3. OpenAI 404 → one-shot Anthropic fallback ──
   {
+    AgentRouterLlmClient.clearProtocolCache();
     final _Gateway g = await _Gateway.start();
     g.statusOf = (String p) => p.endsWith('/chat/completions') ? 404 : 200;
     g.bodyOf = (String p) =>
@@ -241,6 +244,7 @@ Future<void> runChecks() async {
 
   // ── 4. Anthropic 404 → one-shot OpenAI fallback ──
   {
+    AgentRouterLlmClient.clearProtocolCache();
     final _Gateway g = await _Gateway.start();
     g.statusOf = (String p) => p.endsWith('/messages') ? 404 : 200;
     g.bodyOf = (String p) =>
@@ -261,6 +265,7 @@ Future<void> runChecks() async {
 
   // ── 5. anti-loop: both protocols 404 → exactly 2 requests ──
   {
+    AgentRouterLlmClient.clearProtocolCache();
     final _Gateway g = await _Gateway.start(); // 404 everywhere by default
     final _HostRewriteClient httpc = _HostRewriteClient(Uri.parse(g.base));
     final AgentRouterLlmClient client = AgentRouterLlmClient(client: httpc);
@@ -283,6 +288,7 @@ Future<void> runChecks() async {
 
   // ── 6. WAF 200 HTML on the OpenAI path → actionable error ──
   {
+    AgentRouterLlmClient.clearProtocolCache();
     final _Gateway g = await _Gateway.start();
     g.contentTypeOf = (String p) => 'text/html';
     g.bodyOf = (String p) => _wafHtml;
@@ -299,6 +305,7 @@ Future<void> runChecks() async {
 
   // ── 7. WAF 403 on the Anthropic path → actionable error + 403 ──
   {
+    AgentRouterLlmClient.clearProtocolCache();
     final _Gateway g = await _Gateway.start();
     g.statusOf = (String p) => p.endsWith('/messages') ? 403 : 200;
     g.contentTypeOf = (String p) => 'text/html';
@@ -323,6 +330,7 @@ Future<void> runChecks() async {
 
   // ── 8. "Invalid API Key" → deployment-mismatch message ──
   {
+    AgentRouterLlmClient.clearProtocolCache();
     final _Gateway g = await _Gateway.start();
     g.statusOf = (String p) => p.endsWith('/chat/completions') ? 401 : 200;
     g.bodyOf = (String p) => 'Invalid API Key!';
@@ -346,6 +354,7 @@ Future<void> runChecks() async {
 
   // ── 9. confirmed protocol cache: second call skips the guess ──
   {
+    AgentRouterLlmClient.clearProtocolCache();
     final _Gateway g = await _Gateway.start();
     g.bodyOf = (String p) =>
         p.endsWith('/chat/completions') ? _openAiSse('ok') : '';
@@ -367,6 +376,7 @@ Future<void> runChecks() async {
 
   // ── 10. base URL without /v1 normalized onto the versioned paths ──
   {
+    AgentRouterLlmClient.clearProtocolCache();
     final _Gateway g = await _Gateway.start();
     g.bodyOf = (String p) =>
         p.endsWith('/chat/completions') ? _openAiSse('v1 ok') : '';
@@ -386,6 +396,7 @@ Future<void> runChecks() async {
 
   // ── 11. non-agentrouter host: passthrough, no UA branding ──
   {
+    AgentRouterLlmClient.clearProtocolCache();
     final _Gateway g = await _Gateway.start();
     g.bodyOf = (String p) =>
         p.endsWith('/chat/completions') ? _openAiSse('plain') : '';
@@ -406,6 +417,7 @@ Future<void> runChecks() async {
 
   // ── 12. discovery: dual auth + Anthropic-shaped catalog ──
   {
+    AgentRouterLlmClient.clearProtocolCache();
     final _Gateway g = await _Gateway.start();
     g.bodyOf = (String p) => jsonEncode(<String, dynamic>{
       'data': <Map<String, dynamic>>[
