@@ -34,10 +34,7 @@ class ProvidersScreen extends ConsumerWidget {
             engine: preset.engine,
           ),
         );
-    showToast(
-      context,
-      strings.providerActivatedSnack(preset.name),
-    );
+    showToast(context, strings.providerActivatedSnack(preset.name));
   }
 
   /// Long-press shortcut: ask for confirmation before switching the

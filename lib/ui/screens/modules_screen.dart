@@ -155,10 +155,7 @@ class _ModulesScreenState extends ConsumerState<ModulesScreen> {
       );
     } catch (e) {
       if (mounted) {
-        showToast(
-          context,
-          stringsOf(context).moduleInstallFailed('$e'),
-        );
+        showToast(context, stringsOf(context).moduleInstallFailed('$e'));
       }
     } finally {
       if (mounted) setState(() => _installing = false);
@@ -882,10 +879,7 @@ class _OfficialCatalogState extends ConsumerState<_OfficialCatalog> {
     } catch (e) {
       if (!mounted) return;
       setState(() => _busyName = null);
-      showToast(
-        context,
-        stringsOf(context).moduleInstallFailed('$e'),
-      );
+      showToast(context, stringsOf(context).moduleInstallFailed('$e'));
       return;
     }
     ref.invalidate(moduleListProvider);

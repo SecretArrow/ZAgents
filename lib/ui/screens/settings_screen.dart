@@ -347,17 +347,11 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             onPressed: () {
               final String value = pin.text.trim();
               if (value.length < 4 || value.length > 8) {
-                showToast(
-                  dialogContext,
-                  strings.appLockPinTooShort,
-                );
+                showToast(dialogContext, strings.appLockPinTooShort);
                 return;
               }
               if (value != confirm.text.trim()) {
-                showToast(
-                  dialogContext,
-                  strings.appLockPinMismatch,
-                );
+                showToast(dialogContext, strings.appLockPinMismatch);
                 return;
               }
               Navigator.of(dialogContext).pop(value);

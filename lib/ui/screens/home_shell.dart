@@ -493,10 +493,7 @@ class _UpdateBanner extends ConsumerWidget {
                     result.releaseUrl ?? result.apkDownloadUrl ?? '';
                 if (url.isEmpty) return;
                 Clipboard.setData(ClipboardData(text: url));
-                showToast(
-                  context,
-                  '${strings.updateOpenRelease}: $url',
-                );
+                showToast(context, '${strings.updateOpenRelease}: $url');
               },
               child: Text(strings.updateOpenRelease),
             ),

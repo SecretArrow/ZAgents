@@ -32,7 +32,11 @@ void showToast(
   final OverlayState? overlay = Overlay.maybeOf(context, rootOverlay: true);
   if (overlay == null) return;
   _dropCurrent();
-  final OverlayEntry entry = OverlayEntry(
+  // late: the builder closure reads `entry`, so the variable must already
+  // be DECLARED when the closure is created (it only ever RUNS after the
+  // entry is inserted below).
+  late final OverlayEntry entry;
+  entry = OverlayEntry(
     builder: (BuildContext overlayContext) => _ToastCard(
       key: key ?? const ValueKey<String>('toast-card'),
       message: text,
