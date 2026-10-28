@@ -625,7 +625,11 @@ class AgentRouterLlmClient extends LlmClient {
 
       _confirmedProtocol[cacheKey] = _WireProtocol.openAiResponses;
       try {
-        return await consumeResponsesStream(response.stream, onDelta, shouldAbort);
+        return await consumeResponsesStream(
+          response.stream,
+          onDelta,
+          shouldAbort,
+        );
       } on LlmException catch (e) {
         throw _translate(e);
       }

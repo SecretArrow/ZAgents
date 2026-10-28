@@ -205,7 +205,8 @@ Map<String, dynamic> buildAnthropicRequestBody({
     'messages': anthropicMessages,
     if (tools != null && tools.isNotEmpty)
       'tools': <Map<String, dynamic>>[
-        for (final Map<String, dynamic> tool in tools) anthropicToolSchema(tool),
+        for (final Map<String, dynamic> tool in tools)
+          anthropicToolSchema(tool),
       ],
   };
 }
@@ -283,7 +284,10 @@ Map<String, dynamic>? userContentBlock(Object? part) {
   return null;
 }
 
-final RegExp dataUriPattern = RegExp(r'^data:([^;,]+);base64,(.+)$', dotAll: true);
+final RegExp dataUriPattern = RegExp(
+  r'^data:([^;,]+);base64,(.+)$',
+  dotAll: true,
+);
 
 /// OpenAI tool definition
 /// (`{type:'function',function:{name,description,parameters}}`) → Anthropic
@@ -301,7 +305,10 @@ Map<String, dynamic> anthropicToolSchema(Map<String, dynamic> tool) {
     // empty object schema instead of breaking the request.
     'input_schema': parameters is Map<String, dynamic>
         ? parameters
-        : <String, dynamic>{'type': 'object', 'properties': <String, dynamic>{}},
+        : <String, dynamic>{
+            'type': 'object',
+            'properties': <String, dynamic>{},
+          },
   };
 }
 
@@ -340,7 +347,9 @@ AssistantTurn parseAnthropicMessage(String raw) {
           ToolCallRequest(
             id: id.isEmpty ? newCallId() : id,
             name: name,
-            argumentsJson: jsonEncode(asJsonMap(block['input']) ?? <String, dynamic>{}),
+            argumentsJson: jsonEncode(
+              asJsonMap(block['input']) ?? <String, dynamic>{},
+            ),
           ),
         );
       }
@@ -417,7 +426,9 @@ Future<AssistantTurn> consumeAnthropicStream(
           }
         } else if (type == 'content_block_start') {
           final int index = asJsonInt(decoded['index']) ?? toolBlocks.length;
-          final Map<String, dynamic>? block = asJsonMap(decoded['content_block']);
+          final Map<String, dynamic>? block = asJsonMap(
+            decoded['content_block'],
+          );
           // Tool call id/name arrive ONLY here; arguments come later via
           // input_json_delta accumulation.
           if (block != null && block['type']?.toString() == 'tool_use') {
@@ -500,7 +511,11 @@ Future<AssistantTurn> consumeAnthropicResponse(
       .toLowerCase();
   if (contentType.contains('text/event-stream')) {
     try {
-      return await consumeAnthropicStream(response.stream, onDelta, shouldAbort);
+      return await consumeAnthropicStream(
+        response.stream,
+        onDelta,
+        shouldAbort,
+      );
     } on LlmAbortedException {
       rethrow;
     } on LlmException {
@@ -617,7 +632,8 @@ Map<String, dynamic> buildResponsesRequestBody({
     if (config.maxTokens != null) 'max_output_tokens': config.maxTokens,
     if (tools != null && tools.isNotEmpty)
       'tools': <Map<String, dynamic>>[
-        for (final Map<String, dynamic> tool in tools) responsesToolSchema(tool),
+        for (final Map<String, dynamic> tool in tools)
+          responsesToolSchema(tool),
       ],
   };
 }
@@ -650,7 +666,10 @@ List<Map<String, dynamic>> responsesUserContent(Object? content) {
       }
       final Object? text = part['text'];
       if (text != null) {
-        parts.add(<String, dynamic>{'type': 'input_text', 'text': text.toString()});
+        parts.add(<String, dynamic>{
+          'type': 'input_text',
+          'text': text.toString(),
+        });
       }
     }
     if (parts.isNotEmpty) return parts;
@@ -675,7 +694,10 @@ Map<String, dynamic> responsesToolSchema(Map<String, dynamic> tool) {
     'description': fn['description']?.toString() ?? '',
     'parameters': parameters is Map<String, dynamic>
         ? parameters
-        : <String, dynamic>{'type': 'object', 'properties': <String, dynamic>{}},
+        : <String, dynamic>{
+            'type': 'object',
+            'properties': <String, dynamic>{},
+          },
   };
 }
 
@@ -718,9 +740,7 @@ AssistantTurn parseResponsesMessage(String raw) {
       final String id = item['id']?.toString() ?? '';
       toolCalls.add(
         ToolCallRequest(
-          id: callId.isNotEmpty
-              ? callId
-              : (id.isNotEmpty ? id : newCallId()),
+          id: callId.isNotEmpty ? callId : (id.isNotEmpty ? id : newCallId()),
           name: name,
           argumentsJson: (item['arguments'] ?? '{}').toString(),
         ),
@@ -756,8 +776,8 @@ Future<AssistantTurn> consumeResponsesStream(
   bool Function()? shouldAbort,
 ) async {
   final StringBuffer contentBuffer = StringBuffer();
-  final Map<String, ResponsesToolAccumulator> tools = <String,
-      ResponsesToolAccumulator>{};
+  final Map<String, ResponsesToolAccumulator> tools =
+      <String, ResponsesToolAccumulator>{};
   TokenUsage? usage;
   var lineBuffer = '';
   var done = false;
@@ -892,7 +912,11 @@ Future<AssistantTurn> consumeResponsesResponse(
       .toLowerCase();
   if (contentType.contains('text/event-stream')) {
     try {
-      return await consumeResponsesStream(response.stream, onDelta, shouldAbort);
+      return await consumeResponsesStream(
+        response.stream,
+        onDelta,
+        shouldAbort,
+      );
     } on LlmAbortedException {
       rethrow;
     } on LlmException {
