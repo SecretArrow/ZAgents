@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../l10n/app_strings.dart';
+import '../screens/skills_screen.dart';
 import '../theme.dart';
 
 /// One selectable skill entry for [SkillSelectorSheet] — a lightweight
@@ -101,9 +102,35 @@ class _SheetBodyState extends State<_SheetBody> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
-            Text(
-              strings.skillSheetTitle,
-              style: const TextStyle(fontWeight: FontWeight.w700),
+            Row(
+              children: <Widget>[
+                Expanded(
+                  child: Text(
+                    strings.skillSheetTitle,
+                    style: const TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                ),
+                // v1.49.0: shortcut to the Skills manager (Settings → Skills)
+                // — install/enable/configure without leaving the chat.
+                TextButton.icon(
+                  key: const Key('skill-sheet-manage-skills'),
+                  onPressed: () {
+                    // Capture the navigator BEFORE pop(): the sheet's own
+                    // context is deactivated once the sheet route pops, but
+                    // the NavigatorState survives and still points at the
+                    // root navigator that hosts the chat screen.
+                    final NavigatorState nav = Navigator.of(context);
+                    nav.pop();
+                    nav.push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => const SkillsScreen(),
+                      ),
+                    );
+                  },
+                  icon: const Icon(Icons.auto_awesome_rounded, size: 16),
+                  label: Text(strings.skillsManage),
+                ),
+              ],
             ),
             const SizedBox(height: 4),
             Text(

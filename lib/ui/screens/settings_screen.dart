@@ -20,6 +20,7 @@ import 'help_screen.dart';
 import 'node_screen.dart';
 import 'modules_screen.dart';
 import 'providers_screen.dart';
+import 'skills_screen.dart';
 
 /// App configuration: appearance (theme), providers (full-screen manager),
 /// agent behaviour (max steps 1-100 via slider + custom input), context
@@ -824,6 +825,32 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 trailing: const Icon(Icons.chevron_right_rounded),
                 onTap: () => Navigator.of(context).push(
                   MaterialPageRoute<void>(builder: (_) => const NodeScreen()),
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+
+            // -- Skills (v1.49.0) --------------------------------------------
+            // Manager for installed skills: install from URL / ZIP, bundled
+            // one-tap installs, per-skill enable + config (secrets encrypted
+            // and masked), inspector, update, remove. Mirrors the Modules
+            // manager card right below.
+            _sectionTitle(strings.skillsTitle),
+            _card(
+              child: ListTile(
+                key: const Key('skills-manager-tile'),
+                contentPadding: EdgeInsets.zero,
+                leading: const Icon(Icons.auto_awesome_rounded),
+                title: Text(strings.skillsTitle),
+                subtitle: Text(
+                  strings.skillsSubtitle,
+                  style: TextStyle(fontSize: 12, color: palette.muted),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                trailing: const Icon(Icons.chevron_right_rounded),
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(builder: (_) => const SkillsScreen()),
                 ),
               ),
             ),

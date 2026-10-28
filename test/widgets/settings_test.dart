@@ -9,6 +9,7 @@ import 'package:zagents/models/models.dart';
 import 'package:zagents/ui/screens/preset_editor_screen.dart';
 import 'package:zagents/models/user_agent.dart';
 import 'package:zagents/ui/screens/providers_screen.dart';
+import 'package:zagents/ui/screens/skills_screen.dart';
 import 'package:zagents/services/background_service.dart';
 import 'package:zagents/ui/screens/about_screen.dart';
 import 'package:zagents/ui/screens/help_screen.dart';
@@ -50,6 +51,60 @@ void main() {
     expect(find.byType(SettingsScreen), findsOneWidget);
     return container;
   }
+
+  /// v1.49.0: the Skills manager is reachable from Settings, exactly like
+  /// the Modules manager — tapping the tile pushes [SkillsScreen]. The
+  /// manager loads its list through native file IO, which only completes
+  /// outside the FakeAsync zone, so the route wait is a bounded runAsync
+  /// drain (a broken install dir can never hang the suite).
+  testWidgets('skills manager tile opens the Skills manager screen', (
+    WidgetTester tester,
+  ) async {
+    await openSettings(tester);
+
+    // The Skills section sits below the fold in the settings ListView —
+    // drag until the tile is built and visible before tapping.
+    await tester.scrollUntilVisible(
+      find.byKey(const Key('skills-manager-tile')),
+      200,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.pumpAndSettle(
+      const Duration(milliseconds: 100),
+      EnginePhase.sendSemanticsUpdate,
+      const Duration(seconds: 15),
+    );
+    await tester.tap(find.byKey(const Key('skills-manager-tile')));
+
+    // The manager loads its list through native file IO, whose completion
+    // is only delivered outside the FakeAsync zone — drain the real event
+    // loop (bounded) until no loading spinner remains, then assert. A
+    // plain pumpAndSettle would hang forever on the spinner.
+    await tester.pump();
+    int guard = 0;
+    bool screenLoading() => find
+        .descendant(
+          of: find.byType(SkillsScreen),
+          matching: find.byType(CircularProgressIndicator),
+        )
+        .evaluate()
+        .isNotEmpty;
+    while (screenLoading() && guard++ < 100) {
+      await tester.runAsync<void>(
+        () async => Future<void>.delayed(const Duration(milliseconds: 10)),
+      );
+      await tester.pump();
+    }
+
+    // Advance the push transition to completion (fake-time pumps) so the
+    // route is fully settled before the assertions.
+    for (int i = 0; i < 30; i++) {
+      await tester.pump(const Duration(milliseconds: 30));
+    }
+
+    expect(find.byType(SkillsScreen), findsOneWidget);
+    expect(screenLoading(), isFalse);
+  });
 
   Future<void> openProviders(WidgetTester tester) async {
     await tester.tap(find.byKey(const Key('providers-tile')));

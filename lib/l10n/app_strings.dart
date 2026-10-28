@@ -152,6 +152,7 @@ abstract class AppStrings {
   String get todoDependsOn;
   String get skillsTitle;
   String get skillsSubtitle;
+  String get skillsManage;
   String get skillsInstallUrl;
   String get skillsUrlTitle;
   String get skillsUrlLabel;
@@ -817,6 +818,9 @@ class AppStringsEn implements AppStrings {
 
   @override
   String get skillsSubtitle => 'Install once, use in every chat';
+
+  @override
+  String get skillsManage => 'Manage skills';
 
   @override
   String get skillsInstallUrl => 'Install from URL';
@@ -2230,6 +2234,9 @@ class AppStringsId implements AppStrings {
 
   @override
   String get skillsSubtitle => 'Pasang sekali, pakai di semua chat';
+
+  @override
+  String get skillsManage => 'Kelola skills';
 
   @override
   String get skillsInstallUrl => 'Pasang dari URL';

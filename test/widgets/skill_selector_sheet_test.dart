@@ -1,7 +1,14 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:zagents/di.dart';
 import 'package:zagents/l10n/app_strings.dart';
+import 'package:zagents/services/settings_repository.dart';
+import 'package:zagents/services/skill_registry.dart';
+import 'package:zagents/ui/screens/skills_screen.dart';
 import 'package:zagents/ui/theme.dart';
 import 'package:zagents/ui/widgets/skill_selector_sheet.dart';
 
@@ -159,4 +166,103 @@ void main() {
 
     expect(await pending, <String>['a']);
   });
+
+  testWidgets(
+    'manage-skills shortcut pops the sheet and opens the Skills manager',
+    (WidgetTester tester) async {
+      // The pushed SkillsScreen watches the registry providers — the sheet
+      // host gets the same REAL-registry-over-temp-dir overrides the
+      // manager screen tests use (no mocks, empty install dir is fine).
+      // runAsync: native IO must run OUTSIDE the FakeAsync zone — a bare
+      // await here never completes (the future is delivered on the real
+      // event loop, which FakeAsync does not pump).
+      final Directory docs = (await tester.runAsync(
+        () => Directory.systemTemp.createTemp('skill_sheet_manage_test'),
+      ))!;
+      addTearDown(() async {
+        if (await docs.exists()) await docs.delete(recursive: true);
+      });
+      final SkillRegistry registry = SkillRegistry(
+        resolveBaseDir: () async => docs,
+        secretBox: InMemorySecretBox(),
+      );
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: <Override>[
+            skillRegistryProvider.overrideWithValue(registry),
+            bundledSkillCatalogProvider.overrideWith(
+              (Ref ref) async => <BundledSkillInfo>[],
+            ),
+          ],
+          child: MaterialApp(
+            theme: buildDarkTheme(),
+            locale: const Locale('en'),
+            supportedLocales: const <Locale>[Locale('en'), Locale('id')],
+            localizationsDelegates: const <LocalizationsDelegate<dynamic>>[
+              zLocalizationsDelegate,
+              GlobalMaterialLocalizations.delegate,
+              GlobalWidgetsLocalizations.delegate,
+              GlobalCupertinoLocalizations.delegate,
+            ],
+            home: Scaffold(
+              body: Builder(
+                builder: (BuildContext context) => Center(
+                  child: TextButton(
+                    onPressed: () {
+                      pending = SkillSelectorSheet.show(
+                        context,
+                        options: options,
+                        currentSelection: const <String>['a'],
+                      );
+                    },
+                    child: const Text('open'),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+
+      // The shortcut pops the sheet (dismissing it must NOT apply the
+      // selection — the pending future resolves with the caller's current
+      // selection) and pushes the manager route.
+      await tester.tap(find.byKey(const Key('skill-sheet-manage-skills')));
+
+      // The manager loads through native file IO — drain the real event
+      // loop (bounded) until no loading spinner remains; pumpAndSettle
+      // would hang on the spinner inside the FakeAsync zone.
+      await tester.pump();
+      int guard = 0;
+      bool screenLoading() => find
+          .descendant(
+            of: find.byType(SkillsScreen),
+            matching: find.byType(CircularProgressIndicator),
+          )
+          .evaluate()
+          .isNotEmpty;
+      while (screenLoading() && guard++ < 100) {
+        await tester.runAsync<void>(
+          () async => Future<void>.delayed(const Duration(milliseconds: 10)),
+        );
+        await tester.pump();
+      }
+
+      // Advance the sheet-pop and screen-push transitions to completion
+      // (fake-time pumps): the popped route's future — and therefore
+      // `pending` — only completes when the pop animation ends.
+      for (int i = 0; i < 30; i++) {
+        await tester.pump(const Duration(milliseconds: 30));
+      }
+
+      expect(find.byType(SkillsScreen), findsOneWidget);
+      expect(screenLoading(), isFalse);
+      expect(find.byKey(const Key('skill-sheet-search-field')), findsNothing);
+      expect(await pending, <String>['a']);
+    },
+    timeout: const Timeout(Duration(minutes: 3)),
+  );
 }

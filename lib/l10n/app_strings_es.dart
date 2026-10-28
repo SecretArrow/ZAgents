@@ -172,6 +172,9 @@ class AppStringsEs implements AppStrings {
   String get skillsSubtitle => 'Instala una vez, usa en todos los chats';
 
   @override
+  String get skillsManage => 'Administrar skills';
+
+  @override
   String get skillsInstallUrl => 'Instalar desde URL';
 
   @override

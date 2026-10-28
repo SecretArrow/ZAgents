@@ -366,7 +366,7 @@ OpenAI-compatible: **OpenRouter, InferHub, Z.AI, OpenAI, DeepSeek, Groq, dan lai
   enable/disable per skill, konfigurasi field per skill dengan **secret terenkripsi** (FlutterSecretBox;
   nilai secret disamarkan `••••` di UI dan tidak pernah muncul utuh di log), inspect isi skill
   (SKILL.md + file pendukung), update & uninstall dengan konfirmasi; sheet selector skill yang dapat
-  dicari untuk chat. (2) **Skill per-chat yang benar-benar memengaruhi eksekusi**: ikon skills baru di
+  dicari untuk chat, lengkap dengan pintasan "Kelola skills" langsung ke Skills Manager. (2) **Skill per-chat yang benar-benar memengaruhi eksekusi**: ikon skills baru di
   composer (tepat KIRI ikon upload) membuka multi-select skill; pilihan tersimpan per-chat (terisolasi
   antar chat, persisten), dan system prompt agent hanya mengiklankan skill yang dipilih di chat itu —
   tanpa pilihan, perilaku global default tetap. `skill_run` kini menolak skill yang disabled dan
