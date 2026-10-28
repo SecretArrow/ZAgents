@@ -21,7 +21,7 @@ import 'dart:io';
 
 import 'package:http/http.dart' as http;
 import 'package:http/io_client.dart';
-import 'package:zagents/models/models.dart';
+// RemoteModel lives in model_catalog.dart — no models.dart import needed.
 import 'package:zagents/services/agentrouter_client.dart';
 import 'package:zagents/services/llm_client.dart';
 import 'package:zagents/services/model_catalog.dart';

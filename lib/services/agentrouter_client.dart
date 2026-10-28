@@ -359,7 +359,9 @@ class AgentRouterLlmClient extends LlmClient {
       if (response.statusCode == 404 || response.statusCode == 405) {
         // No /messages endpoint on this base: OpenAI-compatible gateway.
         if (allowFallback) {
-          return _completeOpenAi(
+          // await — the finally below must run AFTER the fallback turn is
+          // fully consumed, not when its Future is merely returned.
+          return await _completeOpenAi(
             config: config,
             messages: messages,
             tools: tools,
