@@ -360,6 +360,11 @@ OpenAI-compatible: **OpenRouter, InferHub, Z.AI, OpenAI, DeepSeek, Groq, dan lai
   sendiri saat run selesai — flag buka/tutup tetap global sehingga
   perpindahan langkah, akhir run, dan pindah chat tidak pernah
   menutupnya.
+- **v1.49.7 — fix: versi dalam-app kini sinkron dengan pubspec (update checker berhenti nag palsu)**: konstanta `kAppVersion` di layar About tertinggal di
+  `1.49.3` sementara rilis sudah mencapai 1.49.6 — akibatnya **update checker menganggap app selalu usang** dan menampilkan "update tersedia" palsu di setiap
+  startup (konstanta inilah yang dibandingkan `isNewerVersion` di `di.dart`), plus label versi di About/Settings "Check updates now" salah. Diperbaiki menjadi
+  `1.49.7` dan ditambah **guard test** (`test/unit/app_version_sync_test.dart`) yang membandingkan `kAppVersion` dengan `version:` di pubspec.yaml — bump rilis
+  yang lupa memperbarui About kini merah di CI, bukan mengganggu pengguna.
 - **v1.49.6 — UX: feedback kini dialog di TENGAH layar + anti-blokir AgentRouter (WAF cookie jar + auto-retry)**: (1) **Toast v1.49.5 diganti dialog modal center-screen** —
   laporan pengguna: apapun yang melayang dekat dasar layar (SnackBar maupun toast) menutupi kolom composer dan tombol send/attach justru saat sedang mengetik;
   penggantinya `ui/widgets/app_message.dart` — dialog ringkas dengan ikon + tombol OK yang selalu tampil di tengah layar (tidak pernah menutupi composer, bottom
