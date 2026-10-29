@@ -17,8 +17,10 @@ void main() {
       isTrue,
       reason: 'tests run from the package root; pubspec.yaml must exist',
     );
-    final RegExpMatch? match = RegExp(r'^version:\s*(\d+\.\d+\.\d+)')
-        .firstMatch(pubspec.readAsStringSync());
+    final RegExpMatch? match = RegExp(
+      r'^version:\s*(\d+\.\d+\.\d+)',
+      multiLine: true,
+    ).firstMatch(pubspec.readAsStringSync());
     expect(match, isNotNull, reason: 'pubspec.yaml carries a semver version');
     expect(kAppVersion, match!.group(1));
   });
