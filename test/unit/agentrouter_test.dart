@@ -1177,8 +1177,15 @@ void main() {
         }),
       );
 
+      // The caller subscribes to deltas (the agent loop always does) —
+      // the partial text already reached the UI, so a retry could
+      // duplicate it and must never happen.
       await expectLater(
-        client.complete(config: _agentConfig, messages: hi),
+        client.complete(
+          config: _agentConfig,
+          messages: hi,
+          onDelta: (String _) {},
+        ),
         throwsA(
           isA<LlmException>().having(
             (LlmException e) => e.message,

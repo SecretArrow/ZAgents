@@ -140,11 +140,17 @@ void main() {
     }
 
     // All tool cards + final answer rendered — with a full diagnostic
-    // dump so a regression names itself from the CI log alone.
+    // dump so a regression names itself from the CI log alone (content
+    // AND per-message tool calls — a lost toolCalls list is the #1
+    // suspect when tool cards go missing).
     String transcript() => chatContainer
         .read(chatControllerProvider)
         .messages
-        .map((ChatMessage m) => '[${m.role.name}] ${m.content}')
+        .map(
+          (ChatMessage m) =>
+              '[${m.role.name}] ${m.content}'
+              '${m.toolCalls.isEmpty ? '' : ' tools=${m.toolCalls.map((ToolCall c) => '${c.name}:${c.status.name}').join(',')}'}',
+        )
         .join(' ||| ');
     expect(
       find.text('browser_navigate'),

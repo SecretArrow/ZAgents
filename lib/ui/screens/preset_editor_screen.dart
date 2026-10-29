@@ -164,8 +164,12 @@ class _PresetEditorScreenState extends ConsumerState<PresetEditorScreen> {
         .read(settingsProvider.notifier)
         .update(_upsert(_stored, syncModel: true));
     if (!mounted) return;
-    _snack(_strings.providerSavedSnack);
-    Navigator.of(context).pop();
+    // v1.49.6: close the editor FIRST, then surface the confirmation — the
+    // feedback dialog lives on the ROOT navigator, so a pop() after showing
+    // it would dismiss the DIALOG instead of this screen.
+    final NavigatorState nav = Navigator.of(context);
+    nav.pop();
+    showAppMessage(nav.context, _strings.providerSavedSnack);
   }
 
   /// Persists just the API key (plus name/URL so the key has a home)
@@ -292,8 +296,11 @@ class _PresetEditorScreenState extends ConsumerState<PresetEditorScreen> {
     }
     await ref.read(settingsProvider.notifier).update(next);
     if (!mounted) return;
-    _snack(_strings.providerDeletedSnack);
-    Navigator.of(context).pop();
+    // v1.49.6: pop this screen before the feedback dialog (same reason as
+    // _save — the dialog route would swallow a later pop()).
+    final NavigatorState nav = Navigator.of(context);
+    nav.pop();
+    showAppMessage(nav.context, _strings.providerDeletedSnack);
   }
 
   @override

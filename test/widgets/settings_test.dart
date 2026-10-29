@@ -673,6 +673,9 @@ void main() {
       EnginePhase.sendSemanticsUpdate,
       const Duration(seconds: 15),
     );
+    // v1.49.6: the saved confirmation is a centered modal dialog —
+    // acknowledge it so the barrier cannot eat the provider tap below.
+    await dismissAppMessage(tester);
     // The new card sits at the bottom of the list (page 2 with the
     // 5-per-page pager) — use the search to reach it.
     await tester.enterText(
