@@ -360,6 +360,21 @@ OpenAI-compatible: **OpenRouter, InferHub, Z.AI, OpenAI, DeepSeek, Groq, dan lai
   sendiri saat run selesai — flag buka/tutup tetap global sehingga
   perpindahan langkah, akhir run, dan pindah chat tidak pernah
   menutupnya.
+- **v1.49.6 — UX: feedback kini dialog di TENGAH layar + anti-blokir AgentRouter (WAF cookie jar + auto-retry)**: (1) **Toast v1.49.5 diganti dialog modal center-screen** —
+  laporan pengguna: apapun yang melayang dekat dasar layar (SnackBar maupun toast) menutupi kolom composer dan tombol send/attach justru saat sedang mengetik;
+  penggantinya `ui/widgets/app_message.dart` — dialog ringkas dengan ikon + tombol OK yang selalu tampil di tengah layar (tidak pernah menutupi composer, bottom
+  nav, atau action row). Kontrak lama dipertahankan: pesan baru menggantikan pesan yang sedang tampil, pesan info hilang sendiri ±2,6 detik (hold digerakkan
+  `Timer` di dalam widget dialog — `pumpAndSettle` tidak membakarnya dan teardown test tidak meninggalkan timer menggantung), pesan **error** bertahan sampai
+  dikonfirmasi (tidak boleh hilang sendiri), dan key test lama (`stop-hint-snack`, `force-stop-done-snack`) tetap hidup. (2) **Validasi PIN kini inline di dalam dialog
+  PIN** (PIN terlalu pendek / konfirmasi tidak cocok muncul sebagai baris error merah di dalam dialog, bukan dialog bertumpuk). (3) **Anti-blokir AgentRouter** —
+  laporan pengguna: prompt ke agentrouter.org sering mendapat respon "blocked" (halaman deny/challenge Aliyun WAF). Tiga lapis perbaikan di
+  `services/agentrouter_client.dart`: **cookie jar WAF** (cookie challenge `acw_tc`/`acw_sc__v2` dipanen dari setiap respon — termasuk respon error — via hook
+  `onResponseHeaders` baru di `LlmClient`, lalu direplay di setiap request AgentRouter berikutnya; membawa cookie challenge adalah mekanisme klasik
+  pass-through Aliyun), **auto-retry transparan sekali** untuk failure WAF/challenge (dilakukan hanya bila BELUM ada delta yang ter-stream — kegagalan mid-stream
+  tidak pernah di-retry agar tidak ada teks duplikat — dan upaya kedua otomatis membawa cookie yang baru dipanen), dan **deteksi halaman deny "blocked"**
+  (`looksLikeWafChallenge` kini mengenali halaman HTML "... has been blocked ..." / error JSON yang menyebut firewall — kata "blocked" tanpa konteks halaman HTML
+  atau firewall tetap lolos agar pesan content-policy tidak salah diterjemahkan). Bila dua upaya tetap diblokir, pesan actionable ("switch to mobile data")
+  tetap ditampilkan.
 - **v1.49.5 — UX: semua notifikasi SnackBar diganti toast overlay halus + fix engine saat aktivasi provider**: (1) **SnackBar dihapus total** — SnackBar
   mendorong seluruh layout (transcript, composer, form) naik setiap kali muncul dan mengganggu saat mengetik/scroll; penggantinya toast kecil semi-transparan
   melayang dekat dasar layar (`ui/widgets/toast.dart`): fade in/out, `IgnorePointer` (tidak pernah memblokir sentuhan), tanpa memakan ruang layout, hilang

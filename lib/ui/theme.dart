@@ -124,7 +124,8 @@ ThemeData _baseTheme(Brightness brightness) {
       ),
     ),
     // v1.49.5: snackBarTheme removed — feedback now uses the subtle
-    // overlay toast (see ui/widgets/toast.dart) instead of SnackBars.
+    // centered message dialog (see ui/widgets/app_message.dart) instead of
+    // SnackBars.
   );
 }
 

@@ -183,6 +183,14 @@ void main() {
     );
     await tester.tap(find.byKey(const Key('editor-save-api-key-button')));
     await tester.pumpAndSettle();
+    // v1.49.6: the save confirmation is a centered modal dialog now —
+    // acknowledge it when present, the barrier would otherwise swallow
+    // the BackButton tap below.
+    final Finder appMessageOk = find.byKey(const Key('app-message-ok'));
+    if (appMessageOk.evaluate().isNotEmpty) {
+      await tester.tap(appMessageOk);
+      await tester.pumpAndSettle();
+    }
     // OpenRouter is the active provider: the live connection picks the
     // key up immediately and the preset stores it.
     expect(container.read(settingsProvider).apiKey, 'e2e-key-2');

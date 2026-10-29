@@ -13,7 +13,7 @@ import '../../l10n/app_strings.dart';
 import '../../models/models.dart';
 import '../../models/user_agent.dart';
 import '../theme.dart';
-import '../widgets/toast.dart';
+import '../widgets/app_message.dart';
 import 'about_screen.dart';
 import 'context_screen.dart';
 import 'files_screen.dart';
@@ -170,10 +170,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     );
   }
 
-  /// v1.49.5: subtle overlay toast instead of a SnackBar — settings rows
-  /// no longer jump when feedback arrives.
+  /// v1.49.6: centered message dialog instead of a SnackBar — settings rows
+  /// no longer shift when feedback arrives.
   void _snackHere(BuildContext context, String message) {
-    showToast(context, message);
+    showAppMessage(context, message);
   }
 
   Future<void> _createBackup(BuildContext context) async {
@@ -301,67 +301,14 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   }
 
   /// PIN entry + confirmation dialog for enabling the lock. Returns the
-  /// accepted PIN, or null when cancelled/mismatched.
-  Future<String?> _askPin(BuildContext context, AppStrings strings) async {
-    final TextEditingController pin = TextEditingController();
-    final TextEditingController confirm = TextEditingController();
-    return showDialog<String>(
-      context: context,
-      builder: (BuildContext dialogContext) => AlertDialog(
-        title: Text(strings.appLockSetPinTitle),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            TextField(
-              key: const Key('lock-set-pin-field'),
-              controller: pin,
-              obscureText: true,
-              keyboardType: TextInputType.number,
-              maxLength: 8,
-              decoration: InputDecoration(
-                labelText: strings.appLockPinField,
-                counterText: '',
-              ),
-            ),
-            const SizedBox(height: 8),
-            TextField(
-              key: const Key('lock-confirm-pin-field'),
-              controller: confirm,
-              obscureText: true,
-              keyboardType: TextInputType.number,
-              maxLength: 8,
-              decoration: InputDecoration(
-                labelText: strings.appLockConfirmPin,
-                counterText: '',
-              ),
-            ),
-          ],
-        ),
-        actions: <Widget>[
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(),
-            child: Text(strings.cancel),
-          ),
-          FilledButton(
-            key: const Key('lock-save-pin'),
-            onPressed: () {
-              final String value = pin.text.trim();
-              if (value.length < 4 || value.length > 8) {
-                showToast(dialogContext, strings.appLockPinTooShort);
-                return;
-              }
-              if (value != confirm.text.trim()) {
-                showToast(dialogContext, strings.appLockPinMismatch);
-                return;
-              }
-              Navigator.of(dialogContext).pop(value);
-            },
-            child: Text(strings.appLockSetPinTitle),
-          ),
-        ],
-      ),
-    );
-  }
+  /// accepted PIN, or null when cancelled/mismatched. Validation problems
+  /// render INLINE inside the dialog (v1.49.6) instead of stacking a
+  /// second dialog on top of it.
+  Future<String?> _askPin(BuildContext context, AppStrings strings) =>
+      showDialog<String>(
+        context: context,
+        builder: (BuildContext dialogContext) => _PinSetupDialog(strings),
+      );
 
   @override
   Widget build(BuildContext context) {
@@ -1208,6 +1155,116 @@ class _ProviderSummaryTile extends StatelessWidget {
       onTap: () => Navigator.of(
         context,
       ).push(MaterialPageRoute<void>(builder: (_) => const ProvidersScreen())),
+    );
+  }
+}
+
+/// PIN setup dialog with INLINE validation (v1.49.6): too-short pins and
+/// mismatched confirmations show an error line inside this dialog instead
+/// of stacking feedback dialogs on top of it.
+class _PinSetupDialog extends StatefulWidget {
+  const _PinSetupDialog(this.strings);
+
+  final AppStrings strings;
+
+  @override
+  State<_PinSetupDialog> createState() => _PinSetupDialogState();
+}
+
+class _PinSetupDialogState extends State<_PinSetupDialog> {
+  final TextEditingController _pin = TextEditingController();
+  final TextEditingController _confirm = TextEditingController();
+  String? _error;
+
+  @override
+  void dispose() {
+    _pin.dispose();
+    _confirm.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    final String value = _pin.text.trim();
+    if (value.length < 4 || value.length > 8) {
+      setState(() => _error = widget.strings.appLockPinTooShort);
+      return;
+    }
+    if (value != _confirm.text.trim()) {
+      setState(() => _error = widget.strings.appLockPinMismatch);
+      return;
+    }
+    Navigator.of(context).pop(value);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final AppStrings strings = widget.strings;
+    return AlertDialog(
+      title: Text(strings.appLockSetPinTitle),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          TextField(
+            key: const Key('lock-set-pin-field'),
+            controller: _pin,
+            obscureText: true,
+            keyboardType: TextInputType.number,
+            maxLength: 8,
+            onChanged: (String _) {
+              if (_error != null) setState(() => _error = null);
+            },
+            decoration: InputDecoration(
+              labelText: strings.appLockPinField,
+              counterText: '',
+            ),
+          ),
+          const SizedBox(height: 8),
+          TextField(
+            key: const Key('lock-confirm-pin-field'),
+            controller: _confirm,
+            obscureText: true,
+            keyboardType: TextInputType.number,
+            maxLength: 8,
+            onChanged: (String _) {
+              if (_error != null) setState(() => _error = null);
+            },
+            decoration: InputDecoration(
+              labelText: strings.appLockConfirmPin,
+              counterText: '',
+            ),
+          ),
+          // Inline error slot — reserves nothing when there is no error so
+          // the dialog geometry stays stable.
+          if (_error != null)
+            Padding(
+              key: const Key('lock-pin-error'),
+              padding: const EdgeInsets.only(top: 10),
+              child: Row(
+                children: <Widget>[
+                  Icon(Icons.error_outline, size: 16, color: Theme.of(context).colorScheme.error),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      _error!,
+                      style: TextStyle(fontSize: 12.5, color: Theme.of(context).colorScheme.error),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+        ],
+      ),
+      actions: <Widget>[
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: Text(strings.cancel),
+        ),
+        FilledButton(
+          key: const Key('lock-save-pin'),
+          onPressed: _submit,
+          child: Text(strings.appLockSetPinTitle),
+        ),
+      ],
     );
   }
 }

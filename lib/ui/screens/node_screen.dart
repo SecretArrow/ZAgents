@@ -6,7 +6,7 @@ import '../../l10n/app_strings.dart';
 import '../../services/npm_service.dart';
 import '../theme.dart';
 import '../widgets/paged_list.dart';
-import '../widgets/toast.dart';
+import '../widgets/app_message.dart';
 
 /// Node.js runtime manager: lists installed npm packages, installs new
 /// ones (auto add) and removes them (auto remove) for the embedded JS
@@ -51,10 +51,10 @@ class _NodeScreenState extends ConsumerState<NodeScreen> {
     }
   }
 
-  /// v1.49.5: subtle overlay toast instead of a SnackBar — the Node
+  /// v1.49.6: centered message dialog instead of a SnackBar — the Node
   /// runtime screen no longer jumps when feedback arrives.
   void _snack(String text) {
-    showToast(context, text);
+    showAppMessage(context, text);
   }
 
   Future<void> _install() async {

@@ -12,7 +12,7 @@ import '../../services/module_registry.dart';
 import '../../services/module_remote.dart';
 import '../../l10n/app_strings.dart';
 import '../theme.dart';
-import '../widgets/toast.dart';
+import '../widgets/app_message.dart';
 
 /// Modules (plugins) manager: install from ZIP or URL, one-tap
 /// install/update from the official samples repository, list installed
@@ -123,8 +123,8 @@ class _ModulesScreenState extends ConsumerState<ModulesScreen> {
     ref.invalidate(moduleListProvider);
     if (!mounted) return;
     final AppStrings strings = stringsOf(context);
-    // v1.49.5: subtle overlay toast instead of a SnackBar.
-    showToast(
+    // v1.49.6: centered message dialog instead of a SnackBar.
+    showAppMessage(
       context,
       result.ok
           ? (result.message.startsWith('Updated')
@@ -155,7 +155,7 @@ class _ModulesScreenState extends ConsumerState<ModulesScreen> {
       );
     } catch (e) {
       if (mounted) {
-        showToast(context, stringsOf(context).moduleInstallFailed('$e'));
+        showAppMessage(context, stringsOf(context).moduleInstallFailed('$e'));
       }
     } finally {
       if (mounted) setState(() => _installing = false);
@@ -216,8 +216,8 @@ class _ModulesScreenState extends ConsumerState<ModulesScreen> {
     if (url == null || url.isEmpty) return;
     if (!mounted) return;
     setState(() => _downloading = true);
-    // v1.49.5: subtle overlay toast instead of a SnackBar.
-    showToast(
+    // v1.49.6: centered message dialog instead of a SnackBar.
+    showAppMessage(
       context,
       strings.moduleDownloading,
       key: const Key('module-downloading-snack'),
@@ -422,7 +422,7 @@ class _ModulesScreenState extends ConsumerState<ModulesScreen> {
           .exportToZip(module.name, target);
       if (!result.ok || result.zipPath == null) {
         if (!mounted) return;
-        showToast(context, strings.operationFailed);
+        showAppMessage(context, strings.operationFailed);
         return;
       }
       await SharePlus.instance.share(
@@ -430,7 +430,7 @@ class _ModulesScreenState extends ConsumerState<ModulesScreen> {
       );
     } catch (e) {
       if (!mounted) return;
-      showToast(context, strings.operationFailed);
+      showAppMessage(context, strings.operationFailed);
     } finally {
       nameController.dispose();
       nameFocus.dispose();
@@ -879,14 +879,14 @@ class _OfficialCatalogState extends ConsumerState<_OfficialCatalog> {
     } catch (e) {
       if (!mounted) return;
       setState(() => _busyName = null);
-      showToast(context, stringsOf(context).moduleInstallFailed('$e'));
+      showAppMessage(context, stringsOf(context).moduleInstallFailed('$e'));
       return;
     }
     ref.invalidate(moduleListProvider);
     if (!mounted) return;
     final AppStrings strings = stringsOf(context);
-    // v1.49.5: subtle overlay toast instead of a SnackBar.
-    showToast(
+    // v1.49.6: centered message dialog instead of a SnackBar.
+    showAppMessage(
       context,
       result.ok
           ? (result.message.startsWith('Updated')

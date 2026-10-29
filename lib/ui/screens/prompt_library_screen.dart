@@ -6,7 +6,7 @@ import '../../l10n/app_strings.dart';
 import '../../models/models.dart';
 import '../theme.dart';
 import '../widgets/paged_list.dart';
-import '../widgets/toast.dart';
+import '../widgets/app_message.dart';
 
 /// Prompt Library (v1.15.0): the user stores reusable prompts (title +
 /// content) and inserts them into the composer with one tap. Follows the
@@ -25,8 +25,8 @@ class _PromptLibraryScreenState extends ConsumerState<PromptLibraryScreen> {
     await ref.read(promptRepositoryProvider).save(entries);
     ref.invalidate(promptListProvider);
     if (!mounted) return;
-    // v1.49.5: subtle overlay toast instead of a SnackBar.
-    showToast(
+    // v1.49.6: centered message dialog instead of a SnackBar.
+    showAppMessage(
       context,
       deleted
           ? stringsOf(context).promptDeleted

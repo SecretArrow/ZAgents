@@ -7,7 +7,7 @@ import '../../models/models.dart';
 import '../../services/agentrouter_client.dart';
 import '../theme.dart';
 import '../widgets/paged_list.dart';
-import '../widgets/toast.dart';
+import '../widgets/app_message.dart';
 import 'preset_editor_screen.dart';
 
 /// Full-screen provider management: every preset is a card with its key
@@ -34,7 +34,7 @@ class ProvidersScreen extends ConsumerWidget {
             engine: preset.engine,
           ),
         );
-    showToast(context, strings.providerActivatedSnack(preset.name));
+    showAppMessage(context, strings.providerActivatedSnack(preset.name));
   }
 
   /// Long-press shortcut: ask for confirmation before switching the

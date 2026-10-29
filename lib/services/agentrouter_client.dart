@@ -116,23 +116,53 @@ bool prefersAnthropic(String model) =>
 /// the page. Pure function — unit-tested directly.
 bool looksLikeWafChallenge(String body) {
   final String s = body.toLowerCase();
-  return s.contains('acw_tc') ||
+  if (s.contains('acw_tc') ||
       s.contains('acw_sc') ||
       s.contains('aliyunwaf') ||
       s.contains('aliyun waf') ||
       s.contains('anti-bot') ||
       s.contains('captcha') ||
-      (s.contains('aliyun') && (s.contains('waf') || s.contains('slider')));
+      (s.contains('aliyun') && (s.contains('waf') || s.contains('slider')))) {
+    return true;
+  }
+  // v1.49.6: outright DENY pages. Aliyun WAF serves an HTML block page
+  // ("... has been blocked ...") — or a JSON error naming the firewall —
+  // instead of a JS challenge when the client is outright rejected. The
+  // word "blocked" alone is too generic (content-policy messages also use
+  // it), so require page/context corroboration: an HTML document or an
+  // explicit firewall/protection mention.
+  if (!s.contains('blocked')) return false;
+  final bool htmlPage = s.contains('<html') || s.contains('<!doctype');
+  final bool firewallWord =
+      s.contains('waf') ||
+      s.contains('firewall') ||
+      s.contains('aliyun') ||
+      s.contains('protection');
+  return htmlPage || firewallWord;
 }
+
+/// First bytes of [agentRouterWafMessage] — the retry detector matches
+/// the TRANSLATED message too (the challenge markers are gone once the
+/// failure has been rewritten into actionable guidance).
+const String _wafGuidancePrefix =
+    'AgentRouter is bot-challenging this connection';
 
 /// Actionable guidance for [looksLikeWafChallenge]: the fix is a network
 /// switch (phone networks pass, datacenter IPs are challenged), never a
 /// key or URL change.
 String agentRouterWafMessage() =>
-    'AgentRouter is bot-challenging this connection (Aliyun WAF). The '
+    '$_wafGuidancePrefix (Aliyun WAF). The '
     'gateway blocks datacenter IPs but normally allows phone networks — '
     'switch to mobile data (or another WiFi) and retry. No API key or '
     'URL change is needed.';
+
+/// True when [error] is an Aliyun WAF challenge/block failure — the ONE
+/// failure mode worth a transparent in-flight retry (v1.49.6): the
+/// challenge response plants WAF cookies which the retry replays, and
+/// that is frequently what converts a challenged request into a pass.
+bool isAgentRouterWafBlock(LlmException error) =>
+    looksLikeWafChallenge(error.message) ||
+    error.message.startsWith(_wafGuidancePrefix);
 
 /// The gateway's own rejection string ("Invalid API Key!"). agentrouter.org
 /// and co.agentrouter.org run SEPARATE key databases, so a valid-looking
@@ -160,7 +190,14 @@ class AgentRouterLlmClient extends LlmClient {
   // ignore: use_super_parameters
   AgentRouterLlmClient({http.Client? client})
     : _injected = client,
-      super(client: client, extraHeaders: _userAgentForUrl);
+      super(
+        client: client,
+        extraHeaders: _headersForUrl,
+        // v1.49.6: harvest WAF cookies from EVERY response the base
+        // transport sees (the OpenAI-compatible path included) so the
+        // anti-block retry can replay them.
+        onResponseHeaders: _harvestWafCookies,
+      );
 
   /// Mirrors the base class's private injected-transport field so the
   /// Anthropic/Responses paths reuse the same test double the OpenAI path
@@ -181,6 +218,65 @@ class AgentRouterLlmClient extends LlmClient {
 
   /// Test hook: clears the confirmed-protocol cache.
   static void clearProtocolCache() => _confirmedProtocol.clear();
+
+  /// v1.49.6 — Aliyun WAF cookie jar, keyed by host. Challenge responses
+  /// plant `acw_tc` / `acw_sc__v2` cookies; replaying them on the next
+  /// request is what frequently converts a challenged/blocked connection
+  /// into a pass. Harvested from every AgentRouter response (headers
+  /// observer on the base transport, explicit calls on the wrapper-owned
+  /// transports); attached to every outgoing AgentRouter request.
+  static final Map<String, Map<String, String>> _wafCookies =
+      <String, Map<String, String>>{};
+
+  static final RegExp _wafCookiePattern = RegExp(
+    r'(acw_tc|acw_sc__v[23]|cdn_sec_tc|aliyungf[_ ]tc)=([^;,\s]+)',
+    caseSensitive: false,
+  );
+
+  /// Harvests WAF cookies from a response's headers (the raw `set-cookie`
+  /// value — dart:io merges duplicates with commas, which the regex
+  /// handles). Non-agentrouter hosts are ignored; failures never throw.
+  static void _harvestWafCookies(Uri url, Map<String, String> headers) {
+    if (!isAgentRouterHost(url.host)) return;
+    final String? setCookie = headers['set-cookie'];
+    if (setCookie == null || setCookie.isEmpty) return;
+    try {
+      final Map<String, String> jar = _wafCookies.putIfAbsent(
+        url.host,
+        () => <String, String>{},
+      );
+      for (final RegExpMatch match in _wafCookiePattern.allMatches(setCookie)) {
+        final String name = match
+            .group(1)!
+            .toLowerCase()
+            .replaceAll(' ', '_');
+        jar[name] = match.group(2)!;
+      }
+    } catch (_) {
+      // Cookie bookkeeping must never break the stream.
+    }
+  }
+
+  /// The harvested cookies for [url]'s host as a `Cookie` header value,
+  /// or null when the jar is empty for that host.
+  static String? _wafCookieHeader(Uri url) {
+    final Map<String, String>? jar = _wafCookies[url.host];
+    if (jar == null || jar.isEmpty) return null;
+    return jar.entries
+        .map((MapEntry<String, String> e) => '${e.key}=${e.value}')
+        .join('; ');
+  }
+
+  /// Test hook: clears the WAF cookie jar.
+  static void clearWafCookies() => _wafCookies.clear();
+
+  /// Test hook: read-only view of the jar (inspect in tests).
+  static Map<String, Map<String, String>> get wafCookiesForTesting =>
+      _wafCookies;
+
+  /// Test hook: the anti-block retry delay (unit tests set [Duration.zero]
+  /// to keep them fast).
+  static Duration wafRetryDelay = const Duration(milliseconds: 700);
 
   @override
   Future<AssistantTurn> complete({
@@ -204,6 +300,59 @@ class AgentRouterLlmClient extends LlmClient {
         cancelKey: cancelKey,
       );
     }
+    // v1.49.6 anti-block: watch the delta stream so a MID-STREAM failure
+    // (deltas already surfaced to the chat) is never retried — only
+    // failures that happened before ANY output are.
+    bool streamed = false;
+    final void Function(String delta)? watched = onDelta == null
+        ? null
+        : (String delta) {
+            streamed = true;
+            onDelta(delta);
+          };
+    try {
+      return await _completeAgentRouter(
+        config: config,
+        messages: messages,
+        tools: tools,
+        onDelta: watched,
+        shouldAbort: shouldAbort,
+        cancelKey: cancelKey,
+      );
+    } on LlmException catch (e) {
+      // One transparent retry for WAF challenge/block pages: the first
+      // attempt planted the challenge cookies in the jar, so attempt 2
+      // goes out WITH them — the classic Aliyun acw_tc pass-through.
+      // Everything else (auth errors, 400s, aborts, mid-stream failures)
+      // surfaces immediately.
+      if (!isAgentRouterWafBlock(e) ||
+          streamed ||
+          (shouldAbort?.call() ?? false)) {
+        rethrow;
+      }
+      await Future<void>.delayed(wafRetryDelay);
+      return _completeAgentRouter(
+        config: config,
+        messages: messages,
+        tools: tools,
+        onDelta: watched,
+        shouldAbort: shouldAbort,
+        cancelKey: cancelKey,
+      );
+    }
+  }
+
+  /// The v1.49.4 protocol dispatch (normalization + engine switch +
+  /// confirmed-protocol cache + family first choice) — extracted verbatim
+  /// so [complete] can wrap it with the anti-block retry.
+  Future<AssistantTurn> _completeAgentRouter({
+    required LlmConfig config,
+    required List<Map<String, dynamic>> messages,
+    List<Map<String, dynamic>>? tools,
+    void Function(String delta)? onDelta,
+    bool Function()? shouldAbort,
+    Object? cancelKey,
+  }) async {
     final String base = normalizeAgentRouterBase(config.baseUrl);
     // All official paths are served under the version segment; hand the
     // normalized base to every transport.
@@ -323,15 +472,19 @@ class AgentRouterLlmClient extends LlmClient {
   }
 
   /// Brands every agentrouter-host request of the OpenAI-compatible
-  /// fallback path with the required User-Agent (the Anthropic/Responses
-  /// paths set it on their own request builders). Plain LlmClient
-  /// instances and other hosts get no extra headers, keeping the base
-  /// behavior untouched.
-  static Map<String, String> _userAgentForUrl(Uri url) {
-    if (isAgentRouterHost(url.host)) {
-      return const <String, String>{'User-Agent': kAgentRouterUserAgent};
+  /// fallback path with the required User-Agent AND replays harvested WAF
+  /// cookies (v1.49.6). Plain LlmClient instances and other hosts get no
+  /// extra headers, keeping the base behavior untouched.
+  static Map<String, String> _headersForUrl(Uri url) {
+    if (!isAgentRouterHost(url.host)) {
+      return const <String, String>{};
     }
-    return const <String, String>{};
+    return <String, String>{
+      'User-Agent': kAgentRouterUserAgent,
+      // v1.49.6: carrying the challenge cookie (`acw_tc` et al.) is what
+      // turns a challenged connection into a pass on the retry.
+      if (_wafCookieHeader(url) != null) 'Cookie': _wafCookieHeader(url)!,
+    };
   }
 
   /// Translates the two gateway failure modes embedded in error messages
@@ -480,6 +633,10 @@ class AgentRouterLlmClient extends LlmClient {
         // risks duplicate outputs. Surface it like the base client does.
         throw LlmException('Could not connect to provider: $e');
       }
+      // v1.49.6: WAF cookies from ANY response (challenge pages included)
+      // feed the jar so the anti-block retry — and every later request —
+      // replays them.
+      _harvestWafCookies(url, response.headers);
 
       if (response.statusCode == 404 || response.statusCode == 405) {
         // No /messages endpoint on this base: OpenAI-compatible gateway.
@@ -597,6 +754,8 @@ class AgentRouterLlmClient extends LlmClient {
       } catch (e) {
         throw LlmException('Could not connect to provider: $e');
       }
+      // v1.49.6: harvest WAF cookies — same as the Anthropic path.
+      _harvestWafCookies(url, response.headers);
 
       if (response.statusCode == 404 || response.statusCode == 405) {
         throw LlmException(
@@ -651,29 +810,40 @@ class AgentRouterLlmClient extends LlmClient {
     LlmConfig config,
     Uri url,
     Map<String, dynamic> body,
-  ) async => http.Request('POST', url)
-    ..headers['x-api-key'] = config.apiKey
-    ..headers['Authorization'] = 'Bearer ${config.apiKey}'
-    ..headers['anthropic-version'] = kAnthropicVersion
-    ..headers['Content-Type'] = 'application/json'
-    ..headers['Accept'] = 'text/event-stream'
-    ..headers['User-Agent'] = kAgentRouterUserAgent
+  ) async {
+    final http.Request request = http.Request('POST', url)
+      ..headers['x-api-key'] = config.apiKey
+      ..headers['Authorization'] = 'Bearer ${config.apiKey}'
+      ..headers['anthropic-version'] = kAnthropicVersion
+      ..headers['Content-Type'] = 'application/json'
+      ..headers['Accept'] = 'text/event-stream'
+      ..headers['User-Agent'] = kAgentRouterUserAgent;
+    // v1.49.6: replay harvested WAF cookies when the jar has any.
+    final String? cookie = _wafCookieHeader(url);
+    if (cookie != null) request.headers['Cookie'] = cookie;
     // Encoded OFF the UI isolate — same rationale as the base transport.
-    ..body = await encodeBodyOffIsolate(body);
+    request.body = await encodeBodyOffIsolate(body);
+    return request;
+  }
 
   Future<http.Request> _buildResponsesRequest(
     LlmConfig config,
     Uri url,
     Map<String, dynamic> body,
-  ) async => http.Request('POST', url)
-    // Dual-auth parity with the Anthropic path: the gateway accepts
-    // either credential header on every version-segmented endpoint.
-    ..headers['x-api-key'] = config.apiKey
-    ..headers['Authorization'] = 'Bearer ${config.apiKey}'
-    ..headers['Content-Type'] = 'application/json'
-    ..headers['Accept'] = 'text/event-stream'
-    ..headers['User-Agent'] = kAgentRouterUserAgent
-    ..body = await encodeBodyOffIsolate(body);
+  ) async {
+    final http.Request request = http.Request('POST', url)
+      // Dual-auth parity with the Anthropic path: the gateway accepts
+      // either credential header on every version-segmented endpoint.
+      ..headers['x-api-key'] = config.apiKey
+      ..headers['Authorization'] = 'Bearer ${config.apiKey}'
+      ..headers['Content-Type'] = 'application/json'
+      ..headers['Accept'] = 'text/event-stream'
+      ..headers['User-Agent'] = kAgentRouterUserAgent;
+    final String? cookie = _wafCookieHeader(url);
+    if (cookie != null) request.headers['Cookie'] = cookie;
+    request.body = await encodeBodyOffIsolate(body);
+    return request;
+  }
 
   /// OpenAI-shaped JSON that arrived on the Anthropic endpoint — parsed
   /// exactly like the base transport's non-streaming parser would.

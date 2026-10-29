@@ -1005,4 +1005,182 @@ void main() {
       expect(requests.single.url.path, '/v1/chat/completions');
     });
   });
+
+  group('waf cookie jar + anti-block retry (v1.49.6)', () {
+    setUp(() {
+      AgentRouterLlmClient.clearProtocolCache();
+      AgentRouterLlmClient.clearWafCookies();
+      AgentRouterLlmClient.wafRetryDelay = Duration.zero;
+    });
+
+    const List<Map<String, dynamic>> hi = <Map<String, dynamic>>[
+      <String, dynamic>{'role': 'user', 'content': 'hi'},
+    ];
+
+    http.StreamedResponse blockedPage({
+      required int status,
+      String? setCookie,
+    }) => http.StreamedResponse(
+      Stream<List<int>>.value(
+        utf8.encode(
+          '<html><body>Your request has been blocked by '
+          'Aliyun WAF</body></html>',
+        ),
+      ),
+      status,
+      headers: <String, String>{
+        'content-type': 'text/html',
+        if (setCookie != null) 'set-cookie': setCookie,
+      },
+    );
+
+    test('deny pages ("blocked") are WAF failures; content noise is not', () {
+      expect(
+        looksLikeWafChallenge(
+          '<html><body>Your request has been blocked</body></html>',
+        ),
+        isTrue,
+      );
+      expect(looksLikeWafChallenge('request blocked by firewall'), isTrue);
+      // "blocked" without page/firewall context stays a pass-through (it
+      // would otherwise swallow content-policy messages).
+      expect(looksLikeWafChallenge('we blocked your request'), isFalse);
+      expect(looksLikeWafChallenge('content policy violation'), isFalse);
+    });
+
+    test('challenge responses plant cookies; later requests replay them', () async {
+      final List<http.BaseRequest> requests = <http.BaseRequest>[];
+      final AgentRouterLlmClient client = AgentRouterLlmClient(
+        client: MockClient.streaming((request, bodyStream) async {
+          requests.add(request);
+          return _sseResponse(
+            'data: {"choices":[{"delta":{"content":"ok"}}]}\n\n'
+            'data: [DONE]\n\n',
+          );
+        }),
+      );
+      AgentRouterLlmClient.wafCookiesForTesting['agentrouter.org'] =
+          <String, String>{'acw_tc': 'seeded-123'};
+
+      final AssistantTurn turn = await client.complete(
+        config: _gptConfig,
+        messages: hi,
+      );
+
+      expect(turn.content, 'ok');
+      final Map<String, String> headers = _lower(requests.single.headers);
+      expect(headers['cookie'], 'acw_tc=seeded-123');
+    });
+
+    test('harvests set-cookie from responses (base-transport observer)', () async {
+      final AgentRouterLlmClient client = AgentRouterLlmClient(
+        client: MockClient.streaming((request, bodyStream) async {
+          return http.StreamedResponse(
+            Stream<List<int>>.value(
+              utf8.encode(
+                'data: {"choices":[{"delta":{"content":"ok"}}]}\n\n'
+                'data: [DONE]\n\n',
+              ),
+            ),
+            200,
+            headers: <String, String>{
+              'content-type': 'text/event-stream',
+              'set-cookie': 'acw_tc=abc123; Path=/; HttpOnly',
+            },
+          );
+        }),
+      );
+
+      await client.complete(config: _gptConfig, messages: hi);
+
+      expect(
+        AgentRouterLlmClient.wafCookiesForTesting['agentrouter.org']?['acw_tc'],
+        'abc123',
+      );
+    });
+
+    test('anti-block: a blocked first attempt is retried once, replaying '
+        'the harvested cookie', () async {
+      final List<String> cookies = <String>[];
+      var attempts = 0;
+      final AgentRouterLlmClient client = AgentRouterLlmClient(
+        client: MockClient.streaming((request, bodyStream) async {
+          attempts++;
+          cookies.add(_lower(request.headers)['cookie'] ?? '');
+          if (attempts == 1) {
+            return blockedPage(status: 403, setCookie: 'acw_tc=retry-token-9');
+          }
+          return _sseResponse(
+            'data: {"choices":[{"delta":{"content":"recovered"}}]}\n\n'
+            'data: [DONE]\n\n',
+          );
+        }),
+      );
+
+      final AssistantTurn turn = await client.complete(
+        config: _gptConfig,
+        messages: hi,
+      );
+
+      expect(turn.content, 'recovered');
+      expect(attempts, 2);
+      // First attempt: jar still empty. Retry: replays the challenge
+      // cookie harvested from the blocked response.
+      expect(cookies.first, isEmpty);
+      expect(cookies.last, 'acw_tc=retry-token-9');
+    });
+
+    test('anti-block: a block that persists surfaces the actionable '
+        'guidance after exactly one retry', () async {
+      var attempts = 0;
+      final AgentRouterLlmClient client = AgentRouterLlmClient(
+        client: MockClient.streaming((request, bodyStream) async {
+          attempts++;
+          return blockedPage(status: 403);
+        }),
+      );
+
+      await expectLater(
+        client.complete(config: _gptConfig, messages: hi),
+        throwsA(
+          isA<LlmException>()
+              .having((LlmException e) => e.statusCode, 'statusCode', 403)
+              .having(
+                (LlmException e) => e.message,
+                'message',
+                contains('mobile data'),
+              ),
+        ),
+      );
+      expect(attempts, 2);
+    });
+
+    test('anti-block: mid-stream failures (deltas already shown) never '
+        'retry', () async {
+      var attempts = 0;
+      final AgentRouterLlmClient client = AgentRouterLlmClient(
+        client: MockClient.streaming((request, bodyStream) async {
+          attempts++;
+          return _sseResponse(
+            'data: {"type":"content_block_delta","index":0,'
+            '"delta":{"type":"text_delta","text":"partial"}}\n\n'
+            'data: {"type":"error","error":{"type":"api_error",'
+            '"message":"Aliyun WAF captcha verify"}}\n\n',
+          );
+        }),
+      );
+
+      await expectLater(
+        client.complete(config: _agentConfig, messages: hi),
+        throwsA(
+          isA<LlmException>().having(
+            (LlmException e) => e.message,
+            'message',
+            contains('bot-challenging'),
+          ),
+        ),
+      );
+      expect(attempts, 1);
+    });
+  });
 }

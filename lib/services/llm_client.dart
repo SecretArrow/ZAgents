@@ -136,8 +136,10 @@ class LlmClient {
   LlmClient({
     http.Client? client,
     Map<String, String> Function(Uri url)? extraHeaders,
+    void Function(Uri url, Map<String, String> headers)? onResponseHeaders,
   }) : _injectedClient = client,
-       _extraRequestHeaders = extraHeaders;
+       _extraRequestHeaders = extraHeaders,
+       _onResponseHeaders = onResponseHeaders;
 
   /// Optional injected transport (tests). When null, every [complete] call
   /// owns a dedicated client — which is what makes per-run force cancel
@@ -152,6 +154,24 @@ class LlmClient {
   /// constructor-injected callback (not a public member) so that
   /// `implements LlmClient` test doubles are unaffected.
   final Map<String, String> Function(Uri url)? _extraRequestHeaders;
+
+  /// v1.49.6 — optional observer for every response HEAD line of this
+  /// client (all engines, error statuses included). The AgentRouter
+  /// subclass uses it to harvest Aliyun WAF cookies (`acw_tc` et al.) so
+  /// the anti-block retry can replay them. Exceptions from the observer
+  /// are swallowed — an analytics-style hook must never break a stream.
+  final void Function(Uri url, Map<String, String> headers)?
+  _onResponseHeaders;
+
+  void _notifyResponseHeaders(Uri url, http.BaseResponse response) {
+    final void Function(Uri, Map<String, String>)? hook = _onResponseHeaders;
+    if (hook == null) return;
+    try {
+      hook(url, response.headers);
+    } catch (_) {
+      // Never let the observer mask the actual result.
+    }
+  }
 
   /// v1.42.0 — live streaming requests keyed by the caller's [cancelKey]
   /// (the agent loop passes its per-run object). [forceCancel] looks a run
@@ -339,6 +359,7 @@ class LlmClient {
       } catch (e) {
         throw LlmException('Could not connect to provider: $e');
       }
+      _notifyResponseHeaders(url, response);
       if (response.statusCode != 200) {
         final String raw = await response.stream.bytesToString();
         throw LlmException(
@@ -396,6 +417,7 @@ class LlmClient {
       } catch (e) {
         throw LlmException('Could not connect to provider: $e');
       }
+      _notifyResponseHeaders(url, response);
       if (response.statusCode != 200) {
         final String raw = await response.stream.bytesToString();
         throw LlmException(
@@ -435,6 +457,7 @@ class LlmClient {
     } catch (e) {
       throw LlmException('Could not connect to provider: $e');
     }
+    _notifyResponseHeaders(url, response);
 
     if (response.statusCode == 400) {
       // Some providers do not know stream_options: one quiet retry with a
@@ -448,6 +471,7 @@ class LlmClient {
           final http.StreamedResponse retry = await callClient.send(
             await _buildRequest(config, url, retryBody),
           );
+          _notifyResponseHeaders(url, retry);
           if (retry.statusCode == 200) {
             return await _consume(retry, onDelta, shouldAbort);
           }

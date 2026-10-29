@@ -10,7 +10,7 @@ import '../../services/device_export.dart';
 import '../../services/file_system_service.dart';
 import '../theme.dart';
 import '../widgets/paged_list.dart';
-import '../widgets/toast.dart';
+import '../widgets/app_message.dart';
 
 /// In-app file manager over the app documents directory: browse, preview,
 /// share, rename, delete, copy/cut/paste, zip and unzip.
@@ -56,18 +56,18 @@ class _FilesScreenState extends ConsumerState<FilesScreen> {
     } catch (_) {
       if (!mounted) return;
       setState(() => _loading = false);
-      _toast(stringsOf(context).operationFailed);
+      _appMessage(stringsOf(context).operationFailed);
     }
   }
 
-  /// v1.49.5: subtle overlay toast instead of a SnackBar — a floating
-  /// toast never pushes the file list or the preview sheet around.
-  void _toast(String message) {
-    showToast(context, message);
+  /// v1.49.6: centered message dialog instead of a SnackBar — a dialog
+  /// never pushes the file list or the preview sheet around.
+  void _appMessage(String message) {
+    showAppMessage(context, message);
   }
 
   void _snack(String text) {
-    _toast(text);
+    _appMessage(text);
   }
 
   Future<void> _guard(Future<void> Function() op, String? success) async {
@@ -77,7 +77,7 @@ class _FilesScreenState extends ConsumerState<FilesScreen> {
       if (success != null) _snack(success);
       await _refresh();
     } catch (_) {
-      if (mounted) _toast(stringsOf(context).operationFailed);
+      if (mounted) _appMessage(stringsOf(context).operationFailed);
     }
   }
 
@@ -187,7 +187,7 @@ class _FilesScreenState extends ConsumerState<FilesScreen> {
           ),
         );
       } catch (_) {
-        if (mounted) _toast(stringsOf(context).noPreview);
+        if (mounted) _appMessage(stringsOf(context).noPreview);
       }
       return;
     }
@@ -200,7 +200,7 @@ class _FilesScreenState extends ConsumerState<FilesScreen> {
     try {
       await SharePlus.instance.share(ShareParams(files: <XFile>[XFile(abs)]));
     } catch (_) {
-      if (mounted) _toast(stringsOf(context).operationFailed);
+      if (mounted) _appMessage(stringsOf(context).operationFailed);
     }
   }
 
@@ -379,7 +379,7 @@ class _FilesScreenState extends ConsumerState<FilesScreen> {
     } on ZipPasswordRequiredException {
       rethrow;
     } catch (_) {
-      if (mounted) _toast(stringsOf(context).operationFailed);
+      if (mounted) _appMessage(stringsOf(context).operationFailed);
     }
   }
 
@@ -479,7 +479,7 @@ class _FilesScreenState extends ConsumerState<FilesScreen> {
     } catch (_) {
       if (!mounted) return;
       Navigator.of(context, rootNavigator: true).pop(); // progress dialog
-      _toast(stringsOf(context).operationFailed);
+      _appMessage(stringsOf(context).operationFailed);
     } finally {
       if (mounted) setState(() => _exporting = false);
     }

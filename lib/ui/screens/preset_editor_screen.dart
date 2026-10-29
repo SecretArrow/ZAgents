@@ -8,7 +8,7 @@ import '../../services/agentrouter_client.dart';
 import '../../services/model_catalog.dart';
 import '../theme.dart';
 import '../widgets/paged_list.dart';
-import '../widgets/toast.dart';
+import '../widgets/app_message.dart';
 
 /// Full-screen editor for one provider preset (replaces the old modal
 /// dialog, which overflowed under the keyboard and made the Save button
@@ -93,11 +93,11 @@ class _PresetEditorScreenState extends ConsumerState<PresetEditorScreen> {
     super.dispose();
   }
 
-  /// v1.49.5: subtle overlay toast instead of a SnackBar — the editor
+  /// v1.49.6: centered message dialog instead of a SnackBar — the editor
   /// form no longer shifts when feedback arrives.
   void _snack(String message) {
     if (!mounted) return;
-    showToast(context, message);
+    showAppMessage(context, message);
   }
 
   /// Shared validation. Returns the first problem, or null when OK.

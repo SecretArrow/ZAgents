@@ -28,6 +28,20 @@ void main() {
     if (await tempDir.exists()) await tempDir.delete(recursive: true);
   });
 
+  /// v1.49.6: feedback arrives as a centered modal dialog — acknowledge it
+  /// via the OK button so the dialog barrier cannot swallow the next tap.
+  Future<void> _dismissAppMessage(WidgetTester tester) async {
+    final Finder ok = find.byKey(const Key('app-message-ok'));
+    if (ok.evaluate().isNotEmpty) {
+      await tester.tap(ok);
+      await tester.pumpAndSettle(
+        const Duration(milliseconds: 100),
+        EnginePhase.sendSemanticsUpdate,
+        const Duration(seconds: 15),
+      );
+    }
+  }
+
   Future<ProviderContainer> openSettings(WidgetTester tester) async {
     late ProviderContainer container;
     await tester.pumpWidget(
@@ -545,6 +559,9 @@ void main() {
       EnginePhase.sendSemanticsUpdate,
       const Duration(seconds: 15),
     );
+    // v1.49.6: activation feedback is a centered modal dialog — acknowledge
+    // it before the next tap (the barrier would swallow it otherwise).
+    await _dismissAppMessage(tester);
 
     // Edit the active provider's key through the editor.
     await tester.tap(find.byKey(const Key('provider-Z.AI')));
@@ -563,6 +580,8 @@ void main() {
       EnginePhase.sendSemanticsUpdate,
       const Duration(seconds: 15),
     );
+    // Acknowledge the key-saved dialog before the next tap.
+    await _dismissAppMessage(tester);
     // Active connection picked up the new key immediately.
     expect(container.read(settingsProvider).apiKey, 'sk-zai-live');
 
