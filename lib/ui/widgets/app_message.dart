@@ -58,17 +58,16 @@ void showAppMessage(
     barrierColor: Colors.black38,
     barrierDismissible: true,
     settings: const RouteSettings(name: 'app-message'),
-    pageBuilder: (BuildContext dialogContext, Animation<double> _, Animation<double> __) =>
-        _AppMessageCard(
-          key: key ?? const ValueKey<String>('app-message-card'),
-          message: text,
-          error: error,
-          duration: duration,
-          onExpire: () => _expireRoute(route, navigator),
-          onDismissed: () {
-            if (identical(_currentRoute, route)) _currentRoute = null;
-          },
-        ),
+    builder: (BuildContext dialogContext) => _AppMessageCard(
+      key: key ?? const ValueKey<String>('app-message-card'),
+      message: text,
+      error: error,
+      duration: duration,
+      onExpire: () => _expireRoute(route, navigator),
+      onDismissed: () {
+        if (identical(_currentRoute, route)) _currentRoute = null;
+      },
+    ),
   );
   _currentRoute = route;
   navigator.push(route);
