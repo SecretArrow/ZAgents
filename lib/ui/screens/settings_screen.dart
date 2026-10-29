@@ -1241,12 +1241,19 @@ class _PinSetupDialogState extends State<_PinSetupDialog> {
               padding: const EdgeInsets.only(top: 10),
               child: Row(
                 children: <Widget>[
-                  Icon(Icons.error_outline, size: 16, color: Theme.of(context).colorScheme.error),
+                  Icon(
+                    Icons.error_outline,
+                    size: 16,
+                    color: Theme.of(context).colorScheme.error,
+                  ),
                   const SizedBox(width: 6),
                   Expanded(
                     child: Text(
                       _error!,
-                      style: TextStyle(fontSize: 12.5, color: Theme.of(context).colorScheme.error),
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        color: Theme.of(context).colorScheme.error,
+                      ),
                     ),
                   ),
                 ],

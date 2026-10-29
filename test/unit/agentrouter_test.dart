@@ -1030,7 +1030,7 @@ void main() {
       status,
       headers: <String, String>{
         'content-type': 'text/html',
-        if (setCookie != null) 'set-cookie': setCookie,
+        'set-cookie': ?setCookie,
       },
     );
 
@@ -1048,56 +1048,63 @@ void main() {
       expect(looksLikeWafChallenge('content policy violation'), isFalse);
     });
 
-    test('challenge responses plant cookies; later requests replay them', () async {
-      final List<http.BaseRequest> requests = <http.BaseRequest>[];
-      final AgentRouterLlmClient client = AgentRouterLlmClient(
-        client: MockClient.streaming((request, bodyStream) async {
-          requests.add(request);
-          return _sseResponse(
-            'data: {"choices":[{"delta":{"content":"ok"}}]}\n\n'
-            'data: [DONE]\n\n',
-          );
-        }),
-      );
-      AgentRouterLlmClient.wafCookiesForTesting['agentrouter.org'] =
-          <String, String>{'acw_tc': 'seeded-123'};
+    test(
+      'challenge responses plant cookies; later requests replay them',
+      () async {
+        final List<http.BaseRequest> requests = <http.BaseRequest>[];
+        final AgentRouterLlmClient client = AgentRouterLlmClient(
+          client: MockClient.streaming((request, bodyStream) async {
+            requests.add(request);
+            return _sseResponse(
+              'data: {"choices":[{"delta":{"content":"ok"}}]}\n\n'
+              'data: [DONE]\n\n',
+            );
+          }),
+        );
+        AgentRouterLlmClient.wafCookiesForTesting['agentrouter.org'] =
+            <String, String>{'acw_tc': 'seeded-123'};
 
-      final AssistantTurn turn = await client.complete(
-        config: _gptConfig,
-        messages: hi,
-      );
+        final AssistantTurn turn = await client.complete(
+          config: _gptConfig,
+          messages: hi,
+        );
 
-      expect(turn.content, 'ok');
-      final Map<String, String> headers = _lower(requests.single.headers);
-      expect(headers['cookie'], 'acw_tc=seeded-123');
-    });
+        expect(turn.content, 'ok');
+        final Map<String, String> headers = _lower(requests.single.headers);
+        expect(headers['cookie'], 'acw_tc=seeded-123');
+      },
+    );
 
-    test('harvests set-cookie from responses (base-transport observer)', () async {
-      final AgentRouterLlmClient client = AgentRouterLlmClient(
-        client: MockClient.streaming((request, bodyStream) async {
-          return http.StreamedResponse(
-            Stream<List<int>>.value(
-              utf8.encode(
-                'data: {"choices":[{"delta":{"content":"ok"}}]}\n\n'
-                'data: [DONE]\n\n',
+    test(
+      'harvests set-cookie from responses (base-transport observer)',
+      () async {
+        final AgentRouterLlmClient client = AgentRouterLlmClient(
+          client: MockClient.streaming((request, bodyStream) async {
+            return http.StreamedResponse(
+              Stream<List<int>>.value(
+                utf8.encode(
+                  'data: {"choices":[{"delta":{"content":"ok"}}]}\n\n'
+                  'data: [DONE]\n\n',
+                ),
               ),
-            ),
-            200,
-            headers: <String, String>{
-              'content-type': 'text/event-stream',
-              'set-cookie': 'acw_tc=abc123; Path=/; HttpOnly',
-            },
-          );
-        }),
-      );
+              200,
+              headers: <String, String>{
+                'content-type': 'text/event-stream',
+                'set-cookie': 'acw_tc=abc123; Path=/; HttpOnly',
+              },
+            );
+          }),
+        );
 
-      await client.complete(config: _gptConfig, messages: hi);
+        await client.complete(config: _gptConfig, messages: hi);
 
-      expect(
-        AgentRouterLlmClient.wafCookiesForTesting['agentrouter.org']?['acw_tc'],
-        'abc123',
-      );
-    });
+        expect(
+          AgentRouterLlmClient
+              .wafCookiesForTesting['agentrouter.org']?['acw_tc'],
+          'abc123',
+        );
+      },
+    );
 
     test('anti-block: a blocked first attempt is retried once, replaying '
         'the harvested cookie', () async {

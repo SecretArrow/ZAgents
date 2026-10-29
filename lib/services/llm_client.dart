@@ -136,10 +136,9 @@ class LlmClient {
   LlmClient({
     http.Client? client,
     Map<String, String> Function(Uri url)? extraHeaders,
-    void Function(Uri url, Map<String, String> headers)? onResponseHeaders,
+    this._onResponseHeaders,
   }) : _injectedClient = client,
-       _extraRequestHeaders = extraHeaders,
-       _onResponseHeaders = onResponseHeaders;
+       _extraRequestHeaders = extraHeaders;
 
   /// Optional injected transport (tests). When null, every [complete] call
   /// owns a dedicated client — which is what makes per-run force cancel
@@ -160,8 +159,7 @@ class LlmClient {
   /// subclass uses it to harvest Aliyun WAF cookies (`acw_tc` et al.) so
   /// the anti-block retry can replay them. Exceptions from the observer
   /// are swallowed — an analytics-style hook must never break a stream.
-  final void Function(Uri url, Map<String, String> headers)?
-  _onResponseHeaders;
+  final void Function(Uri url, Map<String, String> headers)? _onResponseHeaders;
 
   void _notifyResponseHeaders(Uri url, http.BaseResponse response) {
     final void Function(Uri, Map<String, String>)? hook = _onResponseHeaders;

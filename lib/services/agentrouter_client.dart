@@ -246,10 +246,7 @@ class AgentRouterLlmClient extends LlmClient {
         () => <String, String>{},
       );
       for (final RegExpMatch match in _wafCookiePattern.allMatches(setCookie)) {
-        final String name = match
-            .group(1)!
-            .toLowerCase()
-            .replaceAll(' ', '_');
+        final String name = match.group(1)!.toLowerCase().replaceAll(' ', '_');
         jar[name] = match.group(2)!;
       }
     } catch (_) {

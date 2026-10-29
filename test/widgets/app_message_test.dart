@@ -39,7 +39,10 @@ void main() {
   testWidgets('info message appears as a centered dialog and auto-expires', (
     WidgetTester tester,
   ) async {
-    await trigger(tester, () => showAppMessage(tester.element(find.text('trigger')), 'Saved!'));
+    await trigger(
+      tester,
+      () => showAppMessage(tester.element(find.text('trigger')), 'Saved!'),
+    );
 
     // Visible immediately (during the entrance transition).
     expect(find.text('Saved!'), findsOneWidget);
@@ -104,7 +107,10 @@ void main() {
   testWidgets('info messages can be dismissed early via the OK button', (
     WidgetTester tester,
   ) async {
-    await trigger(tester, () => showAppMessage(tester.element(find.text('trigger')), 'Copied'));
+    await trigger(
+      tester,
+      () => showAppMessage(tester.element(find.text('trigger')), 'Copied'),
+    );
     await tester.pumpAndSettle();
 
     await tester.tap(find.byKey(const Key('app-message-ok')));
