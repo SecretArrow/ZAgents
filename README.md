@@ -360,6 +360,19 @@ OpenAI-compatible: **OpenRouter, InferHub, Z.AI, OpenAI, DeepSeek, Groq, dan lai
   sendiri saat run selesai — flag buka/tutup tetap global sehingga
   perpindahan langkah, akhir run, dan pindah chat tidak pernah
   menutupnya.
+- **v1.49.8 — provider baru: Nvidia NIM**: preset **Nvidia NIM**
+  (`https://integrate.api.nvidia.com/v1`) ditambahkan ke daftar provider bawaan,
+  di samping OpenRouter / InferHub / Z.AI / AgentRouter / OpenAI / DeepSeek /
+  Groq. Endpoint NIM kompatibel OpenAI penuh (auth `Bearer` biasa, kunci
+  berawalan `nvapi-…` dari build.nvidia.com) sehingga tidak butuh transport
+  khusus: chat streaming, tools, dan pengambilan katalog model
+  (`GET /models`) langsung bekerja lewat jalur generik. Model di NIM
+  dinamespace penerbitnya (`deepseek-ai/…`, `meta/llama-…`, `qwen/…`) —
+  model default yang diisi otomatis saat memilih preset adalah
+  `deepseek-ai/deepseek-v4.1-flash` dari contoh resmi, dan daftar lengkap
+  bisa diambil dengan tombol fetch di editor provider setelah kunci disimpan.
+  Preset baru juga otomatis di-seed ke pengguna lama lewat migrasi preset
+  (kunci kosong, provider aktif tidak berubah) + guard test unit.
 - **v1.49.7 — fix: versi dalam-app kini sinkron dengan pubspec (update checker berhenti nag palsu)**: konstanta `kAppVersion` di layar About tertinggal di
   `1.49.3` sementara rilis sudah mencapai 1.49.6 — akibatnya **update checker menganggap app selalu usang** dan menampilkan "update tersedia" palsu di setiap
   startup (konstanta inilah yang dibandingkan `isNewerVersion` di `di.dart`), plus label versi di About/Settings "Check updates now" salah. Diperbaiki menjadi

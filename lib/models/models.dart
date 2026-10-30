@@ -1366,11 +1366,17 @@ class AppSettings {
 ///
 /// InferHub (https://inferhub.dev) exposes an OpenAI-compatible inference
 /// API at api.inferhub.dev with keys of the form `sk-airo-…`.
+///
+/// Nvidia NIM (https://build.nvidia.com) serves an OpenAI-compatible API at
+/// integrate.api.nvidia.com with keys of the form `nvapi-…`; model ids are
+/// namespaced by their publisher (`deepseek-ai/deepseek-v4.1-flash`,
+/// `meta/llama-3.3-70b-instruct`, …). Plain Bearer auth, no custom headers.
 const Map<String, String> providerPresets = <String, String>{
   'OpenRouter': 'https://openrouter.ai/api/v1',
   'InferHub': 'https://api.inferhub.dev/v1',
   'Z.AI': 'https://api.z.ai/api/paas/v4',
   'AgentRouter': 'https://agentrouter.org/v1',
+  'Nvidia NIM': 'https://integrate.api.nvidia.com/v1',
   'OpenAI': 'https://api.openai.com/v1',
   'DeepSeek': 'https://api.deepseek.com/v1',
   'Groq': 'https://api.groq.com/openai/v1',
@@ -1390,6 +1396,10 @@ const Map<String, String?> providerDefaultModels = <String, String?>{
   // configuration: gpt-6-astra). The model list is still fetchable live
   // from GET /models — this is only the pre-filled suggestion.
   'AgentRouter': 'gpt-6-astra',
+  // Nvidia NIM: pre-filled with the publisher-namespaced model from the
+  // official integrate.api.nvidia.com quickstart sample; the full list is
+  // fetchable live from GET /models once an nvapi-… key is saved.
+  'Nvidia NIM': 'deepseek-ai/deepseek-v4.1-flash',
   'OpenAI': 'gpt-4.1',
   'DeepSeek': 'deepseek-chat',
   'Groq': 'llama-3.3-70b-versatile',

@@ -523,6 +523,54 @@ void main() {
       );
       expect(presetHostLabel(p.baseUrl), 'agentrouter.org');
     });
+
+    test('Nvidia NIM preset ships the quickstart default model (v1.49.8)', () {
+      expect(
+        providerPresets['Nvidia NIM'],
+        'https://integrate.api.nvidia.com/v1',
+        reason: 'official NVIDIA NIM OpenAI-compatible endpoint',
+      );
+      expect(
+        providerDefaultModels['Nvidia NIM'],
+        'deepseek-ai/deepseek-v4.1-flash',
+        reason:
+            'publisher-namespaced model from the official quickstart; the '
+            'full list is fetchable live from GET /models with an nvapi key',
+      );
+      final ProviderPreset p = ProviderPreset(
+        id: 'nim',
+        name: 'Nvidia NIM',
+        baseUrl: providerPresets['Nvidia NIM']!,
+      );
+      expect(presetHostLabel(p.baseUrl), 'integrate.api.nvidia.com');
+    });
+
+    test('preset migration seeds Nvidia NIM into legacy settings', () {
+      // Settings persisted before v1.49.8 carry no Nvidia NIM preset; the
+      // fromJson migration must add it (empty key) without touching the
+      // active provider.
+      final AppSettings legacy = AppSettings(
+        providerName: 'OpenRouter',
+        baseUrl: 'https://openrouter.ai/api/v1',
+        apiKey: 'sk-test',
+        model: 'z-ai/glm-4.6',
+      );
+      final Map<String, dynamic> stored = legacy.toJson();
+      // Simulate a pre-1.49.8 store: strip the new preset from the JSON.
+      stored['presets'] = (stored['presets'] as List<dynamic>)
+          .whereType<Map<String, dynamic>>()
+          .where((Map<String, dynamic> p) => p['name'] != 'Nvidia NIM')
+          .toList();
+      final AppSettings migrated = AppSettings.fromJson(stored);
+      final ProviderPreset nim = migrated.presets.singleWhere(
+        (ProviderPreset p) => p.name == 'Nvidia NIM',
+      );
+      expect(nim.baseUrl, 'https://integrate.api.nvidia.com/v1');
+      expect(nim.apiKey, isEmpty, reason: 'seeded presets start keyless');
+      expect(migrated.providerName, 'OpenRouter');
+      expect(migrated.presets.any((ProviderPreset p) => p.name == 'Custom'),
+          isTrue, reason: 'all other built-ins must survive the merge');
+    });
   });
 
   group('random user-agent prompt (askRandomUa)', () {
