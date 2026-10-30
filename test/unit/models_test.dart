@@ -568,8 +568,11 @@ void main() {
       expect(nim.baseUrl, 'https://integrate.api.nvidia.com/v1');
       expect(nim.apiKey, isEmpty, reason: 'seeded presets start keyless');
       expect(migrated.providerName, 'OpenRouter');
-      expect(migrated.presets.any((ProviderPreset p) => p.name == 'Custom'),
-          isTrue, reason: 'all other built-ins must survive the merge');
+      expect(
+        migrated.presets.any((ProviderPreset p) => p.name == 'Custom'),
+        isTrue,
+        reason: 'all other built-ins must survive the merge',
+      );
     });
   });
 
