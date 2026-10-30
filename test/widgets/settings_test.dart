@@ -642,8 +642,8 @@ void main() {
       find.text('A provider with this name already exists.'),
       findsOneWidget,
     );
-    // AgentRouter joined the built-in preset list (v1.49): 8 presets.
-    expect(container.read(settingsProvider).presets.length, 8);
+    // Nvidia NIM joined the built-in preset list (v1.49.8): 9 presets.
+    expect(container.read(settingsProvider).presets.length, 9);
   });
 
   testWidgets('a provider can be deleted from the editor', (
