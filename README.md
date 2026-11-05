@@ -360,6 +360,17 @@ OpenAI-compatible: **OpenRouter, InferHub, Z.AI, OpenAI, DeepSeek, Groq, dan lai
   sendiri saat run selesai — flag buka/tutup tetap global sehingga
   perpindahan langkah, akhir run, dan pindah chat tidak pernah
   menutupnya.
+- **v1.49.9 — fitur baru: Cron jobs (penjadwal otomatis) dengan aksi Telegram / Notifikasi / Tugas agent**: menu baru di **Settings tepat di bawah Appearance**
+  yang membuka **layar manajer penuh (activity terpisah)** — mendukung **jumlah job TAK TERBATAS**, bukan satu. Setiap job = ekspresi cron standar 5-field
+  (`*  / angka / rentang / langkah / nama hari-bulan` + pintasan `@daily` `@hourly` dst.) dengan 7 chip preset (setiap menit, tiap 5 menit, per jam, harian 08:00,
+  hari kerja 09:00, Minggu, tanggal 1) plus validasi live + pratinjau 3 jadwal berikutnya. Tiga jenis aksi: (1) **Telegram** — kirim teks via Bot API
+  (token bot + chat ID disimpan per job, dienkripsi di secure storage yang sama dengan kunci provider); (2) **Notifikasi** lokal Android lewat channel
+  platform yang sudah ada; (3) **Tugas agent (fan of subagents)** — prompt dijalankan sebagai agent headless dengan toolset lengkap (workspace, browser
+  konteks pribadi, web fetch, node, git), hasilnya muncul sebagai notifikasi dan bisa diteruskan ke Telegram (opsional). Ada saklar master (jeda semua job),
+  saklar per-job, tombol **Run now** untuk uji tembak, dan riwayat 30 eksekusi terakhir. Job berjalan selama app aktif (foreground / background hold);
+  eksekusi yang terlewat saat app tertutup dilewati (tanpa spam replay). 61 test baru: parser cron, repository (roundtrip + cap riwayat), Telegram sender
+  (mock HTTP), scheduler core + service (clock injeksi, recovery missed-run), layar manajer (banyak job, master switch, run now, hapus, editor + validasi),
+  dan paritas string l10n en/id/es.
 - **v1.49.8 — provider baru: Nvidia NIM**: preset **Nvidia NIM**
   (`https://integrate.api.nvidia.com/v1`) ditambahkan ke daftar provider bawaan,
   di samping OpenRouter / InferHub / Z.AI / AgentRouter / OpenAI / DeepSeek /

@@ -16,6 +16,7 @@ import '../theme.dart';
 import '../widgets/app_message.dart';
 import 'about_screen.dart';
 import 'context_screen.dart';
+import 'cron_jobs_screen.dart';
 import 'files_screen.dart';
 import 'help_screen.dart';
 import 'node_screen.dart';
@@ -355,6 +356,33 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 selected: <ThemeModeSetting>{settings.themeMode},
                 onSelectionChanged: (Set<ThemeModeSetting> selection) =>
                     _commit(themeMode: selection.first),
+              ),
+            ),
+            const SizedBox(height: 16),
+
+            // -- Cron jobs (v1.49.9) ------------------------------------------
+            // Scheduled tasks: Telegram messages, local notifications and
+            // headless agent runs on cron schedules. The tile opens the
+            // full-screen manager (unbounded job list + run history).
+            _sectionTitle(strings.cronSectionTitle),
+            _card(
+              child: ListTile(
+                key: const Key('cron-jobs-tile'),
+                contentPadding: EdgeInsets.zero,
+                leading: const Icon(Icons.schedule_rounded),
+                title: Text(strings.cronTileTitle),
+                subtitle: Text(
+                  strings.cronTileSubtitle,
+                  style: TextStyle(fontSize: 12, color: palette.muted),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                trailing: const Icon(Icons.chevron_right_rounded),
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => const CronJobsScreen(),
+                  ),
+                ),
               ),
             ),
             const SizedBox(height: 16),

@@ -280,4 +280,72 @@ void main() {
     expect(id.settingsSkillsManager, 'Pengelola skill');
     expect(es.agentRouterHint, contains('Anthropic'));
   });
+
+  test('cron job strings (v1.49.9) are localized in all three bundles', () {
+    final AppStrings en = appStringsFor('en');
+    final AppStrings id = appStringsFor('id');
+    final AppStrings es = appStringsFor('es');
+    // Every cron string must be present in every bundle.
+    for (final AppStrings s in <AppStrings>[en, id, es]) {
+      expect(s.cronSectionTitle, isNotEmpty);
+      expect(s.cronTileTitle, isNotEmpty);
+      expect(s.cronTileSubtitle, isNotEmpty);
+      expect(s.cronMasterTitle, isNotEmpty);
+      expect(s.cronMasterSubtitle, isNotEmpty);
+      expect(s.cronJobsEmptyTitle, isNotEmpty);
+      expect(s.cronJobsEmptyBody, isNotEmpty);
+      expect(s.cronAddJobTooltip, isNotEmpty);
+      expect(s.cronNewTitle, isNotEmpty);
+      expect(s.cronEditTitle, isNotEmpty);
+      expect(s.cronFieldName, isNotEmpty);
+      expect(s.cronFieldSchedule, isNotEmpty);
+      expect(s.cronScheduleEveryMinute, isNotEmpty);
+      expect(s.cronScheduleEvery5Minutes, isNotEmpty);
+      expect(s.cronScheduleHourly, isNotEmpty);
+      expect(s.cronScheduleDaily8, isNotEmpty);
+      expect(s.cronScheduleWeekdays9, isNotEmpty);
+      expect(s.cronScheduleWeekly, isNotEmpty);
+      expect(s.cronScheduleMonthly, isNotEmpty);
+      expect(s.cronScheduleCustom, isNotEmpty);
+      expect(s.cronFieldExpression, isNotEmpty);
+      expect(s.cronExpressionHint, isNotEmpty);
+      expect(s.cronNextRuns, isNotEmpty);
+      expect(s.cronFieldAction, isNotEmpty);
+      expect(s.cronActionNotification, isNotEmpty);
+      expect(s.cronActionTelegram, isNotEmpty);
+      expect(s.cronActionAgent, isNotEmpty);
+      expect(s.cronActionAgentHint, isNotEmpty);
+      expect(s.cronFieldNotifTitle, isNotEmpty);
+      expect(s.cronFieldNotifText, isNotEmpty);
+      expect(s.cronFieldTelegramToken, isNotEmpty);
+      expect(s.cronFieldTelegramChat, isNotEmpty);
+      expect(s.cronFieldMessage, isNotEmpty);
+      expect(s.cronFieldAgentPrompt, isNotEmpty);
+      expect(s.cronAgentRelayHint, isNotEmpty);
+      expect(s.cronRunsWhileAppOpen, isNotEmpty);
+      expect(s.cronNever, isNotEmpty);
+      expect(s.cronNextRunLabel, isNotEmpty);
+      expect(s.cronLastRunLabel, isNotEmpty);
+      expect(s.cronDeleteTitle, isNotEmpty);
+      expect(s.cronDeleteBody('X'), contains('X'));
+      expect(s.cronRunNowTooltip, isNotEmpty);
+      expect(s.cronNameRequired, isNotEmpty);
+      expect(s.cronExpressionInvalid, isNotEmpty);
+      expect(s.cronTelegramFieldsRequired, isNotEmpty);
+      expect(s.cronMessageRequired, isNotEmpty);
+      expect(s.cronNotifTextRequired, isNotEmpty);
+      expect(s.cronAgentPromptRequired, isNotEmpty);
+      expect(s.cronSaved, isNotEmpty);
+      expect(s.cronHistoryTitle, isNotEmpty);
+      expect(s.cronHistoryEmpty, isNotEmpty);
+      expect(s.cronDisabledBadge, isNotEmpty);
+      expect(s.cronPausedBadge, isNotEmpty);
+    }
+    // Spot-check the translations differ per locale.
+    expect(en.cronTileTitle, 'Cron jobs');
+    expect(id.cronJobsEmptyTitle, 'Belum ada job');
+    expect(id.cronActionAgent, 'Tugas agent');
+    expect(es.cronActionAgent, 'Tarea de agente');
+    expect(es.cronJobsEmptyTitle, 'Aún no hay trabajos');
+  });
 }

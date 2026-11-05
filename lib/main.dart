@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -9,6 +11,7 @@ import 'di.dart';
 import 'l10n/app_strings.dart';
 import 'models/models.dart';
 import 'services/context_repository.dart';
+import 'services/cron_repository.dart';
 import 'services/prompt_repository.dart';
 import 'services/settings_repository.dart';
 import 'ui/lock_gate.dart';
@@ -31,6 +34,8 @@ Future<void> main() async {
       await PrefsSettingsRepository.create();
   final PrefsContextRepository contextRepo =
       await PrefsContextRepository.create();
+  // v1.49.9 — cron store (scheduled Telegram/notification/agent jobs).
+  final PrefsCronRepository cronRepo = await PrefsCronRepository.create();
   final FilePromptRepository promptRepo = FilePromptRepository(
     resolveBaseDir: getApplicationDocumentsDirectory,
   );
@@ -38,18 +43,25 @@ Future<void> main() async {
   // Per-chat "last seen public IP" memo storage of the chat-switch guard
   // (v1.48.0) — same async-at-boot pattern as the app-lock prefs.
   final SharedPreferences ipMemoPrefs = await SharedPreferences.getInstance();
+  final List<Override> overrides = <Override>[
+    settingsRepositoryProvider.overrideWithValue(settingsRepo),
+    contextRepositoryProvider.overrideWithValue(contextRepo),
+    promptRepositoryProvider.overrideWithValue(promptRepo),
+    cronRepositoryProvider.overrideWithValue(cronRepo),
+    appLockPrefsProvider.overrideWithValue(appLockPrefs),
+    ipMemoPrefsProvider.overrideWithValue(ipMemoPrefs),
+  ];
+  // A container handle is needed to boot the cron scheduler once the
+  // widget tree is running (main() is the ONLY place the scheduler is
+  // started, so widget tests never inherit a pending periodic timer).
+  final ProviderContainer container = ProviderContainer(overrides: overrides);
   runApp(
-    ProviderScope(
-      overrides: <Override>[
-        settingsRepositoryProvider.overrideWithValue(settingsRepo),
-        contextRepositoryProvider.overrideWithValue(contextRepo),
-        promptRepositoryProvider.overrideWithValue(promptRepo),
-        appLockPrefsProvider.overrideWithValue(appLockPrefs),
-        ipMemoPrefsProvider.overrideWithValue(ipMemoPrefs),
-      ],
+    UncontrolledProviderScope(
+      container: container,
       child: const ZAgentsApp(),
     ),
   );
+  unawaited(container.read(cronSchedulerProvider).start());
 }
 
 /// v1.49.0 — keeps EVERY screen, dialog, bottom sheet, drawer and

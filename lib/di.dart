@@ -9,17 +9,21 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
 
 import 'models/models.dart';
+import 'models/cron_job.dart';
 import 'services/agent_composer.dart';
 import 'services/agent_controller.dart';
 import 'services/agent_polisher.dart';
 import 'services/agentrouter_client.dart';
 import 'services/app_lock_service.dart';
 import 'services/attachment_service.dart';
+import 'services/background_service.dart';
 import 'services/backup_service.dart';
 import 'services/browser_automation.dart';
 import 'services/browser_session_isolation.dart';
 import 'services/chat_store.dart';
 import 'services/context_repository.dart';
+import 'services/cron_repository.dart';
+import 'services/cron_scheduler.dart';
 import 'services/device_export.dart';
 import 'services/device_shell.dart';
 import 'services/ip_guard.dart';
@@ -38,6 +42,7 @@ import 'services/skill_registry.dart';
 import 'services/settings_repository.dart';
 import 'services/speech_service.dart';
 import 'services/subagents.dart';
+import 'services/telegram_sender.dart';
 import 'services/tool_executor.dart';
 import 'services/update_checker.dart';
 import 'services/user_agent_manager.dart';
@@ -65,9 +70,62 @@ final promptRepositoryProvider = Provider<PromptRepository>((ref) {
   );
 });
 
+/// v1.49.9 — cron store; must be overridden in main() with the real
+/// SharedPreferences-backed repository.
+final cronRepositoryProvider = Provider<CronRepository>((ref) {
+  throw UnimplementedError(
+    'cronRepositoryProvider must be overridden in main()',
+  );
+});
+
 final settingsProvider = NotifierProvider<SettingsController, AppSettings>(
   SettingsController.new,
 );
+
+/// v1.49.9 — live cron state (jobs + history + master switch).
+final cronJobsProvider = NotifierProvider<CronJobsController, CronState>(
+  CronJobsController.new,
+);
+
+/// Telegram Bot API sender (cron action + agent relay).
+final telegramSenderProvider = Provider<TelegramSender>(
+  (ref) => TelegramSender(),
+);
+
+/// v1.49.9 — timer-driven scheduler; started once from main().
+final cronSchedulerProvider = Provider<CronSchedulerService>((ref) {
+  return CronSchedulerService(
+    controller: ref.read(cronJobsProvider.notifier),
+    dispatcher: DefaultCronDispatcher(
+      llm: ref.watch(llmClientProvider),
+      telegram: ref.watch(telegramSenderProvider),
+      background: ref.watch(backgroundRunServiceProvider),
+      executeTool:
+          (
+            String name,
+            Map<String, dynamic> args,
+            String? sessionId, {
+            String? browserContext,
+          }) => ref
+              .read(toolExecutorProvider)
+              .execute(
+                name,
+                args,
+                sessionId: sessionId,
+                browserContext: browserContext,
+              ),
+      resolveConfig: () {
+        final AppSettings settings = ref.read(settingsProvider);
+        return LlmConfig(
+          baseUrl: settings.baseUrl,
+          apiKey: settings.apiKey,
+          model: settings.model,
+          engine: settings.engine,
+        );
+      },
+    ),
+  );
+});
 
 /// Signature for a resolver that yields the app documents directory.
 typedef DocumentsDirResolver = Future<Directory> Function();

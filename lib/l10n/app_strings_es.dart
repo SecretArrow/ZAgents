@@ -529,6 +529,132 @@ class AppStringsEs implements AppStrings {
   @override
   String get themeSystem => 'Sistema';
 
+  // -- Cron jobs (v1.49.9) ------------------------------------------------
+  @override
+  String get cronSectionTitle => 'Trabajos cron';
+  @override
+  String get cronTileTitle => 'Trabajos cron';
+  @override
+  String get cronTileSubtitle =>
+      'Programa mensajes de Telegram, notificaciones o tareas de agente';
+  @override
+  String get cronJobsTitle => 'Trabajos cron';
+  @override
+  String get cronMasterTitle => 'Planificador activo';
+  @override
+  String get cronMasterSubtitle =>
+      'Interruptor maestro: pausa todos los trabajos sin eliminarlos';
+  @override
+  String get cronJobsEmptyTitle => 'Aún no hay trabajos';
+  @override
+  String get cronJobsEmptyBody =>
+      'Toca + para programar mensajes de Telegram, notificaciones o '
+      'tareas de agente.';
+  @override
+  String get cronAddJobTooltip => 'Añadir trabajo';
+  @override
+  String get cronNewTitle => 'Nuevo trabajo';
+  @override
+  String get cronEditTitle => 'Editar trabajo';
+  @override
+  String get cronFieldName => 'Nombre del trabajo';
+  @override
+  String get cronFieldSchedule => 'Horario';
+  @override
+  String get cronScheduleEveryMinute => 'Cada minuto';
+  @override
+  String get cronScheduleEvery5Minutes => 'Cada 5 minutos';
+  @override
+  String get cronScheduleHourly => 'Cada hora (minuto 0)';
+  @override
+  String get cronScheduleDaily8 => 'Diario a las 08:00';
+  @override
+  String get cronScheduleWeekdays9 => 'Días laborables a las 09:00';
+  @override
+  String get cronScheduleWeekly => 'Domingos a las 09:00';
+  @override
+  String get cronScheduleMonthly => 'Día 1 del mes a las 08:00';
+  @override
+  String get cronScheduleCustom => 'Personalizado (expresión cron)';
+  @override
+  String get cronFieldExpression => 'Expresión cron';
+  @override
+  String get cronExpressionHint =>
+      'minuto hora día mes día de semana — p. ej. 30 8 * * mon-fri';
+  @override
+  String get cronNextRuns => 'Próximas ejecuciones';
+  @override
+  String get cronFieldAction => 'Acción';
+  @override
+  String get cronActionNotification => 'Notificación';
+  @override
+  String get cronActionTelegram => 'Telegram';
+  @override
+  String get cronActionAgent => 'Tarea de agente';
+  @override
+  String get cronActionAgentHint =>
+      'Ejecuta el prompt como un agente sin interfaz (workspace, '
+      'navegador, web y herramientas node) y notifica el resultado.';
+  @override
+  String get cronFieldNotifTitle => 'Título de la notificación';
+  @override
+  String get cronFieldNotifText => 'Texto de la notificación';
+  @override
+  String get cronFieldTelegramToken => 'Token del bot';
+  @override
+  String get cronFieldTelegramChat => 'ID de chat';
+  @override
+  String get cronFieldMessage => 'Texto del mensaje';
+  @override
+  String get cronFieldAgentPrompt => 'Prompt del agente';
+  @override
+  String get cronAgentRelayHint =>
+      'Rellena el token del bot + ID de chat para reenviar también la '
+      'respuesta a Telegram (opcional).';
+  @override
+  String get cronRunsWhileAppOpen =>
+      'Los trabajos se ejecutan mientras la app esté activa (primer '
+      'plano o servicio en segundo plano). Las ejecuciones perdidas con '
+      'la app cerrada se omiten, no se reproducen.';
+  @override
+  String get cronNever => 'nunca';
+  @override
+  String get cronNextRunLabel => 'Próxima';
+  @override
+  String get cronLastRunLabel => 'Última';
+  @override
+  String get cronDeleteTitle => '¿Eliminar el trabajo?';
+  @override
+  String cronDeleteBody(String name) =>
+      'El trabajo "$name" y su historial de ejecuciones serán eliminados.';
+  @override
+  String get cronRunNowTooltip => 'Ejecutar ahora';
+  @override
+  String get cronNameRequired => 'El nombre es obligatorio.';
+  @override
+  String get cronExpressionInvalid => 'Expresión cron no válida.';
+  @override
+  String get cronTelegramFieldsRequired =>
+      'El token del bot y el ID de chat son obligatorios.';
+  @override
+  String get cronMessageRequired => 'El texto del mensaje es obligatorio.';
+  @override
+  String get cronNotifTextRequired =>
+      'El texto de la notificación es obligatorio.';
+  @override
+  String get cronAgentPromptRequired =>
+      'El prompt del agente es obligatorio.';
+  @override
+  String get cronSaved => 'Trabajo guardado.';
+  @override
+  String get cronHistoryTitle => 'Ejecuciones recientes';
+  @override
+  String get cronHistoryEmpty => 'Aún no hay ejecuciones registradas.';
+  @override
+  String get cronDisabledBadge => 'desactivado';
+  @override
+  String get cronPausedBadge => 'planificador en pausa';
+
   // -- User Agent ---------------------------------------------------------
   @override
   String get uaSection => 'User Agent';
