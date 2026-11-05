@@ -68,7 +68,7 @@ class CronExpression {
     if (source.isEmpty) {
       throw const CronFormatException('expression is empty');
     }
-    final String expanded = shortcuts[source.toLowerCase()];
+    final String? expanded = shortcuts[source.toLowerCase()];
     if (expanded != null) source = expanded;
     final List<String> fields =
         source.split(RegExp(r'\s+')).where((f) => f.isNotEmpty).toList();

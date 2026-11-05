@@ -4,10 +4,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../di.dart';
 import '../models/cron_job.dart';
-import '../models/models.dart' show LlmClient, LlmConfig;
 import 'background_service.dart';
 import 'cron_parser.dart';
 import 'cron_repository.dart';
+import 'llm_client.dart';
 import 'subagents.dart';
 import 'telegram_sender.dart';
 import 'tool_executor.dart';
@@ -107,7 +107,7 @@ class DefaultCronDispatcher implements CronActionDispatcher {
               }) => executeTool(
                 name,
                 args,
-                sessionId,
+                sessionId: sessionId,
                 browserContext: browserContext,
               ),
         );
@@ -360,6 +360,7 @@ class CronJobsController extends Notifier<CronState> {
 class CronSchedulerService {
   CronSchedulerService({
     required this.controller,
+    required this.readState,
     required this.dispatcher,
     CronSchedulerCore core = const CronSchedulerCore(),
     DateTime Function()? now,
@@ -367,6 +368,11 @@ class CronSchedulerService {
        _now = now ?? DateTime.now;
 
   final CronJobsController controller;
+
+  /// Reads the LIVE cron state through the provider (Notifier.state is
+  /// protected — the service must observe state, never write it;
+  /// mutations go through the controller methods only).
+  final CronState Function() readState;
   final CronActionDispatcher dispatcher;
   final CronSchedulerCore _core;
   final DateTime Function() _now;
@@ -395,10 +401,11 @@ class CronSchedulerService {
   /// cannot fire a job that was just removed or paused.
   Future<void> tick() async {
     final DateTime now = _now();
-    final List<CronJob> due = _core.dueJobs(controller.state, now);
+    final List<CronJob> due = _core.dueJobs(readState(), now);
     for (final CronJob job in due) {
+      final CronState fresh = readState();
       CronJob? current;
-      for (final CronJob j in controller.state.jobs) {
+      for (final CronJob j in fresh.jobs) {
         if (j.id == job.id) {
           current = j;
           break;
@@ -406,7 +413,7 @@ class CronSchedulerService {
       }
       if (current == null ||
           !current.enabled ||
-          !controller.state.enabled ||
+          !fresh.enabled ||
           current.nextRunAtMs == null ||
           current.nextRunAtMs! > now.millisecondsSinceEpoch) {
         continue;

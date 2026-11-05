@@ -67,6 +67,7 @@ void main() {
           cronSchedulerProvider.overrideWith(
             (Ref ref) => CronSchedulerService(
               controller: ref.read(cronJobsProvider.notifier),
+              readState: () => ref.read(cronJobsProvider),
               dispatcher: disp,
             ),
           ),

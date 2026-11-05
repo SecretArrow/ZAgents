@@ -143,6 +143,7 @@ void main() {
       dispatcher = FakeDispatcher();
       scheduler = CronSchedulerService(
         controller: container.read(cronJobsProvider.notifier),
+        readState: () => container.read(cronJobsProvider),
         dispatcher: dispatcher,
         now: () => now,
       );

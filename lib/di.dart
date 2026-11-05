@@ -96,6 +96,7 @@ final telegramSenderProvider = Provider<TelegramSender>(
 final cronSchedulerProvider = Provider<CronSchedulerService>((ref) {
   return CronSchedulerService(
     controller: ref.read(cronJobsProvider.notifier),
+    readState: () => ref.read(cronJobsProvider),
     dispatcher: DefaultCronDispatcher(
       llm: ref.watch(llmClientProvider),
       telegram: ref.watch(telegramSenderProvider),
@@ -103,8 +104,8 @@ final cronSchedulerProvider = Provider<CronSchedulerService>((ref) {
       executeTool:
           (
             String name,
-            Map<String, dynamic> args,
-            String? sessionId, {
+            Map<String, dynamic> args, {
+            String? sessionId,
             String? browserContext,
           }) => ref
               .read(toolExecutorProvider)
