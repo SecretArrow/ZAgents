@@ -54,12 +54,28 @@ class CronExpression {
   };
 
   static const List<String> _monthNames = <String>[
-    'jan', 'feb', 'mar', 'apr', 'may', 'jun',
-    'jul', 'aug', 'sep', 'oct', 'nov', 'dec',
+    'jan',
+    'feb',
+    'mar',
+    'apr',
+    'may',
+    'jun',
+    'jul',
+    'aug',
+    'sep',
+    'oct',
+    'nov',
+    'dec',
   ];
 
   static const List<String> _dayNames = <String>[
-    'sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat',
+    'sun',
+    'mon',
+    'tue',
+    'wed',
+    'thu',
+    'fri',
+    'sat',
   ];
 
   /// Parses [input]; throws [CronFormatException] when invalid.
@@ -70,8 +86,10 @@ class CronExpression {
     }
     final String? expanded = shortcuts[source.toLowerCase()];
     if (expanded != null) source = expanded;
-    final List<String> fields =
-        source.split(RegExp(r'\s+')).where((f) => f.isNotEmpty).toList();
+    final List<String> fields = source
+        .split(RegExp(r'\s+'))
+        .where((f) => f.isNotEmpty)
+        .toList();
     if (fields.length != 5) {
       throw CronFormatException(
         'expected 5 fields (minute hour dom month dow), got ${fields.length}',
@@ -143,9 +161,7 @@ class CronExpression {
         lo = hi = _value(rangePart, min, max, names);
       }
       if (lo < min || hi > max) {
-        throw CronFormatException(
-          'value out of range ($min-$max) in "$part"',
-        );
+        throw CronFormatException('value out of range ($min-$max) in "$part"');
       }
       if (step == null) {
         for (int v = lo; v <= hi; v++) {

@@ -111,9 +111,11 @@ class DefaultCronDispatcher implements CronActionDispatcher {
                 browserContext: browserContext,
               ),
         );
-        final List<SubagentOutcome> outcomes = await runner.run(<
-          SubagentTaskSpec
-        >[SubagentTaskSpec(label: job.name, prompt: job.agentPrompt)]);
+        final List<SubagentOutcome> outcomes = await runner.run(
+          <SubagentTaskSpec>[
+            SubagentTaskSpec(label: job.name, prompt: job.agentPrompt),
+          ],
+        );
         final SubagentOutcome outcome = outcomes.first;
         await _deliver(job, outcome.answer);
         return CronDispatchResult(
@@ -165,9 +167,7 @@ class CronSchedulerCore {
     final int nowMs = now.millisecondsSinceEpoch;
     return <CronJob>[
       for (final CronJob job in state.jobs)
-        if (job.enabled &&
-            job.nextRunAtMs != null &&
-            job.nextRunAtMs! <= nowMs)
+        if (job.enabled && job.nextRunAtMs != null && job.nextRunAtMs! <= nowMs)
           job,
     ];
   }
@@ -208,9 +208,8 @@ class CronSchedulerCore {
       }
       changed = true;
       try {
-        final DateTime? next = CronExpression.parse(
-          job.expression,
-        ).nextAfter(now);
+        final DateTime? next = CronExpression.parse(job.expression)
+            .nextAfter(now);
         jobs.add(job.copyWith(nextRunAtMs: next?.millisecondsSinceEpoch));
       } on CronFormatException {
         jobs.add(job.copyWith(nextRunAtMs: null));
@@ -248,9 +247,9 @@ class CronJobsController extends Notifier<CronState> {
   Future<void> saveJob(CronJob job) async {
     int? nextMs;
     try {
-      nextMs = CronExpression.parse(
-        job.expression,
-      ).nextAfter(_now)?.millisecondsSinceEpoch;
+      nextMs = CronExpression.parse(job.expression)
+          .nextAfter(_now)
+          ?.millisecondsSinceEpoch;
     } on CronFormatException {
       nextMs = null;
     }
@@ -295,9 +294,9 @@ class CronJobsController extends Notifier<CronState> {
     int? nextMs = target.nextRunAtMs;
     if (enabled) {
       try {
-        nextMs = CronExpression.parse(
-          target.expression,
-        ).nextAfter(_now)?.millisecondsSinceEpoch;
+        nextMs = CronExpression.parse(target.expression)
+            .nextAfter(_now)
+            ?.millisecondsSinceEpoch;
       } on CronFormatException {
         nextMs = null;
       }
@@ -362,10 +361,9 @@ class CronSchedulerService {
     required this.controller,
     required this.readState,
     required this.dispatcher,
-    CronSchedulerCore core = const CronSchedulerCore(),
+    this._core = const CronSchedulerCore(),
     DateTime Function()? now,
-  }) : _core = core,
-       _now = now ?? DateTime.now;
+  }) : _now = now ?? DateTime.now;
 
   final CronJobsController controller;
 
@@ -435,7 +433,10 @@ class CronSchedulerService {
     } catch (error) {
       // The dispatcher contract says "never throw", but a programming
       // error must still degrade to a recorded failure, not a crash.
-      result = CronDispatchResult(ok: false, detail: 'dispatcher error: $error');
+      result = CronDispatchResult(
+        ok: false,
+        detail: 'dispatcher error: $error',
+      );
     }
     CronJob stamped = job.copyWith(
       lastRunAtMs: now.millisecondsSinceEpoch,
@@ -446,9 +447,8 @@ class CronSchedulerService {
       // Advance the schedule only for real (persisted) jobs — "run now"
       // probes keep their pending next occurrence.
       try {
-        final DateTime? next = CronExpression.parse(
-          job.expression,
-        ).nextAfter(now);
+        final DateTime? next = CronExpression.parse(job.expression)
+            .nextAfter(now);
         stamped = stamped.copyWith(nextRunAtMs: next?.millisecondsSinceEpoch);
       } on CronFormatException {
         stamped = stamped.copyWith(nextRunAtMs: null);

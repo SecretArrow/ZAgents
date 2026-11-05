@@ -642,8 +642,7 @@ class AppStringsEs implements AppStrings {
   String get cronNotifTextRequired =>
       'El texto de la notificación es obligatorio.';
   @override
-  String get cronAgentPromptRequired =>
-      'El prompt del agente es obligatorio.';
+  String get cronAgentPromptRequired => 'El prompt del agente es obligatorio.';
   @override
   String get cronSaved => 'Trabajo guardado.';
   @override

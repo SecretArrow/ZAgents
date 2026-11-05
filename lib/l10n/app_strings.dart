@@ -1332,7 +1332,8 @@ class AppStringsEn implements AppStrings {
   @override
   String get cronExpressionInvalid => 'Invalid cron expression.';
   @override
-  String get cronTelegramFieldsRequired => 'Bot token and chat ID are required.';
+  String get cronTelegramFieldsRequired =>
+      'Bot token and chat ID are required.';
   @override
   String get cronMessageRequired => 'Message text is required.';
   @override
@@ -2899,8 +2900,7 @@ class AppStringsId implements AppStrings {
   @override
   String get cronExpressionInvalid => 'Ekspresi cron tidak valid.';
   @override
-  String get cronTelegramFieldsRequired =>
-      'Token bot dan chat ID wajib diisi.';
+  String get cronTelegramFieldsRequired => 'Token bot dan chat ID wajib diisi.';
   @override
   String get cronMessageRequired => 'Isi pesan wajib diisi.';
   @override

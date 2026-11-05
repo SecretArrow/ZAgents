@@ -58,8 +58,7 @@ class PrefsCronRepository implements CronRepository {
 
 /// In-memory repository for unit and widget tests.
 class MemoryCronRepository implements CronRepository {
-  MemoryCronRepository([CronState? initial])
-    : _state = initial ?? CronState();
+  MemoryCronRepository([CronState? initial]) : _state = initial ?? CronState();
 
   CronState _state;
 

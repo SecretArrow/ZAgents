@@ -131,14 +131,10 @@ class CronJob {
     agentPrompt: agentPrompt ?? this.agentPrompt,
     enabled: enabled ?? this.enabled,
     createdAtMs: createdAtMs ?? this.createdAtMs,
-    lastRunAtMs: lastRunAtMs == _unset
-        ? this.lastRunAtMs
-        : lastRunAtMs as int?,
+    lastRunAtMs: lastRunAtMs == _unset ? this.lastRunAtMs : lastRunAtMs as int?,
     lastResult: lastResult ?? this.lastResult,
     lastResultOk: lastResultOk ?? this.lastResultOk,
-    nextRunAtMs: nextRunAtMs == _unset
-        ? this.nextRunAtMs
-        : nextRunAtMs as int?,
+    nextRunAtMs: nextRunAtMs == _unset ? this.nextRunAtMs : nextRunAtMs as int?,
   );
 
   Map<String, dynamic> toJson() => <String, dynamic>{

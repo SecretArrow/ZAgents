@@ -107,20 +107,23 @@ void main() {
       expect(core.rescheduleMissed(state, now), isNull);
     });
 
-    test('an invalid stored expression clears nextRunAt instead of crashing', () {
-      const CronSchedulerCore core = CronSchedulerCore();
-      final CronState state = CronState(
-        jobs: <CronJob>[
-          _job(
-            'bad',
-            expression: '99 * * * *',
-            nextRunAtMs: now.millisecondsSinceEpoch - 1,
-          ),
-        ],
-      );
-      final CronState? next = core.rescheduleMissed(state, now);
-      expect(next!.jobs.single.nextRunAtMs, isNull);
-    });
+    test(
+      'an invalid stored expression clears nextRunAt instead of crashing',
+      () {
+        const CronSchedulerCore core = CronSchedulerCore();
+        final CronState state = CronState(
+          jobs: <CronJob>[
+            _job(
+              'bad',
+              expression: '99 * * * *',
+              nextRunAtMs: now.millisecondsSinceEpoch - 1,
+            ),
+          ],
+        );
+        final CronState? next = core.rescheduleMissed(state, now);
+        expect(next!.jobs.single.nextRunAtMs, isNull);
+      },
+    );
   });
 
   group('CronSchedulerService', () {
@@ -154,29 +157,32 @@ void main() {
       container.dispose();
     });
 
-    test('tick fires a due job, records history and advances nextRun', () async {
-      boot(
-        seed: CronState(
-          jobs: <CronJob>[
-            _job('a', nextRunAtMs: now.millisecondsSinceEpoch - 1),
-          ],
-        ),
-      );
+    test(
+      'tick fires a due job, records history and advances nextRun',
+      () async {
+        boot(
+          seed: CronState(
+            jobs: <CronJob>[
+              _job('a', nextRunAtMs: now.millisecondsSinceEpoch - 1),
+            ],
+          ),
+        );
 
-      await scheduler.tick();
+        await scheduler.tick();
 
-      expect(dispatcher.calls, hasLength(1));
-      final CronState state = repo.load();
-      expect(state.history, hasLength(1));
-      expect(state.history.single.jobId, 'a');
-      expect(state.history.single.ok, isTrue);
-      expect(state.history.single.detail, 'sent');
-      expect(
-        state.jobs.single.nextRunAtMs,
-        greaterThan(now.millisecondsSinceEpoch),
-      );
-      expect(state.jobs.single.lastResultOk, isTrue);
-    });
+        expect(dispatcher.calls, hasLength(1));
+        final CronState state = repo.load();
+        expect(state.history, hasLength(1));
+        expect(state.history.single.jobId, 'a');
+        expect(state.history.single.ok, isTrue);
+        expect(state.history.single.detail, 'sent');
+        expect(
+          state.jobs.single.nextRunAtMs,
+          greaterThan(now.millisecondsSinceEpoch),
+        );
+        expect(state.jobs.single.lastResultOk, isTrue);
+      },
+    );
 
     test('a failed dispatch is recorded as a failure, not thrown', () async {
       boot(
@@ -260,9 +266,7 @@ void main() {
 
     test('runNow fires immediately and records history', () async {
       boot(
-        seed: CronState(
-          jobs: <CronJob>[_job('e', expression: '0 0 * * *')],
-        ),
+        seed: CronState(jobs: <CronJob>[_job('e', expression: '0 0 * * *')]),
       );
       dispatcher.calls.clear();
 

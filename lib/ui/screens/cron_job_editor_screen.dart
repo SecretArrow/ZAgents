@@ -232,8 +232,7 @@ class _CronJobEditorScreenState extends ConsumerState<CronJobEditorScreen> {
                     : strings.cronExpressionInvalid,
               ),
             ),
-            if (_expressionError == null &&
-                _upcoming().isNotEmpty) ...<Widget>[
+            if (_expressionError == null && _upcoming().isNotEmpty) ...<Widget>[
               const SizedBox(height: 8),
               _NextRunsPreview(upcoming: _upcoming()),
             ],
@@ -354,8 +353,7 @@ class _CronJobEditorScreenState extends ConsumerState<CronJobEditorScreen> {
                   controller: _telegramToken,
                   obscureText: true,
                   decoration: InputDecoration(
-                    labelText:
-                        '${strings.cronFieldTelegramToken} (optional)',
+                    labelText: '${strings.cronFieldTelegramToken} (optional)',
                   ),
                 ),
                 const SizedBox(height: 12),

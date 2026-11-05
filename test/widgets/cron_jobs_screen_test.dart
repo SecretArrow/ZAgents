@@ -57,9 +57,7 @@ void main() {
         overrides: <Override>[
           ...testOverrides(dir: tempDir),
           cronRepositoryProvider.overrideWithValue(
-            MemoryCronRepository(
-              CronState(jobs: jobs, enabled: enabled),
-            ),
+            MemoryCronRepository(CronState(jobs: jobs, enabled: enabled)),
           ),
           cronClockProvider.overrideWithValue(
             () => DateTime(2026, 1, 14, 10, 30),
@@ -140,34 +138,32 @@ void main() {
     }
   });
 
-  testWidgets('master switch off shows the paused badge and toggling persists', (
-    WidgetTester tester,
-  ) async {
-    final ProviderContainer container = await openCronScreen(
-      tester,
-      jobs: <CronJob>[
-        CronJob(
-          id: 'j1',
-          name: 'J1',
-          expression: '0 8 * * *',
-          createdAtMs: 1,
-          nextRunAtMs: DateTime(2026, 1, 14, 11).millisecondsSinceEpoch,
-        ),
-      ],
-    );
-    expect(
-      container.read(cronJobsProvider).enabled,
-      isTrue,
-    );
-    await tester.tap(find.byKey(const Key('cron-master-switch')));
-    await tester.pumpAndSettle(
-      const Duration(milliseconds: 100),
-      EnginePhase.sendSemanticsUpdate,
-      const Duration(seconds: 15),
-    );
-    expect(container.read(cronJobsProvider).enabled, isFalse);
-    expect(find.byKey(const Key('cron-master-switch')), findsOneWidget);
-  });
+  testWidgets(
+    'master switch off shows the paused badge and toggling persists',
+    (WidgetTester tester) async {
+      final ProviderContainer container = await openCronScreen(
+        tester,
+        jobs: <CronJob>[
+          CronJob(
+            id: 'j1',
+            name: 'J1',
+            expression: '0 8 * * *',
+            createdAtMs: 1,
+            nextRunAtMs: DateTime(2026, 1, 14, 11).millisecondsSinceEpoch,
+          ),
+        ],
+      );
+      expect(container.read(cronJobsProvider).enabled, isTrue);
+      await tester.tap(find.byKey(const Key('cron-master-switch')));
+      await tester.pumpAndSettle(
+        const Duration(milliseconds: 100),
+        EnginePhase.sendSemanticsUpdate,
+        const Duration(seconds: 15),
+      );
+      expect(container.read(cronJobsProvider).enabled, isFalse);
+      expect(find.byKey(const Key('cron-master-switch')), findsOneWidget);
+    },
+  );
 
   testWidgets('the add FAB opens the full-screen editor', (
     WidgetTester tester,
@@ -180,10 +176,7 @@ void main() {
       const Duration(seconds: 15),
     );
     expect(find.byType(CronJobEditorScreen), findsOneWidget);
-    expect(
-      find.byKey(const Key('cron-editor-name-field')),
-      findsOneWidget,
-    );
+    expect(find.byKey(const Key('cron-editor-name-field')), findsOneWidget);
   });
 
   testWidgets('run-now dispatches the job and shows the outcome', (

@@ -69,10 +69,7 @@ class CronJobsScreen extends ConsumerWidget {
         .read(cronSchedulerProvider)
         .runNow(job);
     if (!context.mounted) return;
-    showAppMessage(
-      context,
-      '${strings.cronRunNowTooltip}: ${result.detail}',
-    );
+    showAppMessage(context, '${strings.cronRunNowTooltip}: ${result.detail}');
   }
 
   @override
@@ -257,14 +254,10 @@ class _JobCard extends StatelessWidget {
     };
     final String? nextLine = job.nextRunAtMs == null
         ? null
-        : '${strings.cronNextRunLabel}: ${fmt(
-            DateTime.fromMillisecondsSinceEpoch(job.nextRunAtMs!),
-          )}';
+        : '${strings.cronNextRunLabel}: ${fmt(DateTime.fromMillisecondsSinceEpoch(job.nextRunAtMs!))}';
     final String? lastLine = job.lastRunAtMs == null
         ? null
-        : '${strings.cronLastRunLabel}: ${fmt(
-            DateTime.fromMillisecondsSinceEpoch(job.lastRunAtMs!),
-          )}${job.lastResult.isEmpty ? '' : ' · ${job.lastResult}'}';
+        : '${strings.cronLastRunLabel}: ${fmt(DateTime.fromMillisecondsSinceEpoch(job.lastRunAtMs!))}${job.lastResult.isEmpty ? '' : ' · ${job.lastResult}'}';
     return Card(
       margin: const EdgeInsets.symmetric(vertical: 6),
       child: InkWell(
@@ -291,10 +284,7 @@ class _JobCard extends StatelessWidget {
                       padding: const EdgeInsets.only(right: 4),
                       child: Text(
                         strings.cronDisabledBadge,
-                        style: TextStyle(
-                          fontSize: 10.5,
-                          color: palette.muted,
-                        ),
+                        style: TextStyle(fontSize: 10.5, color: palette.muted),
                       ),
                     ),
                   Switch(

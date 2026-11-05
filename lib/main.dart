@@ -56,10 +56,7 @@ Future<void> main() async {
   // started, so widget tests never inherit a pending periodic timer).
   final ProviderContainer container = ProviderContainer(overrides: overrides);
   runApp(
-    UncontrolledProviderScope(
-      container: container,
-      child: const ZAgentsApp(),
-    ),
+    UncontrolledProviderScope(container: container, child: const ZAgentsApp()),
   );
   unawaited(container.read(cronSchedulerProvider).start());
 }
