@@ -132,9 +132,17 @@ void main() {
     await openCronScreen(tester, jobs: jobs);
     expect(find.byKey(const Key('cron-empty-card')), findsNothing);
     for (var i = 0; i < 7; i++) {
-      expect(find.text('Job $i'), findsOneWidget);
-      expect(find.byKey(Key('cron-job-card-job-$i')), findsOneWidget);
-      expect(find.byKey(Key('cron-job-switch-job-$i')), findsOneWidget);
+      // The manager is a single ListView; cards below the viewport are
+      // built but OFFSTAGE, so the finders must not skip them.
+      expect(find.text('Job $i', skipOffstage: false), findsOneWidget);
+      expect(
+        find.byKey(Key('cron-job-card-job-$i'), skipOffstage: false),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(Key('cron-job-switch-job-$i'), skipOffstage: false),
+        findsOneWidget,
+      );
     }
   });
 
@@ -264,10 +272,27 @@ void main() {
       EnginePhase.sendSemanticsUpdate,
       const Duration(seconds: 15),
     );
-    // Notification is the default action: fill the text.
+    // Notification is the default action: the fields live further down
+    // the editor's ListView — bring the text field on-screen first.
+    await tester.ensureVisible(
+      find.byKey(const Key('cron-editor-notif-text-field')),
+    );
+    await tester.pumpAndSettle(
+      const Duration(milliseconds: 100),
+      EnginePhase.sendSemanticsUpdate,
+      const Duration(seconds: 15),
+    );
     await tester.enterText(
       find.byKey(const Key('cron-editor-notif-text-field')),
       'Standup in 30 minutes',
+    );
+    await tester.ensureVisible(
+      find.byKey(const Key('cron-editor-save-button')),
+    );
+    await tester.pumpAndSettle(
+      const Duration(milliseconds: 100),
+      EnginePhase.sendSemanticsUpdate,
+      const Duration(seconds: 15),
     );
     await tester.tap(find.byKey(const Key('cron-editor-save-button')));
     await tester.pumpAndSettle(

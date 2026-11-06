@@ -150,16 +150,28 @@ void main() {
     });
 
     test('vixie OR rule: restricted dom OR dow fires on either', () {
+      final CronExpression cron = CronExpression.parse('0 8 13 * fri');
       // dom=13, dow=fri; 2026-01-16 is a Friday → fires even though dom≠13.
-      expect(
-        CronExpression.parse('0 8 13 * fri').nextAfter(anchor),
+      final DateTime? first = cron.nextAfter(anchor);
+      expect(first, DateTime(2026, 1, 16, 8, 0));
+      // With dow restricted, EVERY Friday is a fire — chain through them
+      // and confirm 2026-02-13 (a Friday that is also the 13th) still
+      // fires exactly ONCE: never skipped, never doubled.
+      final List<DateTime> fires = <DateTime>[first!];
+      DateTime cursor = first;
+      for (var i = 0; i < 5; i++) {
+        cursor = cron.nextAfter(cursor)!;
+        fires.add(cursor);
+      }
+      expect(fires, <DateTime>[
         DateTime(2026, 1, 16, 8, 0),
-      );
-      // 2026-02-13 is a Friday AND the 13th → still one fire.
-      final DateTime? feb = CronExpression.parse('0 8 13 * fri')
-          .nextAfter(anchor);
-      expect(feb, DateTime(2026, 2, 13, 8, 0));
-    });
+        DateTime(2026, 1, 23, 8, 0),
+        DateTime(2026, 1, 30, 8, 0),
+        DateTime(2026, 2, 6, 8, 0),
+        DateTime(2026, 2, 13, 8, 0),
+        DateTime(2026, 2, 20, 8, 0),
+      ]);
+    }, timeout: const Timeout(Duration(seconds: 30)));
 
     test('steps and ranges compute matches', () {
       expect(
