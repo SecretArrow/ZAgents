@@ -103,6 +103,24 @@ void main() {
     return container;
   }
 
+  /// Drags the first Scrollable until the widget under [key] is built and
+  /// visible. Both the manager and the editor are lazy ListViews: items
+  /// below the viewport + cacheExtent do not EXIST in the tree yet, so
+  /// plain finders (and ensureVisible) see nothing — the list must be
+  /// dragged first to build them.
+  Future<void> scrollToKey(WidgetTester tester, Key key) async {
+    await tester.scrollUntilVisible(
+      find.byKey(key),
+      200,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.pumpAndSettle(
+      const Duration(milliseconds: 100),
+      EnginePhase.sendSemanticsUpdate,
+      const Duration(seconds: 15),
+    );
+  }
+
   testWidgets('empty store shows the empty state and the add FAB', (
     WidgetTester tester,
   ) async {
@@ -132,17 +150,11 @@ void main() {
     await openCronScreen(tester, jobs: jobs);
     expect(find.byKey(const Key('cron-empty-card')), findsNothing);
     for (var i = 0; i < 7; i++) {
-      // The manager is a single ListView; cards below the viewport are
-      // built but OFFSTAGE, so the finders must not skip them.
-      expect(find.text('Job $i', skipOffstage: false), findsOneWidget);
-      expect(
-        find.byKey(Key('cron-job-card-job-$i'), skipOffstage: false),
-        findsOneWidget,
-      );
-      expect(
-        find.byKey(Key('cron-job-switch-job-$i'), skipOffstage: false),
-        findsOneWidget,
-      );
+      // The manager is a lazy ListView — drag until card i is built.
+      await scrollToKey(tester, Key('cron-job-card-job-$i'));
+      expect(find.text('Job $i'), findsOneWidget);
+      expect(find.byKey(Key('cron-job-card-job-$i')), findsOneWidget);
+      expect(find.byKey(Key('cron-job-switch-job-$i')), findsOneWidget);
     }
   });
 
@@ -273,27 +285,13 @@ void main() {
       const Duration(seconds: 15),
     );
     // Notification is the default action: the fields live further down
-    // the editor's ListView — bring the text field on-screen first.
-    await tester.ensureVisible(
-      find.byKey(const Key('cron-editor-notif-text-field')),
-    );
-    await tester.pumpAndSettle(
-      const Duration(milliseconds: 100),
-      EnginePhase.sendSemanticsUpdate,
-      const Duration(seconds: 15),
-    );
+    // the editor's lazy ListView — drag them into view first.
+    await scrollToKey(tester, const Key('cron-editor-notif-text-field'));
     await tester.enterText(
       find.byKey(const Key('cron-editor-notif-text-field')),
       'Standup in 30 minutes',
     );
-    await tester.ensureVisible(
-      find.byKey(const Key('cron-editor-save-button')),
-    );
-    await tester.pumpAndSettle(
-      const Duration(milliseconds: 100),
-      EnginePhase.sendSemanticsUpdate,
-      const Duration(seconds: 15),
-    );
+    await scrollToKey(tester, const Key('cron-editor-save-button'));
     await tester.tap(find.byKey(const Key('cron-editor-save-button')));
     await tester.pumpAndSettle(
       const Duration(milliseconds: 100),
@@ -338,7 +336,11 @@ void main() {
     expect(find.text('Invalid cron expression.'), findsOneWidget);
     // No next-runs preview while invalid.
     expect(find.byKey(const Key('cron-next-runs-preview')), findsNothing);
-    // Saving is blocked (still on the editor, nothing persisted).
+    // Saving is blocked (still on the editor, nothing persisted). The
+    // save button sits at the bottom of the lazy editor list — drag it
+    // into view first, otherwise the tap silently misses nothing (the
+    // widget was never built at all).
+    await scrollToKey(tester, const Key('cron-editor-save-button'));
     await tester.tap(find.byKey(const Key('cron-editor-save-button')));
     await tester.pumpAndSettle(
       const Duration(milliseconds: 100),
