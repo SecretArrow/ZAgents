@@ -193,22 +193,19 @@ void main() {
         // SAME instant forever (100% CPU spin, silent test hang). Both
         // anchors below hit that exact trap with "0 8 * * *".
         expect(
-          CronExpression.parse('0 8 * * *').nextAfter(
-            DateTime(2026, 1, 14, 11),
-          ),
+          CronExpression.parse('0 8 * * *')
+              .nextAfter(DateTime(2026, 1, 14, 11)),
           DateTime(2026, 1, 15, 8),
         );
         expect(
-          CronExpression.parse('0 8 * * *').nextAfter(
-            DateTime(2026, 1, 14, 13, 31),
-          ),
+          CronExpression.parse('0 8 * * *')
+              .nextAfter(DateTime(2026, 1, 14, 13, 31)),
           DateTime(2026, 1, 15, 8),
         );
         // Midnight boundary: hour 0 excluded, hour 24 normalization.
         expect(
-          CronExpression.parse('30 9 * * *').nextAfter(
-            DateTime(2026, 1, 14, 23, 59),
-          ),
+          CronExpression.parse('30 9 * * *')
+              .nextAfter(DateTime(2026, 1, 14, 23, 59)),
           DateTime(2026, 1, 15, 9, 30),
         );
       },
