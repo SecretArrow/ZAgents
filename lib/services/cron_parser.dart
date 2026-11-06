@@ -226,12 +226,16 @@ class CronExpression {
         continue;
       }
       if (!matches(t)) {
-        // Advance in 30-minute hops when the hour is out of range; the
+        // Advance in whole-hour hops when the hour is out of range; the
         // per-minute check inside [matches] still guards correctness.
+        // Regression v1.49.9: the previous 30-minute hop re-floored
+        // minutes to :00, so an anchor already sitting on an excluded
+        // hour boundary (e.g. 11:00 with "0 8 * * *") recomputed the
+        // SAME instant forever and spun the isolate at 100% CPU.
+        // DateTime(hour + 1) always advances (and normalizes 24 → next
+        // day), so termination is guaranteed by the 366-day limit.
         if (!hours.contains(t.hour)) {
-          t = t.add(const Duration(minutes: 30));
-          // Keep minutes aligned to a valid carry boundary.
-          t = DateTime(t.year, t.month, t.day, t.hour, 0);
+          t = DateTime(t.year, t.month, t.day, t.hour + 1);
           continue;
         }
         t = t.add(const Duration(minutes: 1));

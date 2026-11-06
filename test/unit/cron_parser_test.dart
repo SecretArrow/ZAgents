@@ -36,8 +36,11 @@ void main() {
     });
 
     test('parses lists, ranges, steps and names', () {
+      // Month names belong in the MONTH field (4th); the pre-fix typo put
+      // "jan,mar" in the day-of-week slot, where the parser correctly
+      // rejects them (day names are sun..sat).
       final CronExpression cron = CronExpression.parse(
-        '0,15,30 9-11 */2 * jan,mar',
+        '0,15,30 9-11 */2 jan,mar *',
       );
       expect(cron.minutes, <int>{0, 15, 30});
       expect(cron.hours, <int>{9, 10, 11});
@@ -174,12 +177,42 @@ void main() {
           .nextAfter(anchor);
       // Same wall-clock minute as the anchor must be skipped.
       expect(next, DateTime(2026, 1, 15, 10, 30));
-    });
+    }, timeout: const Timeout(Duration(seconds: 30)));
 
     test('year boundary works', () {
       final DateTime? next = CronExpression.parse('0 0 1 1 *')
           .nextAfter(DateTime(2026, 12, 31, 12, 0));
       expect(next, DateTime(2027, 1, 1, 0, 0));
-    });
+    }, timeout: const Timeout(Duration(seconds: 30)));
+
+    test(
+      'hour-boundary anchor never stalls the hour hop (regression v1.49.9)',
+      () {
+        // The old 30-minute hop re-floored minutes to :00, so an anchor
+        // already sitting on an excluded hour boundary recomputed the
+        // SAME instant forever (100% CPU spin, silent test hang). Both
+        // anchors below hit that exact trap with "0 8 * * *".
+        expect(
+          CronExpression.parse('0 8 * * *').nextAfter(
+            DateTime(2026, 1, 14, 11),
+          ),
+          DateTime(2026, 1, 15, 8),
+        );
+        expect(
+          CronExpression.parse('0 8 * * *').nextAfter(
+            DateTime(2026, 1, 14, 13, 31),
+          ),
+          DateTime(2026, 1, 15, 8),
+        );
+        // Midnight boundary: hour 0 excluded, hour 24 normalization.
+        expect(
+          CronExpression.parse('30 9 * * *').nextAfter(
+            DateTime(2026, 1, 14, 23, 59),
+          ),
+          DateTime(2026, 1, 15, 9, 30),
+        );
+      },
+      timeout: const Timeout(Duration(seconds: 30)),
+    );
   });
 }
