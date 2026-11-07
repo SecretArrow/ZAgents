@@ -1819,6 +1819,11 @@ class AppStringsEs implements AppStrings {
       '$receivedMb de $totalMb MB';
   @override
   String get ollamaSizeUnknown => 'tamaño desconocido';
+  @override
+  String ollamaDiskFull(String name, int neededBytes, int freeBytes) =>
+      'Espacio libre insuficiente para «$name»: se necesitan '
+      '${neededBytes ~/ (1024 * 1024)} MB, solo hay '
+      '${freeBytes ~/ (1024 * 1024)} MB.';
 
   // -- Local AI Fase 2 (v1.52.0) -------------------------------------------
   @override

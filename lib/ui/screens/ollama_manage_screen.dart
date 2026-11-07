@@ -50,7 +50,8 @@ const Color _kGrey = Color(0xFF9AA0B4);
 ///   diagnostics, model picker, Start/Stop, port/context/threads config,
 ///   log tail + full-screen log viewer, external-Ollama probe row,
 /// * **Catalog** — curated registry models (RAM auto-filter + remote
-///   catalog refresh/reset) + custom .gguf URL + file import,
+///   catalog refresh/reset; v1.53.0 — rows may carry their own direct
+///   URL for HF-hosted GGUFs) + custom .gguf URL + file import,
 /// * **Installed** — local models with start/export/delete actions and a
 ///   bulk-export selection mode,
 /// * **Downloads** — live progress rows with pause/resume/cancel.
@@ -568,10 +569,16 @@ class _OllamaManageScreenState extends ConsumerState<OllamaManageScreen>
       );
       if (confirmed != true || !mounted) return;
     }
+    // Catalog rows with a directUrl (HF-hosted GGUFs the registry cannot
+    // serve) enqueue through the same custom-URL path the manual field
+    // uses; the display name stays the full ref.
     _enqueueDownload(
       name: model.ollamaRef,
-      source: LocalModelSource.catalog,
+      source: model.directUrl.isEmpty
+          ? LocalModelSource.catalog
+          : LocalModelSource.customUrl,
       ollamaRef: model.ollamaRef,
+      customUrl: model.directUrl,
     );
   }
 

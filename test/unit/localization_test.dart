@@ -373,6 +373,11 @@ void main() {
       expect(s.ollamaImportDone('x'), contains('x'));
       expect(s.ollamaDeleteBody('x'), contains('x'));
       expect(s.ollamaDownloadStarted('x'), contains('x'));
+      // v1.53.0 — disk-guard message takes raw bytes, formats MiB inline.
+      expect(
+        s.ollamaDiskFull('qwen3:0.6b', 5 * 1024 * 1024, 1024 * 1024),
+        allOf(contains('qwen3:0.6b'), contains('5 MB'), contains('1 MB')),
+      );
     }
     // Representative wording per locale.
     expect(en.ollamaTileTitle, 'Ollama Manage');
@@ -389,6 +394,20 @@ void main() {
     expect(es.ollamaTabDownloads, 'Descargas');
     expect(es.ollamaProbeOk('0.6'), contains('0.6'));
     expect(es.ollamaSizeProgress(300, 523), '300 de 523 MB');
+    // v1.53.0 — representative disk-guard wording per locale.
+    expect(
+      en.ollamaDiskFull('m1', 5 * 1024 * 1024, 1024 * 1024),
+      'Not enough free space for “m1”: needs 5 MB, only 1 MB free.',
+    );
+    expect(
+      id.ollamaDiskFull('m1', 5 * 1024 * 1024, 1024 * 1024),
+      'Ruang kosong tidak cukup untuk “m1”: butuh 5 MB, tersisa 1 MB.',
+    );
+    expect(
+      es.ollamaDiskFull('m1', 5 * 1024 * 1024, 1024 * 1024),
+      'Espacio libre insuficiente para «m1»: se necesitan 5 MB, '
+      'solo hay 1 MB.',
+    );
   });
 
   test('fase 2 local AI strings are localized in all three bundles', () {

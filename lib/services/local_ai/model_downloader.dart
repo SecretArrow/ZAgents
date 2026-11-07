@@ -6,7 +6,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 
 import '../../di.dart';
+import '../../l10n/app_strings.dart';
 import '../../models/local_model.dart';
+import 'disk_space.dart';
 import 'local_model_io.dart';
 import 'ollama_registry_client.dart';
 
@@ -113,10 +115,25 @@ class _CollectorSink implements Sink<Digest> {
 /// client, models dir) are optional constructor params for direct unit
 /// testing; production di constructs the controller bare and everything
 /// resolves through the injectable providers.
+///
+/// v1.53.0 — free-disk guard: once a row's URL and expected size are
+/// resolved (but before the first byte), the queue probes the free
+/// space where models live ([DiskSpace], `freeDiskBytes` on the
+/// `zagents/llmserver` channel) and fails the row with the localized
+/// `ollamaDiskFull` message when free < expected + headroom
+/// ([defaultDiskGuardHeadroomBytes]). An unknown probe (null — tests,
+/// unsupported platforms) or an unknown size (0) never blocks, so the
+/// guard degrades to a no-op everywhere the platform cannot answer;
+/// ENOSPC write failures still degrade to a failed row on their own.
 class DownloadQueueController extends Notifier<List<DownloadProgress>> {
-  DownloadQueueController({http.Client? httpClient, Directory? modelsDir})
-    : _injectedClient = httpClient,
-      _injectedDir = modelsDir;
+  DownloadQueueController({
+    http.Client? httpClient,
+    Directory? modelsDir,
+    DiskSpace? diskSpace,
+    this.diskGuardHeadroomBytes = defaultDiskGuardHeadroomBytes,
+  }) : _injectedClient = httpClient,
+       _injectedDir = modelsDir,
+       _diskSpace = diskSpace ?? const DiskSpace();
 
   final http.Client? _injectedClient;
   final Directory? _injectedDir;
@@ -127,9 +144,21 @@ class DownloadQueueController extends Notifier<List<DownloadProgress>> {
   /// capture enriched entries instead.
   void Function(LocalModelEntry)? onCompleted;
 
+  /// Free-disk probe for the enqueue guard (injectable for tests; the
+  /// default probes the `zagents/llmserver` channel and reports null
+  /// wherever the channel is unavailable).
+  final DiskSpace _diskSpace;
+
+  /// Headroom subtracted from the free space before a row may start
+  /// (injectable so tests can pin the threshold exactly).
+  final int diskGuardHeadroomBytes;
+
   /// Hard cap for establishing a download (headers); the body stream
   /// itself is allowed to trickle for the whole transfer.
   static const Duration connectTimeout = Duration(seconds: 30);
+
+  /// Default [diskGuardHeadroomBytes] — 256 MiB (268435456).
+  static const int defaultDiskGuardHeadroomBytes = 256 * 1024 * 1024;
 
   /// Resolved-download bookkeeping per modelId (kept while a row can
   /// still be resumed).
@@ -231,12 +260,22 @@ class DownloadQueueController extends Notifier<List<DownloadProgress>> {
     }
   }
 
+  /// Localized row error for the free-disk guard
+  /// ([AppStrings.ollamaDiskFull]) — resolved through the app settings
+  /// like every other localized controller message.
+  String _diskFullError(String name, int neededBytes, int freeBytes) =>
+      appStringsFor(
+        ref.read(settingsProvider).languageCode,
+      ).ollamaDiskFull(name, neededBytes, freeBytes);
+
   /// Queues [entry] for download. The entry is pre-built by the UI
   /// (catalog ref or custom URL); the queue resolves the concrete URL
   /// and expected sha256 (registry digest, or the entry's own sha256
   /// for custom URLs), adds a row and starts the transfer — the future
   /// completes once the transfer is UNDER WAY, not when it finishes
   /// (progress and outcome are observed through the provider state).
+  /// The v1.53.0 free-disk guard runs on the resolved row before the
+  /// first byte is requested (see the class doc).
   Future<void> enqueue(LocalModelEntry entry) async {
     final DownloadProgress? existing = _rowOf(entry.id);
     if (existing != null &&
@@ -245,11 +284,6 @@ class DownloadQueueController extends Notifier<List<DownloadProgress>> {
             existing.status == DownloadStatus.paused)) {
       return; // Already queued/in flight/paused — resume drives those.
     }
-
-    // TODO(v1.52.0): free-disk guard — dart:io exposes no statfs-style
-    // free-space API, so the queue cannot pre-check the models dir.
-    // ENOSPC write failures already degrade to a failed row; do not
-    // invent a platform API here.
 
     final String customUrl = entry.customUrl.trim();
     final String registryRef = entry.ollamaRef.trim();
@@ -302,6 +336,29 @@ class DownloadQueueController extends Notifier<List<DownloadProgress>> {
         ),
       );
       return;
+    }
+
+    // v1.53.0 disk guard (replaces the v1.52.0 TODO): the expected size
+    // is now resolved for BOTH sources, so refuse rows that cannot fit
+    // before the first byte — no half-download wasted on a full disk.
+    // Tolerant by contract: an unknown probe (null — tests, unsupported
+    // platforms) or an unknown size (0) never blocks, and the failure
+    // is the same failed-row path the HTTP errors use, so the queue
+    // keeps flowing.
+    if (totalBytes > 0) {
+      final int? freeBytes = await _diskSpace.freeDiskBytes();
+      if (freeBytes != null &&
+          freeBytes < totalBytes + diskGuardHeadroomBytes) {
+        _upsertRow(
+          DownloadProgress(
+            modelId: entry.id,
+            modelName: entry.name,
+            status: DownloadStatus.failed,
+            error: _diskFullError(entry.name, totalBytes, freeBytes),
+          ),
+        );
+        return;
+      }
     }
 
     final _DownloadSpec spec = _DownloadSpec(entry, url, expectedSha);

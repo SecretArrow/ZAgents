@@ -817,6 +817,10 @@ abstract class AppStrings {
   String ollamaSizeProgress(int receivedMb, int totalMb);
   String get ollamaSizeUnknown;
 
+  /// v1.53.0 — disk-guard failure row message: takes the raw byte
+  /// counts and formats MiB inline (bytes ~/ (1024 * 1024)).
+  String ollamaDiskFull(String name, int neededBytes, int freeBytes);
+
   // -- Local AI Fase 2 (v1.52.0) -------------------------------------------
   /// Server tab: benchmark button/states + result line, full log viewer,
   /// battery + device-RAM diagnostics lines.
@@ -2604,6 +2608,11 @@ class AppStringsEn implements AppStrings {
       '$receivedMb of $totalMb MB';
   @override
   String get ollamaSizeUnknown => 'unknown size';
+  @override
+  String ollamaDiskFull(String name, int neededBytes, int freeBytes) =>
+      'Not enough free space for “$name”: needs '
+      '${neededBytes ~/ (1024 * 1024)} MB, only '
+      '${freeBytes ~/ (1024 * 1024)} MB free.';
 
   // -- Local AI Fase 2 (v1.52.0) -------------------------------------------
   @override
@@ -4445,6 +4454,11 @@ class AppStringsId implements AppStrings {
       '$receivedMb dari $totalMb MB';
   @override
   String get ollamaSizeUnknown => 'ukuran tidak diketahui';
+  @override
+  String ollamaDiskFull(String name, int neededBytes, int freeBytes) =>
+      'Ruang kosong tidak cukup untuk “$name”: butuh '
+      '${neededBytes ~/ (1024 * 1024)} MB, tersisa '
+      '${freeBytes ~/ (1024 * 1024)} MB.';
 
   // -- Local AI Fase 2 (v1.52.0) -------------------------------------------
   @override

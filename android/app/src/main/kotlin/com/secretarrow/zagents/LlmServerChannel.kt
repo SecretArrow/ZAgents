@@ -1,6 +1,7 @@
 /*
  * LlmServerChannel.kt — Dart ⇄ Kotlin bridge for the Local AI runtime
- * (v1.51.0; `batteryStatus` added in v1.52.0).
+ * (v1.51.0; `batteryStatus` added in v1.52.0, `freeDiskBytes` added in
+ * v1.53.0).
  *
  * Implements the frozen `zagents/llmserver` MethodChannel contract
  * (lib/services/local_ai/README.md §1 + §5): runtime availability, device
@@ -28,6 +29,7 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.os.BatteryManager
 import android.os.Build
+import android.os.StatFs
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
@@ -38,6 +40,9 @@ import java.io.File
  * §1). Constructed and registered from MainActivity's
  * configureFlutterEngine; keeps only the app context (see [appContext])
  * to start/stop [LlmServerService] and to inspect `nativeLibraryDir`.
+ *
+ * v1.53.0 — `freeDiskBytes` for the downloader's disk guard: available
+ * bytes on the models dir, null when unknown (never throws).
  */
 class LlmServerChannel(context: Context) {
 
@@ -64,6 +69,7 @@ class LlmServerChannel(context: Context) {
                         "isRunning" -> result.success(LlmServerProcessHolder.snapshotState())
                         "getLogs" -> result.success(LlmServerProcessHolder.snapshotLogs())
                         "batteryStatus" -> result.success(batteryStatus())
+                        "freeDiskBytes" -> result.success(freeDiskBytes())
                         else -> result.notImplemented()
                     }
                 } catch (_: Exception) {
@@ -207,6 +213,21 @@ class LlmServerChannel(context: Context) {
         // so the 0–100 / -1 contract shape always holds.
         if (percent > 100) percent = 100
         return mapOf("percent" to percent, "charging" to charging)
+    }
+
+    /// v1.53.0 (downloader disk guard) — `freeDiskBytes` → long?: bytes
+    /// available where the model files live, measured with StatFs on the
+    /// app's primary external files dir (`getExternalFilesDir(null)` —
+    /// the same root the models dir resolves to) and falling back to the
+    /// internal `filesDir` when external storage does not resolve. Any
+    /// failure (StatFs error, unresolvable dirs) reports null = unknown;
+    /// the Dart side treats unknown as "allow" so the guard can never
+    /// wedge the queue on devices the platform cannot measure.
+    private fun freeDiskBytes(): Long? = try {
+        val dir = appContext.getExternalFilesDir(null) ?: appContext.filesDir
+        StatFs(dir.absolutePath).availableBytes
+    } catch (_: Exception) {
+        null
     }
 
     companion object {

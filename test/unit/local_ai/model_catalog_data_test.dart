@@ -15,9 +15,9 @@ CatalogModelEntry _e(
 );
 
 void main() {
-  group('kLocalAiCatalog (frozen v1.51.0 proposal)', () {
-    test('has exactly 14 entries with unique refs', () {
-      expect(kLocalAiCatalog, hasLength(14));
+  group('kLocalAiCatalog (v1.53.0 live-registry catalog)', () {
+    test('has exactly 30 entries with unique refs', () {
+      expect(kLocalAiCatalog, hasLength(30));
       final Set<String> refs = <String>{};
       for (final CatalogModelEntry entry in kLocalAiCatalog) {
         expect(
@@ -42,58 +42,90 @@ void main() {
       }
     });
 
-    test('tier split is 6 / 6 / 2', () {
+    test('tier split is 16 / 9 / 5', () {
       final Map<CatalogTier, int> counts = <CatalogTier, int>{
         for (final CatalogTier tier in CatalogTier.values) tier: 0,
       };
       for (final CatalogModelEntry entry in kLocalAiCatalog) {
         counts[entry.tier] = counts[entry.tier]! + 1;
       }
-      expect(counts[CatalogTier.tier1], 6);
-      expect(counts[CatalogTier.tier2], 6);
-      expect(counts[CatalogTier.upperBound], 2);
+      expect(counts[CatalogTier.tier1], 16);
+      expect(counts[CatalogTier.tier2], 9);
+      expect(counts[CatalogTier.upperBound], 5);
     });
 
-    test('spot-checks against the approved proposal values (MB = 1024²)', () {
-      const int mb = 1024 * 1024;
+    test('spot-checks against exact live registry manifest sums '
+        '(Σ layers, verified 2026-11-07)', () {
+      // Every downloadBytes below is the exact byte sum of the registry
+      // manifest layers (Σ layers) — no MiB rounding.
       final Map<String, CatalogModelEntry> byRef = <String, CatalogModelEntry>{
         for (final CatalogModelEntry entry in kLocalAiCatalog)
           entry.ollamaRef: entry,
       };
 
       final CatalogModelEntry qwen = byRef['qwen3:0.6b']!;
-      expect(qwen.downloadBytes, 523 * mb);
+      expect(qwen.downloadBytes, 522653277);
       expect(qwen.contextTokens, 40960);
       expect(qwen.ramEstBytes, 1024 * 1024 * 1024);
       expect(qwen.tier, CatalogTier.tier1);
       expect(qwen.license, 'Apache-2.0');
 
       final CatalogModelEntry gemma = byRef['gemma3:1b']!;
-      expect(gemma.downloadBytes, 806 * mb);
+      expect(gemma.downloadBytes, 806067267);
       expect(gemma.ramEstBytes, (12 * 1024 * 1024 * 1024) ~/ 10);
       expect(gemma.license, 'Gemma');
 
       final CatalogModelEntry coder = byRef['qwen2.5-coder:1.5b']!;
+      expect(coder.downloadBytes, 986061602);
       expect(coder.tier, CatalogTier.tier2);
       expect(coder.contextTokens, 32768);
       expect(coder.license, 'Apache-2.0');
 
       final CatalogModelEntry deepseek = byRef['deepseek-r1:1.5b']!;
+      expect(deepseek.downloadBytes, 1117322281);
       expect(deepseek.license, 'MIT');
       expect(deepseek.contextTokens, 131072);
 
       final CatalogModelEntry llama = byRef['llama3.2:1b']!;
+      expect(llama.downloadBytes, 1321097844);
       expect(llama.license, 'Llama-Community');
 
-      final CatalogModelEntry minicpm = byRef['minicpm5-2b']!;
-      expect(minicpm.tier, CatalogTier.upperBound);
-      expect(minicpm.downloadBytes, 1718 * mb);
+      final CatalogModelEntry minicpm = byRef['openbmb/minicpm5:latest']!;
+      expect(minicpm.tier, CatalogTier.tier1);
+      expect(minicpm.downloadBytes, 688066182);
       expect(minicpm.contextTokens, 131072);
+      expect(minicpm.license, 'Apache-2.0');
 
       final CatalogModelEntry bonsai4 = byRef['bonsai-2:4b']!;
       expect(bonsai4.tier, CatalogTier.upperBound);
+      expect(bonsai4.downloadBytes, 1579008347);
       expect(bonsai4.contextTokens, 262144);
       expect(bonsai4.ramEstBytes, (26 * 1024 * 1024 * 1024) ~/ 10);
+    });
+
+    test('directUrl rows are registry-bypassed HF picks', () {
+      final Map<String, CatalogModelEntry> byRef = <String, CatalogModelEntry>{
+        for (final CatalogModelEntry entry in kLocalAiCatalog)
+          entry.ollamaRef: entry,
+      };
+      const List<String> hfRefs = <String>[
+        'hf.co/taobao-mnn/MNN-Pocket-0.3B-GGUF:Q4_1',
+        'hf.co/zyr-AGENT/ZY-S2:Q5_K_M',
+      ];
+      for (final String ref in hfRefs) {
+        final CatalogModelEntry entry = byRef[ref]!;
+        expect(
+          entry.directUrl,
+          startsWith('https://huggingface.co/'),
+          reason: ref,
+        );
+        expect(entry.directUrl, endsWith('.gguf'), reason: ref);
+      }
+      // Every OTHER entry keeps the default (registry-resolved) URL.
+      for (final CatalogModelEntry entry in kLocalAiCatalog) {
+        if (hfRefs.contains(entry.ollamaRef)) continue;
+        expect(entry.directUrl, isEmpty, reason: entry.ollamaRef);
+      }
     });
 
     test('every tier-1 download fits the smallest approved budget', () {
@@ -141,12 +173,25 @@ void main() {
     });
 
     test('spot checks against the real catalog on a 4 GB device', () {
-      // 4 GiB → limit 2362232012 (55%). Every real entry fits EXCEPT
-      // bonsai-2:4b (2.6 GiB); minicpm5-2b sits exactly ON the line and
-      // therefore fits too (inclusive boundary).
+      // 4 GiB → 55%-of-total limit = 2362232012 B (inclusive boundary).
+      // Every real entry fits EXCEPT the five upper-bound rows whose RAM
+      // estimate exceeds that limit: bonsai-2:4b (2.6 GiB), qwen3.5:2b
+      // (2.9 GiB), phi4-mini:3.8b (2.4 GiB), granite4.2:3b (2.6 GiB) and
+      // gemma4:e2b (3.5 GiB). Everything else stays under 55%.
+      const Set<String> tooBigFor4GiB = <String>{
+        'bonsai-2:4b',
+        'qwen3.5:2b',
+        'phi4-mini:3.8b',
+        'granite4.2:3b',
+        'gemma4:e2b',
+      };
       for (final CatalogModelEntry entry in kLocalAiCatalog) {
         final bool fits = catalogModelFits(entry.ramEstBytes, 4 * gb);
-        expect(fits, entry.ollamaRef != 'bonsai-2:4b', reason: entry.ollamaRef);
+        expect(
+          fits,
+          !tooBigFor4GiB.contains(entry.ollamaRef),
+          reason: entry.ollamaRef,
+        );
       }
     });
   });

@@ -273,22 +273,23 @@ void main() {
     // Acknowledge the queued feedback dialog before the next tap.
     await dismissAppMessage(tester);
 
-    // The upper-bound card sits deep in the lazy list — drag it into
-    // view (dragUntilVisible builds offscreen items).
+    // An upper-bound card sits deep in the 30-row lazy list — drag it
+    // into view (dragUntilVisible builds offscreen items). bonsai-2:4b
+    // is upperBound, so its download asks first.
     await tester.dragUntilVisible(
-      find.byKey(const Key('ollama-download-minicpm5-2b')),
+      find.byKey(const Key('ollama-download-bonsai-2:4b')),
       catalogScrollable(),
       const Offset(0, -250),
     );
     await settle(tester);
-    await tester.tap(find.byKey(const Key('ollama-download-minicpm5-2b')));
+    await tester.tap(find.byKey(const Key('ollama-download-bonsai-2:4b')));
     await settle(tester);
     // Heavy tier: the OOM-risk confirmation dialog appears first.
     expect(find.byKey(const Key('ollama-risk-dialog')), findsOneWidget);
     await tester.tap(find.byKey(const Key('ollama-risk-confirm')));
     await settle(tester);
     expect(queue.enqueued, hasLength(2));
-    expect(queue.enqueued.last.ollamaRef, 'minicpm5-2b');
+    expect(queue.enqueued.last.ollamaRef, 'bonsai-2:4b');
   });
 
   testWidgets(
@@ -661,7 +662,9 @@ void main() {
       expect(find.text('Back to the built-in catalog.'), findsOneWidget);
       await dismissAppMessage(tester);
       expect(container.read(localModelsProvider).remoteCatalog, isEmpty);
-      expect(find.textContaining('523 MB'), findsOneWidget);
+      // Built-in qwen3:0.6b restored: its exact registry size 522653277 B
+      // renders as '498 MB' through the screen's MiB formatter.
+      expect(find.textContaining('498 MB'), findsOneWidget);
       expect(
         find.byKey(
           const Key('ollama-catalog-new-model:1b'),

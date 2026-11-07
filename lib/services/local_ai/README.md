@@ -1,4 +1,4 @@
-# Local AI (Ollama Manage) — Frozen Contracts v1.51.0
+# Local AI (Ollama Manage) — Frozen Contracts v1.53.0
 
 Single source of truth for the Local AI feature (Route B: bundled llama.cpp
 `llama-server` + Route D: external Ollama detection). All parallel workstreams
@@ -130,6 +130,12 @@ class LocalModelState {
   mismatch → `failed` + delete. Writes `<dir>/<fileName>.part` → rename on
   success → fires `onCompleted(LocalModelEntry)` callback given by di
   (wired to `LocalModelsController.addInstalled`).
+  **Disk guard (v1.53.0)** — before the first byte of every row the queue
+  probes `freeDiskBytes` over `zagents/llmserver` (StatFs on the models
+  dir); free < expected + 256 MiB fails the row with `ollamaDiskFull`;
+  unknown/null = proceed. Kotlin returns null on any error. Ctor gains
+  `{http.Client? httpClient, Directory? modelsDir, DiskSpace? diskSpace,
+  int? diskGuardHeadroomBytes}` (headroom default 268435456) for tests.
 
 - **`local_model_store.dart`**
   `abstract class LocalModelRepository` — `LocalModelState load()` +
@@ -161,19 +167,49 @@ class LocalModelState {
 - **`model_catalog_data.dart`**
   `enum CatalogTier { tier1, tier2, upperBound }`
   `class CatalogModelEntry` — `ollamaRef`, `downloadBytes`, `ramEstBytes`,
-  `contextTokens`, `tier`, `license`; `String get id => ollamaRef`.
-  `const List<CatalogModelEntry> kLocalAiCatalog` — 14 entries (values from
-  the approved proposal; MB = 1024²):
-  tier1: `qwen3:0.6b` 523MB/40960/1.0GB Apache-2.0 · `gemma3:1b` 806MB/32768/
-  1.2GB Gemma · `bonsai-2:2b` 911MB/262144/1.3GB · `gemma3:270m` 292MB/32768/
-  0.7GB Gemma · `smollm2:135m` 271MB/8192/0.6GB Apache-2.0 ·
-  `smollm2:360m` 726MB/8192/1.1GB Apache-2.0;
-  tier2: `qwen2.5-coder:1.5b` 1014MB/32768/1.5GB Apache-2.0 ·
-  `deepseek-r1:1.5b` 1153MB/131072/1.6GB MIT · `lfm3:1.7b` 1423MB/262144/
-  1.6GB · `qwen3.5:0.8b` 1311MB/262144/1.7GB · `llama3.2:1b` 1365MB/131072/
-  1.7GB Llama-Community · `qwen3:1.7b` 1468MB/40960/1.8GB Apache-2.0;
-  upperBound (risky, OOM warning in UI): `minicpm5-2b` 1718MB/131072/2.2GB ·
-  `bonsai-2:4b` 1718MB/262144/2.6GB.
+  `contextTokens`, `tier`, `license`, `directUrl` (direct https .gguf URL
+  for Hugging Face-hosted files the Ollama registry cannot serve; `''` =
+  resolve `ollamaRef` through the registry as usual — the screen passes a
+  non-empty value through as the custom-URL download source);
+  `String get id => ollamaRef`.
+  `const List<CatalogModelEntry> kLocalAiCatalog` — 30 entries (16 tier1 /
+  9 tier2 / 5 upperBound). Sizes are live Ollama registry manifest sums
+  (Σ layers, verified 2026-11-07; MB = 1024²); the two `hf.co/…` rows
+  download through a direct Hugging Face URL (`directUrl`) because the
+  registry cannot serve them.
+
+  | ref | tier | download (MB) | RAM est (GB) | context | license |
+  | --- | --- | --- | --- | --- | --- |
+  | `qwen3:0.6b` | tier1 | 498 | 1.0 | 40960 | Apache-2.0 |
+  | `gemma3:1b` | tier1 | 769 | 1.2 | 32768 | Gemma |
+  | `bonsai-2:2b` | tier1 | 869 | 1.3 | 262144 | – |
+  | `gemma3:270m` | tier1 | 278 | 0.7 | 32768 | Gemma |
+  | `smollm2:135m` | tier1 | 258 | 0.6 | 8192 | Apache-2.0 |
+  | `smollm2:360m` | tier1 | 692 | 1.1 | 8192 | Apache-2.0 |
+  | `qwen2.5-coder:0.5b` | tier1 | 379 | 0.8 | 32768 | Apache-2.0 |
+  | `smollm:135m` | tier1 | 87 | 0.5 | 2048 | Apache-2.0 |
+  | `smollm:360m` | tier1 | 219 | 0.7 | 2048 | Apache-2.0 |
+  | `tinyllama:1.1b` | tier1 | 608 | 0.9 | 2048 | Apache-2.0 |
+  | `yi-coder:1.5b` | tier1 | 826 | 1.2 | 131072 | Apache-2.0 |
+  | `stablelm2:1.6b` | tier1 | 937 | 1.2 | 4096 | StabilityAI |
+  | `reader-lm:0.5b` | tier1 | 336 | 0.8 | 256000 | CC-BY-NC-4.0 |
+  | `reader-lm:1.5b` | tier1 | 892 | 1.2 | 256000 | CC-BY-NC-4.0 |
+  | `openbmb/minicpm5:latest` | tier1 | 656 | 1.1 | 131072 | Apache-2.0 |
+  | `hf.co/taobao-mnn/MNN-Pocket-0.3B-GGUF:Q4_1` | tier1 | 183 | 0.5 | 40960 | Apache-2.0 |
+  | `qwen2.5-coder:1.5b` | tier2 | 940 | 1.5 | 32768 | Apache-2.0 |
+  | `deepseek-r1:1.5b` | tier2 | 1066 | 1.6 | 131072 | MIT |
+  | `lfm3:1.7b` | tier2 | 1049 | 1.6 | 262144 | – |
+  | `qwen3.5:0.8b` | tier2 | 1261 | 1.7 | 262144 | – |
+  | `llama3.2:1b` | tier2 | 1260 | 1.7 | 131072 | Llama-Community |
+  | `qwen3:1.7b` | tier2 | 1296 | 1.8 | 40960 | Apache-2.0 |
+  | `smollm2:1.7b` | tier2 | 1736 | 1.9 | 8192 | Apache-2.0 |
+  | `sam860/olmo2:1b` | tier2 | 1508 | 1.8 | 4096 | Apache-2.0 |
+  | `hf.co/zyr-AGENT/ZY-S2:Q5_K_M` | tier2 | 1073 | 1.4 | 32768 | Apache-2.0 |
+  | `bonsai-2:4b` | upperBound | 1506 | 2.6 | 262144 | – |
+  | `qwen3.5:2b` | upperBound | 2559 | 2.9 | 262144 | Apache-2.0 |
+  | `phi4-mini:3.8b` | upperBound | 2376 | 2.4 | 131072 | MIT |
+  | `granite4.2:3b` | upperBound | 2140 | 2.6 | 131072 | Apache-2.0 |
+  | `gemma4:e2b` | upperBound | 4375 | 3.5 | 131072 | Apache-2.0 |
 
 ### 2.3 `lib/di.dart` additions (S2 owns; exact names)
 

@@ -9,23 +9,39 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:zagents/di.dart';
 import 'package:zagents/models/local_model.dart';
+import 'package:zagents/services/local_ai/disk_space.dart';
 import 'package:zagents/services/local_ai/model_downloader.dart';
 import 'package:zagents/services/local_ai/ollama_registry_client.dart';
+import 'package:zagents/services/settings_repository.dart';
 
 const String _fullBody = '0123456789';
 final List<int> _fullBytes = utf8.encode(_fullBody);
 final String _fullSha = sha256.convert(_fullBytes).toString();
 final String _wrongSha = sha256.convert(utf8.encode('XXXXXXXXXX')).toString();
 
-LocalModelEntry _customEntry(String id, {String sha = ''}) => LocalModelEntry(
+LocalModelEntry _customEntry(
+  String id, {
+  String sha = '',
+  int size = 0,
+}) => LocalModelEntry(
   id: id,
   name: 'Model $id',
   source: LocalModelSource.customUrl,
   customUrl: 'https://example.test/$id.gguf',
   fileName: '$id.gguf',
+  sizeBytes: size,
   sha256: sha,
   addedAtMs: 0,
 );
+
+/// Builds a fake [DiskSpace] probe that always reports [bytes] free.
+Future<Object?> Function(String, {dynamic arguments}) _freeProbe(int bytes) =>
+    (String method, {dynamic arguments}) async => bytes;
+
+/// Builds a fake [DiskSpace] probe reporting "unknown" (null) — the
+/// same shape the real channel produces off-platform.
+Future<Object?> Function(String, {dynamic arguments}) _nullProbe() =>
+    (String method, {dynamic arguments}) async => null;
 
 /// Polls [condition] until true; fails the test after 5 s.
 Future<void> _until(FutureOr<bool> Function() condition, String what) async {
@@ -50,12 +66,21 @@ class _Boot {
     required Directory modelsDir,
     http.Client? registryClient,
     void Function(LocalModelEntry)? onCompleted,
+    DiskSpace? diskSpace,
   }) {
     final ProviderContainer container = ProviderContainer(
       overrides: <Override>[
         downloadQueueProvider.overrideWith(
-          () =>
-              DownloadQueueController(httpClient: client, modelsDir: modelsDir),
+          () => DownloadQueueController(
+            httpClient: client,
+            modelsDir: modelsDir,
+            diskSpace: diskSpace,
+          ),
+        ),
+        // The v1.53.0 disk guard reads the app language for its
+        // localized row error — bare tests get an in-memory store.
+        settingsRepositoryProvider.overrideWithValue(
+          MemorySettingsRepository(),
         ),
         if (registryClient != null)
           ollamaRegistryClientProvider.overrideWithValue(
@@ -434,5 +459,103 @@ void main() {
 
     expect(boot.rowOf('noSrc')?.status, DownloadStatus.failed);
     expect(boot.rowOf('noSrc')!.error, contains('no download source'));
+  });
+
+  test('disk guard allows a row when free space covers size + headroom',
+      () async {
+    final List<http.BaseRequest> requests = <http.BaseRequest>[];
+    final _Boot boot = _Boot.create(
+      MockClient.streaming((
+        http.BaseRequest request,
+        http.ByteStream body,
+      ) async {
+        requests.add(request);
+        return http.StreamedResponse(
+          Stream<List<int>>.value(_fullBytes),
+          200,
+          contentLength: _fullBytes.length,
+        );
+      }),
+      modelsDir: tempDir,
+      // 10 GiB free: 4 MiB expected + 256 MiB headroom fits easily.
+      diskSpace: DiskSpace(invoke: _freeProbe(10 * 1024 * 1024 * 1024)),
+    );
+
+    await boot.controller.enqueue(
+      _customEntry('roomy', sha: _fullSha, size: 4 * 1024 * 1024),
+    );
+
+    await _until(
+      () => boot.rowOf('roomy')?.status == DownloadStatus.completed,
+      'completion',
+    );
+    expect(requests, hasLength(1));
+    expect(await File(p('roomy.gguf')).readAsString(), _fullBody);
+  });
+
+  test('disk guard fails the row before any HTTP request when short of '
+      'space', () async {
+    final List<http.BaseRequest> requests = <http.BaseRequest>[];
+    final _Boot boot = _Boot.create(
+      MockClient.streaming((
+        http.BaseRequest request,
+        http.ByteStream body,
+      ) async {
+        requests.add(request);
+        return http.StreamedResponse(
+          Stream<List<int>>.value(_fullBytes),
+          200,
+          contentLength: _fullBytes.length,
+        );
+      }),
+      modelsDir: tempDir,
+      // 1 MiB free: far below 4 MiB expected + 256 MiB headroom.
+      diskSpace: DiskSpace(invoke: _freeProbe(1024 * 1024)),
+    );
+
+    await boot.controller.enqueue(
+      _customEntry('toobig', sha: _fullSha, size: 4 * 1024 * 1024),
+    );
+
+    // The guard resolves before enqueue returns, so the row is already
+    // failed here — no probe-driven race.
+    final DownloadProgress row = boot.rowOf('toobig')!;
+    expect(row.status, DownloadStatus.failed);
+    expect(row.error, contains('Model toobig'));
+    expect(requests, isEmpty);
+    expect(await File(p('toobig.gguf.part')).exists(), isFalse);
+  });
+
+  test('disk guard is a no-op when the free-space probe reports null',
+      () async {
+    final List<http.BaseRequest> requests = <http.BaseRequest>[];
+    final _Boot boot = _Boot.create(
+      MockClient.streaming((
+        http.BaseRequest request,
+        http.ByteStream body,
+      ) async {
+        requests.add(request);
+        return http.StreamedResponse(
+          Stream<List<int>>.value(_fullBytes),
+          200,
+          contentLength: _fullBytes.length,
+        );
+      }),
+      modelsDir: tempDir,
+      diskSpace: DiskSpace(invoke: _nullProbe()),
+    );
+
+    // Unknown free space must never block — even a size that would not
+    // fit any real disk (if null were treated as 0) proceeds.
+    await boot.controller.enqueue(
+      _customEntry('unknown', sha: _fullSha, size: 4 * 1024 * 1024),
+    );
+
+    await _until(
+      () => boot.rowOf('unknown')?.status == DownloadStatus.completed,
+      'completion',
+    );
+    expect(requests, hasLength(1));
+    expect(await File(p('unknown.gguf')).readAsString(), _fullBody);
   });
 }
