@@ -224,6 +224,28 @@ final localModelIoProvider = Provider<LocalModelIo>((ref) => LocalModelIo());
   `app_strings_es.dart`), keys prefixed `ollama…`/`localAi…`; add a
   localization test block for the new keys (all three bundles).
 
+## 5. Fase 2 additions (v1.52.0) — channel + behavior contract
+
+- Channel `zagents/llmserver` gains ONE method (Kotlin implements, Dart calls):
+  | Method | Args | Returns |
+  | --- | --- | --- |
+  | `batteryStatus` | – | `Map`: `percent: int` (0–100, `-1` unknown), `charging: bool` |
+- **Battery guard (Kotlin)**: while `LlmServerService` hosts a live process it
+  registers a runtime `ACTION_BATTERY_LOW` receiver; on critical battery it
+  stops the child + service (llama-server is heavy). Unregistered on teardown.
+- **Boot start (Kotlin)**: `BootReceiver` (RECEIVE_BOOT_COMPLETED) reads the
+  Flutter SharedPreferences store (`FlutterSharedPreferences`, key
+  `flutter.zagents.localai.v1`, JSON via `org.json`): when
+  `autoStartOnBoot` is true, the runtime exists and the most recently used
+  installed model (max `lastUsedAtMs`, fallback first) is present under
+  `<getExternalFilesDir(null)>/local_models/<fileName>`, it starts
+  `LlmServerService` ACTION_START with that model + stored
+  `serverPort`/`contextSize`/`threads`. Defensive: any failure → no-op
+  (optionally a notification). Model alias = model `name` field.
+- Dart side: `LlmServerPlatform.batteryStatus()` added to the abstract
+  platform + fake; `LlmServerState` unchanged (battery polled by the UI,
+  not persisted state).
+
 ## 4. CI contract (S3)
 
 - New composite action `.github/actions/llama-runtime/action.yml`, input

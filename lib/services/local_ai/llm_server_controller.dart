@@ -15,7 +15,7 @@ enum LlmServerStatus {
   /// Launch requested, health endpoint not answering yet.
   starting,
 
-  /// Serving requests on 127.0.0.1:<port>.
+  /// Serving requests on `127.0.0.1:<port>`.
   running,
 
   /// Stop requested, waiting for the service to settle.

@@ -651,9 +651,8 @@ void main() {
   ) async {
     await openSettings(tester);
 
-    // The Local AI section sits below the Cron jobs section — both tiles
-    // live below the fold of the lazy settings ListView, so reveal them
-    // before asserting.
+    // The Local AI section sits below the Cron jobs section — both
+    // tiles live below the fold of the lazy settings ListView.
     await tester.scrollUntilVisible(
       find.byKey(const Key('ollama-manage-tile')),
       200,
@@ -664,12 +663,23 @@ void main() {
       EnginePhase.sendSemanticsUpdate,
       const Duration(seconds: 15),
     );
-    expect(find.byKey(const Key('ollama-manage-tile')), findsOneWidget);
+
+    // scrollUntilVisible stops as soon as the Local AI tile enters the
+    // lazy build range at the TOP edge — which disposes the Cron jobs
+    // section just above it. Drag the list back down a bit so the
+    // viewport covers BOTH sections (they are one small section apart,
+    // the viewport is ~470 px tall), then assert presence and order.
+    await tester.drag(find.byType(Scrollable).first, const Offset(0, 220));
+    await tester.pumpAndSettle(
+      const Duration(milliseconds: 100),
+      EnginePhase.sendSemanticsUpdate,
+      const Duration(seconds: 15),
+    );
+
     expect(find.byKey(const Key('cron-jobs-tile')), findsOneWidget);
+    expect(find.byKey(const Key('ollama-manage-tile')), findsOneWidget);
     expect(
-      tester
-          .getTopLeft(find.byKey(const Key('cron-jobs-tile')))
-          .dy,
+      tester.getTopLeft(find.byKey(const Key('cron-jobs-tile'))).dy,
       lessThan(
         tester.getTopLeft(find.byKey(const Key('ollama-manage-tile'))).dy,
       ),

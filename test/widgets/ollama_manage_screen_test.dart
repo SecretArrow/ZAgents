@@ -79,13 +79,18 @@ void main() {
     }
   }
 
-  /// The scrollable INSIDE the catalog list — the screen also owns the
-  /// TabBarView's horizontal PageView scrollable, so `find
-  /// .byType(Scrollable).first` would drag tabs instead of the list.
-  Finder catalogScrollable() => find.descendant(
-    of: find.byKey(const Key('ollama-catalog-list')),
-    matching: find.byType(Scrollable),
-  );
+  /// The vertical catalog list. Two disambiguations: the screen owns the
+  /// TabBarView's horizontal PageView scrollable (so a global
+  /// `find.byType(Scrollable).first` would drag TABS, not the list), and
+  /// the catalog subtree itself contains the custom-URL TextField's own
+  /// horizontal Scrollable — the list's Scrollable is its ANCESTOR, so
+  /// traversal reports it first and `.first` is unambiguous.
+  Finder catalogScrollable() => find
+      .descendant(
+        of: find.byKey(const Key('ollama-catalog-list')),
+        matching: find.byType(Scrollable),
+      )
+      .first;
 
   /// Pumps the app, navigates Settings → Local AI tile, and lands on the
   /// Ollama Manage screen with the in-memory model store pre-seeded with
