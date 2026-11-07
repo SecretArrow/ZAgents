@@ -182,23 +182,21 @@ void main() {
 
     test('tolerant fromJson: missing remoteCatalog key → empty list; junk '
         'rows skipped; unknown tier → tier2', () {
-      final LocalModelState noKey = LocalModelState.fromJson(
-        <String, dynamic>{'serverPort': 8080},
-      );
+      final LocalModelState noKey = LocalModelState.fromJson(<String, dynamic>{
+        'serverPort': 8080,
+      });
       expect(noKey.remoteCatalog, isEmpty);
 
-      final LocalModelState junk = LocalModelState.fromJson(
-        <String, dynamic>{
-          'remoteCatalog': <dynamic>[
-            <String, dynamic>{
-              'ollamaRef': 'x:1b',
-              'downloadBytes': 5,
-              'tier': 'from-the-future',
-            },
-            'not-a-map',
-          ],
-        },
-      );
+      final LocalModelState junk = LocalModelState.fromJson(<String, dynamic>{
+        'remoteCatalog': <dynamic>[
+          <String, dynamic>{
+            'ollamaRef': 'x:1b',
+            'downloadBytes': 5,
+            'tier': 'from-the-future',
+          },
+          'not-a-map',
+        ],
+      });
       expect(junk.remoteCatalog, hasLength(1));
       expect(junk.remoteCatalog.single.ollamaRef, 'x:1b');
       expect(junk.remoteCatalog.single.downloadBytes, 5);
@@ -207,7 +205,9 @@ void main() {
     });
 
     test('copyWith patches remoteCatalog independently of the rest', () {
-      const LocalModelState state = LocalModelState(remoteCatalog: kLocalAiCatalog);
+      const LocalModelState state = LocalModelState(
+        remoteCatalog: kLocalAiCatalog,
+      );
       final LocalModelState next = state.copyWith(
         remoteCatalog: const <CatalogModelEntry>[],
       );

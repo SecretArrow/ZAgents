@@ -7,7 +7,8 @@ import 'package:zagents/services/local_ai/llm_benchmark.dart';
 
 /// Canned SSE: three content deltas, a final usage chunk (llama-server
 /// sends `usage` in the last chunk by default) and the [DONE] marker.
-const String _sseWithUsage = ''
+const String _sseWithUsage =
+    ''
     'data: {"choices":[{"delta":{"content":"one two "}}]}\n'
     'data: {"choices":[{"delta":{"content":"three four "}}]}\n'
     'data: {"choices":[{"delta":{"content":"five"}}]}\n'
@@ -15,7 +16,8 @@ const String _sseWithUsage = ''
     'data: [DONE]\n';
 
 /// Same answer but WITHOUT a usage chunk — the word-count fallback path.
-const String _sseNoUsage = ''
+const String _sseNoUsage =
+    ''
     'data: {"choices":[{"delta":{"content":"one two three four five"}}]}\n'
     'data: {"choices":[{"delta":{"content":" six seven eight nine ten"}}]}\n'
     'data: [DONE]\n';
@@ -137,9 +139,7 @@ void main() {
 
     test('a stream with no content → “produced no output”', () async {
       const String empty = 'data: {"choices":[{"delta":{}}]}\ndata: [DONE]\n';
-      final LlmBenchmark benchmark = LlmBenchmark(
-        client: _sseClient(empty),
-      );
+      final LlmBenchmark benchmark = LlmBenchmark(client: _sseClient(empty));
 
       await expectLater(
         benchmark.run(baseUrl: 'http://127.0.0.1:11434', model: 'm'),
@@ -156,9 +156,7 @@ void main() {
     test('malformed SSE payload → LlmBenchmarkException', () async {
       const String broken =
           'data: {not json at all}\ndata: {"choices":[{"delta":{"content":"x"}}]}\n';
-      final LlmBenchmark benchmark = LlmBenchmark(
-        client: _sseClient(broken),
-      );
+      final LlmBenchmark benchmark = LlmBenchmark(client: _sseClient(broken));
 
       await expectLater(
         benchmark.run(baseUrl: 'http://127.0.0.1:11434', model: 'm'),

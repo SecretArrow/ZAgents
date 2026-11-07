@@ -1842,8 +1842,7 @@ class AppStringsEs implements AppStrings {
   @override
   String ollamaBattery(int percent) => 'Batería $percent%';
   @override
-  String ollamaBatteryCharging(int percent) =>
-      'Batería $percent% · cargando';
+  String ollamaBatteryCharging(int percent) => 'Batería $percent% · cargando';
   @override
   String ollamaBatteryLow(int percent) => 'Batería $percent% — baja';
   @override

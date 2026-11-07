@@ -163,9 +163,11 @@ class _OllamaManageScreenState extends ConsumerState<OllamaManageScreen>
       status: BenchmarkRunStatus.running,
     );
     try {
-      final LlmBenchmarkResult result = await LlmBenchmark(
-        client: ref.read(llmHttpClientProvider),
-      ).run(baseUrl: 'http://127.0.0.1:${server.port}', model: server.activeModelName);
+      final LlmBenchmarkResult result =
+          await LlmBenchmark(client: ref.read(llmHttpClientProvider)).run(
+            baseUrl: 'http://127.0.0.1:${server.port}',
+            model: server.activeModelName,
+          );
       ref.read(benchmarkRunProvider.notifier).state = BenchmarkRunState(
         status: BenchmarkRunStatus.done,
         result: result,
@@ -206,9 +208,7 @@ class _OllamaManageScreenState extends ConsumerState<OllamaManageScreen>
       final List<CatalogModelEntry> entries = await ref
           .read(remoteCatalogProvider)
           .fetch(kRemoteCatalogUrl);
-      await ref
-          .read(localModelsProvider.notifier)
-          .setRemoteCatalog(entries);
+      await ref.read(localModelsProvider.notifier).setRemoteCatalog(entries);
       if (!mounted) return;
       showAppMessage(context, strings.ollamaCatalogRefreshDone(entries.length));
     } on RemoteCatalogException catch (error) {
@@ -269,10 +269,13 @@ class _OllamaManageScreenState extends ConsumerState<OllamaManageScreen>
     if (_selectedIds.isEmpty) return;
     final AppStrings strings = _strings;
     final List<LocalModelEntry> selected = <LocalModelEntry>[];
-    for (final LocalModelEntry entry in ref.read(localModelsProvider).installed) {
+    for (final LocalModelEntry entry
+        in ref.read(localModelsProvider).installed) {
       if (_selectedIds.contains(entry.id)) selected.add(entry);
     }
-    final int count = await ref.read(localModelIoProvider).exportModels(selected);
+    final int count = await ref
+        .read(localModelIoProvider)
+        .exportModels(selected);
     if (!mounted) return;
     _exitSelection();
     showAppMessage(
@@ -539,7 +542,7 @@ class _OllamaManageScreenState extends ConsumerState<OllamaManageScreen>
     // its tier is not upperBound ("Download anyway").
     final int? ram = ref.read(deviceRamBytesProvider);
     final bool ramKnown = ram != null && ram > 0;
-    final bool fits = !ramKnown || catalogModelFits(model.ramEstBytes, ram!);
+    final bool fits = !ramKnown || catalogModelFits(model.ramEstBytes, ram);
     final bool needsDialog =
         model.tier == CatalogTier.upperBound || (ramKnown && !fits);
     if (needsDialog) {
@@ -1050,9 +1053,8 @@ class _OllamaManageScreenState extends ConsumerState<OllamaManageScreen>
     final bool ramKnown = ram != null && ram > 0;
     final bool batteryKnown = _batteryPercent >= 0;
     if (!batteryKnown && !ramKnown) return const SizedBox.shrink();
-    final bool low = _batteryPercent >= 0 &&
-        _batteryPercent < 20 &&
-        !_batteryCharging;
+    final bool low =
+        _batteryPercent >= 0 && _batteryPercent < 20 && !_batteryCharging;
     return Column(
       key: const Key('ollama-device-lines'),
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1080,7 +1082,9 @@ class _OllamaManageScreenState extends ConsumerState<OllamaManageScreen>
                 style: TextStyle(
                   fontSize: 11.5,
                   color: low ? _kRed : palette.muted,
-                  fontFeatures: const <FontFeature>[FontFeature.tabularFigures()],
+                  fontFeatures: const <FontFeature>[
+                    FontFeature.tabularFigures(),
+                  ],
                 ),
               ),
             ],
@@ -1093,11 +1097,13 @@ class _OllamaManageScreenState extends ConsumerState<OllamaManageScreen>
               Icon(Icons.memory, size: 14, color: palette.muted),
               const SizedBox(width: 6),
               Text(
-                strings.ollamaDeviceRam(_fmtBytes(ram!)),
+                strings.ollamaDeviceRam(_fmtBytes(ram)),
                 style: TextStyle(
                   fontSize: 11.5,
                   color: palette.muted,
-                  fontFeatures: const <FontFeature>[FontFeature.tabularFigures()],
+                  fontFeatures: const <FontFeature>[
+                    FontFeature.tabularFigures(),
+                  ],
                 ),
               ),
             ],
@@ -1223,10 +1229,9 @@ class _OllamaManageScreenState extends ConsumerState<OllamaManageScreen>
       models.remoteCatalog,
     );
     // v1.52.0 — the fit filter hides non-fitting cards (default ON).
-    final Iterable<CatalogModelEntry> visible =
-        _fitFilter && ramKnown
+    final Iterable<CatalogModelEntry> visible = _fitFilter && ramKnown
         ? merged.where(
-            (CatalogModelEntry m) => catalogModelFits(m.ramEstBytes, ram!),
+            (CatalogModelEntry m) => catalogModelFits(m.ramEstBytes, ram),
           )
         : merged;
     return ListView(
@@ -1308,7 +1313,7 @@ class _OllamaManageScreenState extends ConsumerState<OllamaManageScreen>
             model,
             installed: installedRefs.contains(model.ollamaRef),
             active: activeNames.contains(model.ollamaRef),
-            fits: !ramKnown || catalogModelFits(model.ramEstBytes, ram!),
+            fits: !ramKnown || catalogModelFits(model.ramEstBytes, ram),
           ),
       ],
     );
@@ -1364,9 +1369,7 @@ class _OllamaManageScreenState extends ConsumerState<OllamaManageScreen>
                 const SizedBox(width: 6),
                 Expanded(
                   child: Text(
-                    !fits
-                        ? strings.ollamaTooLarge
-                        : strings.ollamaOomWarning,
+                    !fits ? strings.ollamaTooLarge : strings.ollamaOomWarning,
                     style: const TextStyle(
                       fontSize: 11.5,
                       color: _kRed,
@@ -1527,7 +1530,10 @@ class _OllamaManageScreenState extends ConsumerState<OllamaManageScreen>
                   ),
                 ),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 2,
+                  ),
                   decoration: BoxDecoration(
                     color: palette.muted.withValues(alpha: 0.12),
                     borderRadius: BorderRadius.circular(6),

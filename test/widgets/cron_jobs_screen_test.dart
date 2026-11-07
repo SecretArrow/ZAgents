@@ -87,9 +87,7 @@ void main() {
           localModelRepositoryProvider.overrideWithValue(
             MemoryLocalModelRepository(),
           ),
-          llmServerPlatformProvider.overrideWithValue(
-            FakeLlmServerPlatform(),
-          ),
+          llmServerPlatformProvider.overrideWithValue(FakeLlmServerPlatform()),
         ],
         child: Builder(
           builder: (BuildContext context) {

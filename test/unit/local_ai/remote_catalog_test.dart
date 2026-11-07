@@ -10,10 +10,7 @@ import 'package:zagents/services/local_ai/remote_catalog.dart';
 String _payload({
   Object? version = 1,
   List<Map<String, Object?>> models = const <Map<String, Object>>[],
-}) => jsonEncode(<String, Object?>{
-  'version': version,
-  'models': models,
-});
+}) => jsonEncode(<String, Object?>{'version': version, 'models': models});
 
 Map<String, Object?> _model(
   String ref, {
@@ -84,17 +81,19 @@ void main() {
         client: MockClient((http.Request request) async {
           seen.add(request.url);
           return http.Response(
-            _payload(models: <Map<String, Object?>>[
-              _model('qwen3:0.6b'),
-              _model(
-                'new-model:1b',
-                download: 306184192,
-                ram: 751619276,
-                ctx: 32768,
-                tier: 'mystery', // unknown → tier2
-                license: 'MIT',
-              ),
-            ]),
+            _payload(
+              models: <Map<String, Object?>>[
+                _model('qwen3:0.6b'),
+                _model(
+                  'new-model:1b',
+                  download: 306184192,
+                  ram: 751619276,
+                  ctx: 32768,
+                  tier: 'mystery', // unknown → tier2
+                  license: 'MIT',
+                ),
+              ],
+            ),
             200,
           );
         }),
@@ -154,8 +153,10 @@ void main() {
     test('empty models list → RemoteCatalogException', () async {
       final RemoteCatalogService service = RemoteCatalogService(
         client: MockClient(
-          (http.Request request) async =>
-              http.Response(_payload(models: const <Map<String, Object>>[]), 200),
+          (http.Request request) async => http.Response(
+            _payload(models: const <Map<String, Object>>[]),
+            200,
+          ),
         ),
       );
 
@@ -197,11 +198,13 @@ void main() {
       final RemoteCatalogService service = RemoteCatalogService(
         client: MockClient((http.Request request) async {
           return http.Response(
-            _payload(models: <Map<String, Object?>>[
-              _model(''), // empty ref → useless row
-              _model('ok:1b'),
-              <String, Object?>{'junk': true}, // no ollamaRef → dropped too
-            ]),
+            _payload(
+              models: <Map<String, Object?>>[
+                _model(''), // empty ref → useless row
+                _model('ok:1b'),
+                <String, Object?>{'junk': true}, // no ollamaRef → dropped too
+              ],
+            ),
             200,
           );
         }),
@@ -230,9 +233,8 @@ void main() {
 
   group('assets/local_ai_catalog.json (the remote source of truth)', () {
     test('parses and mirrors the built-in catalog values', () async {
-      final String raw = await File(
-        'assets/local_ai_catalog.json',
-      ).readAsString();
+      final String raw = await File('assets/local_ai_catalog.json')
+          .readAsString();
       final RemoteCatalogService service = RemoteCatalogService(
         client: MockClient(
           (http.Request request) async => http.Response(raw, 200),
@@ -249,11 +251,21 @@ void main() {
         final CatalogModelEntry asset = entries[i];
         final CatalogModelEntry builtin = kLocalAiCatalog[i];
         expect(asset.ollamaRef, builtin.ollamaRef, reason: 'index $i');
-        expect(asset.downloadBytes, builtin.downloadBytes,
-            reason: builtin.ollamaRef);
-        expect(asset.ramEstBytes, builtin.ramEstBytes, reason: builtin.ollamaRef);
-        expect(asset.contextTokens, builtin.contextTokens,
-            reason: builtin.ollamaRef);
+        expect(
+          asset.downloadBytes,
+          builtin.downloadBytes,
+          reason: builtin.ollamaRef,
+        );
+        expect(
+          asset.ramEstBytes,
+          builtin.ramEstBytes,
+          reason: builtin.ollamaRef,
+        );
+        expect(
+          asset.contextTokens,
+          builtin.contextTokens,
+          reason: builtin.ollamaRef,
+        );
         expect(asset.tier, builtin.tier, reason: builtin.ollamaRef);
         expect(asset.license, builtin.license, reason: builtin.ollamaRef);
       }

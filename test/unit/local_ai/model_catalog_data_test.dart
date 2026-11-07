@@ -122,10 +122,16 @@ void main() {
     test('55% is the exact boundary (inclusive)', () {
       const int total = 2 * gb;
       const int limit = total * 55 ~/ 100; // 1181116006
-      expect(catalogModelFits(limit, total), isTrue,
-          reason: 'exactly 55% fits');
-      expect(catalogModelFits(limit + 1, total), isFalse,
-          reason: 'one byte over 55% does not');
+      expect(
+        catalogModelFits(limit, total),
+        isTrue,
+        reason: 'exactly 55% fits',
+      );
+      expect(
+        catalogModelFits(limit + 1, total),
+        isFalse,
+        reason: 'one byte over 55% does not',
+      );
       expect(catalogModelFits(limit - 1, total), isTrue);
     });
 
@@ -159,10 +165,22 @@ void main() {
     });
 
     test('remote replaces by ref and appends new refs in order', () {
-      final CatalogModelEntry base = _e('a:1b', ram: 100, tier: CatalogTier.tier1);
+      final CatalogModelEntry base = _e(
+        'a:1b',
+        ram: 100,
+        tier: CatalogTier.tier1,
+      );
       final CatalogModelEntry other = _e('b:2b', ram: 200);
-      final CatalogModelEntry replaced = _e('a:1b', ram: 999, tier: CatalogTier.upperBound);
-      final CatalogModelEntry appended = _e('c:3b', ram: 300, tier: CatalogTier.tier1);
+      final CatalogModelEntry replaced = _e(
+        'a:1b',
+        ram: 999,
+        tier: CatalogTier.upperBound,
+      );
+      final CatalogModelEntry appended = _e(
+        'c:3b',
+        ram: 300,
+        tier: CatalogTier.tier1,
+      );
 
       final List<CatalogModelEntry> merged = mergeCatalog(
         <CatalogModelEntry>[base, other],

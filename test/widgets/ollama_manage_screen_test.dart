@@ -78,16 +78,16 @@ class _RecordingLocalModelIo extends LocalModelIo {
 
 /// MockClient serving the llama-server endpoints needed by the screen:
 /// `/health` → 200 and `/v1/chat/completions` → canned SSE.
-http.Client _llmEndpointsClient(String sseBody) => MockClient(
-  (http.Request request) async {
-    if (request.url.path.endsWith('/health')) {
-      return http.Response('{"status":"ok"}', 200);
-    }
-    return http.Response(sseBody, 200);
-  },
-);
+http.Client _llmEndpointsClient(String sseBody) =>
+    MockClient((http.Request request) async {
+      if (request.url.path.endsWith('/health')) {
+        return http.Response('{"status":"ok"}', 200);
+      }
+      return http.Response(sseBody, 200);
+    });
 
-const String _benchmarkSse = ''
+const String _benchmarkSse =
+    ''
     'data: {"choices":[{"delta":{"content":"one two "}}]}\n'
     'data: {"choices":[{"delta":{"content":"three four "}}]}\n'
     'data: {"choices":[{"delta":{"content":"five"}}]}\n'
@@ -448,8 +448,10 @@ void main() {
     'a failing benchmark reports the failure through the same result line',
     (WidgetTester tester) async {
       final http.Client failing = MockClient(
-        (http.Request request) async =>
-            http.Response('{"status":"ok"}', request.url.path.endsWith('/health') ? 200 : 500),
+        (http.Request request) async => http.Response(
+          '{"status":"ok"}',
+          request.url.path.endsWith('/health') ? 200 : 500,
+        ),
       );
       final ProviderContainer container = await openOllamaScreen(
         tester,
@@ -475,78 +477,77 @@ void main() {
     },
   );
 
-  testWidgets(
-    'log viewer shows the full log, copies it and closes',
-    (WidgetTester tester) async {
-      String? copied;
-      // Returns void — call as a statement (an await on it would not
-      // compile).
-      TestDefaultBinaryMessengerBinding
-          .instance.defaultBinaryMessenger
-          .setMockMethodCallHandler(SystemChannels.platform,
-              (MethodCall call) async {
-        if (call.method == 'Clipboard.setData') {
-          copied = (call.arguments as Map<Object?, Object?>?)?['text'] as String?;
-        }
-        return null;
-      });
-      addTearDown(() {
-        TestDefaultBinaryMessengerBinding
-            .instance.defaultBinaryMessenger
-            .setMockMethodCallHandler(SystemChannels.platform, null);
-      });
+  testWidgets('log viewer shows the full log, copies it and closes', (
+    WidgetTester tester,
+  ) async {
+    String? copied;
+    // Returns void — call as a statement (an await on it would not
+    // compile).
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(SystemChannels.platform, (
+          MethodCall call,
+        ) async {
+          if (call.method == 'Clipboard.setData') {
+            copied =
+                (call.arguments as Map<Object?, Object?>?)?['text'] as String?;
+          }
+          return null;
+        });
+    addTearDown(() {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(SystemChannels.platform, null);
+    });
 
-      final FakeLlmServerPlatform platformFake = FakeLlmServerPlatform()
-        ..logs.addAll(<String>[
-          'llama-server listening on 127.0.0.1:11434',
-          'model loaded — alias qwen3:0.6b',
-          'ready',
-        ]);
-      final ProviderContainer container = await openOllamaScreen(
-        tester,
-        platform: platformFake,
-        httpClient: _llmEndpointsClient(_benchmarkSse),
-      );
+    final FakeLlmServerPlatform platformFake = FakeLlmServerPlatform()
+      ..logs.addAll(<String>[
+        'llama-server listening on 127.0.0.1:11434',
+        'model loaded — alias qwen3:0.6b',
+        'ready',
+      ]);
+    final ProviderContainer container = await openOllamaScreen(
+      tester,
+      platform: platformFake,
+      httpClient: _llmEndpointsClient(_benchmarkSse),
+    );
 
-      // start() flips the status to running and seeds logTail.
-      expect(
-        await container
-            .read(llmServerProvider.notifier)
-            .start(modelPath: '/tmp/m.gguf', modelName: 'qwen3:0.6b'),
-        isTrue,
-      );
-      await settle(tester);
+    // start() flips the status to running and seeds logTail.
+    expect(
+      await container
+          .read(llmServerProvider.notifier)
+          .start(modelPath: '/tmp/m.gguf', modelName: 'qwen3:0.6b'),
+      isTrue,
+    );
+    await settle(tester);
 
-      // The v1.52.0 battery/RAM lines pushed the log section below the
-      // lazy viewport — reveal it before asserting/tapping.
-      await tester.dragUntilVisible(
-        find.byKey(const Key('ollama-log-tail')),
-        find.byType(ListView).first,
-        const Offset(0, -250),
-      );
-      await settle(tester);
-      expect(find.byKey(const Key('ollama-log-tail')), findsOneWidget);
-      await tester.tap(find.byKey(const Key('ollama-log-viewer')));
-      await settle(tester);
+    // The v1.52.0 battery/RAM lines pushed the log section below the
+    // lazy viewport — reveal it before asserting/tapping.
+    await tester.dragUntilVisible(
+      find.byKey(const Key('ollama-log-tail')),
+      find.byType(ListView).first,
+      const Offset(0, -250),
+    );
+    await settle(tester);
+    expect(find.byKey(const Key('ollama-log-tail')), findsOneWidget);
+    await tester.tap(find.byKey(const Key('ollama-log-viewer')));
+    await settle(tester);
 
-      // Full-screen viewer: monospace body with every line.
-      expect(find.byKey(const Key('ollama-log-viewer-body')), findsOneWidget);
-      expect(find.textContaining('llama-server listening'), findsOneWidget);
-      expect(find.textContaining('ready'), findsOneWidget);
+    // Full-screen viewer: monospace body with every line.
+    expect(find.byKey(const Key('ollama-log-viewer-body')), findsOneWidget);
+    expect(find.textContaining('llama-server listening'), findsOneWidget);
+    expect(find.textContaining('ready'), findsOneWidget);
 
-      // Copy-all lands the joined log on the system clipboard.
-      await tester.tap(find.byKey(const Key('ollama-log-viewer-copy')));
-      await settle(tester);
-      expect(copied, platformFake.logs.join('\n'));
-      expect(find.text('Copied'), findsOneWidget);
-      await dismissAppMessage(tester);
+    // Copy-all lands the joined log on the system clipboard.
+    await tester.tap(find.byKey(const Key('ollama-log-viewer-copy')));
+    await settle(tester);
+    expect(copied, platformFake.logs.join('\n'));
+    expect(find.text('Copied'), findsOneWidget);
+    await dismissAppMessage(tester);
 
-      await tester.tap(find.byKey(const Key('ollama-log-viewer-close')));
-      await settle(tester);
-      expect(find.byKey(const Key('ollama-log-viewer-body')), findsNothing);
-      expect(find.byType(OllamaManageScreen), findsOneWidget);
-    },
-  );
+    await tester.tap(find.byKey(const Key('ollama-log-viewer-close')));
+    await settle(tester);
+    expect(find.byKey(const Key('ollama-log-viewer-body')), findsNothing);
+    expect(find.byType(OllamaManageScreen), findsOneWidget);
+  });
 
   testWidgets(
     'RAM auto-filter hides non-fitting cards and the risk dialog gates '
@@ -563,17 +564,26 @@ void main() {
       await settle(tester);
 
       // Filter defaults ON: fitting card visible, too-big cards hidden.
-      expect(find.byKey(const Key('ollama-catalog-qwen3:0.6b')), findsOneWidget);
+      expect(
+        find.byKey(const Key('ollama-catalog-qwen3:0.6b')),
+        findsOneWidget,
+      );
       expect(find.byKey(const Key('ollama-catalog-gemma3:1b')), findsNothing);
       expect(
-        find.byKey(const Key('ollama-catalog-bonsai-2:4b'), skipOffstage: false),
+        find.byKey(
+          const Key('ollama-catalog-bonsai-2:4b'),
+          skipOffstage: false,
+        ),
         findsNothing,
       );
 
       // Toggle the chip OFF: every card shows, too-big ones flagged red.
       await tester.tap(find.byKey(const Key('ollama-fit-filter')));
       await settle(tester);
-      expect(find.byKey(const Key('ollama-catalog-qwen3:0.6b')), findsOneWidget);
+      expect(
+        find.byKey(const Key('ollama-catalog-qwen3:0.6b')),
+        findsOneWidget,
+      );
       expect(find.byKey(const Key('ollama-catalog-gemma3:1b')), findsOneWidget);
       expect(find.text('Too large for this device'), findsWidgets);
 
@@ -623,10 +633,7 @@ void main() {
       await dismissAppMessage(tester);
 
       // Overlay persisted in the store and merged into the visible list.
-      expect(
-        container.read(localModelsProvider).remoteCatalog,
-        hasLength(2),
-      );
+      expect(container.read(localModelsProvider).remoteCatalog, hasLength(2));
       expect(find.textContaining('400 MB'), findsOneWidget); // replaced values
       await tester.dragUntilVisible(
         find.byKey(const Key('ollama-catalog-new-model:1b')),
@@ -634,7 +641,10 @@ void main() {
         const Offset(0, -250),
       );
       await settle(tester);
-      expect(find.byKey(const Key('ollama-catalog-new-model:1b')), findsOneWidget);
+      expect(
+        find.byKey(const Key('ollama-catalog-new-model:1b')),
+        findsOneWidget,
+      );
 
       // Reset clears the overlay → built-in values again. The deep drag
       // above left the list scrolled far DOWN — the Reset button lives at
@@ -653,7 +663,10 @@ void main() {
       expect(container.read(localModelsProvider).remoteCatalog, isEmpty);
       expect(find.textContaining('523 MB'), findsOneWidget);
       expect(
-        find.byKey(const Key('ollama-catalog-new-model:1b'), skipOffstage: false),
+        find.byKey(
+          const Key('ollama-catalog-new-model:1b'),
+          skipOffstage: false,
+        ),
         findsNothing,
       );
     },

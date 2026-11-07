@@ -211,10 +211,10 @@ class LocalModelState {
         contextSize: json['contextSize'] as int? ?? 2048,
         threads: json['threads'] as int? ?? 0,
         autoStartOnBoot: json['autoStartOnBoot'] as bool? ?? false,
-        remoteCatalog: (json['remoteCatalog'] as List<dynamic>? ??
-                const <dynamic>[])
-            .whereType<Map<String, dynamic>>()
-            .map(catalogEntryFromJson)
-            .toList(),
+        remoteCatalog:
+            (json['remoteCatalog'] as List<dynamic>? ?? const <dynamic>[])
+                .whereType<Map<String, dynamic>>()
+                .map(catalogEntryFromJson)
+                .toList(),
       );
 }

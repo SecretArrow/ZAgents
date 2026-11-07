@@ -92,7 +92,8 @@ class RemoteCatalogEntry {
 /// [RemoteCatalogException]; the [http.Client] is injectable (the shared
 /// `llmHttpClientProvider` client in production, a MockClient in tests).
 class RemoteCatalogService {
-  RemoteCatalogService({http.Client? client}) : _client = client ?? http.Client();
+  RemoteCatalogService({http.Client? client})
+    : _client = client ?? http.Client();
 
   final http.Client _client;
 
@@ -108,12 +109,16 @@ class RemoteCatalogService {
       }
       final Object? decoded = jsonDecode(response.body);
       if (decoded is! Map<String, dynamic>) {
-        throw RemoteCatalogException('the catalog payload is not a JSON object');
+        throw RemoteCatalogException(
+          'the catalog payload is not a JSON object',
+        );
       }
       final Object? rawVersion = decoded['version'];
       final int? version = rawVersion is num ? rawVersion.toInt() : null;
       if (version != 1) {
-        throw RemoteCatalogException('unsupported catalog version: $rawVersion');
+        throw RemoteCatalogException(
+          'unsupported catalog version: $rawVersion',
+        );
       }
       final Object? models = decoded['models'];
       if (models is! List) {

@@ -428,8 +428,10 @@ void main() {
       expect(s.ollamaExportNone, isNotEmpty);
     }
     // Representative wording per locale.
-    expect(en.ollamaBenchmarkSummary('12.3', 210, 20),
-        '12.3 tok/s · first token 210ms · 20 tokens');
+    expect(
+      en.ollamaBenchmarkSummary('12.3', 210, 20),
+      '12.3 tok/s · first token 210ms · 20 tokens',
+    );
     expect(en.ollamaBatteryCharging(73), 'Battery 73% · charging');
     expect(en.ollamaBatteryLow(12), 'Battery 12% — low');
     expect(en.ollamaDeviceRam('8.0 GB'), 'Device RAM 8.0 GB');

@@ -823,11 +823,7 @@ abstract class AppStrings {
   String get ollamaBenchmark;
   String get ollamaBenchmarkRunning;
   String ollamaBenchmarkFailed(String error);
-  String ollamaBenchmarkSummary(
-    String tokPerSec,
-    int firstTokenMs,
-    int tokens,
-  );
+  String ollamaBenchmarkSummary(String tokPerSec, int firstTokenMs, int tokens);
   String get ollamaViewFullLog;
   String get ollamaCopyAll;
   String get ollamaClose;
@@ -2631,8 +2627,7 @@ class AppStringsEn implements AppStrings {
   @override
   String ollamaBattery(int percent) => 'Battery $percent%';
   @override
-  String ollamaBatteryCharging(int percent) =>
-      'Battery $percent% · charging';
+  String ollamaBatteryCharging(int percent) => 'Battery $percent% · charging';
   @override
   String ollamaBatteryLow(int percent) => 'Battery $percent% — low';
   @override
