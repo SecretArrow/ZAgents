@@ -102,6 +102,12 @@ abstract class LlmServerPlatform {
 
   /// Last ≤200 stdout+stderr lines, oldest first.
   Future<List<String>> getLogs();
+
+  /// Fase 2 (v1.52.0) — battery state of the device: `{percent: int
+  /// (0–100, -1 unknown), charging: bool}`. Polled by the Ollama Manage
+  /// screen (NOT persisted state) so the Server tab can flag a low
+  /// battery while llama-server runs.
+  Future<Map<String, dynamic>> batteryStatus();
 }
 
 /// Production platform: the `zagents/llmserver` method channel. Every
@@ -188,6 +194,18 @@ class MethodChannelLlmServerPlatform implements LlmServerPlatform {
       return const <String>[];
     }
   }
+
+  @override
+  Future<Map<String, dynamic>> batteryStatus() async {
+    try {
+      final Object? raw = await _channel.invokeMethod('batteryStatus');
+      if (raw is Map) return Map<String, dynamic>.from(raw);
+      return const <String, dynamic>{'percent': -1, 'charging': false};
+    } catch (_) {
+      // No channel (tests/desktop) or platform error: unknown battery.
+      return const <String, dynamic>{'percent': -1, 'charging': false};
+    }
+  }
 }
 
 /// Scriptable in-memory [LlmServerPlatform] for unit tests — v1.51.0.
@@ -228,6 +246,12 @@ class FakeLlmServerPlatform implements LlmServerPlatform {
 
   /// Log lines reported by [getLogs].
   final List<String> logs = <String>[];
+
+  /// Fase 2 — battery percent reported by [batteryStatus] (0–100).
+  int batteryPercent = -1;
+
+  /// Fase 2 — charging flag reported by [batteryStatus].
+  bool batteryCharging = false;
 
   /// One recorded `startServer` argument map per call.
   final List<Map<String, Object?>> startCalls = <Map<String, Object?>>[];
@@ -288,6 +312,12 @@ class FakeLlmServerPlatform implements LlmServerPlatform {
 
   @override
   Future<List<String>> getLogs() async => List<String>.of(logs);
+
+  @override
+  Future<Map<String, dynamic>> batteryStatus() async => <String, dynamic>{
+    'percent': batteryPercent,
+    'charging': batteryCharging,
+  };
 }
 
 /// Riverpod controller for the bundled llama-server lifecycle — v1.51.0.

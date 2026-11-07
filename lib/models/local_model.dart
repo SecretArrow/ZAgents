@@ -1,4 +1,4 @@
-/// Local AI model model — v1.51.0.
+/// Local AI model model — v1.51.0 (state extended in v1.52.0).
 ///
 /// A [LocalModelEntry] is ONE GGUF model file managed by the Ollama Manage
 /// screen: either downloaded from the Ollama registry (the bundled catalog
@@ -10,8 +10,12 @@
 ///
 /// [LocalModelState] is the whole persisted store of the feature: the
 /// installed list plus the llama-server configuration (port / context
-/// size / threads) shared by every start.
+/// size / threads) shared by every start — and, since v1.52.0, the
+/// fetched remote-catalog overlay kept in sync with the built-ins.
 library;
+
+import '../services/local_ai/model_catalog_data.dart'
+    show CatalogModelEntry, catalogEntryFromJson, catalogEntryToJson;
 
 /// Where a local model came from.
 enum LocalModelSource { catalog, customUrl, imported }
@@ -136,7 +140,8 @@ class LocalModelEntry {
 }
 
 /// Whole persisted Local AI store: the installed model list plus the
-/// llama-server configuration (v1.51.0).
+/// llama-server configuration (v1.51.0), plus the remote-catalog overlay
+/// (v1.52.0 Fase 2 — empty until the user refreshes the Catalog tab).
 class LocalModelState {
   const LocalModelState({
     this.installed = const <LocalModelEntry>[],
@@ -144,6 +149,7 @@ class LocalModelState {
     this.contextSize = 2048,
     this.threads = 0,
     this.autoStartOnBoot = false,
+    this.remoteCatalog = const <CatalogModelEntry>[],
   });
 
   final List<LocalModelEntry> installed;
@@ -163,18 +169,25 @@ class LocalModelState {
   /// Fase 2 — start the active model automatically after boot.
   final bool autoStartOnBoot;
 
+  /// Fase 2 (v1.52.0) — the last fetched remote catalog, overlaid onto
+  /// the built-in [kLocalAiCatalog] by `mergeCatalog` in the Catalog tab.
+  /// Empty until the first successful refresh; cleared by “Reset”.
+  final List<CatalogModelEntry> remoteCatalog;
+
   LocalModelState copyWith({
     List<LocalModelEntry>? installed,
     int? serverPort,
     int? contextSize,
     int? threads,
     bool? autoStartOnBoot,
+    List<CatalogModelEntry>? remoteCatalog,
   }) => LocalModelState(
     installed: installed ?? this.installed,
     serverPort: serverPort ?? this.serverPort,
     contextSize: contextSize ?? this.contextSize,
     threads: threads ?? this.threads,
     autoStartOnBoot: autoStartOnBoot ?? this.autoStartOnBoot,
+    remoteCatalog: remoteCatalog ?? this.remoteCatalog,
   );
 
   Map<String, dynamic> toJson() => <String, dynamic>{
@@ -183,6 +196,9 @@ class LocalModelState {
     'contextSize': contextSize,
     'threads': threads,
     'autoStartOnBoot': autoStartOnBoot,
+    'remoteCatalog': [
+      for (final CatalogModelEntry e in remoteCatalog) catalogEntryToJson(e),
+    ],
   };
 
   factory LocalModelState.fromJson(Map<String, dynamic> json) =>
@@ -195,5 +211,10 @@ class LocalModelState {
         contextSize: json['contextSize'] as int? ?? 2048,
         threads: json['threads'] as int? ?? 0,
         autoStartOnBoot: json['autoStartOnBoot'] as bool? ?? false,
+        remoteCatalog: (json['remoteCatalog'] as List<dynamic>? ??
+                const <dynamic>[])
+            .whereType<Map<String, dynamic>>()
+            .map(catalogEntryFromJson)
+            .toList(),
       );
 }

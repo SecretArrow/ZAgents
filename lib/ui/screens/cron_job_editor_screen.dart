@@ -4,10 +4,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../di.dart';
 import '../../l10n/app_strings.dart';
 import '../../models/cron_job.dart';
-import '../../models/models.dart' show ChatSummary;
+import '../../models/models.dart' show AppSettings, ChatSummary;
 import '../../services/cron_parser.dart';
 import '../theme.dart';
 import '../widgets/app_message.dart';
+import 'ollama_manage_screen.dart';
 
 /// Predefined schedule presets shown in the editor. Values are standard
 /// 5-field cron expressions understood by [CronExpression].
@@ -296,6 +297,14 @@ class _CronJobEditorScreenState extends ConsumerState<CronJobEditorScreen> {
               ],
             ),
             const SizedBox(height: 12),
+            // v1.52.0 — Local AI shortcut: when the ACTIVE provider is the
+            // built-in `Local AI` preset, agent/chat jobs run against the
+            // on-device llama-server. The tile (model alias + jump into
+            // Ollama Manage) appears only for those actions and ONLY for
+            // Local AI users — zero visual delta for everyone else.
+            if (_action == CronActionKind.agent ||
+                _action == CronActionKind.chat)
+              ..._localAiShortcut(strings, palette),
             ...switch (_action) {
               CronActionKind.notification => <Widget>[
                 TextField(
@@ -451,6 +460,68 @@ class _CronJobEditorScreenState extends ConsumerState<CronJobEditorScreen> {
         ),
       ),
     );
+  }
+
+  /// v1.52.0 — Local AI shortcut tile for agent/chat actions (see the
+  /// insertion point in [build]). Returns nothing unless the ACTIVE
+  /// provider is the built-in `Local AI` preset.
+  List<Widget> _localAiShortcut(AppStrings strings, ZPalette palette) {
+    final AppSettings settings = ref.watch(settingsProvider);
+    if (settings.providerName != 'Local AI') return const <Widget>[];
+    final String model = settings.model.trim();
+    return <Widget>[
+      const SizedBox(height: 12),
+      Container(
+        key: const Key('cron-local-ai-tile'),
+        width: double.infinity,
+        padding: const EdgeInsets.fromLTRB(12, 10, 4, 2),
+        decoration: BoxDecoration(
+          color: palette.muted.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: palette.muted.withValues(alpha: 0.35)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Icon(Icons.memory_rounded, size: 14, color: palette.muted),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    model.isEmpty
+                        ? strings.cronLocalAiNoModel
+                        : strings.cronLocalAiHint(model),
+                    style: TextStyle(
+                      fontSize: 11.5,
+                      color: palette.muted,
+                      height: 1.35,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton.icon(
+                key: const Key('cron-local-ai-hint'),
+                onPressed: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (BuildContext context) =>
+                          const OllamaManageScreen(),
+                    ),
+                  );
+                },
+                icon: const Icon(Icons.dns_outlined, size: 16),
+                label: Text(strings.cronOpenOllamaManage),
+              ),
+            ),
+          ],
+        ),
+      ),
+    ];
   }
 
   /// Human label for a preset expression (falls back to the expression

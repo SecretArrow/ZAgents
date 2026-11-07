@@ -1,5 +1,6 @@
 /*
- * LlmServerService.kt — Local AI runtime host (v1.51.0).
+ * LlmServerService.kt — Local AI runtime host (v1.51.0; battery guard
+ * added in v1.52.0).
  *
  * Dedicated foreground service that runs the bundled llama.cpp
  * `llama-server` binary as a child process and exposes it to Dart through
@@ -32,6 +33,15 @@
  *    and the Flutter engine can detach while the service keeps the
  *    process alive. The service below is a thin lifecycle shell around
  *    that holder.
+ *  - BATTERY GUARD (v1.52.0, contract §5): while a live child is hosted
+ *    the service arms a RUNTIME receiver for ACTION_BATTERY_LOW — never
+ *    the manifest, so it exists only while a server actually runs and a
+ *    device that never starts one is never woken for it. On critical
+ *    battery the child + service are torn down through the very same
+ *    shutdown() path as ACTION_STOP: llama-server inference is heavy,
+ *    the remaining battery belongs to calls and messages. Registered
+ *    only once a live process is confirmed, released on every teardown
+ *    path, never registered twice.
  */
 package com.secretarrow.zagents
 
@@ -40,8 +50,10 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
@@ -58,6 +70,8 @@ import java.util.concurrent.TimeUnit
  *    extraArgs) → go foreground, acquire the wake lock, spawn the child.
  *  - ACTION_STOP → destroy the child, release everything, stop the
  *    service. Idempotent.
+ *  - ACTION_BATTERY_LOW (runtime receiver, v1.52.0) → the same teardown
+ *    as ACTION_STOP while a live child is hosted (battery guard, §5).
  *
  * Returns START_NOT_STICKY on purpose: if the OS kills the app process the
  * child dies with it, and only the Dart side knows how to restart a run
@@ -104,6 +118,11 @@ class LlmServerService : Service() {
     }
 
     private var wakeLock: PowerManager.WakeLock? = null
+
+    /// v1.52.0 battery guard: the runtime ACTION_BATTERY_LOW receiver
+    /// while a live child is hosted by THIS service instance, null
+    /// otherwise (see [registerBatteryGuard] / [unregisterBatteryGuard]).
+    private var batteryLowReceiver: BroadcastReceiver? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -201,6 +220,13 @@ class LlmServerService : Service() {
                 // cleanly. (When a racing start won, isRunning() is true
                 // and the service simply keeps serving that process.)
                 shutdown()
+            } else {
+                // v1.52.0 (contract §5): a live child is now hosted by THIS
+                // service instance — either we spawned it just now or a
+                // racing start won — arm the battery guard. Idempotent, so
+                // a service object recreated by the system re-arms it
+                // exactly once; see registerBatteryGuard().
+                registerBatteryGuard()
             }
         } catch (e: Exception) {
             LlmServerProcessHolder.fail(
@@ -293,10 +319,80 @@ class LlmServerService : Service() {
         }
     }
 
-    /// Full teardown, shared by ACTION_STOP and onDestroy: kill the child
-    /// (idempotent), drop the wake lock, remove the notification, stop the
-    /// service.
+    /// v1.52.0 (contract §5) — arms the ACTION_BATTERY_LOW guard while a
+    /// live child is hosted. Runtime-registered on purpose (never in the
+    /// manifest): the receiver must only exist while a server actually
+    /// runs, so a phone that never starts the Local AI server is never
+    /// woken by battery broadcasts for it. On critical battery the child
+    /// + service are torn down via the shared shutdown() path. Guarded
+    /// against double registration (handleStart can run again after the
+    /// system recreated the service object) and null-safe; a failed
+    /// registration never breaks the server start.
+    private fun registerBatteryGuard() {
+        if (batteryLowReceiver != null) return
+        // BroadcastReceiver is an abstract class (no SAM constructor) —
+        // a plain anonymous object with the onReceive override is the
+        // only correct form.
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context?, intent: Intent?) {
+                try {
+                    // Diagnosability: the Dart UI polls getLogs — leave the
+                    // reason as the last line, mirroring fail()'s philosophy.
+                    LlmServerProcessHolder.appendLog(
+                        "[zagents] battery low - stopping Local AI server",
+                    )
+                } catch (_: Exception) {
+                    // appendLog is synchronized and cannot really throw; if
+                    // it ever does, the stop below still happens.
+                }
+                // Same full teardown as ACTION_STOP. Delivered on the main
+                // thread like onStartCommand, so it can never race a
+                // start/stop delivery.
+                shutdown()
+            }
+        }
+        try {
+            val filter = IntentFilter(Intent.ACTION_BATTERY_LOW)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                // API 33+: flag the receiver explicitly. NOT_EXPORTED: only
+                // this app and the system may deliver to it — the system
+                // still delivers protected broadcasts such as BATTERY_LOW,
+                // and no other app can ever spoof a critical-battery stop.
+                registerReceiver(receiver, filter, Context.RECEIVER_NOT_EXPORTED)
+            } else {
+                registerReceiver(receiver, filter)
+            }
+            batteryLowReceiver = receiver
+        } catch (_: Exception) {
+            // Practically unreachable (system broadcast, main thread); if
+            // it ever fires the server simply runs without the guard.
+            batteryLowReceiver = null
+        }
+    }
+
+    /// Disarms the battery guard. Idempotent and null-safe; called from
+    /// shutdown() FIRST so no battery broadcast can arrive mid-teardown
+    /// and an orphaned runtime receiver can never outlive the service
+    /// component it belongs to.
+    private fun unregisterBatteryGuard() {
+        val receiver = batteryLowReceiver ?: return
+        batteryLowReceiver = null
+        try {
+            unregisterReceiver(receiver)
+        } catch (_: Exception) {
+            // Already unregistered (double teardown) or the system already
+            // dropped it — nothing left to do.
+        }
+    }
+
+    /// Full teardown, shared by ACTION_STOP, onDestroy and the battery
+    /// guard: kill the child (idempotent), drop the wake lock, remove the
+    /// notification, stop the service.
     private fun shutdown() {
+        // v1.52.0: drop the battery guard before anything else — no
+        // battery broadcast may arrive mid-teardown (see
+        // unregisterBatteryGuard).
+        unregisterBatteryGuard()
         LlmServerProcessHolder.stopProcess()
         releaseWakeLock()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {

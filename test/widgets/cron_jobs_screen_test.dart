@@ -6,11 +6,16 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:zagents/di.dart';
 import 'package:zagents/main.dart';
 import 'package:zagents/models/cron_job.dart';
-import 'package:zagents/models/models.dart' show ChatSummary;
+import 'package:zagents/models/models.dart' show AppSettings, ChatSummary;
 import 'package:zagents/services/cron_repository.dart';
 import 'package:zagents/services/cron_scheduler.dart';
+import 'package:zagents/services/local_ai/llm_server_controller.dart'
+    show FakeLlmServerPlatform;
+import 'package:zagents/services/local_ai/local_model_store.dart'
+    show MemoryLocalModelRepository;
 import 'package:zagents/ui/screens/cron_job_editor_screen.dart';
 import 'package:zagents/ui/screens/cron_jobs_screen.dart';
+import 'package:zagents/ui/screens/ollama_manage_screen.dart';
 
 import '../../test/support/test_doubles.dart';
 
@@ -50,6 +55,7 @@ void main() {
     RecordingCronDispatcher? dispatcher,
     bool enabled = true,
     List<ChatSummary> chatSummaries = const <ChatSummary>[],
+    AppSettings? settings,
   }) async {
     late ProviderContainer container;
     final RecordingCronDispatcher disp =
@@ -57,7 +63,7 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: <Override>[
-          ...testOverrides(dir: tempDir),
+          ...testOverrides(dir: tempDir, settings: settings),
           if (chatSummaries.isNotEmpty)
             chatListProvider.overrideWith((Ref ref) async => chatSummaries),
           cronRepositoryProvider.overrideWithValue(
@@ -72,6 +78,17 @@ void main() {
               readState: () => ref.read(cronJobsProvider),
               dispatcher: disp,
             ),
+          ),
+          // v1.52.0 — the Local AI shortcut tile can push
+          // OllamaManageScreen from INSIDE the editor: give the whole
+          // cron harness the same in-memory store + platform fake the
+          // ollama tests use, so pushing it never touches a throwing
+          // provider or a real method channel.
+          localModelRepositoryProvider.overrideWithValue(
+            MemoryLocalModelRepository(),
+          ),
+          llmServerPlatformProvider.overrideWithValue(
+            FakeLlmServerPlatform(),
           ),
         ],
         child: Builder(
@@ -106,6 +123,14 @@ void main() {
     expect(find.byType(CronJobsScreen), findsOneWidget);
     return container;
   }
+
+  /// The standard settle cadence used by this file (same constants as
+  /// the inline pumpAndSettle calls above).
+  Future<void> settleEditor(WidgetTester tester) => tester.pumpAndSettle(
+    const Duration(milliseconds: 100),
+    EnginePhase.sendSemanticsUpdate,
+    const Duration(seconds: 15),
+  );
 
   /// Drags the first Scrollable until the widget under [key] is built and
   /// visible. Both the manager and the editor are lazy ListViews: items
@@ -459,4 +484,74 @@ void main() {
     expect(find.byType(CronJobEditorScreen), findsOneWidget);
     expect(container.read(cronJobsProvider).jobs, isEmpty);
   });
+
+  // -- v1.52.0 (Fase 2): Local AI shortcut tile ------------------------------
+
+  testWidgets(
+    'editor shows the Local AI shortcut tile for agent jobs and pushes '
+    'Ollama Manage from it',
+    (WidgetTester tester) async {
+      await openCronScreen(
+        tester,
+        settings: AppSettings(
+          providerName: 'Local AI',
+          baseUrl: 'http://127.0.0.1:11434/v1',
+          model: 'qwen3:0.6b',
+        ),
+      );
+
+      // Open the editor and switch the action to agent (default is
+      // notification — the tile only exists for agent/chat).
+      await tester.tap(find.byKey(const Key('cron-add-job-fab')));
+      await settleEditor(tester);
+      await tester.tap(find.byKey(const Key('cron-action-chip-agent')));
+      await settleEditor(tester);
+
+      // The tile sits below the action chips in the lazy editor list.
+      await tester.scrollUntilVisible(
+        find.byKey(const Key('cron-local-ai-tile')),
+        200,
+        scrollable: find
+            .descendant(
+              of: find.byType(CronJobEditorScreen),
+              matching: find.byType(Scrollable),
+            )
+            .first,
+      );
+      await settleEditor(tester);
+      expect(find.byKey(const Key('cron-local-ai-tile')), findsOneWidget);
+      expect(find.textContaining('qwen3:0.6b'), findsOneWidget);
+
+      // The shortcut pushes the manage screen; pop back afterwards.
+      await tester.tap(find.byKey(const Key('cron-local-ai-hint')));
+      await settleEditor(tester);
+      expect(find.byType(OllamaManageScreen), findsOneWidget);
+      await tester.pageBack();
+      await settleEditor(tester);
+      expect(find.byType(OllamaManageScreen), findsNothing);
+      expect(find.byType(CronJobEditorScreen), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'editor hides the Local AI tile for non-local providers (zero delta)',
+    (WidgetTester tester) async {
+      await openCronScreen(tester); // default provider: OpenRouter
+
+      await tester.tap(find.byKey(const Key('cron-add-job-fab')));
+      await settleEditor(tester);
+      await tester.tap(find.byKey(const Key('cron-action-chip-chat')));
+      await settleEditor(tester);
+      // Never built at all — no drag needed, findsNothing covers the
+      // unbuilt lazy item (the finder searches offstage by default).
+      expect(
+        find.byKey(const Key('cron-local-ai-tile'), skipOffstage: false),
+        findsNothing,
+      );
+      expect(
+        find.byKey(const Key('cron-local-ai-hint'), skipOffstage: false),
+        findsNothing,
+      );
+    },
+  );
 }
