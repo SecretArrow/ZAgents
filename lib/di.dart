@@ -127,11 +127,9 @@ final cronSchedulerProvider = Provider<CronSchedulerService>((ref) {
       // v1.50.0 — chat action: the cron fire injects the command into the
       // target chat session (or a fresh background chat) through the
       // live ChatController, exactly like a typed message.
-      runInChat:
-          (String? sessionId, String prompt) =>
-              ref
-                  .read(chatControllerProvider.notifier)
-                  .sendToSession(sessionId, prompt),
+      runInChat: (String? sessionId, String prompt) => ref
+          .read(chatControllerProvider.notifier)
+          .sendToSession(sessionId, prompt),
     ),
   );
 });

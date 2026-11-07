@@ -2901,7 +2901,8 @@ class AppStringsId implements AppStrings {
   @override
   String get cronChatPromptRequired => 'Teks perintah wajib diisi.';
   @override
-  String get cronChatTargetMissing => 'Chat terpilih tidak ditemukan (terhapus?)';
+  String get cronChatTargetMissing =>
+      'Chat terpilih tidak ditemukan (terhapus?)';
   @override
   String get cronFieldNotifTitle => 'Judul notifikasi';
   @override

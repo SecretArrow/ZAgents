@@ -314,13 +314,12 @@ void main() {
       llm: LlmClient(),
       telegram: TelegramSender(),
       background: RecordingBackgroundRun(),
-      executeTool:
-          (
-            String name,
-            Map<String, dynamic> args, {
-            String? sessionId,
-            String? browserContext,
-          }) async => const ToolResult(ok: true, llmOutput: 'unused'),
+      executeTool: (
+        String name,
+        Map<String, dynamic> args, {
+        String? sessionId,
+        String? browserContext,
+      }) async => const ToolResult(ok: true, llmOutput: 'unused'),
       resolveConfig: () => const LlmConfig(
         baseUrl: 'https://example.invalid',
         apiKey: 'k',
@@ -372,13 +371,12 @@ void main() {
         llm: LlmClient(),
         telegram: TelegramSender(),
         background: RecordingBackgroundRun(),
-        executeTool:
-            (
-              String name,
-              Map<String, dynamic> args, {
-              String? sessionId,
-              String? browserContext,
-            }) async => const ToolResult(ok: true, llmOutput: 'unused'),
+        executeTool: (
+          String name,
+          Map<String, dynamic> args, {
+          String? sessionId,
+          String? browserContext,
+        }) async => const ToolResult(ok: true, llmOutput: 'unused'),
         resolveConfig: () => const LlmConfig(
           baseUrl: 'https://example.invalid',
           apiKey: 'k',

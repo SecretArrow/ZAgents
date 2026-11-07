@@ -611,7 +611,8 @@ class AppStringsEs implements AppStrings {
   @override
   String get cronChatPromptRequired => 'El texto del comando es obligatorio.';
   @override
-  String get cronChatTargetMissing => 'Chat seleccionado no encontrado (¿borrado?)';
+  String get cronChatTargetMissing =>
+      'Chat seleccionado no encontrado (¿borrado?)';
   @override
   String get cronFieldNotifTitle => 'Título de la notificación';
   @override

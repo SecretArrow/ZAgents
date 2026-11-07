@@ -77,8 +77,7 @@ class DefaultCronDispatcher implements CronActionDispatcher {
   /// ChatController.sendToSession. Returns null when accepted, otherwise
   /// the English refusal reason recorded in the cron history. Nullable
   /// so tests that never exercise the chat action can omit it.
-  final Future<String?> Function(String? sessionId, String prompt)?
-  runInChat;
+  final Future<String?> Function(String? sessionId, String prompt)? runInChat;
 
   static const int _maxNotifChars = 800;
 

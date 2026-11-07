@@ -264,15 +264,16 @@ class _CronJobEditorScreenState extends ConsumerState<CronJobEditorScreen> {
               spacing: 8,
               runSpacing: 8,
               children: <Widget>[
-                for (final (CronActionKind kind, IconData icon) in const <(
-                  CronActionKind,
-                  IconData,
-                )>[
-                  (CronActionKind.notification, Icons.notifications_none_rounded),
-                  (CronActionKind.telegram, Icons.send_outlined),
-                  (CronActionKind.agent, Icons.smart_toy_outlined),
-                  (CronActionKind.chat, Icons.forum_rounded),
-                ])
+                for (final (CronActionKind kind, IconData icon)
+                    in const <(CronActionKind, IconData)>[
+                      (
+                        CronActionKind.notification,
+                        Icons.notifications_none_rounded,
+                      ),
+                      (CronActionKind.telegram, Icons.send_outlined),
+                      (CronActionKind.agent, Icons.smart_toy_outlined),
+                      (CronActionKind.chat, Icons.forum_rounded),
+                    ])
                   ChoiceChip(
                     key: Key('cron-action-chip-${kind.name}'),
                     avatar: Icon(
@@ -281,7 +282,8 @@ class _CronJobEditorScreenState extends ConsumerState<CronJobEditorScreen> {
                       color: _action == kind ? null : palette.muted,
                     ),
                     label: Text(switch (kind) {
-                      CronActionKind.notification => strings.cronActionNotification,
+                      CronActionKind.notification =>
+                        strings.cronActionNotification,
                       CronActionKind.telegram => strings.cronActionTelegram,
                       CronActionKind.agent => strings.cronActionAgent,
                       CronActionKind.chat => strings.cronActionChat,
