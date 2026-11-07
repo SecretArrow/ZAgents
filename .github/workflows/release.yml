@@ -192,6 +192,19 @@ jobs:
               echo "::error::$SO: expected a $EXPECT binary for $ABI, got: $FILE_OUT"
               exit 1
             fi
+            # v1.51.2 — the launcher is tiny by design; the payload is the
+            # impl library (llama.cpp b12182 all-shared architecture).
+            IMPL="android/app/src/main/jniLibs/$ABI/libllama-server-impl.so"
+            if [ ! -f "$IMPL" ]; then
+              echo "::error::$IMPL is missing — the launcher cannot run without it."
+              exit 1
+            fi
+            IMPL_SIZE=$(stat -c%s "$IMPL")
+            echo "$ABI impl: $IMPL_SIZE bytes"
+            if [ "$IMPL_SIZE" -lt 1048576 ]; then
+              echo "::error::$IMPL is only $IMPL_SIZE bytes (< 1 MB) — the real server payload is missing."
+              exit 1
+            fi
           }
           verify_runtime arm64-v8a aarch64
           verify_runtime x86_64 x86-64
@@ -217,14 +230,24 @@ jobs:
           set -euo pipefail
           APK="build/app/outputs/flutter-apk/app-release.apk"
           for ABI in arm64-v8a x86_64; do
-            LINE=$(unzip -l "$APK" "lib/$ABI/libllamaserver.so" | tail -n +4 | head -n 1 || true)
-            echo "$ABI entry: $LINE"
+            # v1.51.2 — launcher is tiny by design; assert the PAYLOAD
+            # (impl) plus the companions actually made it into the APK.
+            for ENTRY in libllamaserver.so libllama-server-impl.so libggml.so; do
+              LINE=$(unzip -l "$APK" "lib/$ABI/$ENTRY" | tail -n +4 | head -n 1 || true)
+              echo "$ABI $ENTRY entry: $LINE"
+              if [ -z "$(echo "$LINE" | awk '{print $1}')" ]; then
+                echo "::error::lib/$ABI/$ENTRY is missing from $APK — refusing to publish a broken Local AI runtime."
+                FAILED=1
+              fi
+            done
+            LINE=$(unzip -l "$APK" "lib/$ABI/libllama-server-impl.so" | tail -n +4 | head -n 1 || true)
             SIZE=$(echo "$LINE" | awk '{print $1}')
             if [ -z "$SIZE" ] || [ "$SIZE" -lt 1048576 ]; then
-              echo "::error::libllamaserver.so for $ABI is missing or < 1 MB inside $APK — refusing to publish a broken Local AI runtime."
-              exit 1
+              echo "::error::libllama-server-impl.so for $ABI is missing or < 1 MB inside $APK — refusing to publish a broken Local AI runtime."
+              FAILED=1
             fi
           done
+          if [ "${FAILED:-0}" = "1" ]; then exit 1; fi
 
       # v1.41.4 — also ship per-ABI splits (arm64-v8a, armeabi-v7a, x86_64).
       # Same signing key, smaller downloads; the universal APK stays as the

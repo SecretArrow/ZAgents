@@ -155,17 +155,27 @@ jobs:
             -exec ls -la {} \; -exec sha256sum {} \; || true
           echo "== APK entries =="
           for ABI in arm64-v8a x86_64; do
-            LINE=$(unzip -l "$APK" "lib/$ABI/libllamaserver.so" | tail -n +4 | head -n 1 || true)
-            echo "$ABI entry: $LINE"
+            # v1.51.2 — the LAUNCHER (libllamaserver.so) is legitimately
+            # tiny (~7 KB) in llama.cpp b12182's all-shared architecture;
+            # the payload is libllama-server-impl.so (> 1 MB).
+            for ENTRY in libllamaserver.so libllama-server-impl.so libggml.so; do
+              LINE=$(unzip -l "$APK" "lib/$ABI/$ENTRY" | tail -n +4 | head -n 1 || true)
+              echo "$ABI $ENTRY entry: $LINE"
+              if [ -z "$(echo "$LINE" | awk '{print $1}')" ]; then
+                echo "::error::lib/$ABI/$ENTRY is missing from $APK."
+                FAILED=1
+              fi
+            done
+            LINE=$(unzip -l "$APK" "lib/$ABI/libllama-server-impl.so" | tail -n +4 | head -n 1 || true)
             SIZE=$(echo "$LINE" | awk '{print $1}')
             if [ -z "$SIZE" ] || [ "$SIZE" -lt 1048576 ]; then
-              echo "::error::libllamaserver.so for $ABI is missing or < 1 MB inside $APK — the strip/packaging guard regressed."
+              echo "::error::libllama-server-impl.so for $ABI is missing or < 1 MB inside $APK — the Local AI payload did not survive packaging."
               FAILED=1
             else
               mkdir -p "/tmp/so-dump/$ABI"
-              unzip -o -j "$APK" "lib/$ABI/libllamaserver.so" -d "/tmp/so-dump/$ABI" >/dev/null
-              ls -la "/tmp/so-dump/$ABI/libllamaserver.so"
-              file -b "/tmp/so-dump/$ABI/libllamaserver.so"
+              unzip -o -j "$APK" "lib/$ABI/libllama-server-impl.so" -d "/tmp/so-dump/$ABI" >/dev/null
+              ls -la "/tmp/so-dump/$ABI/libllama-server-impl.so"
+              file -b "/tmp/so-dump/$ABI/libllama-server-impl.so"
             fi
           done
           if [ "${FAILED:-0}" = "1" ]; then exit 1; fi
