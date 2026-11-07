@@ -10,6 +10,7 @@ import 'package:path_provider/path_provider.dart';
 
 import 'models/models.dart';
 import 'models/cron_job.dart';
+import 'models/local_model.dart';
 import 'services/agent_composer.dart';
 import 'services/agent_controller.dart';
 import 'services/agent_polisher.dart';
@@ -29,6 +30,12 @@ import 'services/device_shell.dart';
 import 'services/ip_guard.dart';
 import 'services/js_runtime.dart';
 import 'services/llm_client.dart';
+import 'services/local_ai/external_ollama_scanner.dart';
+import 'services/local_ai/llm_server_controller.dart';
+import 'services/local_ai/local_model_io.dart';
+import 'services/local_ai/local_model_store.dart';
+import 'services/local_ai/model_downloader.dart';
+import 'services/local_ai/ollama_registry_client.dart';
 import 'services/model_catalog.dart';
 import 'services/module_registry.dart';
 import 'services/module_remote.dart';
@@ -695,3 +702,58 @@ final updateCheckProvider =
 
 /// GitHub Releases update checker (injectable client for tests).
 final updateCheckerProvider = Provider<UpdateChecker>((ref) => UpdateChecker());
+
+// -- v1.51.0: Local AI (bundled llama-server + Ollama-compatible) --------
+
+/// v1.51.0 — local model store; must be overridden in main() with the
+/// real SharedPreferences-backed repository.
+final localModelRepositoryProvider = Provider<LocalModelRepository>((ref) {
+  throw UnimplementedError(
+    'localModelRepositoryProvider must be overridden in main()',
+  );
+});
+
+/// Live local-model state (installed list + llama-server config).
+final localModelsProvider =
+    NotifierProvider<LocalModelsController, LocalModelState>(
+      LocalModelsController.new,
+    );
+
+/// Platform channel to the bundled llama.cpp llama-server runtime
+/// (`zagents/llmserver`); overridden with the scriptable fake in tests.
+final llmServerPlatformProvider = Provider<LlmServerPlatform>(
+  (ref) => MethodChannelLlmServerPlatform(),
+);
+
+/// Shared injectable HTTP client for every Local AI network call
+/// (llama-server health checks, model downloads, registry lookups,
+/// external Ollama probes) — overridden with a mock in tests.
+final llmHttpClientProvider = Provider<http.Client>((ref) => http.Client());
+
+/// Live llama-server lifecycle state (status, active model, log tail).
+final llmServerProvider =
+    NotifierProvider<LlmServerController, LlmServerState>(
+      LlmServerController.new,
+    );
+
+/// Download queue (one row per model). The completion hook is wired in
+/// the controller's build() — Riverpod 2.6 class providers get no ref
+/// in their create closure — so a verified download lands in the
+/// installed list via localModelsProvider's controller.
+final downloadQueueProvider =
+    NotifierProvider<DownloadQueueController, List<DownloadProgress>>(
+      DownloadQueueController.new,
+    );
+
+/// Ollama registry (manifest → blob) resolver (injectable client).
+final ollamaRegistryClientProvider = Provider<OllamaRegistryClient>(
+  (ref) => OllamaRegistryClient(),
+);
+
+/// External Ollama server probe (Server tab detection row).
+final externalOllamaScannerProvider = Provider<ExternalOllamaScanner>(
+  (ref) => ExternalOllamaScanner(),
+);
+
+/// File import/export/share helper for local models.
+final localModelIoProvider = Provider<LocalModelIo>((ref) => LocalModelIo());

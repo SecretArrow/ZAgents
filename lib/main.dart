@@ -12,6 +12,7 @@ import 'l10n/app_strings.dart';
 import 'models/models.dart';
 import 'services/context_repository.dart';
 import 'services/cron_repository.dart';
+import 'services/local_ai/local_model_store.dart';
 import 'services/prompt_repository.dart';
 import 'services/settings_repository.dart';
 import 'ui/lock_gate.dart';
@@ -36,6 +37,9 @@ Future<void> main() async {
       await PrefsContextRepository.create();
   // v1.49.9 — cron store (scheduled Telegram/notification/agent jobs).
   final PrefsCronRepository cronRepo = await PrefsCronRepository.create();
+  // v1.51.0 — Local AI store (installed models + llama-server config).
+  final PrefsLocalModelRepository localModelRepo =
+      await PrefsLocalModelRepository.create();
   final FilePromptRepository promptRepo = FilePromptRepository(
     resolveBaseDir: getApplicationDocumentsDirectory,
   );
@@ -48,6 +52,7 @@ Future<void> main() async {
     contextRepositoryProvider.overrideWithValue(contextRepo),
     promptRepositoryProvider.overrideWithValue(promptRepo),
     cronRepositoryProvider.overrideWithValue(cronRepo),
+    localModelRepositoryProvider.overrideWithValue(localModelRepo),
     appLockPrefsProvider.overrideWithValue(appLockPrefs),
     ipMemoPrefsProvider.overrideWithValue(ipMemoPrefs),
   ];
