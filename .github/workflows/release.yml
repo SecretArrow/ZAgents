@@ -206,6 +206,26 @@ jobs:
           ZAGENTS_REQUIRE_SIGNING: 'true'
         run: flutter build apk --release
 
+      # v1.51.1 — regression guard for the empty-libllamaserver.so bug:
+      # v1.51.0 shipped a 0-byte runtime (AGP's strip pass emptied the
+      # executable-as-.so; fixed via keepDebugSymbols in build.gradle.kts).
+      # Assert the packaged runtime is a real binary (> 1 MB) for every
+      # ABI that carries one — BEFORE any split/AAB work repeats the same
+      # packaging path.
+      - name: Verify runtime inside universal APK
+        run: |
+          set -euo pipefail
+          APK="build/app/outputs/flutter-apk/app-release.apk"
+          for ABI in arm64-v8a x86_64; do
+            LINE=$(unzip -l "$APK" "lib/$ABI/libllamaserver.so" | tail -n +4 | head -n 1 || true)
+            echo "$ABI entry: $LINE"
+            SIZE=$(echo "$LINE" | awk '{print $1}')
+            if [ -z "$SIZE" ] || [ "$SIZE" -lt 1048576 ]; then
+              echo "::error::libllamaserver.so for $ABI is missing or < 1 MB inside $APK — refusing to publish a broken Local AI runtime."
+              exit 1
+            fi
+          done
+
       # v1.41.4 — also ship per-ABI splits (arm64-v8a, armeabi-v7a, x86_64).
       # Same signing key, smaller downloads; the universal APK stays as the
       # safe default for users who do not know their device's ABI.

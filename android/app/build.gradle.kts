@@ -70,6 +70,19 @@ android {
             }
         }
     }
+
+    // v1.51.1 — libllamaserver.so is a llama.cpp EXECUTABLE (llama-server)
+    // renamed so PackageManager extracts it into nativeLibraryDir and marks
+    // it executable. AGP's NDK strip pass (stripReleaseDebugSymbols) does
+    // not understand a PIE executable masquerading as a shared library and
+    // EMPTIES the file during APK packaging (verified: v1.51.0 shipped a
+    // 0-byte .so). keepDebugSymbols (formerly doNotStrip) keeps the binary
+    // byte-identical.
+    packaging {
+        jniLibs {
+            keepDebugSymbols.add("**/libllamaserver.so")
+        }
+    }
 }
 
 kotlin {

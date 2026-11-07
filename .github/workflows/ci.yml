@@ -122,16 +122,36 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
-      # v1.51.0 — cross-compile llama.cpp llama-server (x86_64) and copy it
-      # into android/app/src/main/jniLibs/ so the debug APK packages it.
-      # Cached by llama tag + NDK version + ABI set; warm runs are fast.
-      - name: Inject llama.cpp runtime (x86_64)
+      # v1.51.0 — cross-compile llama.cpp llama-server and copy it into
+      # android/app/src/main/jniLibs/ so the debug APK packages it.
+      # v1.51.1 — both ABIs (matches the e2e job and the shared v2 cache
+      # key; the verify step below asserts BOTH entries in the APK).
+      - name: Inject llama.cpp runtime (arm64-v8a + x86_64)
         uses: ./.github/actions/llama-runtime
         with:
-          abis: x86_64
+          abis: 'arm64-v8a x86_64'
 
       - name: Build debug APK
         run: flutter build apk --debug
+
+      # v1.51.1 — regression guard for the empty-libllamaserver.so bug:
+      # v1.51.0 shipped a 0-byte runtime because AGP's strip pass emptied
+      # the executable-as-.so (fixed via keepDebugSymbols in
+      # build.gradle.kts). Assert the packaged runtime is a real binary
+      # (> 1 MB) inside the built APK, for every ABI that carries one.
+      - name: Verify runtime inside debug APK
+        run: |
+          set -euo pipefail
+          APK="build/app/outputs/flutter-apk/app-debug.apk"
+          for ABI in arm64-v8a x86_64; do
+            LINE=$(unzip -l "$APK" "lib/$ABI/libllamaserver.so" | tail -n +4 | head -n 1 || true)
+            echo "$ABI entry: $LINE"
+            SIZE=$(echo "$LINE" | awk '{print $1}')
+            if [ -z "$SIZE" ] || [ "$SIZE" -lt 1048576 ]; then
+              echo "::error::libllamaserver.so for $ABI is missing or < 1 MB inside $APK — the strip/packaging guard regressed."
+              exit 1
+            fi
+          done
 
   e2e:
     name: E2E (Android emulator)
