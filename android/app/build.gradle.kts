@@ -73,14 +73,20 @@ android {
 
     // v1.51.1 — libllamaserver.so is a llama.cpp EXECUTABLE (llama-server)
     // renamed so PackageManager extracts it into nativeLibraryDir and marks
-    // it executable. AGP's NDK strip pass (stripReleaseDebugSymbols) does
-    // not understand a PIE executable masquerading as a shared library and
-    // EMPTIES the file during APK packaging (verified: v1.51.0 shipped a
-    // 0-byte .so). keepDebugSymbols (formerly doNotStrip) keeps the binary
-    // byte-identical.
+    // it executable. Two packaging guards are REQUIRED for that trick:
+    //  * keepDebugSymbols — AGP's NDK strip pass cannot handle a PIE
+    //    executable masquerading as a shared library and corrupts it
+    //    (v1.51.0 shipped a 0-byte .so).
+    //  * useLegacyPackaging — with the AGP 8 default (uncompressed,
+    //    16 KB-aligned, non-extracted native libs) zipflinger's ELF
+    //    rewrite mangled the executable into a ~7 KB stub, and the file
+    //    would never be extracted to nativeLibraryDir at all, so
+    //    ProcessBuilder could not spawn it. Legacy packaging = extract at
+    //    install, real executable file on disk.
     packaging {
         jniLibs {
             keepDebugSymbols.add("**/libllamaserver.so")
+            useLegacyPackaging = true
         }
     }
 }
