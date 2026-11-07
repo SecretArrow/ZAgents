@@ -1,5 +1,4 @@
-import 'package:flutter/services.dart'
-    show MethodChannel, MissingPluginException, PlatformException;
+import 'package:flutter/services.dart' show MethodChannel;
 
 /// Free-disk probe — v1.53.0.
 ///
@@ -20,6 +19,12 @@ class DiskSpace {
   const DiskSpace({this.invoke});
 
   /// Bytes available where model files live; null = unknown.
+  ///
+  /// The catch is deliberately TOTAL: on a bare test binding the real
+  /// channel throws a StateError from ServicesBinding.instance, and any
+  /// other surprise (wrong payload type, weird platform) must equally
+  /// degrade to "unknown, allow" — the guard can never wedge the queue
+  /// on a device it cannot measure.
   Future<int?> freeDiskBytes() async {
     try {
       final Object? raw = invoke != null
@@ -27,9 +32,7 @@ class DiskSpace {
           : await _channel.invokeMethod<Object?>('freeDiskBytes');
       if (raw is int) return raw;
       return null;
-    } on PlatformException {
-      return null;
-    } on MissingPluginException {
+    } catch (_) {
       return null;
     }
   }
