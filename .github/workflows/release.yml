@@ -1,5 +1,11 @@
 name: Release
 
+# v1.51.0 — Local AI runtime: the build now injects the llama.cpp
+# llama-server binary (arm64-v8a + x86_64, composite action
+# ./.github/actions/llama-runtime) into android/app/src/main/jniLibs/ before
+# the APK/AAB builds and verifies it is present. armeabi-v7a splits ship
+# without the runtime on purpose (the app degrades gracefully).
+
 on:
   push:
     tags: ['v*']
@@ -20,7 +26,10 @@ jobs:
   build-release:
     name: Build & publish APK + AAB
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    # v1.51.0 — 45 -> 90: the first cold run also cross-compiles llama-server
+    # for two ABIs (~20-30 min) before the APK/AAB builds; cached runs add
+    # only seconds.
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
         with:
@@ -150,6 +159,42 @@ jobs:
             echo "Signing certificate SHA-256: ${FINGERPRINT:-<unknown>}"
             echo "::notice::Set the KEYSTORE_SHA256 secret to pin this fingerprint and fail releases signed by a different key."
           fi
+
+      # v1.51.0 — Local AI runtime: cross-compile llama.cpp llama-server for
+      # arm64-v8a + x86_64 (cached by llama tag + NDK + ABI set) and copy it
+      # into android/app/src/main/jniLibs/ so every APK/AAB packages it.
+      # armeabi-v7a splits intentionally ship WITHOUT the runtime; the app
+      # degrades gracefully (runtimeAvailable = false).
+      - name: Inject llama.cpp runtime (arm64-v8a + x86_64)
+        uses: ./.github/actions/llama-runtime
+        with:
+          abis: 'arm64-v8a x86_64'
+
+      # v1.51.0 — fail the release loudly when the runtime is missing or built
+      # for the wrong machine type (mirrors the ::error:: style used below).
+      - name: Verify llama.cpp runtime binaries (arm64-v8a + x86_64)
+        run: |
+          set -euo pipefail
+          verify_runtime() {
+            ABI="$1"; EXPECT="$2"
+            SO="android/app/src/main/jniLibs/$ABI/libllamaserver.so"
+            if [ ! -f "$SO" ]; then
+              echo "::error::$SO is missing; the release would ship without the Local AI runtime."
+              exit 1
+            fi
+            FILE_OUT=$(file -b "$SO")
+            echo "$ABI: $FILE_OUT"
+            if ! echo "$FILE_OUT" | grep -q '^ELF 64-bit'; then
+              echo "::error::$SO is not a 64-bit ELF: $FILE_OUT"
+              exit 1
+            fi
+            if ! echo "$FILE_OUT" | grep -q "$EXPECT"; then
+              echo "::error::$SO: expected a $EXPECT binary for $ABI, got: $FILE_OUT"
+              exit 1
+            fi
+          }
+          verify_runtime arm64-v8a aarch64
+          verify_runtime x86_64 x86-64
 
       - name: Build release APK (universal)
         env:

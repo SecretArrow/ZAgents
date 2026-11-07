@@ -1,0 +1,142 @@
+# v1.51.0 — Local AI runtime builder (S3). Cross-compiles llama.cpp
+# `llama-server` (pinned tag, default b12182) for the requested Android ABIs
+# with the NDK and copies it to android/app/src/main/jniLibs/<abi>/
+# libllamaserver.so (git-ignored: injected at build time, never committed).
+# Cached by llama tag + NDK version + ABI set; cold runs cost ~10-15 min/ABI.
+
+name: 'llama.cpp runtime (llama-server)'
+description: >-
+  Cross-compile llama.cpp llama-server for Android ABIs with the NDK and
+  inject it as android/app/src/main/jniLibs/<abi>/libllamaserver.so.
+
+inputs:
+  abis:
+    description: 'Space-separated Android ABIs, e.g. "arm64-v8a x86_64"'
+    required: true
+    type: string
+  llama-tag:
+    description: 'llama.cpp tag to build (runtime pin)'
+    required: false
+    default: 'b12182'
+    type: string
+
+runs:
+  using: 'composite'
+  steps:
+    # v1.51.0 — prefer the highest NDK preinstalled under $ANDROID_HOME/ndk
+    # (GitHub ubuntu runners ship a couple); only when none is usable, fall
+    # back to installing the pinned 27.2.12479018 via sdkmanager.
+    - name: Resolve NDK
+      id: ndk
+      shell: bash
+      env:
+        ABIS: ${{ inputs.abis }}
+      run: |
+        set -euo pipefail
+        SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+        # Highest version wins; `|| true` keeps the glob-miss from failing.
+        NDK_DIR=$(ls -d "$SDK"/ndk/* 2>/dev/null | sort -V | tail -n 1 || true)
+        if [ -z "$NDK_DIR" ] || [ ! -f "$NDK_DIR/build/cmake/android.toolchain.cmake" ]; then
+          echo "No usable preinstalled NDK - installing pinned ndk;27.2.12479018"
+          SDKMANAGER="$SDK/cmdline-tools/latest/bin/sdkmanager"
+          [ -x "$SDKMANAGER" ] || SDKMANAGER="$(command -v sdkmanager || echo sdkmanager)"
+          yes | "$SDKMANAGER" "ndk;27.2.12479018" >/dev/null || true
+          NDK_DIR=$(ls -d "$SDK"/ndk/* 2>/dev/null | sort -V | tail -n 1 || true)
+        fi
+        if [ -z "$NDK_DIR" ] || [ ! -f "$NDK_DIR/build/cmake/android.toolchain.cmake" ]; then
+          echo "::error::No usable Android NDK found in $SDK/ndk (pinned install failed too)."
+          exit 1
+        fi
+        NDK_VERSION=$(basename "$NDK_DIR")
+        echo "Using NDK $NDK_VERSION at $NDK_DIR"
+        # "arm64-v8a x86_64" -> "arm64-v8a-x86_64" (safe cache-key fragment).
+        ABI_KEY=$(echo "$ABIS" | tr ' ' '-')
+        echo "ndk-dir=$NDK_DIR" >> "$GITHUB_OUTPUT"
+        echo "ndk-version=$NDK_VERSION" >> "$GITHUB_OUTPUT"
+        echo "abi-key=$ABI_KEY" >> "$GITHUB_OUTPUT"
+
+    # v1.51.0 — exact-key cache only (no restore-keys): binaries built from
+    # another llama tag or NDK must never be silently reused.
+    - name: Restore llama-server cache
+      uses: actions/cache@v4
+      with:
+        path: ~/.cache/zagents-llama-runtime
+        key: llama-runtime-${{ inputs.llama-tag }}-${{ steps.ndk.outputs.ndk-version }}-${{ steps.ndk.outputs.abi-key }}-v1
+
+    # v1.51.0 — build only the ABIs the cache did not provide. LLAMA_BUILD_TOOLS
+    # stays ON on purpose: llama-server lives under tools/ and is gated by that
+    # flag in this tag; extra tool binaries stay in $RUNNER_TEMP (not copied).
+    # GGML_NATIVE=OFF keeps -march=native from leaking host CPU features into
+    # the cross-compiled binary (would SIGILL on emulators / older devices).
+    - name: Build llama-server (cached ABIs are skipped)
+      shell: bash
+      env:
+        ABIS: ${{ inputs.abis }}
+        LLAMA_TAG: ${{ inputs.llama-tag }}
+        NDK_DIR: ${{ steps.ndk.outputs.ndk-dir }}
+      run: |
+        set -euo pipefail
+        for ABI in $ABIS; do
+          CACHE_SO="$HOME/.cache/zagents-llama-runtime/$ABI/libllamaserver.so"
+          if [ -f "$CACHE_SO" ]; then
+            echo "$ABI: runtime found in cache - skipping build"
+            continue
+          fi
+          echo "$ABI: building llama-server from llama.cpp $LLAMA_TAG"
+          if [ ! -d "$RUNNER_TEMP/llama.cpp" ]; then
+            git clone --depth 1 --branch "$LLAMA_TAG" \
+              https://github.com/ggml-org/llama.cpp "$RUNNER_TEMP/llama.cpp"
+          fi
+          cmake -S "$RUNNER_TEMP/llama.cpp" -B "$RUNNER_TEMP/build-$ABI" \
+            -DCMAKE_TOOLCHAIN_FILE="$NDK_DIR/build/cmake/android.toolchain.cmake" \
+            -DANDROID_ABI="$ABI" \
+            -DANDROID_PLATFORM=android-24 \
+            -DANDROID_STL=c++_static \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DLLAMA_BUILD_SERVER=ON \
+            -DLLAMA_BUILD_TESTS=OFF \
+            -DLLAMA_BUILD_EXAMPLES=OFF \
+            -DLLAMA_BUILD_TOOLS=ON \
+            -DLLAMA_CURL=OFF \
+            -DGGML_NATIVE=OFF \
+            -DCMAKE_EXE_LINKER_FLAGS="-Wl,-z,max-page-size=16384"
+          cmake --build "$RUNNER_TEMP/build-$ABI" --config Release --parallel "$(nproc)"
+          mkdir -p "$(dirname "$CACHE_SO")"
+          cp "$RUNNER_TEMP/build-$ABI/bin/llama-server" "$CACHE_SO"
+        done
+
+    # v1.51.0 — copy into the workspace and verify: every requested ABI must
+    # get a 64-bit ELF for the right machine, otherwise the APK would ship
+    # without the runtime and the app would silently degrade.
+    - name: Inject libllamaserver.so into jniLibs and verify
+      shell: bash
+      env:
+        ABIS: ${{ inputs.abis }}
+      run: |
+        set -euo pipefail
+        for ABI in $ABIS; do
+          CACHE_SO="$HOME/.cache/zagents-llama-runtime/$ABI/libllamaserver.so"
+          DEST="$GITHUB_WORKSPACE/android/app/src/main/jniLibs/$ABI/libllamaserver.so"
+          if [ ! -f "$CACHE_SO" ]; then
+            echo "::error::Runtime for $ABI was neither cached nor built ($CACHE_SO missing)."
+            exit 1
+          fi
+          mkdir -p "$(dirname "$DEST")"
+          cp "$CACHE_SO" "$DEST"
+          FILE_OUT=$(file -b "$DEST")
+          echo "$ABI -> $DEST: $FILE_OUT"
+          case "$ABI" in
+            arm64-v8a) EXPECT='aarch64' ;;
+            x86_64)    EXPECT='x86-64' ;;
+            *)         EXPECT='' ;;
+          esac
+          if ! echo "$FILE_OUT" | grep -q '^ELF 64-bit'; then
+            echo "::error::$DEST is not a 64-bit ELF: $FILE_OUT"
+            exit 1
+          fi
+          if [ -n "$EXPECT" ] && ! echo "$FILE_OUT" | grep -q "$EXPECT"; then
+            echo "::error::$DEST: expected a $EXPECT binary for $ABI, got: $FILE_OUT"
+            exit 1
+          fi
+          echo "OK: $ABI runtime injected and verified."
+        done

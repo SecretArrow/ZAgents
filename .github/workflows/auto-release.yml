@@ -5,6 +5,10 @@ name: Auto Release
 # release.yml (quality gate -> signed APK -> GitHub Release). Idempotent:
 # an existing tag never re-releases.
 
+# v1.51.0 — fixed the push trigger typo: `branches: ain]` -> `branches: [main]`.
+# The corrupted filter matched no branch, so pushes to main never auto-tagged
+# and releases had to be dispatched manually. Everything else is untouched.
+
 on:
   push:
     branches: [main]

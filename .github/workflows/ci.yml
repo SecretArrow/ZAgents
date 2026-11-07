@@ -1,5 +1,10 @@
 name: CI
 
+# v1.51.0 — Local AI: build-android and e2e now inject the llama.cpp
+# llama-server runtime (composite action ./.github/actions/llama-runtime)
+# into android/app/src/main/jniLibs/<abi>/ before the Flutter build/test
+# steps, so debug APKs and emulator integration tests ship the real runtime.
+
 on:
   push:
     branches: [main]
@@ -87,7 +92,9 @@ jobs:
       github.event_name == 'pull_request' ||
       github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    # v1.51.0 — 25 -> 40: the first cold run also cross-compiles llama-server
+    # (x86_64) for the debug APK; cached runs add only seconds.
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
 
@@ -115,6 +122,14 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
+      # v1.51.0 — cross-compile llama.cpp llama-server (x86_64) and copy it
+      # into android/app/src/main/jniLibs/ so the debug APK packages it.
+      # Cached by llama tag + NDK version + ABI set; warm runs are fast.
+      - name: Inject llama.cpp runtime (x86_64)
+        uses: ./.github/actions/llama-runtime
+        with:
+          abis: x86_64
+
       - name: Build debug APK
         run: flutter build apk --debug
 
@@ -123,7 +138,9 @@ jobs:
     # Skip emulator on PRs to keep CI fast; run on main pushes & manual dispatch.
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    # v1.51.0 — 45 -> 60: the first cold run cross-compiles llama-server
+    # (x86_64) before the emulator boots; cached runs are unaffected.
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
 
@@ -157,6 +174,14 @@ jobs:
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
           ls -al /dev/kvm
+
+      # v1.51.0 — `flutter test integration_test` builds the app on the
+      # emulator, so the llama.cpp runtime must already sit in jniLibs
+      # (x86_64 matches the emulator ABI) before this step runs.
+      - name: Inject llama.cpp runtime (x86_64)
+        uses: ./.github/actions/llama-runtime
+        with:
+          abis: x86_64
 
       - name: Run integration tests on emulator
         uses: reactivecircus/android-emulator-runner@v2
