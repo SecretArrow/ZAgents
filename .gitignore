@@ -46,3 +46,8 @@ app.*.map.json
 
 # Widget Preview related
 .widget_preview/
+
+# Local AI (v1.51.0): llama.cpp llama-server runtimes are built per-ABI by
+# CI (.github/actions/llama-runtime) and injected into
+# android/app/src/main/jniLibs/ — never committed.
+android/app/src/main/jniLibs/

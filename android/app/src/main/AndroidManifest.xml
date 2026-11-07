@@ -49,6 +49,16 @@
             android:name=".ZAgentsForegroundService"
             android:exported="false"
             android:foregroundServiceType="dataSync"/>
+        <!-- Local AI (v1.51.0): dedicated foreground service hosting the
+             bundled llama.cpp llama-server binary (libllamaserver.so, run
+             from nativeLibraryDir). dataSync = long-running local data
+             processing, the closest FGS type — same as the agent loop, so
+             the FOREGROUND_SERVICE_DATA_SYNC permission above already
+             covers it. -->
+        <service
+            android:name=".LlmServerService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync"/>
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
         <meta-data

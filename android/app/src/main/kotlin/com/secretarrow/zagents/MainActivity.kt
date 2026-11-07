@@ -37,6 +37,9 @@ class MainActivity : FlutterFragmentActivity() {
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         configureDeviceChannel(flutterEngine)
+        // v1.51.0: Local AI runtime (llama-server) channel — see
+        // LlmServerChannel.kt (registered here so MainActivity stays thin).
+        LlmServerChannel(this).register(flutterEngine)
         pendingSessionId = intent?.getStringExtra(EXTRA_PENDING_SESSION)
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, channelName())
             .setMethodCallHandler { call, result ->
