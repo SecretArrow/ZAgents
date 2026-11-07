@@ -289,9 +289,9 @@ class _OllamaManageScreenState extends ConsumerState<OllamaManageScreen>
   /// controller. Re-added in v1.52.0 after the TabController refactor
   /// accidentally dropped the definition while keeping the call sites.
   void _refreshServerState() {
-    final LlmServerController controller = ref.read(
-      llmServerProvider.notifier,
-    );
+    // Inferred on purpose: the screen imports the provider (di.dart), not
+    // the controller class by name.
+    final controller = ref.read(llmServerProvider.notifier);
     controller.refresh();
     controller.pollNow();
   }
