@@ -479,7 +479,9 @@ void main() {
     'log viewer shows the full log, copies it and closes',
     (WidgetTester tester) async {
       String? copied;
-      await TestDefaultBinaryMessengerBinding
+      // Returns void — call as a statement (an await on it would not
+      // compile).
+      TestDefaultBinaryMessengerBinding
           .instance.defaultBinaryMessenger
           .setMockMethodCallHandler(SystemChannels.platform,
               (MethodCall call) async {
