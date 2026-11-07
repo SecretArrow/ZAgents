@@ -291,7 +291,11 @@ void main() {
         modelId: 'd2',
         modelName: 'smollm2:135m',
         receivedBytes: 0,
-        totalBytes: 0,
+        // Determinate on purpose: an unknown total renders an
+        // INDETERMINATE LinearProgressIndicator whose endless animation
+        // makes pumpAndSettle time out — the unknown-total look is not
+        // what this test is about.
+        totalBytes: 284246016,
         status: DownloadStatus.queued,
       ),
     ];
