@@ -19,20 +19,17 @@ final List<int> _fullBytes = utf8.encode(_fullBody);
 final String _fullSha = sha256.convert(_fullBytes).toString();
 final String _wrongSha = sha256.convert(utf8.encode('XXXXXXXXXX')).toString();
 
-LocalModelEntry _customEntry(
-  String id, {
-  String sha = '',
-  int size = 0,
-}) => LocalModelEntry(
-  id: id,
-  name: 'Model $id',
-  source: LocalModelSource.customUrl,
-  customUrl: 'https://example.test/$id.gguf',
-  fileName: '$id.gguf',
-  sizeBytes: size,
-  sha256: sha,
-  addedAtMs: 0,
-);
+LocalModelEntry _customEntry(String id, {String sha = '', int size = 0}) =>
+    LocalModelEntry(
+      id: id,
+      name: 'Model $id',
+      source: LocalModelSource.customUrl,
+      customUrl: 'https://example.test/$id.gguf',
+      fileName: '$id.gguf',
+      sizeBytes: size,
+      sha256: sha,
+      addedAtMs: 0,
+    );
 
 /// Builds a fake [DiskSpace] probe that always reports [bytes] free.
 Future<Object?> Function(String, {dynamic arguments}) _freeProbe(int bytes) =>
@@ -461,37 +458,39 @@ void main() {
     expect(boot.rowOf('noSrc')!.error, contains('no download source'));
   });
 
-  test('disk guard allows a row when free space covers size + headroom',
-      () async {
-    final List<http.BaseRequest> requests = <http.BaseRequest>[];
-    final _Boot boot = _Boot.create(
-      MockClient.streaming((
-        http.BaseRequest request,
-        http.ByteStream body,
-      ) async {
-        requests.add(request);
-        return http.StreamedResponse(
-          Stream<List<int>>.value(_fullBytes),
-          200,
-          contentLength: _fullBytes.length,
-        );
-      }),
-      modelsDir: tempDir,
-      // 10 GiB free: 4 MiB expected + 256 MiB headroom fits easily.
-      diskSpace: DiskSpace(invoke: _freeProbe(10 * 1024 * 1024 * 1024)),
-    );
+  test(
+    'disk guard allows a row when free space covers size + headroom',
+    () async {
+      final List<http.BaseRequest> requests = <http.BaseRequest>[];
+      final _Boot boot = _Boot.create(
+        MockClient.streaming((
+          http.BaseRequest request,
+          http.ByteStream body,
+        ) async {
+          requests.add(request);
+          return http.StreamedResponse(
+            Stream<List<int>>.value(_fullBytes),
+            200,
+            contentLength: _fullBytes.length,
+          );
+        }),
+        modelsDir: tempDir,
+        // 10 GiB free: 4 MiB expected + 256 MiB headroom fits easily.
+        diskSpace: DiskSpace(invoke: _freeProbe(10 * 1024 * 1024 * 1024)),
+      );
 
-    await boot.controller.enqueue(
-      _customEntry('roomy', sha: _fullSha, size: 4 * 1024 * 1024),
-    );
+      await boot.controller.enqueue(
+        _customEntry('roomy', sha: _fullSha, size: 4 * 1024 * 1024),
+      );
 
-    await _until(
-      () => boot.rowOf('roomy')?.status == DownloadStatus.completed,
-      'completion',
-    );
-    expect(requests, hasLength(1));
-    expect(await File(p('roomy.gguf')).readAsString(), _fullBody);
-  });
+      await _until(
+        () => boot.rowOf('roomy')?.status == DownloadStatus.completed,
+        'completion',
+      );
+      expect(requests, hasLength(1));
+      expect(await File(p('roomy.gguf')).readAsString(), _fullBody);
+    },
+  );
 
   test('disk guard fails the row before any HTTP request when short of '
       'space', () async {
@@ -526,36 +525,38 @@ void main() {
     expect(await File(p('toobig.gguf.part')).exists(), isFalse);
   });
 
-  test('disk guard is a no-op when the free-space probe reports null',
-      () async {
-    final List<http.BaseRequest> requests = <http.BaseRequest>[];
-    final _Boot boot = _Boot.create(
-      MockClient.streaming((
-        http.BaseRequest request,
-        http.ByteStream body,
-      ) async {
-        requests.add(request);
-        return http.StreamedResponse(
-          Stream<List<int>>.value(_fullBytes),
-          200,
-          contentLength: _fullBytes.length,
-        );
-      }),
-      modelsDir: tempDir,
-      diskSpace: DiskSpace(invoke: _nullProbe()),
-    );
+  test(
+    'disk guard is a no-op when the free-space probe reports null',
+    () async {
+      final List<http.BaseRequest> requests = <http.BaseRequest>[];
+      final _Boot boot = _Boot.create(
+        MockClient.streaming((
+          http.BaseRequest request,
+          http.ByteStream body,
+        ) async {
+          requests.add(request);
+          return http.StreamedResponse(
+            Stream<List<int>>.value(_fullBytes),
+            200,
+            contentLength: _fullBytes.length,
+          );
+        }),
+        modelsDir: tempDir,
+        diskSpace: DiskSpace(invoke: _nullProbe()),
+      );
 
-    // Unknown free space must never block — even a size that would not
-    // fit any real disk (if null were treated as 0) proceeds.
-    await boot.controller.enqueue(
-      _customEntry('unknown', sha: _fullSha, size: 4 * 1024 * 1024),
-    );
+      // Unknown free space must never block — even a size that would not
+      // fit any real disk (if null were treated as 0) proceeds.
+      await boot.controller.enqueue(
+        _customEntry('unknown', sha: _fullSha, size: 4 * 1024 * 1024),
+      );
 
-    await _until(
-      () => boot.rowOf('unknown')?.status == DownloadStatus.completed,
-      'completion',
-    );
-    expect(requests, hasLength(1));
-    expect(await File(p('unknown.gguf')).readAsString(), _fullBody);
-  });
+      await _until(
+        () => boot.rowOf('unknown')?.status == DownloadStatus.completed,
+        'completion',
+      );
+      expect(requests, hasLength(1));
+      expect(await File(p('unknown.gguf')).readAsString(), _fullBody);
+    },
+  );
 }

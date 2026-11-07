@@ -264,9 +264,8 @@ class DownloadQueueController extends Notifier<List<DownloadProgress>> {
   /// ([AppStrings.ollamaDiskFull]) — resolved through the app settings
   /// like every other localized controller message.
   String _diskFullError(String name, int neededBytes, int freeBytes) =>
-      appStringsFor(
-        ref.read(settingsProvider).languageCode,
-      ).ollamaDiskFull(name, neededBytes, freeBytes);
+      appStringsFor(ref.read(settingsProvider).languageCode)
+          .ollamaDiskFull(name, neededBytes, freeBytes);
 
   /// Queues [entry] for download. The entry is pre-built by the UI
   /// (catalog ref or custom URL); the queue resolves the concrete URL
