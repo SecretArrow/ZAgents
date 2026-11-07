@@ -355,4 +355,39 @@ void main() {
     expect(es.cronActionAgent, 'Tarea de agente');
     expect(es.cronJobsEmptyTitle, 'Aún no hay trabajos');
   });
+
+  test('local AI strings are localized in all three bundles', () {
+    final AppStrings en = appStringsFor('en');
+    final AppStrings id = appStringsFor('id');
+    final AppStrings es = appStringsFor('es');
+    // Every local AI string must be present in every bundle (v1.51.0).
+    for (final AppStrings s in <AppStrings>[en, id, es]) {
+      expect(s.ollamaTileSubtitle, isNotEmpty);
+      expect(s.ollamaRuntimeUnavailable, isNotEmpty);
+      expect(s.ollamaModelEmptyHint, isNotEmpty);
+      expect(s.ollamaConfigInvalid, isNotEmpty);
+      expect(s.ollamaOomWarning, isNotEmpty);
+      expect(s.ollamaStatusRunning, isNotEmpty);
+      expect(s.ollamaUseInChatBody('x'), contains('x'));
+      expect(s.ollamaRiskBody('x'), contains('x'));
+      expect(s.ollamaImportDone('x'), contains('x'));
+      expect(s.ollamaDeleteBody('x'), contains('x'));
+      expect(s.ollamaDownloadStarted('x'), contains('x'));
+    }
+    // Representative wording per locale.
+    expect(en.ollamaTileTitle, 'Ollama Manage');
+    expect(en.ollamaTabDownloads, 'Downloads');
+    expect(en.ollamaSizeProgress(300, 523), '300 of 523 MB');
+    expect(id.ollamaTileTitle, 'Kelola Ollama');
+    expect(id.ollamaTabCatalog, 'Katalog');
+    expect(id.ollamaTabInstalled, 'Terpasang');
+    expect(id.ollamaTabDownloads, 'Unduhan');
+    expect(id.ollamaStatusFailed, 'Gagal');
+    expect(id.ollamaSizeProgress(300, 523), '300 dari 523 MB');
+    expect(es.ollamaTabServer, 'Servidor');
+    expect(es.ollamaTabCatalog, 'Catálogo');
+    expect(es.ollamaTabDownloads, 'Descargas');
+    expect(es.ollamaProbeOk('0.6'), contains('0.6'));
+    expect(es.ollamaSizeProgress(300, 523), '300 de 523 MB');
+  });
 }

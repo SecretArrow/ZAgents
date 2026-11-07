@@ -1643,4 +1643,181 @@ class AppStringsEs implements AppStrings {
   String get forceStopCancel => 'Cancelar';
   @override
   String get forceStopDone => 'Force stop ejecutado.';
+
+  // -- Local AI / Ollama Manage (v1.51.0) --------------------------------
+  @override
+  String get ollamaSectionTitle => 'IA local';
+  @override
+  String get ollamaTileTitle => 'Gestionar Ollama';
+  @override
+  String get ollamaTileSubtitle =>
+      'Runtime de IA local compatible con Ollama';
+  @override
+  String get ollamaScreenTitle => 'Gestionar Ollama';
+  @override
+  String get ollamaTabServer => 'Servidor';
+  @override
+  String get ollamaTabCatalog => 'Catálogo';
+  @override
+  String get ollamaTabInstalled => 'Instalados';
+  @override
+  String get ollamaTabDownloads => 'Descargas';
+  @override
+  String get ollamaRuntimeUnavailable =>
+      'Esta compilación o dispositivo no incluye el runtime de IA local '
+      '(armeabi-v7a no es compatible). Aún puedes conectarte a un servidor '
+      'Ollama externo más abajo.';
+  @override
+  String get ollamaStatusUnavailable => 'No disponible';
+  @override
+  String get ollamaStatusStopped => 'Detenido';
+  @override
+  String get ollamaStatusStarting => 'Iniciando…';
+  @override
+  String get ollamaStatusRunning => 'En ejecución';
+  @override
+  String get ollamaStatusStopping => 'Deteniendo…';
+  @override
+  String get ollamaStatusFailed => 'Error';
+  @override
+  String get ollamaStart => 'Iniciar';
+  @override
+  String get ollamaStop => 'Detener';
+  @override
+  String get ollamaModelLabel => 'Modelo';
+  @override
+  String get ollamaModelEmptyHint =>
+      'Aún no hay modelos instalados: descarga uno del Catálogo.';
+  @override
+  String get ollamaGoToCatalog => 'Ir al Catálogo';
+  @override
+  String get ollamaActiveModelLabel => 'Modelo activo';
+  @override
+  String get ollamaPortLabel => 'Puerto';
+  @override
+  String get ollamaContextLabel => 'Tamaño de contexto';
+  @override
+  String get ollamaThreadsLabel => 'Hilos (0 = automático)';
+  @override
+  String get ollamaConfigSave => 'Guardar configuración';
+  @override
+  String get ollamaConfigSaved => 'Configuración del servidor guardada.';
+  @override
+  String get ollamaConfigInvalid =>
+      'El puerto debe ser 1024–65535, el contexto 512–32768 y los hilos 0–8.';
+  @override
+  String get ollamaUseInChat => 'Usar en el chat';
+  @override
+  String get ollamaUseInChatTitle => '¿Usar este modelo en el chat?';
+  @override
+  String ollamaUseInChatBody(String alias) =>
+      'Tu proveedor activo cambia a Local AI con el modelo “$alias”.';
+  @override
+  String get ollamaUseInChatDone => 'Local AI ya está activo para el chat.';
+  @override
+  String get ollamaLogTitle => 'Registro del servidor';
+  @override
+  String get ollamaExternalServerLabel => 'Servidor Ollama externo';
+  @override
+  String get ollamaProbe => 'Probar';
+  @override
+  String ollamaProbeOk(String version) => 'Ollama $version es accesible.';
+  @override
+  String ollamaProbeFail(String error) =>
+      'No se encontró ningún servidor Ollama: $error';
+  @override
+  String get ollamaStartedSnack => 'Servidor iniciado.';
+  @override
+  String get ollamaStartFailedSnack => 'El servidor no pudo iniciarse.';
+  @override
+  String get ollamaStoppedSnack => 'Servidor detenido.';
+  @override
+  String get ollamaTierLight => 'Ligero';
+  @override
+  String get ollamaTierMedium => 'Medio';
+  @override
+  String get ollamaTierHeavy => 'Pesado';
+  @override
+  String get ollamaOomWarning =>
+      'Modelo pesado: alto riesgo de quedarse sin memoria en este '
+      'dispositivo.';
+  @override
+  String get ollamaDownload => 'Descargar';
+  @override
+  String get ollamaInstalledLabel => 'Instalado';
+  @override
+  String get ollamaDownloadingLabel => 'Descargando…';
+  @override
+  String get ollamaRiskTitle => '¿Descargar este modelo pesado?';
+  @override
+  String ollamaRiskBody(String ref) =>
+      '“$ref” puede superar la memoria de este dispositivo y no cargar. '
+      '¿Descargarlo de todos modos?';
+  @override
+  String get ollamaCustomUrlLabel => 'URL personalizada (.gguf)';
+  @override
+  String get ollamaCustomUrlInvalid =>
+      'Introduce una URL http(s) que termine en .gguf';
+  @override
+  String get ollamaImportButton => 'Importar archivo .gguf';
+  @override
+  String ollamaImportDone(String name) => '“$name” importado.';
+  @override
+  String get ollamaImportFailed => 'Error al importar.';
+  @override
+  String ollamaRamEst(String size) => 'RAM ~$size';
+  @override
+  String ollamaCtxTokens(String tokens) => '$tokens ctx';
+  @override
+  String ollamaDownloadStarted(String name) =>
+      '“$name” añadido a la cola de descargas.';
+  @override
+  String get ollamaInstalledEmptyTitle => 'Ningún modelo instalado';
+  @override
+  String get ollamaInstalledEmptyBody =>
+      'Descarga un modelo del Catálogo o importa un archivo .gguf.';
+  @override
+  String get ollamaExport => 'Exportar';
+  @override
+  String get ollamaExportDone => 'Modelo exportado.';
+  @override
+  String get ollamaDeleteTitle => '¿Eliminar este modelo?';
+  @override
+  String ollamaDeleteBody(String name) =>
+      '“$name” y su archivo se eliminarán de este dispositivo.';
+  @override
+  String get ollamaStartWith => 'Iniciar con este modelo';
+  @override
+  String get ollamaSourceCatalog => 'Catálogo';
+  @override
+  String get ollamaSourceCustomUrl => 'URL personalizada';
+  @override
+  String get ollamaSourceImported => 'Importado';
+  @override
+  String ollamaAddedAt(String date) => 'Añadido el $date';
+  @override
+  String get ollamaDownloadsEmpty => 'Aún no hay descargas.';
+  @override
+  String get ollamaPause => 'Pausar';
+  @override
+  String get ollamaResume => 'Reanudar';
+  @override
+  String get ollamaClearFinished => 'Limpiar terminadas';
+  @override
+  String get ollamaDlQueued => 'En cola';
+  @override
+  String get ollamaDlRunning => 'Descargando';
+  @override
+  String get ollamaDlPaused => 'En pausa';
+  @override
+  String get ollamaDlCompleted => 'Completada';
+  @override
+  String get ollamaDlFailed => 'Error';
+  @override
+  String get ollamaDlCanceled => 'Cancelada';
+  @override
+  String ollamaSizeProgress(int receivedMb, int totalMb) =>
+      '$receivedMb de $totalMb MB';
+  @override
+  String get ollamaSizeUnknown => 'tamaño desconocido';
 }

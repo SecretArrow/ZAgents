@@ -21,6 +21,7 @@ import 'files_screen.dart';
 import 'help_screen.dart';
 import 'node_screen.dart';
 import 'modules_screen.dart';
+import 'ollama_manage_screen.dart';
 import 'providers_screen.dart';
 import 'skills_screen.dart';
 
@@ -381,6 +382,34 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 onTap: () => Navigator.of(context).push(
                   MaterialPageRoute<void>(
                     builder: (_) => const CronJobsScreen(),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+
+            // -- Local AI / Ollama Manage (v1.51.0) --------------------------
+            // On-device LLM runtime: the bundled llama-server runs
+            // Ollama-compatible GGUF models on 127.0.0.1. The tile opens the
+            // four-tab manager (server / catalog / installed / downloads)
+            // which also fills the built-in "Local AI" provider preset.
+            _sectionTitle(strings.ollamaSectionTitle),
+            _card(
+              child: ListTile(
+                key: const Key('ollama-manage-tile'),
+                contentPadding: EdgeInsets.zero,
+                leading: const Icon(Icons.memory_rounded),
+                title: Text(strings.ollamaTileTitle),
+                subtitle: Text(
+                  strings.ollamaTileSubtitle,
+                  style: TextStyle(fontSize: 12, color: palette.muted),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                trailing: const Icon(Icons.chevron_right_rounded),
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => const OllamaManageScreen(),
                   ),
                 ),
               ),

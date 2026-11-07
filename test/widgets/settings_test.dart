@@ -642,8 +642,39 @@ void main() {
       find.text('A provider with this name already exists.'),
       findsOneWidget,
     );
-    // Nvidia NIM joined the built-in preset list (v1.49.8): 9 presets.
-    expect(container.read(settingsProvider).presets.length, 9);
+    // Local AI joined the built-in preset list (v1.51.0): 10 presets.
+    expect(container.read(settingsProvider).presets.length, 10);
+  });
+
+  testWidgets('local AI tile sits directly below the cron jobs tile', (
+    WidgetTester tester,
+  ) async {
+    await openSettings(tester);
+
+    // The Local AI section sits below the Cron jobs section — both tiles
+    // live below the fold of the lazy settings ListView, so reveal them
+    // before asserting.
+    await tester.scrollUntilVisible(
+      find.byKey(const Key('ollama-manage-tile')),
+      200,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.pumpAndSettle(
+      const Duration(milliseconds: 100),
+      EnginePhase.sendSemanticsUpdate,
+      const Duration(seconds: 15),
+    );
+    expect(find.byKey(const Key('ollama-manage-tile')), findsOneWidget);
+    expect(find.byKey(const Key('cron-jobs-tile')), findsOneWidget);
+    expect(
+      tester
+          .getTopLeft(find.byKey(const Key('cron-jobs-tile')))
+          .dy,
+      lessThan(
+        tester.getTopLeft(find.byKey(const Key('ollama-manage-tile'))).dy,
+      ),
+      reason: 'Local AI must sit directly below the Cron jobs section',
+    );
   });
 
   testWidgets('a provider can be deleted from the editor', (

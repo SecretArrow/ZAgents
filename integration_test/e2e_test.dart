@@ -13,6 +13,8 @@ import 'package:zagents/models/models.dart';
 import 'package:zagents/services/js_runtime.dart';
 import 'package:zagents/services/agent_controller.dart';
 import 'package:zagents/services/llm_client.dart';
+import 'package:zagents/services/local_ai/local_model_store.dart'
+    show MemoryLocalModelRepository;
 import 'package:zagents/services/module_registry.dart';
 import 'package:zagents/services/module_runtime.dart';
 import 'package:zagents/services/session_sandbox.dart';
@@ -649,4 +651,59 @@ module.exports = main();
       await tester.runAsync(() => tempDir.delete(recursive: true));
     } catch (_) {}
   });
+
+  testWidgets(
+    'e2e: Ollama Manage opens from Settings and renders all four tabs',
+    (WidgetTester tester) async {
+      final Directory tempDir = (await tester.runAsync<Directory>(
+        () => Directory.systemTemp.createTemp('zagents_e2e_ollama'),
+      ))!;
+
+      // The Local AI store needs the in-memory repository (the prefs one
+      // is only wired in main()); the server controller runs for real
+      // against the bundled llama-server runtime — but no model is
+      // installed, so this flow only asserts the screen renders.
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: <Override>[
+            ...testOverrides(dir: tempDir),
+            localModelRepositoryProvider.overrideWithValue(
+              MemoryLocalModelRepository(),
+            ),
+          ],
+          child: const ZAgentsApp(),
+        ),
+      );
+      await tester.pumpAndSettle(const Duration(seconds: 1));
+
+      // Settings tab → the Local AI tile sits below the Cron jobs section
+      // (lazy list: reveal it before tapping).
+      await tester.tap(find.byIcon(Icons.settings_outlined));
+      await tester.pumpAndSettle();
+      expect(find.byType(SettingsScreen), findsOneWidget);
+      await tapScrollable(tester, const Key('ollama-manage-tile'));
+      await tester.pumpAndSettle();
+
+      // All four tabs render with their localized (English default)
+      // labels. Deliberately NOT asserting server start: no model is
+      // installed on the emulator.
+      expect(find.byKey(const Key('ollama-tab-server')), findsOneWidget);
+      expect(find.byKey(const Key('ollama-tab-catalog')), findsOneWidget);
+      expect(find.byKey(const Key('ollama-tab-installed')), findsOneWidget);
+      expect(find.byKey(const Key('ollama-tab-downloads')), findsOneWidget);
+      expect(find.text('Server'), findsOneWidget);
+      expect(find.text('Catalog'), findsOneWidget);
+      expect(find.text('Installed'), findsOneWidget);
+      expect(find.text('Downloads'), findsOneWidget);
+
+      // Back to Settings.
+      await tester.tap(find.byType(BackButton).first);
+      await tester.pumpAndSettle();
+      expect(find.byType(SettingsScreen), findsOneWidget);
+
+      try {
+        await tester.runAsync(() => tempDir.delete(recursive: true));
+      } catch (_) {}
+    },
+  );
 }

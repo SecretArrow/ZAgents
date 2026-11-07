@@ -1371,6 +1371,13 @@ class AppSettings {
 /// integrate.api.nvidia.com with keys of the form `nvapi-…`; model ids are
 /// namespaced by their publisher (`deepseek-ai/deepseek-v4.1-flash`,
 /// `meta/llama-3.3-70b-instruct`, …). Plain Bearer auth, no custom headers.
+///
+/// Local AI (v1.51.0) targets the on-device llama-server managed by
+/// Settings → Ollama Manage: it speaks the OpenAI-compatible API on
+/// 127.0.0.1:11434 and needs no API key. The preset's model stays EMPTY on
+/// purpose — users pick the alias of whichever local model is actually
+/// running (Server tab → “Use in chat” writes it here), so the built-in
+/// preset count becomes 10.
 const Map<String, String> providerPresets = <String, String>{
   'OpenRouter': 'https://openrouter.ai/api/v1',
   'InferHub': 'https://api.inferhub.dev/v1',
@@ -1380,6 +1387,7 @@ const Map<String, String> providerPresets = <String, String>{
   'OpenAI': 'https://api.openai.com/v1',
   'DeepSeek': 'https://api.deepseek.com/v1',
   'Groq': 'https://api.groq.com/openai/v1',
+  'Local AI': 'http://127.0.0.1:11434/v1',
   'Custom': '',
 };
 
@@ -1387,6 +1395,13 @@ const Map<String, String> providerPresets = <String, String>{
 /// model is empty or belongs to another provider's default. Providers whose
 /// catalogs must be fetched (InferHub) map to null — the user picks from
 /// the live model list instead.
+///
+/// Local AI (v1.51.0) is deliberately NOT listed: nothing in the app
+/// requires every provider to be present here (lookups are by key and the
+/// map has no runtime completeness consumer), and its "model" is the alias
+/// of whichever local model is currently running — chosen on the Ollama
+/// Manage Server tab, not pre-fillable with a static default. The preset
+/// therefore ships with an empty model instead.
 const Map<String, String?> providerDefaultModels = <String, String?>{
   'OpenRouter': 'z-ai/glm-4.6',
   'InferHub': null,
