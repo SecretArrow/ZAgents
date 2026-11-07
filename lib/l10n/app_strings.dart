@@ -335,6 +335,13 @@ abstract class AppStrings {
   String get cronActionTelegram;
   String get cronActionAgent;
   String get cronActionAgentHint;
+  String get cronActionChat;
+  String get cronActionChatHint;
+  String get cronFieldChatTarget;
+  String get cronChatNewEveryRun;
+  String get cronFieldChatPrompt;
+  String get cronChatPromptRequired;
+  String get cronChatTargetMissing;
   String get cronFieldNotifTitle;
   String get cronFieldNotifText;
   String get cronFieldTelegramToken;
@@ -1294,6 +1301,23 @@ class AppStringsEn implements AppStrings {
   String get cronActionAgentHint =>
       'Runs the prompt as a headless agent (workspace, browser, web and '
       'node tools) and notifies the result.';
+  @override
+  String get cronActionChat => 'Run in chat';
+  @override
+  String get cronActionChatHint =>
+      'Sends the command into the selected chat like a typed message; the '
+      'agent answers right in that conversation (its history, modules and '
+      'skills all apply).';
+  @override
+  String get cronFieldChatTarget => 'Target chat';
+  @override
+  String get cronChatNewEveryRun => 'New chat (each run)';
+  @override
+  String get cronFieldChatPrompt => 'Command to run';
+  @override
+  String get cronChatPromptRequired => 'The command text is required.';
+  @override
+  String get cronChatTargetMissing => 'Selected chat not found (deleted?)';
   @override
   String get cronFieldNotifTitle => 'Notification title';
   @override
@@ -2861,6 +2885,23 @@ class AppStringsId implements AppStrings {
   String get cronActionAgentHint =>
       'Menjalankan prompt sebagai agent tanpa UI (workspace, browser, web, '
       'dan tool node) lalu memberi tahu hasilnya.';
+  @override
+  String get cronActionChat => 'Jalankan di chat';
+  @override
+  String get cronActionChatHint =>
+      'Mengirim perintah ke chat terpilih seperti pesan yang diketik; '
+      'agent menjawab langsung di percakapan itu (histori, modul, dan '
+      'skill-nya tetap berlaku).';
+  @override
+  String get cronFieldChatTarget => 'Chat tujuan';
+  @override
+  String get cronChatNewEveryRun => 'Chat baru (tiap eksekusi)';
+  @override
+  String get cronFieldChatPrompt => 'Perintah yang dijalankan';
+  @override
+  String get cronChatPromptRequired => 'Teks perintah wajib diisi.';
+  @override
+  String get cronChatTargetMissing => 'Chat terpilih tidak ditemukan (terhapus?)';
   @override
   String get cronFieldNotifTitle => 'Judul notifikasi';
   @override

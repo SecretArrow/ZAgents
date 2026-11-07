@@ -4,6 +4,11 @@ import 'package:zagents/di.dart';
 import 'package:zagents/models/cron_job.dart';
 import 'package:zagents/services/cron_repository.dart';
 import 'package:zagents/services/cron_scheduler.dart';
+import 'package:zagents/services/llm_client.dart';
+import 'package:zagents/services/telegram_sender.dart';
+import 'package:zagents/services/tool_executor.dart';
+
+import '../support/test_doubles.dart';
 
 class FakeDispatcher implements CronActionDispatcher {
   FakeDispatcher([
@@ -289,6 +294,103 @@ void main() {
         state.jobs.single.nextRunAtMs,
         DateTime(2026, 1, 15, 8).millisecondsSinceEpoch,
       );
+    });
+  });
+
+  group('DefaultCronDispatcher — chat action (v1.50.0)', () {
+    CronJob chatJob({String sessionId = ''}) => CronJob(
+      id: 'chat-1',
+      name: 'Chat job',
+      expression: '0 9 * * *',
+      action: CronActionKind.chat,
+      agentPrompt: 'summarize the news',
+      chatSessionId: sessionId,
+      createdAtMs: 0,
+    );
+
+    DefaultCronDispatcher dispatcher(
+      Future<String?> Function(String? sessionId, String prompt) runner,
+    ) => DefaultCronDispatcher(
+      llm: LlmClient(),
+      telegram: TelegramSender(),
+      background: RecordingBackgroundRun(),
+      executeTool:
+          (
+            String name,
+            Map<String, dynamic> args, {
+            String? sessionId,
+            String? browserContext,
+          }) async => const ToolResult(ok: true, llmOutput: 'unused'),
+      resolveConfig: () => const LlmConfig(
+        baseUrl: 'https://example.invalid',
+        apiKey: 'k',
+        model: 'm',
+      ),
+      runInChat: runner,
+    );
+
+    test('accepted run forwards target+prompt and reports success', () async {
+      String? seenSession;
+      String? seenPrompt;
+      final CronDispatchResult result = await dispatcher((
+        session,
+        prompt,
+      ) async {
+        seenSession = session;
+        seenPrompt = prompt;
+        return null;
+      }).dispatch(chatJob(sessionId: 'session-42'));
+
+      expect(result.ok, isTrue);
+      expect(result.detail, 'prompt sent to chat');
+      expect(seenSession, 'session-42');
+      expect(seenPrompt, 'summarize the news');
+    });
+
+    test('empty target maps to null (new chat per fire)', () async {
+      String? seenSession;
+      final CronDispatchResult result = await dispatcher((
+        session,
+        prompt,
+      ) async {
+        seenSession = session;
+        return null;
+      }).dispatch(chatJob());
+
+      expect(seenSession, isNull);
+    });
+
+    test('a refusal reason becomes a recorded failure detail', () async {
+      final CronDispatchResult result = await dispatcher(
+        (session, prompt) async => 'chat busy',
+      ).dispatch(chatJob(sessionId: 's1'));
+
+      expect(result.ok, isFalse);
+      expect(result.detail, 'chat busy');
+    });
+
+    test('a null runner fails the fire instead of crashing', () async {
+      final CronJob job = chatJob();
+      final CronDispatchResult result = await DefaultCronDispatcher(
+        llm: LlmClient(),
+        telegram: TelegramSender(),
+        background: RecordingBackgroundRun(),
+        executeTool:
+            (
+              String name,
+              Map<String, dynamic> args, {
+              String? sessionId,
+              String? browserContext,
+            }) async => const ToolResult(ok: true, llmOutput: 'unused'),
+        resolveConfig: () => const LlmConfig(
+          baseUrl: 'https://example.invalid',
+          apiKey: 'k',
+          model: 'm',
+        ),
+      ).dispatch(job);
+
+      expect(result.ok, isFalse);
+      expect(result.detail, 'chat runner unavailable');
     });
   });
 }

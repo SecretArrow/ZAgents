@@ -41,7 +41,10 @@ abstract class CronActionDispatcher {
 /// Production dispatcher: Telegram Bot API, the existing local
 /// notification platform channel, and a headless fan-of-subagents agent
 /// run (single task, full agent toolset: workspace, web fetch, node,
-/// git, private browser context) for the agent action.
+/// git, private browser context) for the agent action. v1.50.0 adds the
+/// chat action: the prompt is injected into a (new or selected) chat
+/// session through [runInChat] — the agent answers inside that
+/// conversation, visible in the app like any other exchange.
 class DefaultCronDispatcher implements CronActionDispatcher {
   DefaultCronDispatcher({
     required this.llm,
@@ -49,6 +52,7 @@ class DefaultCronDispatcher implements CronActionDispatcher {
     required this.background,
     required this.executeTool,
     required this.resolveConfig,
+    this.runInChat,
   });
 
   final LlmClient llm;
@@ -67,6 +71,14 @@ class DefaultCronDispatcher implements CronActionDispatcher {
   })
   executeTool;
   final LlmConfig Function() resolveConfig;
+
+  /// v1.50.0 — chat action runner: injects the prompt into the session
+  /// ([chatSessionId], null = new chat per fire) via
+  /// ChatController.sendToSession. Returns null when accepted, otherwise
+  /// the English refusal reason recorded in the cron history. Nullable
+  /// so tests that never exercise the chat action can omit it.
+  final Future<String?> Function(String? sessionId, String prompt)?
+  runInChat;
 
   static const int _maxNotifChars = 800;
 
@@ -92,6 +104,22 @@ class DefaultCronDispatcher implements CronActionDispatcher {
         return CronDispatchResult(
           ok: ok,
           detail: ok ? 'notification posted' : 'notification channel failed',
+        );
+
+      case CronActionKind.chat:
+        if (runInChat == null) {
+          return const CronDispatchResult(
+            ok: false,
+            detail: 'chat runner unavailable',
+          );
+        }
+        final String? refusal = await runInChat!(
+          job.chatSessionId.trim().isEmpty ? null : job.chatSessionId.trim(),
+          job.agentPrompt,
+        );
+        return CronDispatchResult(
+          ok: refusal == null,
+          detail: refusal ?? 'prompt sent to chat',
         );
 
       case CronActionKind.agent:

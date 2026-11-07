@@ -315,6 +315,13 @@ void main() {
       expect(s.cronActionTelegram, isNotEmpty);
       expect(s.cronActionAgent, isNotEmpty);
       expect(s.cronActionAgentHint, isNotEmpty);
+      expect(s.cronActionChat, isNotEmpty);
+      expect(s.cronActionChatHint, isNotEmpty);
+      expect(s.cronFieldChatTarget, isNotEmpty);
+      expect(s.cronChatNewEveryRun, isNotEmpty);
+      expect(s.cronFieldChatPrompt, isNotEmpty);
+      expect(s.cronChatPromptRequired, isNotEmpty);
+      expect(s.cronChatTargetMissing, isNotEmpty);
       expect(s.cronFieldNotifTitle, isNotEmpty);
       expect(s.cronFieldNotifText, isNotEmpty);
       expect(s.cronFieldTelegramToken, isNotEmpty);

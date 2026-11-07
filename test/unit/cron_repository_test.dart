@@ -83,7 +83,7 @@ void main() {
       expect(repo.load().jobs, isEmpty);
     });
 
-    test('all three action kinds roundtrip through JSON', () async {
+    test('all four action kinds roundtrip through JSON', () async {
       SharedPreferences.setMockInitialValues(<String, Object>{});
       final PrefsCronRepository repo = await PrefsCronRepository.create();
       await repo.save(
@@ -106,6 +106,16 @@ void main() {
               agentPrompt: 'do it',
               createdAtMs: 2,
             ),
+            // v1.50.0: the chat action persists its target session too.
+            CronJob(
+              id: 'c',
+              name: 'C',
+              expression: '0 9 * * *',
+              action: CronActionKind.chat,
+              agentPrompt: 'summarize the news',
+              chatSessionId: 'session-42',
+              createdAtMs: 3,
+            ),
           ],
         ),
       );
@@ -113,6 +123,24 @@ void main() {
       expect(reloaded.jobs[0].action, CronActionKind.notification);
       expect(reloaded.jobs[1].action, CronActionKind.agent);
       expect(reloaded.jobs[1].agentPrompt, 'do it');
+      expect(reloaded.jobs[2].action, CronActionKind.chat);
+      expect(reloaded.jobs[2].agentPrompt, 'summarize the news');
+      expect(reloaded.jobs[2].chatSessionId, 'session-42');
+    });
+
+    test('legacy stores without chatSessionId load as new-chat jobs', () async {
+      // A v1.49.9 payload has no chatSessionId key — the chat action did
+      // not exist yet; the field must default to '' (new chat per fire).
+      SharedPreferences.setMockInitialValues(<String, Object>{
+        'zagents.cronjobs.v1':
+            '{"jobs":[{"id":"old","name":"Old","expression":"0 8 * * *",'
+            '"action":"chat","agentPrompt":"hi","enabled":true,'
+            '"createdAtMs":9}],"history":[],"enabled":true}',
+      });
+      final PrefsCronRepository repo = await PrefsCronRepository.create();
+      final CronJob job = repo.load().jobs.single;
+      expect(job.action, CronActionKind.chat);
+      expect(job.chatSessionId, isEmpty);
     });
   });
 }

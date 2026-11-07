@@ -371,6 +371,21 @@ OpenAI-compatible: **OpenRouter, InferHub, Z.AI, OpenAI, DeepSeek, Groq, dan lai
   eksekusi yang terlewat saat app tertutup dilewati (tanpa spam replay). 61 test baru: parser cron, repository (roundtrip + cap riwayat), Telegram sender
   (mock HTTP), scheduler core + service (clock injeksi, recovery missed-run), layar manajer (banyak job, master switch, run now, hapus, editor + validasi),
   dan paritas string l10n en/id/es.
+- **v1.50.0 — Cron jobs: aksi baru "Jalankan di chat" (run in chat)**: job cron kini bisa
+  **memilih salah satu percakapan** lalu menjalankan perintah di dalamnya sesuai jadwal — prompt
+  disuntikkan ke chat terpilih **persis seperti pesan yang diketik user**, agent menjawab langsung di
+  percakapan itu (histori, modul, dan skill chat tersebut tetap berlaku), lengkap dengan notifikasi
+  "selesai" saat app di background. Target chat dipilih dari dropdown daftar percakapan tersimpan,
+  atau pilih **"Chat baru (tiap eksekusi)"** agar setiap jadwal membuka chat segar. Pemilihan aksi di
+  editor diganti 4 ChoiceChip (Notifikasi / Telegram / Tugas agent / Jalankan di chat) yang aman di
+  layar 360dp, kartu job di manajer kini menampilkan judul chat tujuan (chat terhapus ditandai jelas),
+  dan eksekusi menolak dengan aman situasi mustahil dijalankan: chat sedang aktif dijalankan user
+  (**chat busy**), chat sudah terhapus (**chat not found**), chat menunggu formulir setup modul
+  (**chat waiting for module setup**), atau API key/model belum diisi — semua tercatat di riwayat
+  run tanpa pernah menabrak percakapan yang sedang dibuka. 8 test baru: roundtrip 4 jenis aksi +
+  payload legacy tanpa chatSessionId, dispatcher chat (penerusan target/prompt, refusal → gagal
+  tercatat, runner null), editor simpan job chat dengan dropdown target, dan kartu manajer yang
+  menampilkan judul chat tujuan.
 - **v1.49.8 — provider baru: Nvidia NIM**: preset **Nvidia NIM**
   (`https://integrate.api.nvidia.com/v1`) ditambahkan ke daftar provider bawaan,
   di samping OpenRouter / InferHub / Z.AI / AgentRouter / OpenAI / DeepSeek /

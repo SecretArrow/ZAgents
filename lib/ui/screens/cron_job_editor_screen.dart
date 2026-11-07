@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../di.dart';
 import '../../l10n/app_strings.dart';
 import '../../models/cron_job.dart';
+import '../../models/models.dart' show ChatSummary;
 import '../../services/cron_parser.dart';
 import '../theme.dart';
 import '../widgets/app_message.dart';
@@ -48,6 +49,10 @@ class _CronJobEditorScreenState extends ConsumerState<CronJobEditorScreen> {
 
   late CronActionKind _action;
 
+  /// Chat action target: '' = a new chat per fire, otherwise the picked
+  /// session id from [chatListProvider].
+  String _chatTarget = '';
+
   /// Null while the expression parses; carries the error text otherwise.
   CronFormatException? _expressionError;
 
@@ -68,6 +73,7 @@ class _CronJobEditorScreenState extends ConsumerState<CronJobEditorScreen> {
     _notifText = TextEditingController(text: job.notifText);
     _agentPrompt = TextEditingController(text: job.agentPrompt);
     _action = job.action;
+    _chatTarget = job.chatSessionId;
     _revalidate();
   }
 
@@ -127,6 +133,10 @@ class _CronJobEditorScreenState extends ConsumerState<CronJobEditorScreen> {
         if (_agentPrompt.text.trim().isEmpty) {
           return _strings.cronAgentPromptRequired;
         }
+      case CronActionKind.chat:
+        if (_agentPrompt.text.trim().isEmpty) {
+          return _strings.cronChatPromptRequired;
+        }
     }
     return null;
   }
@@ -147,6 +157,7 @@ class _CronJobEditorScreenState extends ConsumerState<CronJobEditorScreen> {
       notifTitle: _notifTitle.text.trim(),
       notifText: _notifText.text,
       agentPrompt: _agentPrompt.text.trim(),
+      chatSessionId: _chatTarget.trim(),
     );
     await ref.read(cronJobsProvider.notifier).saveJob(saved);
     if (!mounted) return;
@@ -239,33 +250,48 @@ class _CronJobEditorScreenState extends ConsumerState<CronJobEditorScreen> {
             const SizedBox(height: 16),
 
             // -- Action --------------------------------------------------
+            // v1.50.0: four action kinds now — a SegmentedButton with four
+            // icon+label segments overflows on 360dp phones, so the kinds
+            // render as ChoiceChips in a Wrap (same visual language as the
+            // schedule presets above).
             Text(
               strings.cronFieldAction,
               style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
             ),
             const SizedBox(height: 8),
-            SegmentedButton<CronActionKind>(
+            Wrap(
               key: const Key('cron-editor-action-segmented'),
-              segments: <ButtonSegment<CronActionKind>>[
-                ButtonSegment<CronActionKind>(
-                  value: CronActionKind.notification,
-                  icon: const Icon(Icons.notifications_none_rounded, size: 18),
-                  label: Text(strings.cronActionNotification),
-                ),
-                ButtonSegment<CronActionKind>(
-                  value: CronActionKind.telegram,
-                  icon: const Icon(Icons.send_outlined, size: 18),
-                  label: Text(strings.cronActionTelegram),
-                ),
-                ButtonSegment<CronActionKind>(
-                  value: CronActionKind.agent,
-                  icon: const Icon(Icons.smart_toy_outlined, size: 18),
-                  label: Text(strings.cronActionAgent),
-                ),
+              spacing: 8,
+              runSpacing: 8,
+              children: <Widget>[
+                for (final (CronActionKind kind, IconData icon) in const <(
+                  CronActionKind,
+                  IconData,
+                )>[
+                  (CronActionKind.notification, Icons.notifications_none_rounded),
+                  (CronActionKind.telegram, Icons.send_outlined),
+                  (CronActionKind.agent, Icons.smart_toy_outlined),
+                  (CronActionKind.chat, Icons.forum_rounded),
+                ])
+                  ChoiceChip(
+                    key: Key('cron-action-chip-${kind.name}'),
+                    avatar: Icon(
+                      icon,
+                      size: 16,
+                      color: _action == kind ? null : palette.muted,
+                    ),
+                    label: Text(switch (kind) {
+                      CronActionKind.notification => strings.cronActionNotification,
+                      CronActionKind.telegram => strings.cronActionTelegram,
+                      CronActionKind.agent => strings.cronActionAgent,
+                      CronActionKind.chat => strings.cronActionChat,
+                    }),
+                    selected: _action == kind,
+                    onSelected: (bool selected) {
+                      if (selected) setState(() => _action = kind);
+                    },
+                  ),
               ],
-              selected: <CronActionKind>{_action},
-              onSelectionChanged: (Set<CronActionKind> selection) =>
-                  setState(() => _action = selection.first),
             ),
             const SizedBox(height: 12),
             ...switch (_action) {
@@ -314,6 +340,43 @@ class _CronJobEditorScreenState extends ConsumerState<CronJobEditorScreen> {
                   maxLines: 4,
                   decoration: InputDecoration(
                     labelText: strings.cronFieldMessage,
+                  ),
+                ),
+              ],
+              CronActionKind.chat => <Widget>[
+                Row(
+                  children: <Widget>[
+                    Icon(
+                      Icons.info_outline_rounded,
+                      size: 14,
+                      color: palette.muted,
+                    ),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        strings.cronActionChatHint,
+                        style: TextStyle(
+                          fontSize: 11.5,
+                          color: palette.muted,
+                          height: 1.35,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                _ChatTargetDropdown(
+                  value: _chatTarget,
+                  onChanged: (String? value) =>
+                      setState(() => _chatTarget = value ?? ''),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  key: const Key('cron-editor-chat-prompt-field'),
+                  controller: _agentPrompt,
+                  maxLines: 5,
+                  decoration: InputDecoration(
+                    labelText: strings.cronFieldChatPrompt,
                   ),
                 ),
               ],
@@ -407,6 +470,56 @@ class _CronJobEditorScreenState extends ConsumerState<CronJobEditorScreen> {
     }
     return expr;
   }
+}
+
+/// Target-chat selector of the chat action (v1.50.0). Lists the stored
+/// conversations (newest first) plus the "new chat per fire" option;
+/// a persisted id that no longer resolves still shows as an entry so the
+/// user sees the stale selection instead of a silent reset.
+class _ChatTargetDropdown extends ConsumerWidget {
+  const _ChatTargetDropdown({required this.value, required this.onChanged});
+
+  final String value;
+  final ValueChanged<String?> onChanged;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final AppStrings strings = stringsOf(context);
+    final List<ChatSummary> sessions =
+        ref.watch(chatListProvider).valueOrNull ?? const <ChatSummary>[];
+    final bool knownTarget =
+        value.isEmpty || sessions.any((ChatSummary s) => s.id == value);
+    return DropdownButtonFormField<String>(
+      key: const Key('cron-editor-chat-target-dropdown'),
+      initialValue: value.isEmpty || knownTarget ? value : _staleSentinel,
+      decoration: InputDecoration(labelText: strings.cronFieldChatTarget),
+      items: <DropdownMenuItem<String>>[
+        DropdownMenuItem<String>(
+          value: '',
+          child: Text(strings.cronChatNewEveryRun),
+        ),
+        if (!knownTarget)
+          DropdownMenuItem<String>(
+            value: _staleSentinel,
+            child: Text(
+              strings.cronChatTargetMissing,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        for (final ChatSummary session in sessions)
+          DropdownMenuItem<String>(
+            value: session.id,
+            child: Text(session.title, overflow: TextOverflow.ellipsis),
+          ),
+      ],
+      onChanged: (String? selected) =>
+          onChanged(selected == _staleSentinel ? null : selected),
+    );
+  }
+
+  /// Internal sentinel for a persisted-but-unresolvable target: shown so
+  /// the stale id stays visible; selecting anything else drops it.
+  static const String _staleSentinel = '__stale__';
 }
 
 /// Live preview of the next fire times under the expression field.

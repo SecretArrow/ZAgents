@@ -16,10 +16,15 @@
 ///   web fetch, node, git) and delivers the final answer as a local
 ///   notification; when the optional telegram fields are filled the
 ///   answer is relayed to that chat as well.
+/// * [CronActionKind.chat] (v1.50.0) — sends [agentPrompt] INTO the chat
+///   session [chatSessionId] like a typed message (empty id = a brand-new
+///   chat per fire). The agent answers right in that conversation, with
+///   its own history, modules and skills; a background completion also
+///   posts the regular done-notification.
 library;
 
 /// What a cron job does when it fires.
-enum CronActionKind { telegram, notification, agent }
+enum CronActionKind { telegram, notification, agent, chat }
 
 /// Resolves a wire name to [CronActionKind]; unknown spellings fall back
 /// to [CronActionKind.notification] (the least-surprising default).
@@ -29,6 +34,8 @@ CronActionKind cronActionKindFromName(String? name) {
       return CronActionKind.telegram;
     case 'agent':
       return CronActionKind.agent;
+    case 'chat':
+      return CronActionKind.chat;
     case 'notification':
     default:
       return CronActionKind.notification;
@@ -48,6 +55,7 @@ class CronJob {
     this.notifTitle = '',
     this.notifText = '',
     this.agentPrompt = '',
+    this.chatSessionId = '',
     this.enabled = true,
     required this.createdAtMs,
     this.lastRunAtMs,
@@ -83,8 +91,14 @@ class CronJob {
   /// Local notification body (notification action).
   final String notifText;
 
-  /// Prompt executed by the agent (fan-of-subagents) action.
+  /// Prompt executed by the agent (fan-of-subagents) action — also the
+  /// command text of the chat action (v1.50.0).
   final String agentPrompt;
+
+  /// Target chat session of the chat action. Empty = start a NEW chat
+  /// for every fire; otherwise the stored session id picked in the
+  /// editor (the job refuses to fire into a deleted/unknown session).
+  final String chatSessionId;
 
   final bool enabled;
   final int createdAtMs;
@@ -112,6 +126,7 @@ class CronJob {
     String? notifTitle,
     String? notifText,
     String? agentPrompt,
+    String? chatSessionId,
     bool? enabled,
     int? createdAtMs,
     Object? lastRunAtMs = _unset,
@@ -129,6 +144,7 @@ class CronJob {
     notifTitle: notifTitle ?? this.notifTitle,
     notifText: notifText ?? this.notifText,
     agentPrompt: agentPrompt ?? this.agentPrompt,
+    chatSessionId: chatSessionId ?? this.chatSessionId,
     enabled: enabled ?? this.enabled,
     createdAtMs: createdAtMs ?? this.createdAtMs,
     lastRunAtMs: lastRunAtMs == _unset ? this.lastRunAtMs : lastRunAtMs as int?,
@@ -148,6 +164,7 @@ class CronJob {
     'notifTitle': notifTitle,
     'notifText': notifText,
     'agentPrompt': agentPrompt,
+    'chatSessionId': chatSessionId,
     'enabled': enabled,
     'createdAtMs': createdAtMs,
     'lastRunAtMs': lastRunAtMs,
@@ -167,6 +184,7 @@ class CronJob {
     notifTitle: json['notifTitle'] as String? ?? '',
     notifText: json['notifText'] as String? ?? '',
     agentPrompt: json['agentPrompt'] as String? ?? '',
+    chatSessionId: json['chatSessionId'] as String? ?? '',
     enabled: json['enabled'] as bool? ?? true,
     createdAtMs: json['createdAtMs'] as int? ?? 0,
     lastRunAtMs: json['lastRunAtMs'] as int?,

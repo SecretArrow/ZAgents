@@ -690,6 +690,75 @@ class ChatController extends Notifier<ChatState> {
     await _executeRun(run, settings, prompt: trimmed, attachments: attachments);
   }
 
+  /// v1.50.0 — cron "run in chat": injects [text] into the session
+  /// [targetSessionId] exactly like a typed message. A null/empty target
+  /// starts a BRAND-NEW background chat that never steals the screen (the
+  /// on-screen draft stays untouched); an existing target continues its
+  /// stored history, modules and skills. When the target happens to be
+  /// the chat on screen, the transcript live-updates through [_sync];
+  /// otherwise the run is fully background and the drawer refreshes when
+  /// it finishes (plus the regular done-notification off-screen).
+  ///
+  /// Returns null when the run was accepted; otherwise a short English
+  /// refusal reason for the cron history line. Refusals never throw and
+  /// never touch the on-screen chat: a cron fire must not barge into a
+  /// live conversation, a deleted session, or a chat parked on a module
+  /// setup form (only the user can answer that form).
+  Future<String?> sendToSession(String? targetSessionId, String text) async {
+    final String trimmed = text.trim();
+    if (trimmed.isEmpty) return 'empty prompt';
+    if (!_alive) return 'app shutting down';
+    final settings = ref.read(settingsProvider);
+    if (settings.apiKey.trim().isEmpty) return 'missing API key';
+    if (settings.model.trim().isEmpty) return 'model not set';
+
+    final String? target =
+        (targetSessionId == null || targetSessionId.trim().isEmpty)
+        ? null
+        : targetSessionId.trim();
+    _SessionRun? run = target != null ? _runs[target] : null;
+    if (run != null && (run.isRunning || run.finalizing)) return 'chat busy';
+    if (run == null) {
+      if (target == null) {
+        // Fresh background chat — deliberately does NOT touch
+        // _activeSessionId or the provider state.
+        final String sessionId = newId();
+        run = _SessionRun(sessionId: sessionId, title: _titleFor(trimmed));
+        run.autoTitlePending = true;
+        _runs[sessionId] = run;
+      } else {
+        // An unknown (deleted) session must not silently resurrect: the
+        // stored-title probe doubles as an existence check.
+        final String storedTitle = await _storedTitle(target);
+        if (storedTitle.isEmpty) return 'chat not found';
+        run = await _adoptSession(target, trimmed);
+        if (run.isRunning || run.finalizing) return 'chat busy';
+        _runs[target] = run;
+      }
+    }
+    // Claim the run BEFORE the async setup-gate probe so a user message
+    // racing the same session sees `isRunning` and backs off instead of
+    // starting a second loop over the same run object.
+    run.isRunning = true;
+    final List<String> gateNames = <String>[...run.activeModules];
+    if (gateNames.isNotEmpty) {
+      final ModuleSetupRequest? gate = await _findSetupRequest(
+        run.sessionId,
+        gateNames,
+      );
+      if (gate != null) {
+        run.isRunning = false;
+        return 'chat waiting for module setup';
+      }
+    }
+    if (_activeSessionId == run.sessionId) {
+      _chatLoadGeneration++;
+      state = state.copyWith(isRunning: true, error: null);
+    }
+    await _executeRun(run, settings, prompt: trimmed);
+    return null;
+  }
+
   /// Clears the module staged on a fresh draft (chip unselected).
   void stageNoModule() {
     if (state.pendingModule == null) return;

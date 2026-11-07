@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:zagents/di.dart';
 import 'package:zagents/main.dart';
 import 'package:zagents/models/cron_job.dart';
+import 'package:zagents/models/models.dart' show ChatSummary;
 import 'package:zagents/services/cron_repository.dart';
 import 'package:zagents/services/cron_scheduler.dart';
 import 'package:zagents/ui/screens/cron_job_editor_screen.dart';
@@ -48,6 +49,7 @@ void main() {
     List<CronJob> jobs = const <CronJob>[],
     RecordingCronDispatcher? dispatcher,
     bool enabled = true,
+    List<ChatSummary> chatSummaries = const <ChatSummary>[],
   }) async {
     late ProviderContainer container;
     final RecordingCronDispatcher disp =
@@ -56,6 +58,8 @@ void main() {
       ProviderScope(
         overrides: <Override>[
           ...testOverrides(dir: tempDir),
+          if (chatSummaries.isNotEmpty)
+            chatListProvider.overrideWith((Ref ref) async => chatSummaries),
           cronRepositoryProvider.overrideWithValue(
             MemoryCronRepository(CronState(jobs: jobs, enabled: enabled)),
           ),
@@ -307,6 +311,111 @@ void main() {
     expect(state.jobs.single.expression, '0 8 * * *');
     expect(state.jobs.single.action, CronActionKind.notification);
     expect(state.jobs.single.nextRunAtMs, isNotNull);
+  });
+
+  testWidgets('the editor saves a chat job with a picked target chat', (
+    WidgetTester tester,
+  ) async {
+    final ProviderContainer container = await openCronScreen(
+      tester,
+      chatSummaries: <ChatSummary>[
+        ChatSummary(
+          id: 'session-42',
+          title: 'Daily driver',
+          updatedAt: DateTime(2026, 1, 14, 9),
+        ),
+      ],
+    );
+    await tester.tap(find.byKey(const Key('cron-add-job-fab')));
+    await tester.pumpAndSettle(
+      const Duration(milliseconds: 100),
+      EnginePhase.sendSemanticsUpdate,
+      const Duration(seconds: 15),
+    );
+
+    await tester.enterText(
+      find.byKey(const Key('cron-editor-name-field')),
+      'Chat reminder',
+    );
+    await tester.tap(find.byKey(const Key('cron-preset-daily-8')));
+    await tester.pumpAndSettle(
+      const Duration(milliseconds: 100),
+      EnginePhase.sendSemanticsUpdate,
+      const Duration(seconds: 15),
+    );
+
+    // Switch to the chat action (four-way ChoiceChip row).
+    await scrollToKey(tester, const Key('cron-action-chip-chat'));
+    await tester.tap(find.byKey(const Key('cron-action-chip-chat')));
+    await tester.pumpAndSettle(
+      const Duration(milliseconds: 100),
+      EnginePhase.sendSemanticsUpdate,
+      const Duration(seconds: 15),
+    );
+
+    // Pick the stored conversation from the target dropdown.
+    await scrollToKey(tester, const Key('cron-editor-chat-target-dropdown'));
+    await tester.tap(find.byKey(const Key('cron-editor-chat-target-dropdown')));
+    await tester.pumpAndSettle(
+      const Duration(milliseconds: 100),
+      EnginePhase.sendSemanticsUpdate,
+      const Duration(seconds: 15),
+    );
+    await tester.tap(find.text('Daily driver').last);
+    await tester.pumpAndSettle(
+      const Duration(milliseconds: 100),
+      EnginePhase.sendSemanticsUpdate,
+      const Duration(seconds: 15),
+    );
+
+    await tester.enterText(
+      find.byKey(const Key('cron-editor-chat-prompt-field')),
+      'Summarize yesterday\'s notes',
+    );
+    await scrollToKey(tester, const Key('cron-editor-save-button'));
+    await tester.tap(find.byKey(const Key('cron-editor-save-button')));
+    await tester.pumpAndSettle(
+      const Duration(milliseconds: 100),
+      EnginePhase.sendSemanticsUpdate,
+      const Duration(seconds: 15),
+    );
+
+    expect(find.byType(CronJobEditorScreen), findsNothing);
+    final CronState state = container.read(cronJobsProvider);
+    expect(state.jobs, hasLength(1));
+    expect(state.jobs.single.action, CronActionKind.chat);
+    expect(state.jobs.single.chatSessionId, 'session-42');
+    expect(state.jobs.single.agentPrompt, 'Summarize yesterday\'s notes');
+    expect(state.jobs.single.nextRunAtMs, isNotNull);
+  });
+
+  testWidgets('chat job card shows the target chat title', (
+    WidgetTester tester,
+  ) async {
+    await openCronScreen(
+      tester,
+      chatSummaries: <ChatSummary>[
+        ChatSummary(
+          id: 'session-7',
+          title: 'Research thread',
+          updatedAt: DateTime(2026, 1, 14, 9),
+        ),
+      ],
+      jobs: <CronJob>[
+        CronJob(
+          id: 'c1',
+          name: 'Nightly digest',
+          expression: '0 21 * * *',
+          action: CronActionKind.chat,
+          agentPrompt: 'write the digest',
+          chatSessionId: 'session-7',
+          createdAtMs: 1,
+        ),
+      ],
+    );
+    await scrollToKey(tester, const Key('cron-job-card-c1'));
+    expect(find.text('Nightly digest'), findsOneWidget);
+    expect(find.text('→ Research thread'), findsOneWidget);
   });
 
   testWidgets('the editor rejects an invalid cron expression', (

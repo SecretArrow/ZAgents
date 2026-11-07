@@ -596,6 +596,23 @@ class AppStringsEs implements AppStrings {
       'Ejecuta el prompt como un agente sin interfaz (workspace, '
       'navegador, web y herramientas node) y notifica el resultado.';
   @override
+  String get cronActionChat => 'Ejecutar en chat';
+  @override
+  String get cronActionChatHint =>
+      'Envía el comando al chat seleccionado como si fuera un mensaje '
+      'escrito; el agente responde en esa misma conversación (se aplican '
+      'su historial, módulos y skills).';
+  @override
+  String get cronFieldChatTarget => 'Chat de destino';
+  @override
+  String get cronChatNewEveryRun => 'Chat nuevo (cada ejecución)';
+  @override
+  String get cronFieldChatPrompt => 'Comando a ejecutar';
+  @override
+  String get cronChatPromptRequired => 'El texto del comando es obligatorio.';
+  @override
+  String get cronChatTargetMissing => 'Chat seleccionado no encontrado (¿borrado?)';
+  @override
   String get cronFieldNotifTitle => 'Título de la notificación';
   @override
   String get cronFieldNotifText => 'Texto de la notificación';

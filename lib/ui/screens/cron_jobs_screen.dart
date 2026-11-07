@@ -4,7 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../di.dart';
 import '../../l10n/app_strings.dart';
 import '../../models/cron_job.dart';
-import '../../models/models.dart' show newId;
+import '../../models/models.dart' show ChatSummary, newId;
 import '../../services/cron_scheduler.dart' show CronDispatchResult;
 import '../theme.dart';
 import '../widgets/app_message.dart';
@@ -77,6 +77,14 @@ class CronJobsScreen extends ConsumerWidget {
     final AppStrings strings = stringsOf(context);
     final ZPalette palette = context.palette;
     final CronState state = ref.watch(cronJobsProvider);
+    // v1.50.0: chat-action cards show the target conversation's title —
+    // resolved from the stored list; a deleted session degrades to the
+    // "not found" note instead of a raw id.
+    final Map<String, String> chatTitles = <String, String>{
+      for (final ChatSummary session
+          in (ref.watch(chatListProvider).valueOrNull ?? const <ChatSummary>[]))
+        session.id: session.title,
+    };
     return Scaffold(
       appBar: AppBar(title: Text(strings.cronJobsTitle)),
       floatingActionButton: FloatingActionButton.extended(
@@ -162,6 +170,12 @@ class CronJobsScreen extends ConsumerWidget {
                   key: Key('cron-job-card-${job.id}'),
                   job: job,
                   fmt: _fmt,
+                  chatTargetLabel: job.action == CronActionKind.chat
+                      ? (job.chatSessionId.isEmpty
+                            ? strings.cronChatNewEveryRun
+                            : chatTitles[job.chatSessionId] ??
+                                  strings.cronChatTargetMissing)
+                      : null,
                   onEdit: () => _openEditor(context, job),
                   onDelete: () => _confirmDelete(context, ref, job),
                   onToggle: (bool value) => ref
@@ -234,10 +248,16 @@ class _JobCard extends StatelessWidget {
     required this.onDelete,
     required this.onToggle,
     required this.onRunNow,
+    this.chatTargetLabel,
   });
 
   final CronJob job;
   final String Function(DateTime) fmt;
+
+  /// Chat action only: human label of the target conversation ("new chat
+  /// per run", the stored title, or the not-found note). Null for the
+  /// other action kinds.
+  final String? chatTargetLabel;
   final VoidCallback onEdit;
   final VoidCallback onDelete;
   final ValueChanged<bool> onToggle;
@@ -251,6 +271,7 @@ class _JobCard extends StatelessWidget {
       CronActionKind.notification => Icons.notifications_none_rounded,
       CronActionKind.telegram => Icons.send_outlined,
       CronActionKind.agent => Icons.smart_toy_outlined,
+      CronActionKind.chat => Icons.forum_rounded,
     };
     final String? nextLine = job.nextRunAtMs == null
         ? null
@@ -305,6 +326,17 @@ class _JobCard extends StatelessWidget {
                   ],
                 ),
               ),
+              if (chatTargetLabel != null)
+                Text(
+                  '→ $chatTargetLabel',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 11.5,
+                    color: palette.muted,
+                    fontStyle: FontStyle.italic,
+                  ),
+                ),
               if (nextLine != null)
                 Text(
                   nextLine,
