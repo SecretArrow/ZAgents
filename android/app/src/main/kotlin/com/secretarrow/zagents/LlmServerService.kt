@@ -330,21 +330,26 @@ class LlmServerService : Service() {
     /// registration never breaks the server start.
     private fun registerBatteryGuard() {
         if (batteryLowReceiver != null) return
-        val receiver = BroadcastReceiver { _, _ ->
-            try {
-                // Diagnosability: the Dart UI polls getLogs — leave the
-                // reason as the last line, mirroring fail()'s philosophy.
-                LlmServerProcessHolder.appendLog(
-                    "[zagents] battery low - stopping Local AI server",
-                )
-            } catch (_: Exception) {
-                // appendLog is synchronized and cannot really throw; if
-                // it ever does, the stop below still happens.
+        // BroadcastReceiver is an abstract class (no SAM constructor) —
+        // a plain anonymous object with the onReceive override is the
+        // only correct form.
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context?, intent: Intent?) {
+                try {
+                    // Diagnosability: the Dart UI polls getLogs — leave the
+                    // reason as the last line, mirroring fail()'s philosophy.
+                    LlmServerProcessHolder.appendLog(
+                        "[zagents] battery low - stopping Local AI server",
+                    )
+                } catch (_: Exception) {
+                    // appendLog is synchronized and cannot really throw; if
+                    // it ever does, the stop below still happens.
+                }
+                // Same full teardown as ACTION_STOP. Delivered on the main
+                // thread like onStartCommand, so it can never race a
+                // start/stop delivery.
+                shutdown()
             }
-            // Same full teardown as ACTION_STOP. Delivered on the main
-            // thread like onStartCommand, so it can never race a
-            // start/stop delivery.
-            shutdown()
         }
         try {
             val filter = IntentFilter(Intent.ACTION_BATTERY_LOW)

@@ -517,6 +517,14 @@ void main() {
       );
       await settle(tester);
 
+      // The v1.52.0 battery/RAM lines pushed the log section below the
+      // lazy viewport — reveal it before asserting/tapping.
+      await tester.dragUntilVisible(
+        find.byKey(const Key('ollama-log-tail')),
+        find.byType(ListView).first,
+        const Offset(0, -250),
+      );
+      await settle(tester);
       expect(find.byKey(const Key('ollama-log-tail')), findsOneWidget);
       await tester.tap(find.byKey(const Key('ollama-log-viewer')));
       await settle(tester);
@@ -628,7 +636,16 @@ void main() {
       await settle(tester);
       expect(find.byKey(const Key('ollama-catalog-new-model:1b')), findsOneWidget);
 
-      // Reset clears the overlay → built-in values again.
+      // Reset clears the overlay → built-in values again. The deep drag
+      // above left the list scrolled far DOWN — the Reset button lives at
+      // the TOP of the catalog list and was disposed by the lazy builder,
+      // so scroll back up before tapping it.
+      await tester.dragUntilVisible(
+        find.byKey(const Key('ollama-catalog-reset')),
+        catalogScrollable(),
+        const Offset(0, 250),
+      );
+      await settle(tester);
       await tester.tap(find.byKey(const Key('ollama-catalog-reset')));
       await settle(tester);
       expect(find.text('Back to the built-in catalog.'), findsOneWidget);
