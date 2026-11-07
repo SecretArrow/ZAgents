@@ -904,6 +904,20 @@ void main() {
     ) async {
       await openSettings(tester);
 
+      // The tile sits below the fold (the v1.51.0 Local AI section pushed
+      // it further down the lazy list): reveal it first, like the sibling
+      // tap test below.
+      await tester.dragUntilVisible(
+        find.byKey(const Key('battery-reliability-tile')),
+        find.byType(ListView),
+        const Offset(0, -200),
+      );
+      await tester.pumpAndSettle(
+        const Duration(milliseconds: 100),
+        EnginePhase.sendSemanticsUpdate,
+        const Duration(seconds: 15),
+      );
+
       // Default double: not exempted yet.
       expect(find.byKey(const Key('battery-reliability-tile')), findsOneWidget);
       expect(find.textContaining('Optimized (may pause runs)'), findsOneWidget);
