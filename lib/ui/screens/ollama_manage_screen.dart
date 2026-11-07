@@ -284,6 +284,18 @@ class _OllamaManageScreenState extends ConsumerState<OllamaManageScreen>
     );
   }
 
+  /// v1.51.0 — coherent server status: refresh (runtime availability +
+  /// latched run state) then pollNow (one /health probe) on the server
+  /// controller. Re-added in v1.52.0 after the TabController refactor
+  /// accidentally dropped the definition while keeping the call sites.
+  void _refreshServerState() {
+    final LlmServerController controller = ref.read(
+      llmServerProvider.notifier,
+    );
+    controller.refresh();
+    controller.pollNow();
+  }
+
   /// v1.52.0 — battery + device-RAM poll (same 3 s cadence as the server
   /// poll). RAM is stable per boot, so it is cached once into
   /// [deviceRamBytesProvider] and never re-read; the battery flips between
