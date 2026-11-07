@@ -7,8 +7,11 @@ void main() {
       expect(kLocalAiCatalog, hasLength(14));
       final Set<String> refs = <String>{};
       for (final CatalogModelEntry entry in kLocalAiCatalog) {
-        expect(refs.add(entry.ollamaRef), isTrue,
-            reason: 'duplicate ref ${entry.ollamaRef}');
+        expect(
+          refs.add(entry.ollamaRef),
+          isTrue,
+          reason: 'duplicate ref ${entry.ollamaRef}',
+        );
       }
     });
 
@@ -38,8 +41,7 @@ void main() {
       expect(counts[CatalogTier.upperBound], 2);
     });
 
-    test('spot-checks against the approved proposal values (MB = 1024²)',
-        () {
+    test('spot-checks against the approved proposal values (MB = 1024²)', () {
       const int mb = 1024 * 1024;
       final Map<String, CatalogModelEntry> byRef = <String, CatalogModelEntry>{
         for (final CatalogModelEntry entry in kLocalAiCatalog)
@@ -84,8 +86,11 @@ void main() {
     test('every tier-1 download fits the smallest approved budget', () {
       for (final CatalogModelEntry entry in kLocalAiCatalog) {
         if (entry.tier != CatalogTier.tier1) continue;
-        expect(entry.downloadBytes, lessThan(1024 * 1024 * 1024),
-            reason: entry.ollamaRef);
+        expect(
+          entry.downloadBytes,
+          lessThan(1024 * 1024 * 1024),
+          reason: entry.ollamaRef,
+        );
       }
     });
   });

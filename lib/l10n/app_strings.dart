@@ -2402,8 +2402,7 @@ class AppStringsEn implements AppStrings {
   @override
   String get ollamaTileTitle => 'Ollama Manage';
   @override
-  String get ollamaTileSubtitle =>
-      'Local AI runtime compatible with Ollama';
+  String get ollamaTileSubtitle => 'Local AI runtime compatible with Ollama';
   @override
   String get ollamaScreenTitle => 'Ollama Manage';
   @override
@@ -4298,8 +4297,7 @@ class AppStringsId implements AppStrings {
   @override
   String ollamaCtxTokens(String tokens) => '$tokens ctx';
   @override
-  String ollamaDownloadStarted(String name) =>
-      '“$name” masuk antrean unduhan.';
+  String ollamaDownloadStarted(String name) => '“$name” masuk antrean unduhan.';
   @override
   String get ollamaInstalledEmptyTitle => 'Belum ada model terpasang';
   @override

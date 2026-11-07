@@ -15,8 +15,7 @@ const int _hashChunkBytes = 64 * 1024;
 
 /// Joins [dir] and [name] with the platform separator (session_export
 /// style — no package:path dependency).
-String _join(String dir, String name) =>
-    '${dir}${Platform.pathSeparator}$name';
+String _join(String dir, String name) => '$dir${Platform.pathSeparator}$name';
 
 /// Resolves the default local-models directory — v1.51.0:
 /// `<external-storage>/local_models` when the platform provides an
@@ -145,9 +144,7 @@ class LocalModelIo {
       if (!await source.exists()) return false;
       final Directory tmp = await _tmpDir();
       await tmp.create(recursive: true);
-      final File staged = File(
-        _join(tmp.path, _exportFileName(entry)),
-      );
+      final File staged = File(_join(tmp.path, _exportFileName(entry)));
       await source.copy(staged.path);
       final ShareResult result = await SharePlus.instance.share(
         ShareParams(files: <XFile>[XFile(staged.path)]),
@@ -203,9 +200,11 @@ class LocalModelIo {
   /// suffix so two same-named exports never overwrite each other in the
   /// staging dir.
   static String _exportFileName(LocalModelEntry entry) {
-    final String clean = entry.name.trim().isEmpty ? 'model' : entry.name.trim();
+    final String clean = entry.name.trim().isEmpty
+        ? 'model'
+        : entry.name.trim();
     final String safe = clean.replaceAll(RegExp(r'[^A-Za-z0-9._ -]+'), '_');
     final String suffix = entry.id.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '');
-    return '${safe}-${suffix.length > 6 ? suffix.substring(0, 6) : suffix}.gguf';
+    return '$safe-${suffix.length > 6 ? suffix.substring(0, 6) : suffix}.gguf';
   }
 }

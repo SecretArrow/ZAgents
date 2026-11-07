@@ -30,13 +30,13 @@ void main() {
     controller = container.read(llmServerProvider.notifier);
   }
 
-  http.Client _health(int status) => MockClient(
+  http.Client health(int status) => MockClient(
     (http.Request request) async => http.Response('{"status":"ok"}', status),
   );
 
   group('LlmServerController.start', () {
     test('start → starting → health 200 → running (args forwarded)', () async {
-      boot(healthClient: _health(200));
+      boot(healthClient: health(200));
       platform.logs.addAll(<String>['llama-server listening', 'model loaded']);
 
       final Future<bool> started = controller.start(
@@ -66,9 +66,8 @@ void main() {
       expect(platform.running, isTrue);
     });
 
-    test('health never answering → failed with message and log tail',
-        () async {
-      boot(healthClient: _health(503));
+    test('health never answering → failed with message and log tail', () async {
+      boot(healthClient: health(503));
       platform.logs.add('loading model');
 
       final bool ok = await controller.start(
@@ -84,7 +83,7 @@ void main() {
     });
 
     test('a refused platform start fails immediately', () async {
-      boot(healthClient: _health(200));
+      boot(healthClient: health(200));
       platform.startResult = false;
 
       final bool ok = await controller.start(
@@ -93,14 +92,11 @@ void main() {
       );
 
       expect(ok, isFalse);
-      expect(
-        container.read(llmServerProvider).status,
-        LlmServerStatus.failed,
-      );
+      expect(container.read(llmServerProvider).status, LlmServerStatus.failed);
     });
 
     test('a second start while running is refused', () async {
-      boot(healthClient: _health(200));
+      boot(healthClient: health(200));
 
       expect(
         await controller.start(modelPath: '/a.gguf', modelName: 'a'),
@@ -110,16 +106,13 @@ void main() {
         await controller.start(modelPath: '/b.gguf', modelName: 'b'),
         isFalse,
       );
-      expect(
-        container.read(llmServerProvider).activeModelName,
-        'a',
-      );
+      expect(container.read(llmServerProvider).activeModelName, 'a');
     });
   });
 
   group('LlmServerController.refresh', () {
     test('runtimeAvailable false → unavailable', () async {
-      boot(healthClient: _health(200));
+      boot(healthClient: health(200));
       platform.available = false;
 
       await controller.refresh();
@@ -131,19 +124,16 @@ void main() {
     });
 
     test('running + healthy → running (crash recovery probe)', () async {
-      boot(healthClient: _health(200));
+      boot(healthClient: health(200));
       platform.running = true;
 
       await controller.refresh();
 
-      expect(
-        container.read(llmServerProvider).status,
-        LlmServerStatus.running,
-      );
+      expect(container.read(llmServerProvider).status, LlmServerStatus.running);
     });
 
     test('a crashed process (exit code) flips running → failed', () async {
-      boot(healthClient: _health(200));
+      boot(healthClient: health(200));
       platform.running = true;
 
       // The controller believes the server is running…
@@ -161,59 +151,51 @@ void main() {
     });
 
     test('a stopped process reports stopped', () async {
-      boot(healthClient: _health(200));
+      boot(healthClient: health(200));
       platform.running = false;
       platform.exitCode = null;
 
       await controller.refresh();
 
-      expect(
-        container.read(llmServerProvider).status,
-        LlmServerStatus.stopped,
-      );
+      expect(container.read(llmServerProvider).status, LlmServerStatus.stopped);
     });
   });
 
   group('LlmServerController.stop / pollNow', () {
     test('stop → stopping → stopped', () async {
-      boot(healthClient: _health(200));
+      boot(healthClient: health(200));
       await controller.start(modelPath: '/a.gguf', modelName: 'a');
 
       final bool stopped = await controller.stop();
 
       expect(stopped, isTrue);
-      expect(
-        container.read(llmServerProvider).status,
-        LlmServerStatus.stopped,
-      );
+      expect(container.read(llmServerProvider).status, LlmServerStatus.stopped);
       expect(platform.stopCalls, 1);
       expect(platform.running, isFalse);
     });
 
-    test('pollNow flips a dead server to failed and refreshes the logs',
-        () async {
-      boot(healthClient: _health(200));
-      await controller.start(modelPath: '/a.gguf', modelName: 'a');
-      platform.logs.add('crash!');
-      platform.simulateCrash(3);
+    test(
+      'pollNow flips a dead server to failed and refreshes the logs',
+      () async {
+        boot(healthClient: health(200));
+        await controller.start(modelPath: '/a.gguf', modelName: 'a');
+        platform.logs.add('crash!');
+        platform.simulateCrash(3);
+
+        await controller.pollNow();
+
+        final LlmServerState state = container.read(llmServerProvider);
+        expect(state.status, LlmServerStatus.failed);
+        expect(state.logTail, contains('crash!'));
+      },
+    );
+
+    test('pollNow is a no-op unless the server is believed running', () async {
+      boot(healthClient: health(200));
 
       await controller.pollNow();
 
-      final LlmServerState state = container.read(llmServerProvider);
-      expect(state.status, LlmServerStatus.failed);
-      expect(state.logTail, contains('crash!'));
-    });
-
-    test('pollNow is a no-op unless the server is believed running',
-        () async {
-      boot(healthClient: _health(200));
-
-      await controller.pollNow();
-
-      expect(
-        container.read(llmServerProvider).status,
-        LlmServerStatus.stopped,
-      );
+      expect(container.read(llmServerProvider).status, LlmServerStatus.stopped);
     });
   });
 }

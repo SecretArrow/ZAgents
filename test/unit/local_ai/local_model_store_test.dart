@@ -119,8 +119,7 @@ void main() {
       expect(repo.load().installed, isEmpty);
     });
 
-    test('legacy store without config keys falls back to defaults',
-        () async {
+    test('legacy store without config keys falls back to defaults', () async {
       SharedPreferences.setMockInitialValues(<String, Object>{
         'zagents.localai.v1':
             '{"installed":[{"id":"old","name":"Old","fileName":"old.gguf",'
@@ -168,11 +167,9 @@ void main() {
       }
     });
 
-    String p(String name) =>
-        '${tempDir.path}${Platform.pathSeparator}$name';
+    String p(String name) => '${tempDir.path}${Platform.pathSeparator}$name';
 
-    test('addInstalled persists and replaces by id (no duplicates)',
-        () async {
+    test('addInstalled persists and replaces by id (no duplicates)', () async {
       await controller.addInstalled(_entry('a'));
       await controller.addInstalled(_entry('b', name: 'B'));
       await controller.addInstalled(_entry('a', name: 'A2'));
@@ -185,17 +182,19 @@ void main() {
       expect(repo.load().installed.first.name, 'A2');
     });
 
-    test('removeInstalled drops the row AND deletes the backing file',
-        () async {
-      File(p('a.gguf')).writeAsStringSync('gguf-bytes');
-      await controller.addInstalled(_entry('a'));
+    test(
+      'removeInstalled drops the row AND deletes the backing file',
+      () async {
+        File(p('a.gguf')).writeAsStringSync('gguf-bytes');
+        await controller.addInstalled(_entry('a'));
 
-      await controller.removeInstalled('a');
+        await controller.removeInstalled('a');
 
-      expect(container.read(localModelsProvider).installed, isEmpty);
-      expect(repo.load().installed, isEmpty);
-      expect(await File(p('a.gguf')).exists(), isFalse);
-    });
+        expect(container.read(localModelsProvider).installed, isEmpty);
+        expect(repo.load().installed, isEmpty);
+        expect(await File(p('a.gguf')).exists(), isFalse);
+      },
+    );
 
     test('removeInstalled survives a missing file', () async {
       await controller.addInstalled(_entry('ghost'));

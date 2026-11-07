@@ -263,7 +263,9 @@ class DownloadQueueController extends Notifier<List<DownloadProgress>> {
     } else if (registryRef.isNotEmpty) {
       final RegistryBlob blob;
       try {
-        blob = await ref.read(ollamaRegistryClientProvider).resolve(registryRef);
+        blob = await ref
+            .read(ollamaRegistryClientProvider)
+            .resolve(registryRef);
       } on OllamaRegistryException catch (error) {
         _upsertRow(
           DownloadProgress(
@@ -385,7 +387,11 @@ class DownloadQueueController extends Notifier<List<DownloadProgress>> {
     try {
       response = await _client().send(request).timeout(connectTimeout);
     } on TimeoutException {
-      _setRow(modelId, status: DownloadStatus.failed, error: 'connection timed out');
+      _setRow(
+        modelId,
+        status: DownloadStatus.failed,
+        error: 'connection timed out',
+      );
       return;
     } catch (error) {
       _setRow(modelId, status: DownloadStatus.failed, error: '$error');

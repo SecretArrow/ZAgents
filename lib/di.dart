@@ -731,10 +731,9 @@ final llmServerPlatformProvider = Provider<LlmServerPlatform>(
 final llmHttpClientProvider = Provider<http.Client>((ref) => http.Client());
 
 /// Live llama-server lifecycle state (status, active model, log tail).
-final llmServerProvider =
-    NotifierProvider<LlmServerController, LlmServerState>(
-      LlmServerController.new,
-    );
+final llmServerProvider = NotifierProvider<LlmServerController, LlmServerState>(
+  LlmServerController.new,
+);
 
 /// Download queue (one row per model). The completion hook is wired in
 /// the controller's build() — Riverpod 2.6 class providers get no ref

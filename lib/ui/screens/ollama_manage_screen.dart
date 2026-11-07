@@ -47,8 +47,7 @@ class OllamaManageScreen extends ConsumerStatefulWidget {
   const OllamaManageScreen({super.key});
 
   @override
-  ConsumerState<OllamaManageScreen> createState() =>
-      _OllamaManageScreenState();
+  ConsumerState<OllamaManageScreen> createState() => _OllamaManageScreenState();
 }
 
 class _OllamaManageScreenState extends ConsumerState<OllamaManageScreen> {
@@ -120,8 +119,9 @@ class _OllamaManageScreenState extends ConsumerState<OllamaManageScreen> {
     try {
       // Models live at `<modelsDir>/<fileName>` — on Android the separator
       // is always '/', matching the downloader's own path building.
-      final String dir =
-          await ref.read(downloadQueueProvider.notifier).modelsDirPath();
+      final String dir = await ref
+          .read(downloadQueueProvider.notifier)
+          .modelsDirPath();
       modelPath = '$dir/${entry.fileName}';
     } catch (_) {
       if (mounted) {
@@ -566,10 +566,7 @@ class _OllamaManageScreenState extends ConsumerState<OllamaManageScreen> {
               for (final LocalModelEntry e in models.installed)
                 DropdownMenuItem<String>(
                   value: e.id,
-                  child: Text(
-                    e.name,
-                    overflow: TextOverflow.ellipsis,
-                  ),
+                  child: Text(e.name, overflow: TextOverflow.ellipsis),
                 ),
             ],
             onChanged: (String? value) =>
@@ -598,7 +595,7 @@ class _OllamaManageScreenState extends ConsumerState<OllamaManageScreen> {
                     busy ||
                     server.status == LlmServerStatus.unavailable
                 ? null
-                : () => _startModel(selected!),
+                : () => _startModel(selected),
             icon: const Icon(Icons.play_arrow_rounded),
             label: Text(strings.ollamaStart),
           ),
@@ -901,8 +898,8 @@ class _OllamaManageScreenState extends ConsumerState<OllamaManageScreen> {
           const SizedBox(height: 2),
           Text(
             '${_fmtBytes(model.downloadBytes)} · '
-                '${strings.ollamaRamEst(_fmtBytes(model.ramEstBytes))} · '
-                '${strings.ollamaCtxTokens(_fmtTokens(model.contextTokens))}',
+            '${strings.ollamaRamEst(_fmtBytes(model.ramEstBytes))} · '
+            '${strings.ollamaCtxTokens(_fmtTokens(model.contextTokens))}',
             style: const TextStyle(
               fontSize: 11.5,
               color: _kGrey,
@@ -914,11 +911,7 @@ class _OllamaManageScreenState extends ConsumerState<OllamaManageScreen> {
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
-                const Icon(
-                  Icons.memory_rounded,
-                  size: 14,
-                  color: _kRed,
-                ),
+                const Icon(Icons.memory_rounded, size: 14, color: _kRed),
                 const SizedBox(width: 6),
                 Expanded(
                   child: Text(
@@ -1150,8 +1143,7 @@ class _OllamaManageScreenState extends ConsumerState<OllamaManageScreen> {
             ),
           )
         else ...<Widget>[
-          for (final DownloadProgress d in downloads)
-            _downloadCard(strings, d),
+          for (final DownloadProgress d in downloads) _downloadCard(strings, d),
           if (hasFinished)
             OutlinedButton.icon(
               key: const Key('ollama-clear-finished'),
@@ -1252,9 +1244,8 @@ class _OllamaManageScreenState extends ConsumerState<OllamaManageScreen> {
                   key: Key('ollama-pause-${d.modelId}'),
                   tooltip: strings.ollamaPause,
                   icon: const Icon(Icons.pause_rounded),
-                  onPressed: () => ref
-                      .read(downloadQueueProvider.notifier)
-                      .pause(d.modelId),
+                  onPressed: () =>
+                      ref.read(downloadQueueProvider.notifier).pause(d.modelId),
                 ),
               if (d.status == DownloadStatus.queued ||
                   d.status == DownloadStatus.running ||

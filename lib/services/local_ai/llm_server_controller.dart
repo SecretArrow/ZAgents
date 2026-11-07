@@ -310,9 +310,7 @@ class LlmServerController extends Notifier<LlmServerState> {
   static const Duration defaultStartTimeout = Duration(seconds: 90);
 
   /// Poll cadence while starting.
-  static const Duration defaultHealthPollInterval = Duration(
-    milliseconds: 500,
-  );
+  static const Duration defaultHealthPollInterval = Duration(milliseconds: 500);
 
   /// Per-request health timeout (a hung request must not eat the whole
   /// start budget on its own).
@@ -438,7 +436,9 @@ class LlmServerController extends Notifier<LlmServerState> {
     );
     bool launched = false;
     try {
-      launched = await ref.read(llmServerPlatformProvider).startServer(
+      launched = await ref
+          .read(llmServerPlatformProvider)
+          .startServer(
             modelPath: modelPath,
             alias: modelName,
             port: effectivePort,

@@ -21,9 +21,7 @@ import '../../test/support/test_doubles.dart';
 /// the Catalog buttons. No network, no disk — the real controller would
 /// resolve registry refs over http.
 class _FakeDownloadQueueController extends DownloadQueueController {
-  _FakeDownloadQueueController([
-    this.initial = const <DownloadProgress>[],
-  ]);
+  _FakeDownloadQueueController([this.initial = const <DownloadProgress>[]]);
 
   final List<DownloadProgress> initial;
   final List<LocalModelEntry> enqueued = <LocalModelEntry>[];
@@ -114,9 +112,7 @@ void main() {
         overrides: <Override>[
           ...testOverrides(dir: tempDir),
           localModelRepositoryProvider.overrideWithValue(
-            MemoryLocalModelRepository(
-              LocalModelState(installed: installed),
-            ),
+            MemoryLocalModelRepository(LocalModelState(installed: installed)),
           ),
           llmServerPlatformProvider.overrideWithValue(platformFake),
           downloadQueueProvider.overrideWith(() => queueController),
@@ -190,7 +186,10 @@ void main() {
         platform: FakeLlmServerPlatform(available: false),
       );
 
-      expect(find.byKey(const Key('ollama-unavailable-banner')), findsOneWidget);
+      expect(
+        find.byKey(const Key('ollama-unavailable-banner')),
+        findsOneWidget,
+      );
       expect(find.text('Unavailable'), findsOneWidget);
       final FilledButton start = tester.widget<FilledButton>(
         find.byKey(const Key('ollama-start')),
@@ -203,48 +202,45 @@ void main() {
     },
   );
 
-  testWidgets(
-    'catalog renders the model cards; tier-1 enqueues directly, '
-    'upper-bound asks first',
-    (WidgetTester tester) async {
-      final _FakeDownloadQueueController queue = _FakeDownloadQueueController();
-      await openOllamaScreen(tester, queue: queue);
+  testWidgets('catalog renders the model cards; tier-1 enqueues directly, '
+      'upper-bound asks first', (WidgetTester tester) async {
+    final _FakeDownloadQueueController queue = _FakeDownloadQueueController();
+    await openOllamaScreen(tester, queue: queue);
 
-      await tester.tap(find.byKey(const Key('ollama-tab-catalog')));
-      await settle(tester);
+    await tester.tap(find.byKey(const Key('ollama-tab-catalog')));
+    await settle(tester);
 
-      // First catalog card (tier 1) is on screen; its Download button
-      // enqueues without any confirmation.
-      expect(find.byKey(const Key('ollama-catalog-qwen3:0.6b')), findsOneWidget);
-      await tester.tap(find.byKey(const Key('ollama-download-qwen3:0.6b')));
-      await settle(tester);
-      expect(queue.enqueued, hasLength(1));
-      expect(queue.enqueued.single.ollamaRef, 'qwen3:0.6b');
-      expect(queue.enqueued.single.source, LocalModelSource.catalog);
-      expect(queue.enqueued.single.name, 'qwen3:0.6b');
-      expect(queue.enqueued.single.fileName, endsWith('.gguf'));
+    // First catalog card (tier 1) is on screen; its Download button
+    // enqueues without any confirmation.
+    expect(find.byKey(const Key('ollama-catalog-qwen3:0.6b')), findsOneWidget);
+    await tester.tap(find.byKey(const Key('ollama-download-qwen3:0.6b')));
+    await settle(tester);
+    expect(queue.enqueued, hasLength(1));
+    expect(queue.enqueued.single.ollamaRef, 'qwen3:0.6b');
+    expect(queue.enqueued.single.source, LocalModelSource.catalog);
+    expect(queue.enqueued.single.name, 'qwen3:0.6b');
+    expect(queue.enqueued.single.fileName, endsWith('.gguf'));
 
-      // Acknowledge the queued feedback dialog before the next tap.
-      await dismissAppMessage(tester);
+    // Acknowledge the queued feedback dialog before the next tap.
+    await dismissAppMessage(tester);
 
-      // The upper-bound card sits deep in the lazy list — drag it into
-      // view (dragUntilVisible builds offscreen items).
-      await tester.dragUntilVisible(
-        find.byKey(const Key('ollama-download-minicpm5-2b')),
-        catalogScrollable(),
-        const Offset(0, -250),
-      );
-      await settle(tester);
-      await tester.tap(find.byKey(const Key('ollama-download-minicpm5-2b')));
-      await settle(tester);
-      // Heavy tier: the OOM-risk confirmation dialog appears first.
-      expect(find.byKey(const Key('ollama-risk-dialog')), findsOneWidget);
-      await tester.tap(find.byKey(const Key('ollama-risk-confirm')));
-      await settle(tester);
-      expect(queue.enqueued, hasLength(2));
-      expect(queue.enqueued.last.ollamaRef, 'minicpm5-2b');
-    },
-  );
+    // The upper-bound card sits deep in the lazy list — drag it into
+    // view (dragUntilVisible builds offscreen items).
+    await tester.dragUntilVisible(
+      find.byKey(const Key('ollama-download-minicpm5-2b')),
+      catalogScrollable(),
+      const Offset(0, -250),
+    );
+    await settle(tester);
+    await tester.tap(find.byKey(const Key('ollama-download-minicpm5-2b')));
+    await settle(tester);
+    // Heavy tier: the OOM-risk confirmation dialog appears first.
+    expect(find.byKey(const Key('ollama-risk-dialog')), findsOneWidget);
+    await tester.tap(find.byKey(const Key('ollama-risk-confirm')));
+    await settle(tester);
+    expect(queue.enqueued, hasLength(2));
+    expect(queue.enqueued.last.ollamaRef, 'minicpm5-2b');
+  });
 
   testWidgets(
     'installed tab lists seeded models and deletes after confirmation',

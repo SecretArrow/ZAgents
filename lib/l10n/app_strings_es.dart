@@ -1650,8 +1650,7 @@ class AppStringsEs implements AppStrings {
   @override
   String get ollamaTileTitle => 'Gestionar Ollama';
   @override
-  String get ollamaTileSubtitle =>
-      'Runtime de IA local compatible con Ollama';
+  String get ollamaTileSubtitle => 'Runtime de IA local compatible con Ollama';
   @override
   String get ollamaScreenTitle => 'Gestionar Ollama';
   @override

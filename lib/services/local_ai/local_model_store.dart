@@ -130,7 +130,9 @@ class LocalModelsController extends Notifier<LocalModelState> {
         installed: <LocalModelEntry>[
           for (final LocalModelEntry entry in state.installed)
             if (entry.id == id)
-              entry.copyWith(lastUsedAtMs: DateTime.now().millisecondsSinceEpoch)
+              entry.copyWith(
+                lastUsedAtMs: DateTime.now().millisecondsSinceEpoch,
+              )
             else
               entry,
         ],
@@ -140,7 +142,11 @@ class LocalModelsController extends Notifier<LocalModelState> {
 
   /// Persists the llama-server launch config (port / context / threads;
   /// null keeps the current value).
-  Future<void> setServerConfig({int? port, int? contextSize, int? threads}) async {
+  Future<void> setServerConfig({
+    int? port,
+    int? contextSize,
+    int? threads,
+  }) async {
     await _persist(
       state.copyWith(
         serverPort: port,

@@ -89,7 +89,8 @@ _ParsedRef _parseRef(String raw) {
 /// unit tests plug in a [http.MockClient] (same pattern as
 /// [UpdateChecker] and [TelegramSender]).
 class OllamaRegistryClient {
-  OllamaRegistryClient({http.Client? client}) : _client = client ?? http.Client();
+  OllamaRegistryClient({http.Client? client})
+    : _client = client ?? http.Client();
 
   final http.Client _client;
 
@@ -109,15 +110,14 @@ class OllamaRegistryClient {
   /// the caller (download queue) turns it into a failed row.
   Future<RegistryBlob> resolve(String ref) async {
     final _ParsedRef parsed = _parseRef(ref);
-    final Uri uri = Uri.parse('$_registryBase/${parsed.repo}/manifests/${parsed.tag}');
+    final Uri uri = Uri.parse(
+      '$_registryBase/${parsed.repo}/manifests/${parsed.tag}',
+    );
 
     final http.Response response;
     try {
       response = await _client
-          .get(
-            uri,
-            headers: <String, String>{'Accept': _manifestAccept},
-          )
+          .get(uri, headers: <String, String>{'Accept': _manifestAccept})
           .timeout(requestTimeout);
     } on TimeoutException {
       throw OllamaRegistryException(
@@ -140,7 +140,9 @@ class OllamaRegistryClient {
     try {
       decoded = jsonDecode(response.body);
     } catch (error) {
-      throw OllamaRegistryException('manifest for "$ref" is not valid JSON: $error');
+      throw OllamaRegistryException(
+        'manifest for "$ref" is not valid JSON: $error',
+      );
     }
     if (decoded is! Map) {
       throw OllamaRegistryException('manifest for "$ref" is not a JSON object');
@@ -170,7 +172,9 @@ class OllamaRegistryClient {
       }
     }
     if (best == null) {
-      throw OllamaRegistryException('manifest for "$ref" carries no model blob');
+      throw OllamaRegistryException(
+        'manifest for "$ref" carries no model blob',
+      );
     }
 
     final String digest = best['digest'] as String;

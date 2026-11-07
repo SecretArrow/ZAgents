@@ -7,26 +7,25 @@ import 'package:zagents/services/local_ai/external_ollama_scanner.dart';
 
 void main() {
   group('ExternalOllamaScanner.probe', () {
-    test('scheme normalization: bare host gets http:// and /api/version',
-        () async {
-      final List<Uri> seen = <Uri>[];
-      final ExternalOllamaScanner scanner = ExternalOllamaScanner(
-        client: MockClient((http.Request request) async {
-          seen.add(request.url);
-          return http.Response('{"version":"0.12.6"}', 200);
-        }),
-      );
+    test(
+      'scheme normalization: bare host gets http:// and /api/version',
+      () async {
+        final List<Uri> seen = <Uri>[];
+        final ExternalOllamaScanner scanner = ExternalOllamaScanner(
+          client: MockClient((http.Request request) async {
+            seen.add(request.url);
+            return http.Response('{"version":"0.12.6"}', 200);
+          }),
+        );
 
-      final ExternalOllamaScan scan = await scanner.probe('127.0.0.1:11434');
+        final ExternalOllamaScan scan = await scanner.probe('127.0.0.1:11434');
 
-      expect(
-        seen.single.toString(),
-        'http://127.0.0.1:11434/api/version',
-      );
-      expect(scan.ok, isTrue);
-      expect(scan.version, '0.12.6');
-      expect(scan.error, isNull);
-    });
+        expect(seen.single.toString(), 'http://127.0.0.1:11434/api/version');
+        expect(scan.ok, isTrue);
+        expect(scan.version, '0.12.6');
+        expect(scan.error, isNull);
+      },
+    );
 
     test('an explicit http:// scheme is not doubled, trailing slash and '
         'spaces are stripped', () async {
@@ -42,10 +41,7 @@ void main() {
         '  http://192.168.1.42:11434/ ',
       );
 
-      expect(
-        seen.single.toString(),
-        'http://192.168.1.42:11434/api/version',
-      );
+      expect(seen.single.toString(), 'http://192.168.1.42:11434/api/version');
       expect(scan.ok, isTrue);
       expect(scan.version, '0.9.0');
       expect(scan.host, '  http://192.168.1.42:11434/ ');
@@ -62,10 +58,7 @@ void main() {
 
       await scanner.probe('https://ollama.lan:11434');
 
-      expect(
-        seen.single.toString(),
-        'https://ollama.lan:11434/api/version',
-      );
+      expect(seen.single.toString(), 'https://ollama.lan:11434/api/version');
     });
 
     test('a timeout reports a failed scan with a reason', () async {

@@ -18,7 +18,8 @@ Map<String, Object?> _manifest(List<Map<String, Object?>> layers) =>
       'mediaType': 'application/vnd.docker.distribution.manifest.v2+json',
       'config': <String, Object?>{
         'mediaType': 'application/vnd.docker.container.image.v1+json',
-        'digest': 'sha256:fffff67b0c14b9a3e9e5a4a5a7c8b9d0e1f2a3b4c5d6e7'
+        'digest':
+            'sha256:fffff67b0c14b9a3e9e5a4a5a7c8b9d0e1f2a3b4c5d6e7'
             'f8a9b0c1d2e3f4a5b',
         'size': 187,
       },
@@ -37,44 +38,45 @@ Map<String, Object?> _layer(
 
 void main() {
   group('OllamaRegistryClient.resolve', () {
-    test('library ref: config + one blob layer → blob url, sha and size',
-        () async {
-      final List<http.Request> requests = <http.Request>[];
-      final OllamaRegistryClient client = OllamaRegistryClient(
-        client: MockClient((http.Request request) async {
-          requests.add(request);
-          return http.Response(
-            jsonEncode(
-              _manifest(<Map<String, Object?>>[_layer(_modelDigest, 548407808)]),
-            ),
-            200,
-          );
-        }),
-      );
+    test(
+      'library ref: config + one blob layer → blob url, sha and size',
+      () async {
+        final List<http.Request> requests = <http.Request>[];
+        final OllamaRegistryClient client = OllamaRegistryClient(
+          client: MockClient((http.Request request) async {
+            requests.add(request);
+            return http.Response(
+              jsonEncode(
+                _manifest(<Map<String, Object?>>[
+                  _layer(_modelDigest, 548407808),
+                ]),
+              ),
+              200,
+            );
+          }),
+        );
 
-      final RegistryBlob blob = await client.resolve('qwen3:0.6b');
+        final RegistryBlob blob = await client.resolve('qwen3:0.6b');
 
-      expect(
-        requests.single.url.toString(),
-        'https://registry.ollama.ai/v2/library/qwen3/manifests/0.6b',
-      );
-      expect(
-        requests.single.headers['Accept'],
-        contains(
-          'application/vnd.docker.distribution.manifest.v2+json',
-        ),
-      );
-      expect(
-        blob.blobUrl,
-        'https://registry.ollama.ai/v2/library/qwen3/blobs/'
-        'sha256:$_modelDigest',
-      );
-      expect(blob.sha256, _modelDigest);
-      expect(blob.sizeBytes, 548407808);
-    });
+        expect(
+          requests.single.url.toString(),
+          'https://registry.ollama.ai/v2/library/qwen3/manifests/0.6b',
+        );
+        expect(
+          requests.single.headers['Accept'],
+          contains('application/vnd.docker.distribution.manifest.v2+json'),
+        );
+        expect(
+          blob.blobUrl,
+          'https://registry.ollama.ai/v2/library/qwen3/blobs/'
+          'sha256:$_modelDigest',
+        );
+        expect(blob.sha256, _modelDigest);
+        expect(blob.sizeBytes, 548407808);
+      },
+    );
 
-    test('multi-layer manifest picks the largest non-config layer',
-        () async {
+    test('multi-layer manifest picks the largest non-config layer', () async {
       final OllamaRegistryClient client = OllamaRegistryClient(
         client: MockClient((http.Request request) async {
           return http.Response(

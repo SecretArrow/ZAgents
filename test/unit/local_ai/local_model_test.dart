@@ -64,10 +64,7 @@ void main() {
     test('an unknown source wire name degrades to imported', () {
       final Map<String, dynamic> json = _entry().toJson()
         ..['source'] = 'from-the-future';
-      expect(
-        LocalModelEntry.fromJson(json).source,
-        LocalModelSource.imported,
-      );
+      expect(LocalModelEntry.fromJson(json).source, LocalModelSource.imported);
     });
   });
 
@@ -110,9 +107,7 @@ void main() {
         threads: 4,
         autoStartOnBoot: true,
       );
-      final LocalModelState restored = LocalModelState.fromJson(
-        state.toJson(),
-      );
+      final LocalModelState restored = LocalModelState.fromJson(state.toJson());
       expect(restored.installed.single.id, 'm-1');
       expect(restored.serverPort, 8080);
       expect(restored.contextSize, 8192);

@@ -102,8 +102,9 @@ class LocalModelEntry {
     sizeBytes: sizeBytes ?? this.sizeBytes,
     sha256: sha256 ?? this.sha256,
     addedAtMs: addedAtMs ?? this.addedAtMs,
-    lastUsedAtMs:
-        lastUsedAtMs == _unset ? this.lastUsedAtMs : lastUsedAtMs as int?,
+    lastUsedAtMs: lastUsedAtMs == _unset
+        ? this.lastUsedAtMs
+        : lastUsedAtMs as int?,
   );
 
   Map<String, dynamic> toJson() => <String, dynamic>{
