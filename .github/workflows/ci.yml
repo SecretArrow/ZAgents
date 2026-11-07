@@ -143,15 +143,32 @@ jobs:
         run: |
           set -euo pipefail
           APK="build/app/outputs/flutter-apk/app-debug.apk"
+          # v1.51.2 — full stage dump: sources, merged intermediates, the
+          # stripped dir, and the actual APK entry. The APK shipped stub
+          # ELFs (4-7 KB) with keepDebugSymbols + useLegacyPackaging both
+          # active — this dump pinpoints the corrupting stage.
+          echo "== jniLibs sources =="
+          ls -la android/app/src/main/jniLibs/*/libllamaserver.so || true
+          sha256sum android/app/src/main/jniLibs/*/libllamaserver.so || true
+          echo "== gradle intermediates (merge/strip pipeline) =="
+          find build/app/intermediates -name 'libllamaserver.so' \
+            -exec ls -la {} \; -exec sha256sum {} \; || true
+          echo "== APK entries =="
           for ABI in arm64-v8a x86_64; do
             LINE=$(unzip -l "$APK" "lib/$ABI/libllamaserver.so" | tail -n +4 | head -n 1 || true)
             echo "$ABI entry: $LINE"
             SIZE=$(echo "$LINE" | awk '{print $1}')
             if [ -z "$SIZE" ] || [ "$SIZE" -lt 1048576 ]; then
               echo "::error::libllamaserver.so for $ABI is missing or < 1 MB inside $APK — the strip/packaging guard regressed."
-              exit 1
+              FAILED=1
+            else
+              mkdir -p "/tmp/so-dump/$ABI"
+              unzip -o -j "$APK" "lib/$ABI/libllamaserver.so" -d "/tmp/so-dump/$ABI" >/dev/null
+              ls -la "/tmp/so-dump/$ABI/libllamaserver.so"
+              file -b "/tmp/so-dump/$ABI/libllamaserver.so"
             fi
           done
+          if [ "${FAILED:-0}" = "1" ]; then exit 1; fi
 
   e2e:
     name: E2E (Android emulator)

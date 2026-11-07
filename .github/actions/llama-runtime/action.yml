@@ -180,6 +180,11 @@ runs:
           fi
           mkdir -p "$(dirname "$DEST")"
           cp "$CACHE_SO" "$DEST"
+          # v1.51.2 — size + hash at every stage: the APK shipped stub
+          # ELFs (4-7 KB) twice, and only sizes/hashes pinpoint WHICH
+          # stage corrupts the executable.
+          ls -la "$CACHE_SO" "$DEST"
+          sha256sum "$CACHE_SO" "$DEST"
           FILE_OUT=$(file -b "$DEST")
           echo "$ABI -> $DEST: $FILE_OUT"
           case "$ABI" in

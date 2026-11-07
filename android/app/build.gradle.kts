@@ -86,6 +86,7 @@ android {
     packaging {
         jniLibs {
             keepDebugSymbols.add("**/libllamaserver.so")
+            keepDebugSymbols.add("libllamaserver.so")
             useLegacyPackaging = true
         }
     }
