@@ -127,7 +127,9 @@ void main() {
       final DownloadProgress row = boot.rowOf('ok1')!;
       expect(row.receivedBytes, 10);
       expect(row.totalBytes, 10);
-      expect(row.error, isNull);
+      // '' = explicitly cleared (copyWith cannot reset to null) — the UI
+    // treats null and '' identically via (error ?? '').
+    expect(row.error ?? '', isEmpty);
       expect(completed, hasLength(1));
       expect(completed.single.sizeBytes, 10);
       expect(completed.single.sha256, _fullSha);

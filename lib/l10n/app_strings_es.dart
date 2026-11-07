@@ -1819,4 +1819,68 @@ class AppStringsEs implements AppStrings {
       '$receivedMb de $totalMb MB';
   @override
   String get ollamaSizeUnknown => 'tamaño desconocido';
+
+  // -- Local AI Fase 2 (v1.52.0) -------------------------------------------
+  @override
+  String get ollamaBenchmark => 'Benchmark';
+  @override
+  String get ollamaBenchmarkRunning => 'Midiendo…';
+  @override
+  String ollamaBenchmarkFailed(String error) => 'Error de benchmark: $error';
+  @override
+  String ollamaBenchmarkSummary(
+    String tokPerSec,
+    int firstTokenMs,
+    int tokens,
+  ) => '$tokPerSec tok/s · primer token ${firstTokenMs}ms · $tokens tokens';
+  @override
+  String get ollamaViewFullLog => 'Ver registro completo';
+  @override
+  String get ollamaCopyAll => 'Copiar todo';
+  @override
+  String get ollamaClose => 'Cerrar';
+  @override
+  String ollamaBattery(int percent) => 'Batería $percent%';
+  @override
+  String ollamaBatteryCharging(int percent) =>
+      'Batería $percent% · cargando';
+  @override
+  String ollamaBatteryLow(int percent) => 'Batería $percent% — baja';
+  @override
+  String ollamaDeviceRam(String size) => 'RAM del dispositivo $size';
+  @override
+  String get ollamaTooLarge => 'Demasiado grande para este dispositivo';
+  @override
+  String get ollamaFitFilter => 'Solo modelos que caben';
+  @override
+  String get ollamaCatalogRefresh => 'Actualizar catálogo';
+  @override
+  String get ollamaCatalogReset => 'Restablecer';
+  @override
+  String ollamaCatalogRefreshDone(int count) =>
+      'Catálogo actualizado: $count modelos.';
+  @override
+  String ollamaCatalogRefreshFailed(String error) =>
+      'Error al actualizar el catálogo: $error';
+  @override
+  String get ollamaCatalogResetDone => 'De vuelta al catálogo integrado.';
+  @override
+  String cronLocalAiHint(String model) =>
+      'Se ejecuta en el modelo local “$model”: inicia primero el servidor '
+      'de Local AI.';
+  @override
+  String get cronLocalAiNoModel =>
+      'Se ejecuta en el modelo local: inicia primero el servidor de Local AI.';
+  @override
+  String get cronOpenOllamaManage => 'Abrir Gestionar Ollama';
+  @override
+  String get ollamaSelectMode => 'Seleccionar modelos';
+  @override
+  String ollamaSelectedCount(int count) => '$count seleccionados';
+  @override
+  String get ollamaExportSelected => 'Exportar seleccionados';
+  @override
+  String ollamaExportSelectedDone(int count) => '$count modelos exportados.';
+  @override
+  String get ollamaExportNone => 'No se exportó ningún modelo.';
 }

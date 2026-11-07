@@ -390,4 +390,57 @@ void main() {
     expect(es.ollamaProbeOk('0.6'), contains('0.6'));
     expect(es.ollamaSizeProgress(300, 523), '300 de 523 MB');
   });
+
+  test('fase 2 local AI strings are localized in all three bundles', () {
+    final AppStrings en = appStringsFor('en');
+    final AppStrings id = appStringsFor('id');
+    final AppStrings es = appStringsFor('es');
+    // v1.52.0 — every Fase 2 string present in every bundle.
+    for (final AppStrings s in <AppStrings>[en, id, es]) {
+      expect(s.ollamaBenchmark, isNotEmpty);
+      expect(s.ollamaBenchmarkRunning, isNotEmpty);
+      expect(s.ollamaBenchmarkFailed('boom'), contains('boom'));
+      expect(
+        s.ollamaBenchmarkSummary('12.3', 210, 20),
+        allOf(contains('12.3'), contains('210'), contains('20')),
+      );
+      expect(s.ollamaViewFullLog, isNotEmpty);
+      expect(s.ollamaCopyAll, isNotEmpty);
+      expect(s.ollamaClose, isNotEmpty);
+      expect(s.ollamaBattery(73), contains('73'));
+      expect(s.ollamaBatteryCharging(73), contains('73'));
+      expect(s.ollamaBatteryLow(12), contains('12'));
+      expect(s.ollamaDeviceRam('3.6 GB'), contains('3.6 GB'));
+      expect(s.ollamaTooLarge, isNotEmpty);
+      expect(s.ollamaFitFilter, isNotEmpty);
+      expect(s.ollamaCatalogRefresh, isNotEmpty);
+      expect(s.ollamaCatalogReset, isNotEmpty);
+      expect(s.ollamaCatalogRefreshDone(7), contains('7'));
+      expect(s.ollamaCatalogRefreshFailed('offline'), contains('offline'));
+      expect(s.ollamaCatalogResetDone, isNotEmpty);
+      expect(s.cronLocalAiHint('qwen3:0.6b'), contains('qwen3:0.6b'));
+      expect(s.cronLocalAiNoModel, isNotEmpty);
+      expect(s.cronOpenOllamaManage, isNotEmpty);
+      expect(s.ollamaSelectMode, isNotEmpty);
+      expect(s.ollamaSelectedCount(2), contains('2'));
+      expect(s.ollamaExportSelected, isNotEmpty);
+      expect(s.ollamaExportSelectedDone(2), contains('2'));
+      expect(s.ollamaExportNone, isNotEmpty);
+    }
+    // Representative wording per locale.
+    expect(en.ollamaBenchmarkSummary('12.3', 210, 20),
+        '12.3 tok/s · first token 210ms · 20 tokens');
+    expect(en.ollamaBatteryCharging(73), 'Battery 73% · charging');
+    expect(en.ollamaBatteryLow(12), 'Battery 12% — low');
+    expect(en.ollamaDeviceRam('8.0 GB'), 'Device RAM 8.0 GB');
+    expect(id.ollamaBatteryCharging(73), 'Baterai 73% · mengisi');
+    expect(id.ollamaBatteryLow(12), 'Baterai 12% — lemah');
+    expect(id.ollamaDeviceRam('8.0 GB'), 'RAM perangkat 8.0 GB');
+    expect(id.ollamaSelectedCount(2), '2 dipilih');
+    expect(es.ollamaBatteryCharging(73), 'Batería 73% · cargando');
+    expect(es.ollamaBatteryLow(12), 'Batería 12% — baja');
+    expect(es.ollamaDeviceRam('8.0 GB'), 'RAM del dispositivo 8.0 GB');
+    expect(es.cronOpenOllamaManage, 'Abrir Gestionar Ollama');
+    expect(es.ollamaExportSelectedDone(2), '2 modelos exportados.');
+  });
 }

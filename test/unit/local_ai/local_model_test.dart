@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zagents/models/local_model.dart';
+import 'package:zagents/services/local_ai/model_catalog_data.dart';
 
 LocalModelEntry _entry() => const LocalModelEntry(
   id: 'm-1',
@@ -140,6 +141,79 @@ void main() {
       expect(next.threads, 6);
       expect(next.contextSize, 2048);
       expect(next.autoStartOnBoot, isFalse);
+      expect(next.remoteCatalog, isEmpty);
+    });
+
+    test('defaults include an empty remoteCatalog (v1.52.0)', () {
+      const LocalModelState state = LocalModelState();
+      expect(state.remoteCatalog, isEmpty);
+    });
+
+    test('remoteCatalog survives a toJson → fromJson roundtrip', () {
+      final LocalModelState state = LocalModelState(
+        remoteCatalog: <CatalogModelEntry>[
+          const CatalogModelEntry(
+            ollamaRef: 'qwen3:0.6b',
+            downloadBytes: 548405248,
+            ramEstBytes: 1073741824,
+            contextTokens: 40960,
+            tier: CatalogTier.tier1,
+            license: 'Apache-2.0',
+          ),
+          const CatalogModelEntry(
+            ollamaRef: 'new-model:1b',
+            downloadBytes: 306184192,
+            ramEstBytes: 751619276,
+            contextTokens: 32768,
+            tier: CatalogTier.upperBound,
+          ),
+        ],
+      );
+      final LocalModelState restored = LocalModelState.fromJson(state.toJson());
+      expect(restored.remoteCatalog, hasLength(2));
+      expect(restored.remoteCatalog.first.ollamaRef, 'qwen3:0.6b');
+      expect(restored.remoteCatalog.first.tier, CatalogTier.tier1);
+      expect(restored.remoteCatalog.first.downloadBytes, 548405248);
+      expect(restored.remoteCatalog.first.license, 'Apache-2.0');
+      expect(restored.remoteCatalog.last.ollamaRef, 'new-model:1b');
+      expect(restored.remoteCatalog.last.tier, CatalogTier.upperBound);
+      expect(restored.remoteCatalog.last.license, '');
+    });
+
+    test('tolerant fromJson: missing remoteCatalog key → empty list; junk '
+        'rows skipped; unknown tier → tier2', () {
+      final LocalModelState noKey = LocalModelState.fromJson(
+        <String, dynamic>{'serverPort': 8080},
+      );
+      expect(noKey.remoteCatalog, isEmpty);
+
+      final LocalModelState junk = LocalModelState.fromJson(
+        <String, dynamic>{
+          'remoteCatalog': <dynamic>[
+            <String, dynamic>{
+              'ollamaRef': 'x:1b',
+              'downloadBytes': 5,
+              'tier': 'from-the-future',
+            },
+            'not-a-map',
+          ],
+        },
+      );
+      expect(junk.remoteCatalog, hasLength(1));
+      expect(junk.remoteCatalog.single.ollamaRef, 'x:1b');
+      expect(junk.remoteCatalog.single.downloadBytes, 5);
+      expect(junk.remoteCatalog.single.tier, CatalogTier.tier2);
+      expect(junk.remoteCatalog.single.ramEstBytes, 0);
+    });
+
+    test('copyWith patches remoteCatalog independently of the rest', () {
+      const LocalModelState state = LocalModelState(remoteCatalog: kLocalAiCatalog);
+      final LocalModelState next = state.copyWith(
+        remoteCatalog: const <CatalogModelEntry>[],
+      );
+      expect(next.remoteCatalog, isEmpty);
+      expect(next.serverPort, state.serverPort);
+      expect(next.installed, state.installed);
     });
   });
 }

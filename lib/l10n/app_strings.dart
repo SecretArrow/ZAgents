@@ -816,6 +816,46 @@ abstract class AppStrings {
   String get ollamaDlCanceled;
   String ollamaSizeProgress(int receivedMb, int totalMb);
   String get ollamaSizeUnknown;
+
+  // -- Local AI Fase 2 (v1.52.0) -------------------------------------------
+  /// Server tab: benchmark button/states + result line, full log viewer,
+  /// battery + device-RAM diagnostics lines.
+  String get ollamaBenchmark;
+  String get ollamaBenchmarkRunning;
+  String ollamaBenchmarkFailed(String error);
+  String ollamaBenchmarkSummary(
+    String tokPerSec,
+    int firstTokenMs,
+    int tokens,
+  );
+  String get ollamaViewFullLog;
+  String get ollamaCopyAll;
+  String get ollamaClose;
+  String ollamaBattery(int percent);
+  String ollamaBatteryCharging(int percent);
+  String ollamaBatteryLow(int percent);
+  String ollamaDeviceRam(String size);
+
+  /// Catalog tab: RAM auto-filter + remote catalog refresh/reset.
+  String get ollamaTooLarge;
+  String get ollamaFitFilter;
+  String get ollamaCatalogRefresh;
+  String get ollamaCatalogReset;
+  String ollamaCatalogRefreshDone(int count);
+  String ollamaCatalogRefreshFailed(String error);
+  String get ollamaCatalogResetDone;
+
+  /// Cron editor: Local AI shortcut tile + Open Ollama Manage button.
+  String cronLocalAiHint(String model);
+  String get cronLocalAiNoModel;
+  String get cronOpenOllamaManage;
+
+  /// Installed tab: bulk selection + export.
+  String get ollamaSelectMode;
+  String ollamaSelectedCount(int count);
+  String get ollamaExportSelected;
+  String ollamaExportSelectedDone(int count);
+  String get ollamaExportNone;
 }
 
 /// English strings (default).
@@ -2568,6 +2608,69 @@ class AppStringsEn implements AppStrings {
       '$receivedMb of $totalMb MB';
   @override
   String get ollamaSizeUnknown => 'unknown size';
+
+  // -- Local AI Fase 2 (v1.52.0) -------------------------------------------
+  @override
+  String get ollamaBenchmark => 'Benchmark';
+  @override
+  String get ollamaBenchmarkRunning => 'Benchmarking…';
+  @override
+  String ollamaBenchmarkFailed(String error) => 'Benchmark failed: $error';
+  @override
+  String ollamaBenchmarkSummary(
+    String tokPerSec,
+    int firstTokenMs,
+    int tokens,
+  ) => '$tokPerSec tok/s · first token ${firstTokenMs}ms · $tokens tokens';
+  @override
+  String get ollamaViewFullLog => 'View full log';
+  @override
+  String get ollamaCopyAll => 'Copy all';
+  @override
+  String get ollamaClose => 'Close';
+  @override
+  String ollamaBattery(int percent) => 'Battery $percent%';
+  @override
+  String ollamaBatteryCharging(int percent) =>
+      'Battery $percent% · charging';
+  @override
+  String ollamaBatteryLow(int percent) => 'Battery $percent% — low';
+  @override
+  String ollamaDeviceRam(String size) => 'Device RAM $size';
+  @override
+  String get ollamaTooLarge => 'Too large for this device';
+  @override
+  String get ollamaFitFilter => 'Only models that fit';
+  @override
+  String get ollamaCatalogRefresh => 'Refresh catalog';
+  @override
+  String get ollamaCatalogReset => 'Reset';
+  @override
+  String ollamaCatalogRefreshDone(int count) =>
+      'Catalog updated: $count models.';
+  @override
+  String ollamaCatalogRefreshFailed(String error) =>
+      'Catalog refresh failed: $error';
+  @override
+  String get ollamaCatalogResetDone => 'Back to the built-in catalog.';
+  @override
+  String cronLocalAiHint(String model) =>
+      'Runs on the local model “$model” — start the Local AI server first.';
+  @override
+  String get cronLocalAiNoModel =>
+      'Runs on the local model — start the Local AI server first.';
+  @override
+  String get cronOpenOllamaManage => 'Open Ollama Manage';
+  @override
+  String get ollamaSelectMode => 'Select models';
+  @override
+  String ollamaSelectedCount(int count) => '$count selected';
+  @override
+  String get ollamaExportSelected => 'Export selected';
+  @override
+  String ollamaExportSelectedDone(int count) => 'Exported $count models.';
+  @override
+  String get ollamaExportNone => 'No models exported.';
 }
 
 /// Bahasa Indonesia strings.
@@ -4347,4 +4450,66 @@ class AppStringsId implements AppStrings {
       '$receivedMb dari $totalMb MB';
   @override
   String get ollamaSizeUnknown => 'ukuran tidak diketahui';
+
+  // -- Local AI Fase 2 (v1.52.0) -------------------------------------------
+  @override
+  String get ollamaBenchmark => 'Benchmark';
+  @override
+  String get ollamaBenchmarkRunning => 'Mengukur…';
+  @override
+  String ollamaBenchmarkFailed(String error) => 'Benchmark gagal: $error';
+  @override
+  String ollamaBenchmarkSummary(
+    String tokPerSec,
+    int firstTokenMs,
+    int tokens,
+  ) => '$tokPerSec tok/dtk · token pertama ${firstTokenMs}ms · $tokens token';
+  @override
+  String get ollamaViewFullLog => 'Lihat log lengkap';
+  @override
+  String get ollamaCopyAll => 'Salin semua';
+  @override
+  String get ollamaClose => 'Tutup';
+  @override
+  String ollamaBattery(int percent) => 'Baterai $percent%';
+  @override
+  String ollamaBatteryCharging(int percent) => 'Baterai $percent% · mengisi';
+  @override
+  String ollamaBatteryLow(int percent) => 'Baterai $percent% — lemah';
+  @override
+  String ollamaDeviceRam(String size) => 'RAM perangkat $size';
+  @override
+  String get ollamaTooLarge => 'Terlalu besar untuk perangkat ini';
+  @override
+  String get ollamaFitFilter => 'Hanya model yang muat';
+  @override
+  String get ollamaCatalogRefresh => 'Muat ulang katalog';
+  @override
+  String get ollamaCatalogReset => 'Atur ulang';
+  @override
+  String ollamaCatalogRefreshDone(int count) =>
+      'Katalog diperbarui: $count model.';
+  @override
+  String ollamaCatalogRefreshFailed(String error) =>
+      'Gagal memuat ulang katalog: $error';
+  @override
+  String get ollamaCatalogResetDone => 'Kembali ke katalog bawaan.';
+  @override
+  String cronLocalAiHint(String model) =>
+      'Berjalan di model lokal “$model” — nyalakan dulu server Local AI.';
+  @override
+  String get cronLocalAiNoModel =>
+      'Berjalan di model lokal — nyalakan dulu server Local AI.';
+  @override
+  String get cronOpenOllamaManage => 'Buka Kelola Ollama';
+  @override
+  String get ollamaSelectMode => 'Pilih model';
+  @override
+  String ollamaSelectedCount(int count) => '$count dipilih';
+  @override
+  String get ollamaExportSelected => 'Ekspor terpilih';
+  @override
+  String ollamaExportSelectedDone(int count) => '$count model diekspor.';
+  @override
+  String get ollamaExportNone => 'Tidak ada model yang diekspor.';
 }

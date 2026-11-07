@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../di.dart';
 import '../../models/local_model.dart';
+import 'model_catalog_data.dart';
 
 /// Abstraction over the persisted Local AI store — v1.51.0. [load] is
 /// synchronous on purpose (mirrors [CronRepository]) so the Riverpod
@@ -159,5 +160,13 @@ class LocalModelsController extends Notifier<LocalModelState> {
   /// Fase 2 — auto-start the active model on boot.
   Future<void> setAutoStartOnBoot(bool enabled) async {
     await _persist(state.copyWith(autoStartOnBoot: enabled));
+  }
+
+  /// Fase 2 (v1.52.0) — stores the fetched remote-catalog overlay. An
+  /// empty list clears it (the “Reset” action); persists like
+  /// [setServerConfig] so the overlay survives restarts and reappears
+  /// merged with the built-ins on the next Catalog tab render.
+  Future<void> setRemoteCatalog(List<CatalogModelEntry> entries) async {
+    await _persist(state.copyWith(remoteCatalog: entries));
   }
 }

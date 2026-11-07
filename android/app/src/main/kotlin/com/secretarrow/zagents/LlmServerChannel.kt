@@ -1,11 +1,12 @@
 /*
  * LlmServerChannel.kt — Dart ⇄ Kotlin bridge for the Local AI runtime
- * (v1.51.0).
+ * (v1.51.0; `batteryStatus` added in v1.52.0).
  *
  * Implements the frozen `zagents/llmserver` MethodChannel contract
- * (lib/services/local_ai/README.md §1): runtime availability, device RAM,
- * start/stop of the llama-server foreground service (LlmServerService),
- * latched run state and the log tail.
+ * (lib/services/local_ai/README.md §1 + §5): runtime availability, device
+ * RAM, start/stop of the llama-server foreground service (LlmServerService),
+ * latched run state, the log tail and the battery status the UI polls for
+ * its low-battery warning (§5).
  *
  * Design notes:
  *  - Kept OUT of MainActivity on purpose (the Local AI surface is sizeable
@@ -24,6 +25,8 @@ package com.secretarrow.zagents
 import android.app.ActivityManager
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
+import android.os.BatteryManager
 import android.os.Build
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodCall
@@ -60,6 +63,7 @@ class LlmServerChannel(context: Context) {
                         "stopServer" -> result.success(stopServer())
                         "isRunning" -> result.success(LlmServerProcessHolder.snapshotState())
                         "getLogs" -> result.success(LlmServerProcessHolder.snapshotLogs())
+                        "batteryStatus" -> result.success(batteryStatus())
                         else -> result.notImplemented()
                     }
                 } catch (_: Exception) {
@@ -156,6 +160,53 @@ class LlmServerChannel(context: Context) {
         }
         LlmServerProcessHolder.stopProcess()
         return true
+    }
+
+    /// v1.52.0 (contract §5) — `batteryStatus` → Map: `percent` (Int,
+    /// 0–100, -1 unknown) + `charging` (Boolean). Served from the sticky
+    /// ACTION_BATTERY_CHANGED broadcast: `registerReceiver(null, …)`
+    /// with a NULL receiver only READS the last sticky intent and
+    /// registers nothing — the platform's own documented zero-cost
+    /// battery read. Percent = EXTRA_LEVEL/EXTRA_SCALE; charging =
+    /// EXTRA_STATUS is CHARGING or FULL. When a device has no sticky
+    /// broadcast (rare OEM builds) the percent falls back to
+    /// BATTERY_PROPERTY_CAPACITY; charging then stays false. Never
+    /// throws — every failure resolves to {percent: -1, charging: false}.
+    private fun batteryStatus(): Map<String, Any> {
+        var percent = -1
+        var charging = false
+        try {
+            val sticky = appContext.registerReceiver(
+                null,
+                IntentFilter(Intent.ACTION_BATTERY_CHANGED),
+            )
+            if (sticky != null) {
+                val level = sticky.getIntExtra(BatteryManager.EXTRA_LEVEL, -1)
+                val scale = sticky.getIntExtra(BatteryManager.EXTRA_SCALE, -1)
+                if (level >= 0 && scale > 0) percent = level * 100 / scale
+                val status = sticky.getIntExtra(BatteryManager.EXTRA_STATUS, -1)
+                charging = status == BatteryManager.BATTERY_STATUS_CHARGING ||
+                    status == BatteryManager.BATTERY_STATUS_FULL
+            }
+        } catch (_: Exception) {
+            // No sticky broadcast on this device — property API below.
+        }
+        if (percent < 0) {
+            try {
+                // Fallback: a plain integer percentage from the platform
+                // (-1 when even the system does not know). Charging is not
+                // derivable from this API — stays false (unknown).
+                val manager =
+                    appContext.getSystemService(Context.BATTERY_SERVICE) as BatteryManager
+                val capacity = manager.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)
+                if (capacity >= 0) percent = capacity
+            } catch (_: Exception) {
+            }
+        }
+        // Clamp odd hardware reports (some devices briefly report > 100)
+        // so the 0–100 / -1 contract shape always holds.
+        if (percent > 100) percent = 100
+        return mapOf("percent" to percent, "charging" to charging)
     }
 
     companion object {

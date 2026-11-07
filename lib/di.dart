@@ -31,11 +31,13 @@ import 'services/ip_guard.dart';
 import 'services/js_runtime.dart';
 import 'services/llm_client.dart';
 import 'services/local_ai/external_ollama_scanner.dart';
+import 'services/local_ai/llm_benchmark.dart';
 import 'services/local_ai/llm_server_controller.dart';
 import 'services/local_ai/local_model_io.dart';
 import 'services/local_ai/local_model_store.dart';
 import 'services/local_ai/model_downloader.dart';
 import 'services/local_ai/ollama_registry_client.dart';
+import 'services/local_ai/remote_catalog.dart';
 import 'services/model_catalog.dart';
 import 'services/module_registry.dart';
 import 'services/module_remote.dart';
@@ -756,3 +758,24 @@ final externalOllamaScannerProvider = Provider<ExternalOllamaScanner>(
 
 /// File import/export/share helper for local models.
 final localModelIoProvider = Provider<LocalModelIo>((ref) => LocalModelIo());
+
+// -- v1.52.0 (Fase 2): Local AI diagnostics + remote catalog ------------
+
+/// Cached total device RAM in bytes (null = not probed yet). Populated
+/// once by the Ollama Manage screen's 3 s poll timer (`deviceTotalRamBytes`
+/// is stable for a boot); drives the RAM line and the catalog auto-filter.
+final deviceRamBytesProvider = StateProvider<int?>((ref) => null);
+
+/// Last benchmark run (idle/running/done/failed). Deliberately OUTSIDE
+/// the frozen `LlmServerState` — benchmark progress is screen state,
+/// not server lifecycle.
+final benchmarkRunProvider = StateProvider<BenchmarkRunState>(
+  (ref) => const BenchmarkRunState(),
+);
+
+/// Remote catalog fetcher — reuses the shared Local AI HTTP client
+/// (`llmHttpClientProvider`), so overriding that one provider in tests
+/// feeds every call a MockClient.
+final remoteCatalogProvider = Provider<RemoteCatalogService>(
+  (ref) => RemoteCatalogService(client: ref.watch(llmHttpClientProvider)),
+);
