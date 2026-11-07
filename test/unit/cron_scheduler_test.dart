@@ -349,10 +349,7 @@ void main() {
 
     test('empty target maps to null (new chat per fire)', () async {
       String? seenSession;
-      final CronDispatchResult result = await dispatcher((
-        session,
-        prompt,
-      ) async {
+      await dispatcher((session, prompt) async {
         seenSession = session;
         return null;
       }).dispatch(chatJob());
