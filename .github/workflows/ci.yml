@@ -178,10 +178,15 @@ jobs:
       # v1.51.0 — `flutter test integration_test` builds the app on the
       # emulator, so the llama.cpp runtime must already sit in jniLibs
       # (x86_64 matches the emulator ABI) before this step runs.
-      - name: Inject llama.cpp runtime (x86_64)
+      # v1.51.1 — BOTH ABIs on purpose: releases run on tag refs and can
+      # only restore caches saved on the default branch, so the e2e job
+      # (which runs on every main push) keeps the combined
+      # arm64-v8a+x86_64 cache warm for release.yml. Cold once, then
+      # cached; the extra arm64 entry in the debug APK is harmless.
+      - name: Inject llama.cpp runtime (arm64-v8a + x86_64)
         uses: ./.github/actions/llama-runtime
         with:
-          abis: x86_64
+          abis: 'arm64-v8a x86_64'
 
       - name: Run integration tests on emulator
         uses: reactivecircus/android-emulator-runner@v2

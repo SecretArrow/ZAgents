@@ -2,7 +2,16 @@
 # `llama-server` (pinned tag, default b12182) for the requested Android ABIs
 # with the NDK and copies it to android/app/src/main/jniLibs/<abi>/
 # libllamaserver.so (git-ignored: injected at build time, never committed).
-# Cached by llama tag + NDK version + ABI set; cold runs cost ~10-15 min/ABI.
+#
+# v1.51.1 — cache-first rework:
+#  * The cache key NO LONGER contains the NDK version (runner NDK drift was
+#    invalidating the cache and the version probe itself needs the NDK).
+#    A restored cache makes warm runs completely NDK-independent.
+#  * NDK resolution (and the whole build) is skipped when every requested
+#    ABI is already cached — the 2026 runner images stopped preinstalling
+#    NDKs, so resolution must only pay its cost on a real cold build.
+#  * The sdkmanager fallback now accepts licenses first and probes all the
+#    known cmdline-tools locations before giving up.
 
 name: 'llama.cpp runtime (llama-server)'
 description: >-
@@ -23,14 +32,63 @@ inputs:
 runs:
   using: 'composite'
   steps:
-    # v1.51.0 — prefer the highest NDK preinstalled under $ANDROID_HOME/ndk
-    # (GitHub ubuntu runners ship a couple); only when none is usable, fall
-    # back to installing the pinned 27.2.12479018 via sdkmanager.
-    - name: Resolve NDK
-      id: ndk
+    # v1.51.1 — compute the cache-key fragment and probe which requested
+    # ABIs are already present after the restore. No NDK involved: a warm
+    # cache must never require an NDK (runners ship without one now).
+    - name: Compute ABI coverage
+      id: coverage
       shell: bash
       env:
         ABIS: ${{ inputs.abis }}
+      run: |
+        set -euo pipefail
+        # "arm64-v8a x86_64" -> "arm64-v8a-x86_64" (safe cache-key fragment).
+        ABI_KEY=$(echo "$ABIS" | tr ' ' '-')
+        echo "abi-key=$ABI_KEY" >> "$GITHUB_OUTPUT"
+        # Coverage is recomputed AFTER the cache restore step below (this
+        # step only records the key); the build gate reads cache-matrix.
+        echo "computed abi-key=$ABI_KEY for abis='$ABIS'"
+
+    # v1.51.1 — exact-key cache only (no restore-keys): binaries built from
+    # another llama tag must never be silently reused. Deliberately WITHOUT
+    # the NDK version: the NDK is irrelevant for a restored binary, and
+    # runner NDK drift must not invalidate warm runs.
+    - name: Restore llama-server cache
+      id: llama-cache
+      uses: actions/cache@v4
+      with:
+        path: ~/.cache/zagents-llama-runtime
+        key: llama-runtime-${{ inputs.llama-tag }}-${{ steps.coverage.outputs.abi-key }}-v2
+
+    # v1.51.1 — which requested ABIs are still missing after the restore?
+    - name: Check cached ABIs
+      id: matrix
+      shell: bash
+      env:
+        ABIS: ${{ inputs.abis }}
+      run: |
+        set -euo pipefail
+        MISSING=""
+        for ABI in $ABIS; do
+          if [ -f "$HOME/.cache/zagents-llama-runtime/$ABI/libllamaserver.so" ]; then
+            echo "$ABI: runtime found in cache"
+          else
+            echo "$ABI: NOT cached - will build"
+            MISSING="$MISSING $ABI"
+          fi
+        done
+        MISSING=$(echo "$MISSING" | xargs)
+        echo "missing=$MISSING" >> "$GITHUB_OUTPUT"
+        echo "missing-abis='$MISSING'"
+
+    # v1.51.1 — resolve the NDK ONLY when something actually needs building.
+    # Prefer the highest NDK preinstalled under $ANDROID_HOME/ndk; the 2026
+    # runner images often ship none, so the sdkmanager fallback accepts
+    # licenses and probes every known cmdline-tools location.
+    - name: Resolve NDK
+      id: ndk
+      if: steps.matrix.outputs.missing != ''
+      shell: bash
       run: |
         set -euo pipefail
         SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
@@ -38,8 +96,18 @@ runs:
         NDK_DIR=$(ls -d "$SDK"/ndk/* 2>/dev/null | sort -V | tail -n 1 || true)
         if [ -z "$NDK_DIR" ] || [ ! -f "$NDK_DIR/build/cmake/android.toolchain.cmake" ]; then
           echo "No usable preinstalled NDK - installing pinned ndk;27.2.12479018"
-          SDKMANAGER="$SDK/cmdline-tools/latest/bin/sdkmanager"
-          [ -x "$SDKMANAGER" ] || SDKMANAGER="$(command -v sdkmanager || echo sdkmanager)"
+          SDKMANAGER=""
+          for CAND in \
+            "$SDK/cmdline-tools/latest/bin/sdkmanager" \
+            "$SDK/cmdline-tools/bin/sdkmanager" \
+            "$(command -v sdkmanager || true)"; do
+            if [ -n "$CAND" ] && [ -x "$CAND" ]; then SDKMANAGER="$CAND"; break; fi
+          done
+          if [ -z "$SDKMANAGER" ]; then
+            echo "::error::No preinstalled NDK under $SDK/ndk and no sdkmanager found (looked in cmdline-tools/{latest,bin} and PATH)."
+            exit 1
+          fi
+          yes | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
           yes | "$SDKMANAGER" "ndk;27.2.12479018" >/dev/null || true
           NDK_DIR=$(ls -d "$SDK"/ndk/* 2>/dev/null | sort -V | tail -n 1 || true)
         fi
@@ -47,31 +115,20 @@ runs:
           echo "::error::No usable Android NDK found in $SDK/ndk (pinned install failed too)."
           exit 1
         fi
-        NDK_VERSION=$(basename "$NDK_DIR")
-        echo "Using NDK $NDK_VERSION at $NDK_DIR"
-        # "arm64-v8a x86_64" -> "arm64-v8a-x86_64" (safe cache-key fragment).
-        ABI_KEY=$(echo "$ABIS" | tr ' ' '-')
+        echo "Using NDK $(basename "$NDK_DIR") at $NDK_DIR"
         echo "ndk-dir=$NDK_DIR" >> "$GITHUB_OUTPUT"
-        echo "ndk-version=$NDK_VERSION" >> "$GITHUB_OUTPUT"
-        echo "abi-key=$ABI_KEY" >> "$GITHUB_OUTPUT"
 
-    # v1.51.0 — exact-key cache only (no restore-keys): binaries built from
-    # another llama tag or NDK must never be silently reused.
-    - name: Restore llama-server cache
-      uses: actions/cache@v4
-      with:
-        path: ~/.cache/zagents-llama-runtime
-        key: llama-runtime-${{ inputs.llama-tag }}-${{ steps.ndk.outputs.ndk-version }}-${{ steps.ndk.outputs.abi-key }}-v1
-
-    # v1.51.0 — build only the ABIs the cache did not provide. LLAMA_BUILD_TOOLS
-    # stays ON on purpose: llama-server lives under tools/ and is gated by that
-    # flag in this tag; extra tool binaries stay in $RUNNER_TEMP (not copied).
-    # GGML_NATIVE=OFF keeps -march=native from leaking host CPU features into
-    # the cross-compiled binary (would SIGILL on emulators / older devices).
+    # v1.51.1 — build ONLY the ABIs the cache did not provide (skipped
+    # entirely on warm runs). LLAMA_BUILD_TOOLS stays ON on purpose:
+    # llama-server lives under tools/ and is gated by that flag in this
+    # tag; extra tool binaries stay in $RUNNER_TEMP (not copied).
+    # GGML_NATIVE=OFF keeps -march=native from leaking host CPU features
+    # into the cross-compiled binary (would SIGILL on emulators / devices).
     - name: Build llama-server (cached ABIs are skipped)
+      if: steps.matrix.outputs.missing != ''
       shell: bash
       env:
-        ABIS: ${{ inputs.abis }}
+        ABIS: ${{ steps.matrix.outputs.missing }}
         LLAMA_TAG: ${{ inputs.llama-tag }}
         NDK_DIR: ${{ steps.ndk.outputs.ndk-dir }}
       run: |
