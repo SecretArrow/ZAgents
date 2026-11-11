@@ -125,8 +125,12 @@ class _LiveBrowserScreenState extends ConsumerState<LiveBrowserScreen> {
     return PopScope<void>(
       // Back/close run the detach FIRST (the capture inside
       // detachExternalContext needs the WebView alive), then pop.
+      // The lambda params are left un-annotated on purpose: the SDK
+      // signature is (bool, void) and inferring keeps this compatible
+      // across Flutter versions (an explicit void? annotation is
+      // rejected by the CFE on older toolchains).
       canPop: false,
-      onPopInvokedWithResult: (bool didPop, void? result) {
+      onPopInvokedWithResult: (didPop, result) {
         if (didPop) return;
         _close();
       },
