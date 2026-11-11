@@ -1236,93 +1236,104 @@ class _OllamaManageScreenState extends ConsumerState<OllamaManageScreen>
       models.remoteCatalog,
     );
     // v1.52.0 — the fit filter hides non-fitting cards (default ON).
-    final Iterable<CatalogModelEntry> visible = _fitFilter && ramKnown
-        ? merged.where(
-            (CatalogModelEntry m) => catalogModelFits(m.ramEstBytes, ram),
-          )
+    final List<CatalogModelEntry> visible = _fitFilter && ramKnown
+        ? merged
+              .where(
+                (CatalogModelEntry m) => catalogModelFits(m.ramEstBytes, ram),
+              )
+              .toList(growable: false)
         : merged;
-    return ListView(
-      key: const Key('ollama-catalog-list'),
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
-      children: <Widget>[
-        TextField(
-          key: const Key('ollama-custom-url'),
-          controller: _customUrl,
-          keyboardType: TextInputType.url,
-          decoration: InputDecoration(
-            labelText: strings.ollamaCustomUrlLabel,
-            hintText: 'https://example.com/model.gguf',
+    // v1.54.0 — lazy: with the 30-model catalog (v1.53.0) the eager list
+    // built every card up front on tab open; the builder only
+    // materializes rows near the viewport. The header (custom URL, action
+    // rows, fit filter) are the first items, so every row Key and the
+    // scroll geometry stay identical to the old eager list.
+    final List<Widget> header = <Widget>[
+      TextField(
+        key: const Key('ollama-custom-url'),
+        controller: _customUrl,
+        keyboardType: TextInputType.url,
+        decoration: InputDecoration(
+          labelText: strings.ollamaCustomUrlLabel,
+          hintText: 'https://example.com/model.gguf',
+        ),
+      ),
+      const SizedBox(height: 8),
+      Row(
+        children: <Widget>[
+          Expanded(
+            child: FilledButton.tonalIcon(
+              key: const Key('ollama-custom-download'),
+              onPressed: _downloadCustomUrl,
+              icon: const Icon(Icons.link_rounded, size: 18),
+              label: Text(strings.ollamaDownload),
+            ),
           ),
-        ),
-        const SizedBox(height: 8),
-        Row(
-          children: <Widget>[
-            Expanded(
-              child: FilledButton.tonalIcon(
-                key: const Key('ollama-custom-download'),
-                onPressed: _downloadCustomUrl,
-                icon: const Icon(Icons.link_rounded, size: 18),
-                label: Text(strings.ollamaDownload),
-              ),
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: OutlinedButton.icon(
-                key: const Key('ollama-import'),
-                onPressed: _importFromFile,
-                icon: const Icon(Icons.upload_file_outlined, size: 18),
-                label: Text(strings.ollamaImportButton),
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 12),
-        // v1.52.0 — remote catalog refresh + reset (only once applied).
-        Row(
-          children: <Widget>[
-            Expanded(
-              child: OutlinedButton.icon(
-                key: const Key('ollama-catalog-refresh'),
-                onPressed: _catalogRefreshing ? null : _refreshCatalog,
-                icon: const Icon(Icons.cloud_download_outlined, size: 18),
-                label: Text(strings.ollamaCatalogRefresh),
-              ),
-            ),
-            if (models.remoteCatalog.isNotEmpty) ...<Widget>[
-              const SizedBox(width: 8),
-              Expanded(
-                child: OutlinedButton.icon(
-                  key: const Key('ollama-catalog-reset'),
-                  onPressed: _resetCatalog,
-                  icon: const Icon(Icons.restore, size: 18),
-                  label: Text(strings.ollamaCatalogReset),
-                ),
-              ),
-            ],
-          ],
-        ),
-        if (ramKnown) ...<Widget>[
-          const SizedBox(height: 8),
-          Align(
-            alignment: Alignment.centerLeft,
-            child: FilterChip(
-              key: const Key('ollama-fit-filter'),
-              label: Text(strings.ollamaFitFilter),
-              selected: _fitFilter,
-              onSelected: (bool value) => setState(() => _fitFilter = value),
+          const SizedBox(width: 8),
+          Expanded(
+            child: OutlinedButton.icon(
+              key: const Key('ollama-import'),
+              onPressed: _importFromFile,
+              icon: const Icon(Icons.upload_file_outlined, size: 18),
+              label: Text(strings.ollamaImportButton),
             ),
           ),
         ],
-        const SizedBox(height: 4),
-        for (final CatalogModelEntry model in visible)
-          _catalogCard(
-            strings,
-            model,
-            installed: installedRefs.contains(model.ollamaRef),
-            active: activeNames.contains(model.ollamaRef),
-            fits: !ramKnown || catalogModelFits(model.ramEstBytes, ram),
+      ),
+      const SizedBox(height: 12),
+      // v1.52.0 — remote catalog refresh + reset (only once applied).
+      Row(
+        children: <Widget>[
+          Expanded(
+            child: OutlinedButton.icon(
+              key: const Key('ollama-catalog-refresh'),
+              onPressed: _catalogRefreshing ? null : _refreshCatalog,
+              icon: const Icon(Icons.cloud_download_outlined, size: 18),
+              label: Text(strings.ollamaCatalogRefresh),
+            ),
           ),
+          if (models.remoteCatalog.isNotEmpty) ...<Widget>[
+            const SizedBox(width: 8),
+            Expanded(
+              child: OutlinedButton.icon(
+                key: const Key('ollama-catalog-reset'),
+                onPressed: _resetCatalog,
+                icon: const Icon(Icons.restore, size: 18),
+                label: Text(strings.ollamaCatalogReset),
+              ),
+            ),
+          ],
+        ],
+      ),
+      if (ramKnown) ...<Widget>[
+        const SizedBox(height: 8),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: FilterChip(
+            key: const Key('ollama-fit-filter'),
+            label: Text(strings.ollamaFitFilter),
+            selected: _fitFilter,
+            onSelected: (bool value) => setState(() => _fitFilter = value),
+          ),
+        ),
       ],
+      const SizedBox(height: 4),
+    ];
+    return ListView.builder(
+      key: const Key('ollama-catalog-list'),
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
+      itemCount: header.length + visible.length,
+      itemBuilder: (BuildContext context, int index) {
+        if (index < header.length) return header[index];
+        final CatalogModelEntry model = visible[index - header.length];
+        return _catalogCard(
+          strings,
+          model,
+          installed: installedRefs.contains(model.ollamaRef),
+          active: activeNames.contains(model.ollamaRef),
+          fits: !ramKnown || catalogModelFits(model.ramEstBytes, ram),
+        );
+      },
     );
   }
 
@@ -1491,13 +1502,14 @@ class _OllamaManageScreenState extends ConsumerState<OllamaManageScreen>
         ],
       );
     }
-    return ListView(
+    // v1.54.0 — lazy: a user can install every catalog model, so the
+    // cards build per row now (identical widgets, Keys and padding).
+    return ListView.builder(
       key: const Key('ollama-installed-list'),
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
-      children: <Widget>[
-        for (final LocalModelEntry entry in models.installed)
-          _installedCard(context, strings, palette, entry),
-      ],
+      itemCount: models.installed.length,
+      itemBuilder: (BuildContext context, int index) =>
+          _installedCard(context, strings, palette, models.installed[index]),
     );
   }
 
@@ -1615,11 +1627,11 @@ class _OllamaManageScreenState extends ConsumerState<OllamaManageScreen>
           d.status == DownloadStatus.failed ||
           d.status == DownloadStatus.canceled,
     );
-    return ListView(
-      key: const Key('ollama-downloads-list'),
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
-      children: <Widget>[
-        if (downloads.isEmpty)
+    if (downloads.isEmpty) {
+      return ListView(
+        key: const Key('ollama-downloads-list'),
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
+        children: <Widget>[
           Card(
             key: const Key('ollama-downloads-empty'),
             child: Padding(
@@ -1639,19 +1651,29 @@ class _OllamaManageScreenState extends ConsumerState<OllamaManageScreen>
                 ],
               ),
             ),
-          )
-        else ...<Widget>[
-          for (final DownloadProgress d in downloads) _downloadCard(strings, d),
-          if (hasFinished)
-            OutlinedButton.icon(
-              key: const Key('ollama-clear-finished'),
-              onPressed: () =>
-                  ref.read(downloadQueueProvider.notifier).clearFinished(),
-              icon: const Icon(Icons.clear_all_rounded, size: 18),
-              label: Text(strings.ollamaClearFinished),
-            ),
+          ),
         ],
-      ],
+      );
+    }
+    // v1.54.0 — lazy: the queue mirrors the catalog, so live progress rows
+    // (+ the trailing clear-finished action) build per row; the empty
+    // state above stays the fixed single-card list it always was.
+    return ListView.builder(
+      key: const Key('ollama-downloads-list'),
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
+      itemCount: downloads.length + (hasFinished ? 1 : 0),
+      itemBuilder: (BuildContext context, int index) {
+        if (index < downloads.length) {
+          return _downloadCard(strings, downloads[index]);
+        }
+        return OutlinedButton.icon(
+          key: const Key('ollama-clear-finished'),
+          onPressed: () =>
+              ref.read(downloadQueueProvider.notifier).clearFinished(),
+          icon: const Icon(Icons.clear_all_rounded, size: 18),
+          label: Text(strings.ollamaClearFinished),
+        );
+      },
     );
   }
 

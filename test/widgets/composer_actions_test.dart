@@ -9,7 +9,11 @@ import 'package:speech_to_text/speech_recognition_result.dart';
 import 'package:speech_to_text/speech_to_text.dart';
 import 'package:zagents/di.dart';
 import 'package:zagents/l10n/app_strings.dart';
+import 'package:zagents/services/agent_controller.dart'
+    show ChatController, ChatState;
+import 'package:zagents/services/live_browser_controller.dart';
 import 'package:zagents/services/speech_service.dart';
+import 'package:zagents/ui/screens/browser_screen.dart';
 import 'package:zagents/ui/widgets/composer.dart';
 import 'package:zagents/ui/widgets/composer_actions.dart';
 
@@ -388,6 +392,56 @@ void main() {
       expect(attach.onPressed, isNotNull);
     });
   });
+
+  group('live browser entry point (v1.54.0)', () {
+    testWidgets('the globe action renders with its label and is disabled '
+        'while no chat is open', (WidgetTester tester) async {
+      await pumpComposer(tester);
+
+      final IconButton browser = tester.widget<IconButton>(
+        find.byKey(const Key('composer-live-browser')),
+      );
+      expect(browser.onPressed, isNull);
+      expect(
+        find.byTooltip(const AppStringsEn().liveBrowserTitle),
+        findsOneWidget,
+        reason: 'the action is labelled with the screen title',
+      );
+    });
+
+    testWidgets('with an active chat it is enabled and pushes the Live '
+        'Browser screen of that session', (WidgetTester tester) async {
+      final ProviderContainer container = await pumpComposer(
+        tester,
+        extra: <Override>[
+          chatControllerProvider.overrideWith(
+            () => _ActiveSessionChatController(),
+          ),
+        ],
+      );
+
+      final IconButton browser = tester.widget<IconButton>(
+        find.byKey(const Key('composer-live-browser')),
+      );
+      expect(browser.onPressed, isNotNull);
+
+      await tester.tap(find.byKey(const Key('composer-live-browser')));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(LiveBrowserScreen), findsOneWidget);
+      // The screen attaches the 'live' context of the ACTIVE session. The
+      // default test automation is NOT the multi-context engine, so the
+      // attach degrades to the retry card — deterministically, and no
+      // platform WebView is ever created inside the test zone.
+      expect(
+        find.byKey(const Key('live-browser-attach-error')),
+        findsOneWidget,
+      );
+      final LiveBrowserState live = container.read(liveBrowserProvider);
+      expect(live.sessionId, 'sess-live-1');
+      expect(live.attachError, isNotEmpty);
+    });
+  });
 }
 
 /// Deterministic [FileSelectorPlatform] stand-ins (see the group doc):
@@ -408,4 +462,11 @@ class _ThrowingFileSelector extends FileSelectorPlatform {
     String? initialDirectory,
     String? confirmButtonText,
   }) async => throw Exception('picker unavailable');
+}
+
+/// Parked ChatController with an ACTIVE session — the Live Browser entry
+/// point needs an owning chat (same override trick as plan_progress_test).
+class _ActiveSessionChatController extends ChatController {
+  @override
+  ChatState build() => const ChatState(sessionId: 'sess-live-1');
 }

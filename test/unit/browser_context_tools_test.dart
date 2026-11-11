@@ -63,7 +63,10 @@ class _FakeEngine implements BrowserAutomation {
     String? selector,
     String? text,
     String? sessionId,
-  }) async => <String, dynamic>{'ok': true};
+  }) async {
+    calls.add('click:${text ?? selector}');
+    return <String, dynamic>{'ok': true, 'clicked': text ?? selector ?? ''};
+  }
 
   @override
   Future<Map<String, dynamic>> type(
@@ -334,6 +337,51 @@ void main() {
     );
   });
 
+  group('browser_click with a named context (v1.54.0)', () {
+    test(
+      "routes the click into the named slot's engine, not the default",
+      () async {
+        await executor.execute('browser_context_create', <String, dynamic>{
+          'name': 'live',
+        }, sessionId: 'chat-1');
+        // Boot the named slot with a navigation first.
+        await executor.execute(
+          'browser_navigate',
+          <String, dynamic>{'url': 'https://a.test/', 'context': 'live'},
+          sessionId: 'chat-1',
+        );
+        expect(h.shared.created, hasLength(1));
+        final int before = h.shared.created.length;
+        final ToolResult click = await executor.execute(
+          'browser_click',
+          <String, dynamic>{'selector': 'a.next', 'context': 'live'},
+          sessionId: 'chat-1',
+        );
+        expect(click.ok, isTrue);
+        // The click LANDED on the named slot's engine…
+        expect(h.engine(0).calls, contains('click:a.next'));
+        // …and reused it — the chat-default slot never booted.
+        expect(
+          h.shared.created,
+          hasLength(before),
+          reason: 'named routing must not boot the default engine',
+        );
+      },
+    );
+
+    test('an unknown context is the honest cannot-open error', () async {
+      final int before = h.shared.created.length;
+      final ToolResult click = await executor.execute(
+        'browser_click',
+        <String, dynamic>{'selector': 'a', 'context': 'ghost'},
+        sessionId: 'chat-1',
+      );
+      expect(click.ok, isFalse);
+      expect(click.llmOutput, contains('cannot open "ghost"'));
+      expect(h.shared.created, hasLength(before));
+    });
+  });
+
   group('single-engine automations', () {
     test(
       'answer every context tool with an honest unsupported error',
@@ -365,6 +413,39 @@ void main() {
         );
         expect(nav.ok, isFalse);
         expect(nav.llmOutput, contains('not supported'));
+        // v1.54.0: the same honest refusal for the newly-routed tools.
+        for (final (String tool, Map<String, dynamic> args)
+            in <(String, Map<String, dynamic>)>[
+              (
+                'browser_click',
+                <String, dynamic>{'selector': 'a', 'context': 'live'},
+              ),
+              (
+                'browser_type',
+                <String, dynamic>{'text': 'hi', 'context': 'live'},
+              ),
+              (
+                'browser_scroll',
+                <String, dynamic>{'direction': 'up', 'context': 'live'},
+              ),
+              (
+                'browser_screenshot',
+                <String, dynamic>{'context': 'live'},
+              ),
+              (
+                'browser_extract_text',
+                <String, dynamic>{'context': 'live'},
+              ),
+              ('run_js', <String, dynamic>{'code': '1', 'context': 'live'}),
+            ]) {
+          final ToolResult result = await single.execute(
+            tool,
+            args,
+            sessionId: 'chat-1',
+          );
+          expect(result.ok, isFalse, reason: tool);
+          expect(result.llmOutput, contains('not supported'), reason: tool);
+        }
       },
     );
   });

@@ -134,9 +134,13 @@ class ZAgentsApp extends ConsumerWidget {
       darkTheme: buildDarkTheme(),
       themeMode: themeMode,
       // Explicit locale (never the device locale): English is the default
-      // until the user picks Bahasa Indonesia in Settings.
+      // until the user picks Bahasa Indonesia or Español in Settings.
       locale: Locale(languageCode),
-      supportedLocales: const <Locale>[Locale('en'), Locale('id')],
+      supportedLocales: const <Locale>[
+        Locale('en'),
+        Locale('id'),
+        Locale('es'),
+      ],
       localizationsDelegates: const <LocalizationsDelegate<dynamic>>[
         zLocalizationsDelegate,
         GlobalMaterialLocalizations.delegate,

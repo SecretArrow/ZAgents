@@ -780,6 +780,17 @@ class _ContextSlot {
 /// the shared jar, engine disposed, hibernation file deleted); the
 /// chat-default slot and the legacy slot can never be closed through
 /// that API.
+///
+/// v1.54.0 (live browser): a named context's slot can also be an
+/// EXTERNAL engine — the user-visible WebView of the Live Browser screen
+/// (`attachExternalContext` / `detachExternalContext`). While attached,
+/// every browser tool can target it via `contextName`; the user and the
+/// agent operate the SAME browser surface (the engine itself refuses
+/// agent ops while the user holds control). Detaching hibernates the
+/// captured state and KEEPS the registry row, so later ops simply revive
+/// the context headlessly — a fresh `_makeInner` engine restores the
+/// hibernation file, and a later attach wires the visible webview back
+/// in.
 class ContextualBrowserAutomation implements BrowserAutomation {
   ContextualBrowserAutomation({
     required this._makeInner,
@@ -855,18 +866,7 @@ class ContextualBrowserAutomation implements BrowserAutomation {
     // (registry evictionOrder): persistent victims flush their state to
     // the sandbox file so a later createContext restores it, ephemeral
     // victims are dropped fully.
-    while (contextRegistry.list(sessionId).length >= maxContexts) {
-      final Set<String> owned = contextRegistry
-          .list(sessionId)
-          .map((BrowserContextInfo info) => info.key)
-          .toSet();
-      final List<String> order = contextRegistry
-          .evictionOrder()
-          .where(owned.contains)
-          .toList(growable: false);
-      if (order.isEmpty) break;
-      _hibernateNamedContext(order.first);
-    }
+    _evictForCap(sessionId);
     // Restore-on-restart: a persistent context hibernated by an eviction
     // or a previous app run resumes with its captured state and its
     // original creation time.
@@ -919,6 +919,208 @@ class ContextualBrowserAutomation implements BrowserAutomation {
     }
   }
 
+  /// v1.54.0 (live browser) — attaches an EXTERNAL engine as the slot of
+  /// named context [name] for [sessionId]: the user-visible WebView of the
+  /// Live Browser screen. Idempotent re-attach: when the context already
+  /// exists (previous screen instance) its slot is hibernated first (state
+  /// flushed, engine dropped) and replaced by [engine]. Returns the
+  /// context info map (same shape as browser_context_list rows) so the
+  /// caller learns lastUrl for the initial navigation.
+  Future<Map<String, dynamic>> attachExternalContext({
+    required String name,
+    required String sessionId,
+    required BrowserAutomation engine,
+  }) async {
+    if (sessionId.isEmpty) {
+      throw ArgumentError(
+        'named browser contexts need the owning chat sessionId',
+      );
+    }
+    if (!BrowserContextRegistry.isValidName(name) ||
+        BrowserContextRegistry.reservedNames.contains(name)) {
+      throw ArgumentError('invalid browser context name');
+    }
+    final String key = BrowserContextRegistry.keyFor(sessionId, name);
+    // Same cap pressure as createContext: overflow hibernates this
+    // chat's least-recently-used named contexts first.
+    _evictForCap(sessionId);
+    // Restore snapshot: a persistent context hibernated by a previous
+    // screen instance (or an eviction) resumes with its captured state.
+    final NamedContextSnapshot? saved = await store.loadNamed(
+      sessionId,
+      name,
+    );
+    final BrowserContextInfo? existing = contextRegistry.info(key);
+    if (existing != null) {
+      // Re-attach (previous screen instance): keep the registry row and
+      // its age, only swap the slot. The OLD slot — if still alive — is
+      // hibernated inline EXACTLY like _hibernateNamedContext would, but
+      // WITHOUT unregistering: state flushed, engine dropped, cookies
+      // taken off the shared jar; the row itself survives the swap.
+      final _ContextSlot? old = _slots[key];
+      if (old != null && !old.disposed) {
+        if (existing.persistent &&
+            old.namedPersistent &&
+            old.sessionId != null &&
+            old.namedContext != null) {
+          try {
+            await store.saveNamed(
+              old.sessionId!,
+              old.namedContext!,
+              old.state,
+              createdAt: existing.createdAt,
+              lastUrl: existing.lastUrl,
+              originCount: old.state.origins.length,
+            );
+          } catch (_) {
+            // Best effort: losing a snapshot degrades to a logged-out
+            // context on revive, never a crash.
+          }
+        }
+        old.disposed = true;
+        _slots.remove(key);
+        Future<void>(() async {
+          await _releaseCookies(old);
+          try {
+            old.inner.dispose();
+          } catch (_) {
+            // Best effort.
+          }
+        });
+      }
+    }
+    // Register only when the row is not there yet — live contexts are
+    // always persistent: they hibernate across screen instances,
+    // evictions and app restarts.
+    final BrowserContextInfo info =
+        existing ??
+        contextRegistry.register(
+          sessionId: sessionId,
+          name: name,
+          persistent: true,
+          createdAt: saved?.createdAt,
+          lastUrl: saved?.lastUrl,
+          originCount: saved?.originCount,
+        );
+    // The slot is created DIRECTLY (not via _slotFor — the engine is the
+    // caller's external one, never a headless _makeInner()). loaded=true
+    // so _ensureLoaded never re-reads the file; the state is pre-applied
+    // so the first op's _claimOrigin restores the context's cookies.
+    final _ContextSlot slot = _ContextSlot(
+      key: key,
+      inner: engine,
+      ephemeral: false,
+      namedContext: name,
+      namedPersistent: true,
+    )
+      ..sessionId = sessionId
+      ..namedCreatedAt = saved?.createdAt ?? info.createdAt
+      ..state = saved?.state ?? BrowserState()
+      ..loaded = true;
+    _slots[key] = slot;
+    return _namedContextInfo(info);
+  }
+
+  /// v1.54.0 (live browser) — detaches the external engine of [name]:
+  /// captures the context's current page state under the slot mutex
+  /// (serialized with any in-flight agent op), flushes it to the
+  /// hibernation file with [lastUrl] (the URL the visible webview is
+  /// showing — user navigations happen outside engine ops, so the caller
+  /// supplies it), drops the slot, and KEEPS the registry row (the context
+  /// continues headless for later ops; a later attachExternalContext or
+  /// _slotFor revive restores from the file). Returns true when a live
+  /// slot was detached; false when there was nothing to detach (never
+  /// throws for a missing context).
+  Future<bool> detachExternalContext({
+    required String name,
+    required String sessionId,
+    String? lastUrl,
+  }) async {
+    if (sessionId.isEmpty) {
+      throw ArgumentError(
+        'named browser contexts need the owning chat sessionId',
+      );
+    }
+    if (!BrowserContextRegistry.isValidName(name) ||
+        BrowserContextRegistry.reservedNames.contains(name)) {
+      throw ArgumentError('invalid browser context name');
+    }
+    final String key = BrowserContextRegistry.keyFor(sessionId, name);
+    final BrowserContextInfo? info = contextRegistry.info(key);
+    if (info == null) return false;
+    final _ContextSlot? slot = _slots[key];
+    if (slot == null || slot.disposed) return false;
+    // Serialize with any in-flight agent op, then capture the dying
+    // webview's state one last time (best effort — a failing webview
+    // must not crash detach).
+    await slot.mutex.protect(() async {
+      try {
+        await _capture(slot);
+      } catch (_) {
+        // Best effort.
+      }
+      // v1.54.0 fix: while the USER holds control, the engine's control
+      // gate refuses the capture JS like any other interactive op, so
+      // _capture silently degrades to persisting the OLD state — the
+      // user's manual browsing (fresh logins earned in the visible
+      // webview) would be lost from the hibernation file. Recover what
+      // matters without touching the page: when the recorded state does
+      // not carry the caller-supplied URL, read that URL's cookies
+      // straight from the shared jar (the visible webview set them
+      // there) and record them under the origin. Web storage is not
+      // recoverable this way — cookies (logins) are.
+      final String url = (lastUrl ?? '').trim();
+      final String? origin = url.isEmpty ? null : _originOf(url);
+      if (origin != null) {
+        final OriginState? recorded = slot.state.origins[origin];
+        if (recorded == null || recorded.lastUrl != url) {
+          try {
+            final Map<String, String> jar = await cookies.readForUrl(url);
+            final OriginState merged =
+                recorded ?? OriginState(lastUrl: url);
+            merged.lastUrl = url;
+            merged.cookies
+              ..clear()
+              ..addAll(jar);
+            slot.state.origins[origin] = merged;
+          } catch (_) {
+            // Best effort: keep whatever _capture recorded.
+          }
+        }
+      }
+    });
+    contextRegistry.touch(
+      key,
+      lastUrl: (lastUrl != null && lastUrl.isNotEmpty) ? lastUrl : null,
+      originCount: slot.state.origins.length,
+    );
+    if (slot.namedPersistent) {
+      try {
+        await store.saveNamed(
+          sessionId,
+          name,
+          slot.state,
+          createdAt: info.createdAt,
+          lastUrl: lastUrl ?? info.lastUrl,
+          originCount: slot.state.origins.length,
+        );
+      } catch (_) {
+        // Best effort: losing a snapshot degrades to a logged-out
+        // context on revive, never a crash.
+      }
+    }
+    slot.disposed = true;
+    _slots.remove(key);
+    // The WIDGET owns the platform webview: the engine is never disposed
+    // here (it only becomes garbage), but its recorded cookie names
+    // leave the shared jar (async, like closeContext's teardown). The
+    // registry row STAYS — the context continues headless for later ops.
+    Future<void>(() async {
+      await _releaseCookies(slot);
+    });
+    return true;
+  }
+
   Future<Map<String, dynamic>?> contextInfo(
     String name, {
     String? sessionId,
@@ -957,6 +1159,27 @@ class ContextualBrowserAutomation implements BrowserAutomation {
       'lastUsedAt': info.lastUsedAt.toIso8601String(),
       'originCount': live ? slot.state.origins.length : info.originCount,
     };
+  }
+
+  /// v1.54.0 (live browser) — the named-context cap loop shared by
+  /// [createContext] and [attachExternalContext]: while [sessionId] owns
+  /// [maxContexts] named contexts, its least-recently-used context
+  /// hibernates (persistent victims flush their state to the sandbox
+  /// file first, so a later createContext / attachExternalContext
+  /// restores it; ephemeral victims drop fully).
+  void _evictForCap(String sessionId) {
+    while (contextRegistry.list(sessionId).length >= maxContexts) {
+      final Set<String> owned = contextRegistry
+          .list(sessionId)
+          .map((BrowserContextInfo info) => info.key)
+          .toSet();
+      final List<String> order = contextRegistry
+          .evictionOrder()
+          .where(owned.contains)
+          .toList(growable: false);
+      if (order.isEmpty) break;
+      _hibernateNamedContext(order.first);
+    }
   }
 
   /// Evicts one named context: a persistent context's live state is
@@ -1020,7 +1243,13 @@ class ContextualBrowserAutomation implements BrowserAutomation {
     String? selector,
     String? text,
     String? sessionId,
-  }) => _click(selector: selector, text: text, sessionId: sessionId);
+    String? contextName,
+  }) => _click(
+    selector: selector,
+    text: text,
+    sessionId: sessionId,
+    contextName: contextName,
+  );
 
   @override
   Future<Map<String, dynamic>> type(
@@ -1028,41 +1257,76 @@ class ContextualBrowserAutomation implements BrowserAutomation {
     String? selector,
     bool clear = true,
     String? sessionId,
-  }) => _type(text, selector: selector, clear: clear, sessionId: sessionId);
+    String? contextName,
+  }) => _type(
+    text,
+    selector: selector,
+    clear: clear,
+    sessionId: sessionId,
+    contextName: contextName,
+  );
 
   @override
   Future<Map<String, dynamic>> scroll({
     String direction = 'down',
     int amount = 800,
     String? sessionId,
-  }) => _scroll(direction: direction, amount: amount, sessionId: sessionId);
-
-  @override
-  Future<String?> screenshot({required String saveDir, String? sessionId}) =>
-      _run<String?>(
-        null,
-        sessionId: sessionId,
-        op: (slot) => slot.inner.screenshot(saveDir: saveDir, sessionId: null),
-      );
-
-  @override
-  Future<String> extractText({int maxLength = 8000, String? sessionId}) =>
-      _run<String>(
-        null,
-        sessionId: sessionId,
-        op: (slot) => slot.inner.extractText(maxLength: maxLength),
-      );
-
-  @override
-  Future<String> runJs(String code, {String? sessionId}) => _run<String>(
-    null,
+    String? contextName,
+  }) => _scroll(
+    direction: direction,
+    amount: amount,
     sessionId: sessionId,
-    op: (slot) async {
-      final String result = await slot.inner.runJs(code);
-      await _capture(slot);
-      return result;
-    },
+    contextName: contextName,
   );
+
+  @override
+  Future<String?> screenshot({
+    required String saveDir,
+    String? sessionId,
+    String? contextName,
+  }) async {
+    final String? namedKey = _namedSlotKey(contextName, sessionId);
+    return _run<String?>(
+      null,
+      sessionId: sessionId,
+      slotKey: namedKey,
+      op: (slot) => slot.inner.screenshot(saveDir: saveDir, sessionId: null),
+    );
+  }
+
+  @override
+  Future<String> extractText({
+    int maxLength = 8000,
+    String? sessionId,
+    String? contextName,
+  }) async {
+    final String? namedKey = _namedSlotKey(contextName, sessionId);
+    return _run<String>(
+      null,
+      sessionId: sessionId,
+      slotKey: namedKey,
+      op: (slot) => slot.inner.extractText(maxLength: maxLength),
+    );
+  }
+
+  @override
+  Future<String> runJs(
+    String code, {
+    String? sessionId,
+    String? contextName,
+  }) async {
+    final String? namedKey = _namedSlotKey(contextName, sessionId);
+    return _run<String>(
+      null,
+      sessionId: sessionId,
+      slotKey: namedKey,
+      op: (slot) async {
+        final String result = await slot.inner.runJs(code);
+        await _capture(slot);
+        return result;
+      },
+    );
+  }
 
   @override
   Future<void> purgeSiteData() async {
@@ -1102,6 +1366,26 @@ class ContextualBrowserAutomation implements BrowserAutomation {
   }
 
   // ---- context-scoped internals (also used by the pinned view) ------------
+
+  /// v1.54.0 (live browser) — resolves a non-empty [contextName] into its
+  /// named-context slot key with the SAME validation [_navigate] applies:
+  /// the context must have been created for THIS chat [sessionId] (an
+  /// unknown, foreign or anonymous name is an ArgumentError instead of
+  /// silently leaking into the chat's default slot). Returns null for an
+  /// omitted/empty name so callers keep their default routing.
+  String? _namedSlotKey(String? contextName, String? sessionId) {
+    if (contextName == null || contextName.isEmpty) return null;
+    if (sessionId == null || sessionId.isEmpty) {
+      throw ArgumentError(
+        'named browser contexts need the owning chat sessionId',
+      );
+    }
+    final String key = BrowserContextRegistry.keyFor(sessionId, contextName);
+    if (!contextRegistry.isRegistered(key)) {
+      throw ArgumentError('no such browser context: $contextName');
+    }
+    return key;
+  }
 
   Future<BrowserAutomation> _ensureSharedInner() async {
     if (_sharedInner != null) return _sharedInner!;
@@ -1154,18 +1438,23 @@ class ContextualBrowserAutomation implements BrowserAutomation {
     String? text,
     String? sessionId,
     String? contextId,
-  }) => _run<Map<String, dynamic>>(
-    contextId,
-    sessionId: sessionId,
-    op: (slot) async {
-      final Map<String, dynamic> result = await slot.inner.click(
-        selector: selector,
-        text: text,
-      );
-      await _capture(slot);
-      return result;
-    },
-  );
+    String? contextName,
+  }) async {
+    final String? namedKey = _namedSlotKey(contextName, sessionId);
+    return _run<Map<String, dynamic>>(
+      contextId,
+      sessionId: sessionId,
+      slotKey: namedKey,
+      op: (slot) async {
+        final Map<String, dynamic> result = await slot.inner.click(
+          selector: selector,
+          text: text,
+        );
+        await _capture(slot);
+        return result;
+      },
+    );
+  }
 
   Future<Map<String, dynamic>> _type(
     String text, {
@@ -1173,37 +1462,47 @@ class ContextualBrowserAutomation implements BrowserAutomation {
     bool clear = true,
     String? sessionId,
     String? contextId,
-  }) => _run<Map<String, dynamic>>(
-    contextId,
-    sessionId: sessionId,
-    op: (slot) async {
-      final Map<String, dynamic> result = await slot.inner.type(
-        text,
-        selector: selector,
-        clear: clear,
-      );
-      await _capture(slot);
-      return result;
-    },
-  );
+    String? contextName,
+  }) async {
+    final String? namedKey = _namedSlotKey(contextName, sessionId);
+    return _run<Map<String, dynamic>>(
+      contextId,
+      sessionId: sessionId,
+      slotKey: namedKey,
+      op: (slot) async {
+        final Map<String, dynamic> result = await slot.inner.type(
+          text,
+          selector: selector,
+          clear: clear,
+        );
+        await _capture(slot);
+        return result;
+      },
+    );
+  }
 
   Future<Map<String, dynamic>> _scroll({
     String direction = 'down',
     int amount = 800,
     String? sessionId,
     String? contextId,
-  }) => _run<Map<String, dynamic>>(
-    contextId,
-    sessionId: sessionId,
-    op: (slot) async {
-      final Map<String, dynamic> result = await slot.inner.scroll(
-        direction: direction,
-        amount: amount,
-      );
-      await _capture(slot);
-      return result;
-    },
-  );
+    String? contextName,
+  }) async {
+    final String? namedKey = _namedSlotKey(contextName, sessionId);
+    return _run<Map<String, dynamic>>(
+      contextId,
+      sessionId: sessionId,
+      slotKey: namedKey,
+      op: (slot) async {
+        final Map<String, dynamic> result = await slot.inner.scroll(
+          direction: direction,
+          amount: amount,
+        );
+        await _capture(slot);
+        return result;
+      },
+    );
+  }
 
   Future<BrowserPageInfo> _navigateOp(
     _ContextSlot slot,

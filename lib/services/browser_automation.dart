@@ -146,13 +146,28 @@ mixin UnsupportedNamedBrowserContexts {
 /// restarting the app. Desktop picks also switch the viewport into wide
 /// ("desktop site") rendering so the page layout matches the identity —
 /// the environment is adjusted together with the UA, never the UA alone.
+///
+/// v1.54.0 (live browser): [externalController] lets a user-VISIBLE
+/// InAppWebView (the one hosted by the Live Browser screen) become this
+/// engine's backing webview instead of a headless one, and [settingsFor]
+/// and [serviceWorkerBlockScript] are the public seam that screen uses to
+/// configure its own widget EXACTLY like the headless engine configures
+/// itself (same UA settings, same service-worker hardening).
 class WebViewAutomation
     with UnsupportedNamedBrowserContexts
     implements BrowserAutomation {
-  WebViewAutomation({UserAgentRecord? Function()? pickUserAgent})
-    : _resolveUserAgent = pickUserAgent;
+  WebViewAutomation({
+    UserAgentRecord? Function()? pickUserAgent,
+    this.externalController,
+  }) : _resolveUserAgent = pickUserAgent;
 
   final UserAgentRecord? Function()? _resolveUserAgent;
+
+  /// v1.54.0 (live browser): when set, [_ensure] returns THIS controller
+  /// (a user-visible InAppWebView created by the Live Browser screen)
+  /// instead of creating a headless WebView. The widget owns the
+  /// platform lifecycle — [dispose] only clears the reference.
+  final Future<InAppWebViewController> Function()? externalController;
 
   HeadlessInAppWebView? _headless;
   InAppWebViewController? _controller;
@@ -184,11 +199,18 @@ class WebViewAutomation
     if (_controller != null) {
       return _controller!;
     }
+    if (externalController != null) {
+      // v1.54.0 (live browser): the user-visible webview of the Live
+      // Browser screen backs this engine — never boot a headless one.
+      final InAppWebViewController c = await externalController!();
+      _controller = c;
+      return c;
+    }
     final UserAgentRecord ua = _currentUa;
     final headless = HeadlessInAppWebView(
       initialSize: const Size(1080, 1920),
       initialUrlRequest: URLRequest(url: WebUri('about:blank')),
-      initialSettings: _settingsFor(ua),
+      initialSettings: settingsFor(ua),
       // Private-window hardening (v1.20.0): new service-worker
       // registrations are rejected at document start in every frame, so a
       // site's worker registered while one chat is logged in can never
@@ -196,7 +218,7 @@ class WebViewAutomation
       // unregistered per origin during storage reconciliation.
       initialUserScripts: UnmodifiableListView<UserScript>(<UserScript>[
         UserScript(
-          source: _swBlockScript,
+          source: serviceWorkerBlockScript,
           injectionTime: UserScriptInjectionTime.AT_DOCUMENT_START,
           forMainFrameOnly: false,
         ),
@@ -237,14 +259,19 @@ class WebViewAutomation
   /// WebView settings matching a UA selection: desktop identities render
   /// with the wide "desktop site" viewport, Android identities keep the
   /// natural mobile layout.
-  InAppWebViewSettings _settingsFor(UserAgentRecord ua) => InAppWebViewSettings(
-    javaScriptEnabled: true,
-    transparentBackground: false,
-    supportZoom: false,
-    userAgent: ua.ua,
-    useWideViewPort: true,
-    loadWithOverviewMode: ua.isDesktop,
-  );
+  ///
+  /// Public seam (v1.54.0, live browser): the Live Browser screen uses it
+  /// to configure its user-visible webview exactly like this engine
+  /// configures its headless one.
+  static InAppWebViewSettings settingsFor(UserAgentRecord ua) =>
+      InAppWebViewSettings(
+        javaScriptEnabled: true,
+        transparentBackground: false,
+        supportZoom: false,
+        userAgent: ua.ua,
+        useWideViewPort: true,
+        loadWithOverviewMode: ua.isDesktop,
+      );
 
   @override
   Future<BrowserPageInfo> navigate(
@@ -269,7 +296,7 @@ class WebViewAutomation
       // change reaches the long-lived WebView immediately and every page
       // of a session is fetched with the SAME identity (stability).
       try {
-        await controller.setSettings(settings: _settingsFor(_currentUa));
+        await controller.setSettings(settings: settingsFor(_currentUa));
       } catch (_) {
         // Older engines may reject partial setSettings — the UA from
         // WebView start still applies.
@@ -557,7 +584,10 @@ class WebViewAutomation
 
   /// Runs at document start in every frame: service-worker registration
   /// is stubbed out (private windows never register workers).
-  static const String _swBlockScript =
+  ///
+  /// Public seam (v1.54.0, live browser): the Live Browser screen injects
+  /// the same hardening into its user-visible webview.
+  static const String serviceWorkerBlockScript =
       '(function(){try{if(navigator.serviceWorker){'
       'navigator.serviceWorker.register=function(){'
       'return Promise.reject(new Error("service workers are disabled in '
@@ -598,6 +628,12 @@ return "reconciled";
 
   @override
   void dispose() {
+    if (externalController != null) {
+      // v1.54.0 (live browser): the widget owns the platform webview —
+      // only clear the reference, never dispose the widget's webview.
+      _controller = null;
+      return;
+    }
     _headless?.dispose();
     _headless = null;
     _controller = null;

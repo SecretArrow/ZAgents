@@ -17,6 +17,7 @@ import '../widgets/module_repair_card.dart';
 import '../widgets/module_setup_sheet.dart';
 import '../widgets/app_message.dart';
 import '../../services/update_checker.dart' show UpdateCheckResult;
+import 'providers_screen.dart';
 import 'settings_screen.dart';
 
 /// Main screen: app bar (brand, model chip, agent toggle, language menu),
@@ -89,7 +90,26 @@ class _HomeShellState extends ConsumerState<HomeShell> {
         // v1.49.6: centered message dialog instead of a SnackBar — a
         // SnackBar shoved the streaming transcript up on every error,
         // which users found disruptive mid-scroll.
-        showAppMessage(context, next);
+        //
+        // v1.54.0: provider auth/config failures (401/403, invalid/missing
+        // API key) additionally get an "Open Providers" shortcut — the fix
+        // is one tap away while the raw error text stays in the body for
+        // honesty. Auth dialogs are sticky (error: true) so the action
+        // cannot evaporate in the 2.6 s info auto-expire.
+        final bool authTrouble = _looksLikeAuthError(next);
+        showAppMessage(
+          context,
+          next,
+          error: authTrouble,
+          actionLabel: authTrouble ? strings.errorOpenProviders : null,
+          onAction: authTrouble
+              ? () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => const ProvidersScreen(),
+                  ),
+                )
+              : null,
+        );
       },
     );
     // A module waiting for its per-chat setup form: open the sheet once
@@ -193,6 +213,21 @@ class _HomeShellState extends ConsumerState<HomeShell> {
       ),
     );
   }
+}
+
+/// v1.54.0 — true when a surfaced chat error smells like a provider
+/// auth/config problem: HTTP 401/403, an invalid/missing API key. The
+/// wording comes from the LLM layer's HTTP error lines ("HTTP 401: …"),
+/// provider bodies ("unauthorized", "invalid_api_key") and the localized
+/// missing-API-key message, so the match is case-insensitive.
+bool _looksLikeAuthError(String text) {
+  final String t = text.toLowerCase();
+  return t.contains('401') ||
+      t.contains('403') ||
+      t.contains('unauthorized') ||
+      t.contains('api key') ||
+      t.contains('api_key') ||
+      t.contains('invalid_api_key');
 }
 
 /// v1.38.0: explicit user-approval card for the `request_confirmation`

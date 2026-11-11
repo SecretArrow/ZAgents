@@ -25,13 +25,19 @@ import '../../l10n/app_strings.dart';
 ///   (no "Timer is still pending" test failures);
 /// - error messages (`error: true`) stay until dismissed — an error the
 ///   user must acknowledge should not vanish on its own;
-/// - the OK button (and the barrier tap) dismiss immediately.
+/// - the OK button (and the barrier tap) dismiss immediately;
+/// - v1.54.0: [actionLabel] + [onAction] render an extra TextButton
+///   BEFORE OK (e.g. "Open Providers" for auth failures). The action
+///   runs after the dialog closes; when either is null the dialog is
+///   byte-for-byte the old single-button one for every existing caller.
 void showAppMessage(
   BuildContext context,
   String message, {
   Key? key,
   Duration? duration,
   bool error = false,
+  String? actionLabel,
+  VoidCallback? onAction,
 }) {
   final String text = message.trim();
   if (text.isEmpty) return;
@@ -63,6 +69,8 @@ void showAppMessage(
       message: text,
       error: error,
       duration: duration,
+      actionLabel: actionLabel,
+      onAction: onAction,
       onExpire: () => _expireRoute(route, navigator),
       onDismissed: () {
         if (identical(_currentRoute, route)) _currentRoute = null;
@@ -93,10 +101,19 @@ class _AppMessageCard extends StatefulWidget {
     required this.onExpire,
     required this.onDismissed,
     this.duration,
+    this.actionLabel,
+    this.onAction,
   });
 
   final String message;
   final bool error;
+
+  /// v1.54.0 — optional action button next to OK (e.g. "Open Providers"
+  /// for auth failures). BOTH [actionLabel] and [onAction] must be
+  /// non-null for the button to render; null keeps the old
+  /// single-button behavior everywhere else.
+  final String? actionLabel;
+  final VoidCallback? onAction;
 
   /// Fired when the info hold elapses (never scheduled for errors).
   final VoidCallback onExpire;
@@ -137,6 +154,15 @@ class _AppMessageCardState extends State<_AppMessageCard> {
     Navigator.of(context).pop();
   }
 
+  /// v1.54.0 — mirrors [_dismiss] (guard reset + pop) and then runs the
+  /// optional action AFTER the dialog is gone, so a navigation pushed by
+  /// the action never fights the dialog route.
+  void _runAction() {
+    widget.onDismissed();
+    Navigator.of(context).pop();
+    widget.onAction?.call();
+  }
+
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
@@ -164,6 +190,12 @@ class _AppMessageCardState extends State<_AppMessageCard> {
       actionsAlignment: MainAxisAlignment.center,
       actionsPadding: const EdgeInsets.only(bottom: 12),
       actions: <Widget>[
+        if (widget.actionLabel != null && widget.onAction != null)
+          TextButton(
+            key: const Key('app-message-action'),
+            onPressed: _runAction,
+            child: Text(widget.actionLabel!),
+          ),
         TextButton(
           key: const Key('app-message-ok'),
           onPressed: _dismiss,

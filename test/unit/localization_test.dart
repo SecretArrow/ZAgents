@@ -464,4 +464,82 @@ void main() {
     expect(es.cronOpenOllamaManage, 'Abrir Gestionar Ollama');
     expect(es.ollamaExportSelectedDone(2), '2 modelos exportados.');
   });
+
+  // -- Assistant polish (v1.54.0) -------------------------------------------
+  group('v1.54.0 assistant polish strings', () {
+    test('errorOpenProviders is localized in all three bundles', () {
+      final AppStrings en = appStringsFor('en');
+      final AppStrings id = appStringsFor('id');
+      final AppStrings es = appStringsFor('es');
+      for (final AppStrings s in <AppStrings>[en, id, es]) {
+        expect(s.errorOpenProviders, isNotEmpty);
+      }
+      expect(en.errorOpenProviders, 'Open Providers');
+      expect(id.errorOpenProviders, 'Buka Providers');
+      expect(es.errorOpenProviders, 'Abrir Proveedores');
+    });
+
+    test('Spanish is wired: native picker name + resolution + codes', () {
+      // The picker label is the native name, identical in every locale
+      // (same convention as 'Bahasa Indonesia').
+      for (final AppStrings s in <AppStrings>[
+        appStringsFor('en'),
+        appStringsFor('id'),
+        appStringsFor('es'),
+      ]) {
+        expect(s.spanishOption, 'Español');
+      }
+      expect(appStringsFor('es'), isA<AppStringsEs>());
+      expect(appStringsFor('ES'), isA<AppStringsEs>()); // case-insensitive
+      expect(supportedLanguageCodes, containsAll(<String>['en', 'id', 'es']));
+    });
+  });
+
+  // -- Live browser (v1.54.0) -------------------------------------------------
+  group('live browser strings are localized in all three bundles', () {
+    test('every live browser getter is present in en/id/es', () {
+      final AppStrings en = appStringsFor('en');
+      final AppStrings id = appStringsFor('id');
+      final AppStrings es = appStringsFor('es');
+      for (final AppStrings s in <AppStrings>[en, id, es]) {
+        expect(s.liveBrowserTitle, isNotEmpty);
+        expect(s.liveBrowserModeUser, isNotEmpty);
+        expect(s.liveBrowserModeAgent, isNotEmpty);
+        expect(s.liveBrowserPromptHint, isNotEmpty);
+        expect(s.liveBrowserUserHint, isNotEmpty);
+        expect(s.liveBrowserSent, isNotEmpty);
+        expect(s.liveBrowserAttachFailed, isNotEmpty);
+        expect(s.liveBrowserRetry, isNotEmpty);
+        expect(s.liveBrowserRefusalBusy, isNotEmpty);
+        expect(s.liveBrowserRefusalNoKey, isNotEmpty);
+        expect(s.liveBrowserRefusalNoModel, isNotEmpty);
+        expect(s.liveBrowserRefusalSetup, isNotEmpty);
+        expect(s.liveBrowserRefusalNotFound, isNotEmpty);
+        expect(s.liveBrowserRefusalGeneric, isNotEmpty);
+      }
+    });
+
+    test('exact wording spot checks per locale', () {
+      final AppStrings en = appStringsFor('en');
+      final AppStrings id = appStringsFor('id');
+      final AppStrings es = appStringsFor('es');
+      expect(en.liveBrowserTitle, 'Live Browser');
+      expect(en.liveBrowserModeUser, 'You');
+      expect(en.liveBrowserModeAgent, 'AI');
+      expect(
+        en.liveBrowserUserHint,
+        'You hold the controls — browse freely. Switch to AI to let the '
+        'agent drive this page.',
+      );
+      expect(id.liveBrowserTitle, 'Browser Langsung');
+      expect(id.liveBrowserModeUser, 'Anda');
+      expect(id.liveBrowserRetry, 'Coba lagi');
+      expect(
+        es.liveBrowserUserHint,
+        startsWith('Tú'),
+      );
+      expect(es.liveBrowserTitle, 'Navegador en vivo');
+      expect(es.liveBrowserModeAgent, 'IA');
+    });
+  });
 }

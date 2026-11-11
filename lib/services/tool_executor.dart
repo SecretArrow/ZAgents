@@ -167,7 +167,7 @@ class ToolExecutor {
         case 'browser_scroll':
           return await _scroll(args, sessionId, browserApi);
         case 'browser_screenshot':
-          return await _screenshot(sessionId, browserApi);
+          return await _screenshot(args, sessionId, browserApi);
         case 'browser_extract_text':
           return await _extract(args, sessionId, browserApi);
         case 'run_js':
@@ -559,6 +559,35 @@ class ToolExecutor {
   ) async {
     final guard = _automationGuard('browser_click');
     if (guard != null) return guard;
+    // v1.54.0 (live browser): the model may target a NAMED context with
+    // every browser tool now, not just navigate — same honest-unsupported
+    // and cannot-open error shapes as _navigate.
+    final String contextName = args['context']?.toString().trim() ?? '';
+    if (contextName.isNotEmpty) {
+      final ContextualBrowserAutomation? manager = _contextManager;
+      if (manager == null) return _contextsUnsupported('browser_click');
+      try {
+        final result = await manager.click(
+          selector: args['selector']?.toString(),
+          text: args['text']?.toString(),
+          sessionId: sessionId,
+          contextName: contextName,
+        );
+        final ok = result['ok'] == true;
+        return ToolResult(
+          ok: ok,
+          llmOutput: jsonEncode(result),
+          displayText: result['clicked']?.toString(),
+        );
+      } on ArgumentError catch (e) {
+        return ToolResult(
+          ok: false,
+          llmOutput:
+              'browser_click: cannot open "$contextName" — '
+              '${_errorText(e)} (see browser_context_list).',
+        );
+      }
+    }
     final result = await browserApi.click(
       selector: args['selector']?.toString(),
       text: args['text']?.toString(),
@@ -579,6 +608,32 @@ class ToolExecutor {
   ) async {
     final guard = _automationGuard('browser_type');
     if (guard != null) return guard;
+    // v1.54.0 (live browser): named-context routing, see _click.
+    final String contextName = args['context']?.toString().trim() ?? '';
+    if (contextName.isNotEmpty) {
+      final ContextualBrowserAutomation? manager = _contextManager;
+      if (manager == null) return _contextsUnsupported('browser_type');
+      try {
+        final result = await manager.type(
+          args['text']?.toString() ?? '',
+          selector: args['selector']?.toString(),
+          clear: args['clear'] is bool ? args['clear'] as bool : true,
+          sessionId: sessionId,
+          contextName: contextName,
+        );
+        return ToolResult(
+          ok: result['ok'] == true,
+          llmOutput: jsonEncode(result),
+        );
+      } on ArgumentError catch (e) {
+        return ToolResult(
+          ok: false,
+          llmOutput:
+              'browser_type: cannot open "$contextName" — '
+              '${_errorText(e)} (see browser_context_list).',
+        );
+      }
+    }
     final result = await browserApi.type(
       args['text']?.toString() ?? '',
       selector: args['selector']?.toString(),
@@ -595,6 +650,31 @@ class ToolExecutor {
   ) async {
     final guard = _automationGuard('browser_scroll');
     if (guard != null) return guard;
+    // v1.54.0 (live browser): named-context routing, see _click.
+    final String contextName = args['context']?.toString().trim() ?? '';
+    if (contextName.isNotEmpty) {
+      final ContextualBrowserAutomation? manager = _contextManager;
+      if (manager == null) return _contextsUnsupported('browser_scroll');
+      try {
+        final result = await manager.scroll(
+          direction: args['direction']?.toString() ?? 'down',
+          amount: args['amount'] is int ? args['amount'] as int : 800,
+          sessionId: sessionId,
+          contextName: contextName,
+        );
+        return ToolResult(
+          ok: result['ok'] == true,
+          llmOutput: jsonEncode(result),
+        );
+      } on ArgumentError catch (e) {
+        return ToolResult(
+          ok: false,
+          llmOutput:
+              'browser_scroll: cannot open "$contextName" — '
+              '${_errorText(e)} (see browser_context_list).',
+        );
+      }
+    }
     final result = await browserApi.scroll(
       direction: args['direction']?.toString() ?? 'down',
       amount: args['amount'] is int ? args['amount'] as int : 800,
@@ -604,11 +684,46 @@ class ToolExecutor {
   }
 
   Future<ToolResult> _screenshot(
+    Map<String, dynamic> args,
     String? sessionId,
     BrowserAutomation browserApi,
   ) async {
     final guard = _automationGuard('browser_screenshot');
     if (guard != null) return guard;
+    // v1.54.0 (live browser): named-context routing, see _click.
+    final String contextName = args['context']?.toString().trim() ?? '';
+    if (contextName.isNotEmpty) {
+      final ContextualBrowserAutomation? manager = _contextManager;
+      if (manager == null) return _contextsUnsupported('browser_screenshot');
+      try {
+        final base = await resolveBaseDir(sessionId);
+        final shotsDir = '${base.path}${Platform.pathSeparator}browser_shots';
+        final path = await manager.screenshot(
+          saveDir: shotsDir,
+          sessionId: sessionId,
+          contextName: contextName,
+        );
+        if (path == null) {
+          return const ToolResult(
+            ok: false,
+            llmOutput: 'Screenshot could not be captured.',
+          );
+        }
+        return ToolResult(
+          ok: true,
+          llmOutput: 'Screenshot saved at $path',
+          screenshotPath: path,
+          displayText: 'screenshot',
+        );
+      } on ArgumentError catch (e) {
+        return ToolResult(
+          ok: false,
+          llmOutput:
+              'browser_screenshot: cannot open "$contextName" — '
+              '${_errorText(e)} (see browser_context_list).',
+        );
+      }
+    }
     final base = await resolveBaseDir(sessionId);
     final shotsDir = '${base.path}${Platform.pathSeparator}browser_shots';
     final path = await browserApi.screenshot(
@@ -639,6 +754,32 @@ class ToolExecutor {
     final maxLength = args['maxLength'] is int
         ? args['maxLength'] as int
         : 8000;
+    // v1.54.0 (live browser): named-context routing, see _click.
+    final String contextName = args['context']?.toString().trim() ?? '';
+    if (contextName.isNotEmpty) {
+      final ContextualBrowserAutomation? manager = _contextManager;
+      if (manager == null) {
+        return _contextsUnsupported('browser_extract_text');
+      }
+      try {
+        final text = await manager.extractText(
+          maxLength: maxLength,
+          sessionId: sessionId,
+          contextName: contextName,
+        );
+        return ToolResult(
+          ok: true,
+          llmOutput: text.isEmpty ? '(empty page)' : text,
+        );
+      } on ArgumentError catch (e) {
+        return ToolResult(
+          ok: false,
+          llmOutput:
+              'browser_extract_text: cannot open "$contextName" — '
+              '${_errorText(e)} (see browser_context_list).',
+        );
+      }
+    }
     final text = await browserApi.extractText(
       maxLength: maxLength,
       sessionId: sessionId,
@@ -659,6 +800,27 @@ class ToolExecutor {
     final code = args['code']?.toString() ?? '';
     if (code.trim().isEmpty) {
       return const ToolResult(ok: false, llmOutput: 'Parameter code is empty.');
+    }
+    // v1.54.0 (live browser): named-context routing, see _click.
+    final String contextName = args['context']?.toString().trim() ?? '';
+    if (contextName.isNotEmpty) {
+      final ContextualBrowserAutomation? manager = _contextManager;
+      if (manager == null) return _contextsUnsupported('run_js');
+      try {
+        final result = await manager.runJs(
+          code,
+          sessionId: sessionId,
+          contextName: contextName,
+        );
+        return ToolResult(ok: true, llmOutput: result);
+      } on ArgumentError catch (e) {
+        return ToolResult(
+          ok: false,
+          llmOutput:
+              'run_js: cannot open "$contextName" — '
+              '${_errorText(e)} (see browser_context_list).',
+        );
+      }
     }
     final result = await browserApi.runJs(code, sessionId: sessionId);
     return ToolResult(ok: true, llmOutput: result);

@@ -154,4 +154,84 @@ void main() {
     expect(find.text('Ask anything…'), findsOneWidget);
     expect(find.text('Tanya apa saja…'), findsNothing);
   });
+
+  // v1.54.0 — Spanish is a first-class locale: a third radio row in
+  // Settings (native name 'Español') flips the whole UI to the es bundle.
+  testWidgets('switching to Spanish updates settings and home', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(wrap());
+    await tester.pump();
+
+    await tester.tap(find.byIcon(Icons.settings_outlined));
+    await tester.pumpAndSettle(
+      const Duration(milliseconds: 100),
+      EnginePhase.sendSemanticsUpdate,
+      const Duration(seconds: 15),
+    );
+    expect(find.byType(SettingsScreen), findsOneWidget);
+
+    // Reveal the language section, then the Spanish radio below it.
+    await tester.dragUntilVisible(
+      find.text('LANGUAGE'),
+      find.byType(ListView),
+      const Offset(0, -250),
+    );
+    await tester.pumpAndSettle(
+      const Duration(milliseconds: 100),
+      EnginePhase.sendSemanticsUpdate,
+      const Duration(seconds: 15),
+    );
+    await tester.dragUntilVisible(
+      find.byKey(const Key('lang-es')),
+      find.byType(ListView),
+      const Offset(0, -160),
+    );
+    await tester.pumpAndSettle(
+      const Duration(milliseconds: 100),
+      EnginePhase.sendSemanticsUpdate,
+      const Duration(seconds: 15),
+    );
+    // Native name, same convention as the Bahasa Indonesia row.
+    expect(find.text('Español'), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('lang-es')));
+    await tester.pumpAndSettle(
+      const Duration(milliseconds: 100),
+      EnginePhase.sendSemanticsUpdate,
+      const Duration(seconds: 15),
+    );
+
+    // The header may have scrolled out of the lazy viewport (same as the
+    // Bahasa flow above): bring it back before asserting.
+    await tester.dragUntilVisible(
+      find.text('IDIOMA'),
+      find.byType(ListView),
+      const Offset(0, 250),
+    );
+    await tester.pumpAndSettle(
+      const Duration(milliseconds: 100),
+      EnginePhase.sendSemanticsUpdate,
+      const Duration(seconds: 15),
+    );
+
+    // Settings re-renders in Spanish immediately.
+    expect(find.text('Ajustes'), findsOneWidget);
+    expect(find.text('IDIOMA'), findsOneWidget);
+
+    // The choice is persisted in the settings controller.
+    final BuildContext context = tester.element(find.byType(SettingsScreen));
+    final ProviderContainer container = ProviderScope.containerOf(context);
+    expect(container.read(settingsProvider).languageCode, 'es');
+
+    // Go back home: composer hint is now Spanish.
+    await tester.tap(find.byType(BackButton));
+    await tester.pumpAndSettle(
+      const Duration(milliseconds: 100),
+      EnginePhase.sendSemanticsUpdate,
+      const Duration(seconds: 15),
+    );
+    expect(find.text('Pregunta lo que sea…'), findsOneWidget);
+    expect(find.text('Ask anything…'), findsNothing);
+  });
 }

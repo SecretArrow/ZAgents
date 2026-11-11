@@ -1013,6 +1013,16 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                           title: Text(strings.indonesianOption),
                           value: 'id',
                         ),
+                        // v1.54.0 — Spanish ships its full bundle
+                        // (AppStringsEs); the row follows the same
+                        // native-name convention as Bahasa Indonesia.
+                        RadioListTile<String>(
+                          key: const Key('lang-es'),
+                          contentPadding: EdgeInsets.zero,
+                          dense: true,
+                          title: Text(strings.spanishOption),
+                          value: 'es',
+                        ),
                       ],
                     ),
                   ),

@@ -2660,6 +2660,24 @@ class ChatController extends Notifier<ChatState> {
         last.content.trim().isNotEmpty;
   }
 
+  /// v1.54.0 — the wall-clock line injected into the system wire so the
+  /// model can answer "today", handle relative dates and schedule work.
+  /// Pure for tests; [offset] defaults to [DateTime.timeZoneOffset] of
+  /// [now] — pass an explicit one to pin the output in tests (half-hour
+  /// zones such as UTC+05:30 format honestly, minutes included).
+  static String systemWireDateTimeLine(DateTime now, {Duration? offset}) {
+    final Duration zone = offset ?? now.timeZoneOffset;
+    final int totalMinutes =
+        zone.isNegative ? -zone.inMinutes : zone.inMinutes;
+    String two(int n) => n.toString().padLeft(2, '0');
+    final String zoneLabel =
+        '${zone.isNegative ? '-' : '+'}'
+        '${two(totalMinutes ~/ 60)}:${two(totalMinutes % 60)}';
+    return 'Current local date/time: '
+        '${now.year}-${two(now.month)}-${two(now.day)} '
+        '${two(now.hour)}:${two(now.minute)} (UTC$zoneLabel).';
+  }
+
   /// System message: agent prompt (agent mode) + plan-first addendum +
   /// active-module context + enabled Context Manager entries merged into
   /// ONE system message (some providers reject several).
@@ -2678,6 +2696,13 @@ class ChatController extends Notifier<ChatState> {
       content.write(agentSystemPrompt);
       if (settings.planFirst) content.write(planFirstSystemPrompt);
     }
+    // v1.54.0: wall-clock context — the model has no clock of its own, so
+    // "today", relative dates and scheduled work need the local date/time
+    // in the prompt. Sits right after the identity section; the emptiness
+    // guard mirrors the Context block below (a plain-chat wire with no
+    // identity prompt starts flush instead of with a blank line).
+    if (content.isNotEmpty) content.writeln();
+    content.writeln(systemWireDateTimeLine(DateTime.now()));
     // v1.38.0: installed skills — global scope, injected so the agent
     // discovers its extended capabilities WITHOUT the user repeating the
     // install in every chat. Sync-cache read: no I/O on the wire path.

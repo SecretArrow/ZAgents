@@ -1887,4 +1887,48 @@ class AppStringsEs implements AppStrings {
   String ollamaExportSelectedDone(int count) => '$count modelos exportados.';
   @override
   String get ollamaExportNone => 'No se exportó ningún modelo.';
+
+  // -- Assistant polish (v1.54.0) ------------------------------------------
+  @override
+  String get errorOpenProviders => 'Abrir Proveedores';
+  @override
+  String get spanishOption => 'Español';
+
+  // -- Live browser (v1.54.0) ----------------------------------------------
+  @override
+  String get liveBrowserTitle => 'Navegador en vivo';
+  @override
+  String get liveBrowserModeUser => 'Tú';
+  @override
+  String get liveBrowserModeAgent => 'IA';
+  @override
+  String get liveBrowserPromptHint => 'Pide a la IA algo en esta página…';
+  @override
+  String get liveBrowserUserHint =>
+      'Tú tienes el control: navega con libertad. Cambia a IA para que el '
+      'agente conduzca esta página.';
+  @override
+  String get liveBrowserSent =>
+      'Enviado al chat: mira al agente trabajar en esta página.';
+  @override
+  String get liveBrowserAttachFailed =>
+      'No se pudo adjuntar el contexto del navegador en vivo.';
+  @override
+  String get liveBrowserRetry => 'Reintentar';
+  @override
+  String get liveBrowserRefusalBusy =>
+      'El chat está ocupado: inténtalo de nuevo en un momento.';
+  @override
+  String get liveBrowserRefusalNoKey =>
+      'Falta la API key: abre Proveedores para configurarla.';
+  @override
+  String get liveBrowserRefusalNoModel =>
+      'No hay modelo seleccionado: abre Proveedores para elegir uno.';
+  @override
+  String get liveBrowserRefusalSetup =>
+      'El chat espera una respuesta de configuración del módulo.';
+  @override
+  String get liveBrowserRefusalNotFound => 'Ese chat ya no existe.';
+  @override
+  String get liveBrowserRefusalGeneric => 'No se pudo enviar al chat.';
 }

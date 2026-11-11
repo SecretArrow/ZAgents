@@ -117,4 +117,45 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Copied'), findsNothing);
   });
+
+  testWidgets('v1.54.0: an optional action button renders before OK and '
+      'runs after the dialog closes', (WidgetTester tester) async {
+    bool acted = false;
+    await trigger(
+      tester,
+      () => showAppMessage(
+        tester.element(find.text('trigger')),
+        'HTTP 401: Unauthorized',
+        error: true,
+        actionLabel: 'Open Providers',
+        onAction: () => acted = true,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // Error + action: both buttons are offered and the error never
+    // auto-expires (the action must stay tappable).
+    await tester.pump(const Duration(seconds: 5));
+    expect(find.text('HTTP 401: Unauthorized'), findsOneWidget);
+    expect(find.byKey(const Key('app-message-action')), findsOneWidget);
+    expect(find.byKey(const Key('app-message-ok')), findsOneWidget);
+
+    // Tapping the action closes the dialog first, then runs the callback.
+    await tester.tap(find.byKey(const Key('app-message-action')));
+    await tester.pumpAndSettle();
+    expect(find.text('HTTP 401: Unauthorized'), findsNothing);
+    expect(acted, isTrue);
+  });
+
+  testWidgets('v1.54.0: without the optional params the dialog stays '
+      'single-button (old API unchanged)', (WidgetTester tester) async {
+    await trigger(
+      tester,
+      () => showAppMessage(tester.element(find.text('trigger')), 'Saved!'),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('app-message-action')), findsNothing);
+    expect(find.byKey(const Key('app-message-ok')), findsOneWidget);
+  });
 }

@@ -11,6 +11,7 @@ import '../../models/models.dart';
 import '../../services/attachment_service.dart';
 import '../../services/skill_registry.dart';
 import '../../services/speech_service.dart';
+import '../screens/browser_screen.dart';
 import '../screens/prompt_library_screen.dart';
 import '../theme.dart';
 import 'skill_selector_sheet.dart';
@@ -450,11 +451,12 @@ final composerActionsProvider =
       ComposerActionsController.new,
     );
 
-/// The four composer TOOL icons — skills / attach file / prompt library /
-/// mic — with their stable test keys ('composer-skills', 'attach-button',
-/// 'prompt-insert-button', 'mic-button') and the v1.46.0 visual states
-/// (picking spinner, red listening stop). The skills multi-select sits
-/// EXACTLY LEFT of the attach icon (v1.49.0 user requirement).
+/// The five composer TOOL icons — skills / attach file / prompt library /
+/// mic / live browser — with their stable test keys ('composer-skills',
+/// 'attach-button', 'prompt-insert-button', 'mic-button',
+/// 'composer-live-browser') and the v1.46.0 visual states (picking
+/// spinner, red listening stop). The skills multi-select sits EXACTLY LEFT
+/// of the attach icon (v1.49.0 user requirement).
 ///
 /// Rendered by the idle composer toolbar AND (compact) by the thinking
 /// footer's row during a run — same behaviour everywhere, driven by the
@@ -473,6 +475,11 @@ class ComposerToolIcons extends ConsumerWidget {
     final ComposerActionsController controller = ref.read(
       composerActionsProvider.notifier,
     );
+    // v1.54.0 — the Live Browser needs an owning chat: the 'live' context
+    // is registered per session. Without an active chat the globe stays
+    // visible but disabled (same enable/disable style as the attach icon
+    // while a pick is in flight).
+    final String? activeSessionId = ref.watch(activeSessionIdProvider);
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: <Widget>[
@@ -546,6 +553,35 @@ class ComposerToolIcons extends ConsumerWidget {
             actions.listening ? Icons.stop_rounded : Icons.mic_none_rounded,
             size: compact ? 16 : null,
             color: actions.listening ? const Color(0xFFE5484D) : context.zMuted,
+          ),
+        ),
+        // v1.54.0 — the Live Browser: hands the visible in-app browser to
+        // the agent of the ACTIVE chat (or keeps driving it manually).
+        // Appended at the END so the pinned v1.48/v1.49 icon geometry
+        // (skills immediately left of attach, mic left of the footer eye)
+        // is untouched.
+        IconButton(
+          key: const Key('composer-live-browser'),
+          tooltip: strings.liveBrowserTitle,
+          onPressed: activeSessionId == null
+              ? null
+              : () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) =>
+                          LiveBrowserScreen(sessionId: activeSessionId),
+                    ),
+                  );
+                },
+          visualDensity: compact ? VisualDensity.compact : null,
+          constraints: compact
+              ? const BoxConstraints(minWidth: 32, minHeight: 32)
+              : null,
+          padding: compact ? const EdgeInsets.all(6) : null,
+          icon: Icon(
+            Icons.travel_explore_rounded,
+            size: compact ? 16 : null,
+            color: context.zMuted,
           ),
         ),
       ],

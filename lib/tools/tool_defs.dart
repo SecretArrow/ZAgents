@@ -11,7 +11,7 @@ Guidelines:
 - Summarize page content in your own words instead of dumping raw text.
 - If a tool fails, adapt: try another selector, a different URL, or explain the limitation to the user.
 - File tools operate inside THIS chat session's private workspace. Every conversation has its own isolated workspace (like a browser private window): files, uploads and archives from other chats are never visible here. Use them for notes, reports, or data the user asks to store.
-- Browser tools are isolated per chat session too: cookies, logins and site storage captured in THIS chat are invisible to other chats, and other chats' logins are invisible here. If the user wants a different account logged in, do it inside this chat without worrying about leaking it elsewhere.
+- Browser tools are isolated per chat session too: cookies, logins and site storage captured in THIS chat are invisible to other chats, and other chats' logins are invisible here. If the user wants a different account logged in, do it inside this chat without worrying about leaking it elsewhere. Every browser tool accepts an optional "context" parameter naming a browser_context_create context to act in (e.g. the live browser context "live" while the user watches).
 - Files the user attaches are saved under uploads/ in that session workspace. Binary attachments (zip, pdf, ...) are not inlined: unzip_file archives first, then use read_file, node_run or zip_file on the extracted files. JavaScript files (.js) can be executed with node_run — require local files by relative path, e.g. require('./uploads/project/lib/util.js'). npm packages are shared across sessions, but scripts and files are not.
 - unzip_file supports encrypted archives (ZipCrypto and WinZip AES). If an archive is password-protected, ask the user for the password and call unzip_file again passing it in the password argument.
 - The node_run tool executes JavaScript in an embedded runtime with CommonJS modules. Each node_run starts a completely fresh runtime: nothing (variables, cached modules, earlier scripts or their secrets) survives between runs or across chats. If a package is missing, install it with node_install first; remove unneeded packages with node_remove to save space.
@@ -212,6 +212,11 @@ List<Map<String, dynamic>> buildAgentTools({
         'type': 'string',
         'description': 'Visible text to search for (link/button label)',
       },
+      'context': <String, dynamic>{
+        'type': 'string',
+        'description':
+            'Optional name of a context created with browser_context_create to act in (default context when omitted)',
+      },
     },
     const <String>[],
   ),
@@ -231,6 +236,11 @@ List<Map<String, dynamic>> buildAgentTools({
         'type': 'boolean',
         'description': 'Clear existing value first (default true)',
       },
+      'context': <String, dynamic>{
+        'type': 'string',
+        'description':
+            'Optional name of a context created with browser_context_create to act in (default context when omitted)',
+      },
     },
     <String>['text'],
   ),
@@ -243,11 +253,22 @@ List<Map<String, dynamic>> buildAgentTools({
       'type': 'integer',
       'description': 'Pixels to scroll (default 800)',
     },
+    'context': <String, dynamic>{
+      'type': 'string',
+      'description':
+          'Optional name of a context created with browser_context_create to act in (default context when omitted)',
+    },
   }, const <String>[]),
   _fn(
     'browser_screenshot',
     'Capture a screenshot of the current page. The image is shown to the user in the chat.',
-    <String, dynamic>{},
+    <String, dynamic>{
+      'context': <String, dynamic>{
+        'type': 'string',
+        'description':
+            'Optional name of a context created with browser_context_create to act in (default context when omitted)',
+      },
+    },
     const <String>[],
   ),
   _fn(
@@ -257,6 +278,11 @@ List<Map<String, dynamic>> buildAgentTools({
       'maxLength': <String, dynamic>{
         'type': 'integer',
         'description': 'Max characters to return (default 8000)',
+      },
+      'context': <String, dynamic>{
+        'type': 'string',
+        'description':
+            'Optional name of a context created with browser_context_create to act in (default context when omitted)',
       },
     },
     const <String>[],
@@ -268,6 +294,11 @@ List<Map<String, dynamic>> buildAgentTools({
       'code': <String, dynamic>{
         'type': 'string',
         'description': 'JavaScript source to run',
+      },
+      'context': <String, dynamic>{
+        'type': 'string',
+        'description':
+            'Optional name of a context created with browser_context_create to act in (default context when omitted)',
       },
     },
     <String>['code'],

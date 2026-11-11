@@ -856,6 +856,41 @@ abstract class AppStrings {
   String get ollamaExportSelected;
   String ollamaExportSelectedDone(int count);
   String get ollamaExportNone;
+
+  // -- Assistant polish (v1.54.0) ------------------------------------------
+  /// Error dialog: action button that jumps to the Providers screen for
+  /// auth/config failures (401/403, invalid or missing API key).
+  String get errorOpenProviders;
+
+  /// Settings language picker: Spanish native name (identical in every
+  /// locale, like "Bahasa Indonesia").
+  String get spanishOption;
+
+  // -- Live browser (v1.54.0) ----------------------------------------------
+  /// Live Browser screen title + the two driver modes of its segmented
+  /// control: 'You' = the user drives (agent ops on the live context are
+  /// refused), 'AI' = the agent drives the visible page.
+  String get liveBrowserTitle;
+  String get liveBrowserModeUser;
+  String get liveBrowserModeAgent;
+
+  /// Prompt bar (agent mode) + the user-mode hint row.
+  String get liveBrowserPromptHint;
+  String get liveBrowserUserHint;
+
+  /// Prompt-bar send feedback + the attach failure / retry card.
+  String get liveBrowserSent;
+  String get liveBrowserAttachFailed;
+  String get liveBrowserRetry;
+
+  /// Localized refusals for the prompt bar, mapped from the chat
+  /// controller's English sendToSession refusal reasons.
+  String get liveBrowserRefusalBusy;
+  String get liveBrowserRefusalNoKey;
+  String get liveBrowserRefusalNoModel;
+  String get liveBrowserRefusalSetup;
+  String get liveBrowserRefusalNotFound;
+  String get liveBrowserRefusalGeneric;
 }
 
 /// English strings (default).
@@ -2675,6 +2710,50 @@ class AppStringsEn implements AppStrings {
   String ollamaExportSelectedDone(int count) => 'Exported $count models.';
   @override
   String get ollamaExportNone => 'No models exported.';
+
+  // -- Assistant polish (v1.54.0) ------------------------------------------
+  @override
+  String get errorOpenProviders => 'Open Providers';
+  @override
+  String get spanishOption => 'Español';
+
+  // -- Live browser (v1.54.0) ----------------------------------------------
+  @override
+  String get liveBrowserTitle => 'Live Browser';
+  @override
+  String get liveBrowserModeUser => 'You';
+  @override
+  String get liveBrowserModeAgent => 'AI';
+  @override
+  String get liveBrowserPromptHint => 'Ask the AI about this page…';
+  @override
+  String get liveBrowserUserHint =>
+      'You hold the controls — browse freely. Switch to AI to let the '
+      'agent drive this page.';
+  @override
+  String get liveBrowserSent =>
+      'Sent to the chat — watch the agent work on this page.';
+  @override
+  String get liveBrowserAttachFailed =>
+      'Could not attach the live browser context.';
+  @override
+  String get liveBrowserRetry => 'Retry';
+  @override
+  String get liveBrowserRefusalBusy =>
+      'That chat is busy right now — try again in a moment.';
+  @override
+  String get liveBrowserRefusalNoKey =>
+      'No API key set — open Providers to configure one.';
+  @override
+  String get liveBrowserRefusalNoModel =>
+      'No model selected — open Providers to pick one.';
+  @override
+  String get liveBrowserRefusalSetup =>
+      'The chat is waiting for a module setup answer.';
+  @override
+  String get liveBrowserRefusalNotFound => 'That chat no longer exists.';
+  @override
+  String get liveBrowserRefusalGeneric => 'Could not send to the chat.';
 }
 
 /// Bahasa Indonesia strings.
@@ -4521,4 +4600,47 @@ class AppStringsId implements AppStrings {
   String ollamaExportSelectedDone(int count) => '$count model diekspor.';
   @override
   String get ollamaExportNone => 'Tidak ada model yang diekspor.';
+
+  // -- Assistant polish (v1.54.0) ------------------------------------------
+  @override
+  String get errorOpenProviders => 'Buka Providers';
+  @override
+  String get spanishOption => 'Español';
+
+  // -- Live browser (v1.54.0) ----------------------------------------------
+  @override
+  String get liveBrowserTitle => 'Browser Langsung';
+  @override
+  String get liveBrowserModeUser => 'Anda';
+  @override
+  String get liveBrowserModeAgent => 'AI';
+  @override
+  String get liveBrowserPromptHint => 'Minta AI bekerja di halaman ini…';
+  @override
+  String get liveBrowserUserHint =>
+      'Anda memegang kontrol — jelajahi bebas. Ganti ke AI agar agen '
+      'mengoperasikan halaman ini.';
+  @override
+  String get liveBrowserSent =>
+      'Terkirim ke chat — lihat agen bekerja di halaman ini.';
+  @override
+  String get liveBrowserAttachFailed =>
+      'Gagal melampirkan konteks browser langsung.';
+  @override
+  String get liveBrowserRetry => 'Coba lagi';
+  @override
+  String get liveBrowserRefusalBusy =>
+      'Chat sedang sibuk — coba lagi sebentar lagi.';
+  @override
+  String get liveBrowserRefusalNoKey =>
+      'API key belum diatur — buka Providers untuk mengaturnya.';
+  @override
+  String get liveBrowserRefusalNoModel =>
+      'Model belum dipilih — buka Providers untuk memilih.';
+  @override
+  String get liveBrowserRefusalSetup => 'Chat menunggu jawaban setup modul.';
+  @override
+  String get liveBrowserRefusalNotFound => 'Chat itu sudah tidak ada.';
+  @override
+  String get liveBrowserRefusalGeneric => 'Tidak bisa mengirim ke chat.';
 }
