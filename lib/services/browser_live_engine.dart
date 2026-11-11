@@ -27,9 +27,9 @@ class LiveBrowserEngine extends WebViewAutomation {
   LiveBrowserEngine({
     required bool Function() userHoldsControl,
     required Future<InAppWebViewController> Function() controller,
-    UserAgentRecord? Function()? pickUserAgent,
+    super.pickUserAgent,
   }) : _userHoldsControl = userHoldsControl,
-       super(pickUserAgent: pickUserAgent, externalController: controller);
+       super(externalController: controller);
 
   final bool Function() _userHoldsControl;
 

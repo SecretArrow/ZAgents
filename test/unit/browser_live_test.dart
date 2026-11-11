@@ -172,19 +172,18 @@ class _FakeEngine implements BrowserAutomation {
 /// the injected makeInner (their count proves headless revives) + the
 /// manager's real registry.
 class _Harness {
-  _Harness(this.store, {this.maxContexts = 4}) {
+  _Harness(this.store) {
     shared.cookies = _Jar();
     manager = ContextualBrowserAutomation(
       makeInner: () => _FakeEngine(shared),
       store: store,
       cookies: shared.cookies,
-      maxContexts: maxContexts,
+      maxContexts: 4,
     );
   }
 
   final _Shared shared = _Shared();
   final BrowserStateStore store;
-  final int maxContexts;
   late final ContextualBrowserAutomation manager;
 
   /// Headless engine created Nth (slot creation follows first use).

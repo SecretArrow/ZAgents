@@ -1,6 +1,5 @@
 import 'dart:collection';
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -316,8 +315,7 @@ class _LiveBrowserScreenState extends ConsumerState<LiveBrowserScreen> {
         ),
       ]),
       onWebViewCreated: _onWebViewCreated,
-      onLoadStop: (InAppWebViewController controller, WebUri? url) =>
-          _syncUrl(controller, url),
+      onLoadStop: _syncUrl,
       // Keeps the bar in sync with redirects and SPA history pushes.
       onUpdateVisitedHistory:
           (

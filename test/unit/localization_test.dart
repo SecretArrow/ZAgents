@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zagents/l10n/app_strings.dart';
+import 'package:zagents/l10n/app_strings_es.dart';
 import 'package:zagents/models/models.dart';
 
 void main() {

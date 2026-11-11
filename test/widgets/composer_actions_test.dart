@@ -415,7 +415,7 @@ void main() {
         tester,
         extra: <Override>[
           chatControllerProvider.overrideWith(
-            () => _ActiveSessionChatController(),
+            _ActiveSessionChatController.new,
           ),
         ],
       );
