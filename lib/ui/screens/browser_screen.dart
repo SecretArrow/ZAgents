@@ -84,8 +84,13 @@ class _LiveBrowserScreenState extends ConsumerState<LiveBrowserScreen> {
     // Attach before the view settles: the restored lastUrl must be in the
     // service state when the page area is first built. Preview mode
     // attaches too — the service's dependencies are provider overrides in
-    // tests.
-    ref.read(liveBrowserProvider.notifier).attach(widget.sessionId);
+    // tests. Deferred to the event queue on purpose: attach WRITES the
+    // provider state, and a synchronous write from initState throws
+    // Riverpod's "modified while the widget tree was building" guard.
+    Future<void>(() async {
+      if (!mounted) return;
+      await ref.read(liveBrowserProvider.notifier).attach(widget.sessionId);
+    });
   }
 
   @override

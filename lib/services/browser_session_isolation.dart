@@ -1076,9 +1076,11 @@ class ContextualBrowserAutomation implements BrowserAutomation {
             final Map<String, String> jar = await cookies.readForUrl(url);
             final OriginState merged = recorded ?? OriginState(lastUrl: url);
             merged.lastUrl = url;
-            merged.cookies
-              ..clear()
-              ..addAll(jar);
+            // ADDITIVE per-key: the jar read may know fresher cookies for
+            // the page the user browsed to (their manual session), but an
+            // empty jar must never wipe what the capture already recorded
+            // for this origin — the keys the jar does not know stay.
+            merged.cookies.addAll(jar);
             slot.state.origins[origin] = merged;
           } catch (_) {
             // Best effort: keep whatever _capture recorded.
