@@ -390,7 +390,10 @@ void main() {
       );
       expect(h.shared.created, hasLength(1));
       expect(
-        h.shared.cookies.jar['https://example.com/start']!['sid'],
+        // The revive claim writes under the origin's recorded lastUrl —
+        // the caller-supplied page from detach (the fallback fix moved it
+        // off the engine's older page), so that is the jar key.
+        h.shared.cookies.jar['https://example.com/page']!['sid'],
         'live-login',
       );
       h.manager.dispose();
