@@ -426,70 +426,75 @@ void main() {
       h.manager.dispose();
     });
 
-    test('user-mode close still records the page — the gated capture falls '
-        'back to the shared jar (v1.54.0 fix)', () async {
-      final _Harness h = _Harness(store);
-      // A real LiveBrowserEngine with the control gate SHUT (user
-      // mode): its interactive ops — including the capture JS — answer
-      // the refusal, exactly like on a device where the user holds
-      // control while closing the screen.
-      final LiveBrowserEngine gated = LiveBrowserEngine(
-        userHoldsControl: () => true,
-        controller: () async {
-          throw StateError('the webview is gone');
-        },
-      );
-      await h.manager.attachExternalContext(
-        name: 'live',
-        sessionId: 'chat-1',
-        engine: gated,
-      );
-      // The user browsed manually: the visible webview left fresh
-      // login cookies in the (process-global) jar for this page.
-      await h.shared.cookies.writeForUrl(
-        'https://example.com/profile',
-        <String, String>{'session': 'fresh-login'},
-      );
-      final bool detached = await h.manager.detachExternalContext(
-        name: 'live',
-        sessionId: 'chat-1',
-        lastUrl: 'https://example.com/profile',
-      );
-      expect(detached, isTrue);
-      final NamedContextSnapshot? saved = await store.loadNamed(
-        'chat-1',
-        'live',
-      );
-      expect(saved, isNotNull);
-      expect(saved!.lastUrl, 'https://example.com/profile');
-      final OriginState? o = saved.state.origins['https://example.com'];
-      expect(o, isNotNull, reason: 'the fallback must record the origin');
-      expect(o!.lastUrl, 'https://example.com/profile');
-      expect(
-        o.cookies['session'],
-        'fresh-login',
-        reason: 'jar cookies survive the gated capture',
-      );
-      h.manager.dispose();
-    });
+    test(
+      'user-mode close still records the page — the gated capture falls '
+      'back to the shared jar (v1.54.0 fix)',
+      () async {
+        final _Harness h = _Harness(store);
+        // A real LiveBrowserEngine with the control gate SHUT (user
+        // mode): its interactive ops — including the capture JS — answer
+        // the refusal, exactly like on a device where the user holds
+        // control while closing the screen.
+        final LiveBrowserEngine gated = LiveBrowserEngine(
+          control: () => true,
+          controller: () async {
+            throw StateError('the webview is gone');
+          },
+        );
+        await h.manager.attachExternalContext(
+          name: 'live',
+          sessionId: 'chat-1',
+          engine: gated,
+        );
+        // The user browsed manually: the visible webview left fresh
+        // login cookies in the (process-global) jar for this page.
+        await h.shared.cookies.writeForUrl(
+          'https://example.com/profile',
+          <String, String>{'session': 'fresh-login'},
+        );
+        final bool detached = await h.manager.detachExternalContext(
+          name: 'live',
+          sessionId: 'chat-1',
+          lastUrl: 'https://example.com/profile',
+        );
+        expect(detached, isTrue);
+        final NamedContextSnapshot? saved = await store.loadNamed(
+          'chat-1',
+          'live',
+        );
+        expect(saved, isNotNull);
+        expect(saved!.lastUrl, 'https://example.com/profile');
+        final OriginState? o = saved.state.origins['https://example.com'];
+        expect(o, isNotNull, reason: 'the fallback must record the origin');
+        expect(o!.lastUrl, 'https://example.com/profile');
+        expect(
+          o.cookies['session'],
+          'fresh-login',
+          reason: 'jar cookies survive the gated capture',
+        );
+        h.manager.dispose();
+      },
+    );
   });
 
   group('LiveBrowserEngine control gate', () {
-    test('all 7 interactive ops refuse while the user holds control, then '
-        'delegate once control flips back', () async {
-      // A controller source that errors immediately when FIRST touched.
-      // Built lazily on purpose: an eagerly-completed erroring future
-      // would surface as an unhandled async error during the gated
-      // phase below, when nobody has listened to it yet.
-      Future<InAppWebViewController> deadController() =>
-          Future<InAppWebViewController>.error(
-            StateError('the webview is gone'),
-          );
-      bool userHolds = true;
-      final LiveBrowserEngine engine = LiveBrowserEngine(
-        userHoldsControl: () => userHolds,
-        controller: deadController,
-      );
+    test(
+      'all 7 interactive ops refuse while the user holds control, then '
+      'delegate once control flips back',
+      () async {
+        // A controller source that errors immediately when FIRST touched.
+        // Built lazily on purpose: an eagerly-completed erroring future
+        // would surface as an unhandled async error during the gated
+        // phase below, when nobody has listened to it yet.
+        Future<InAppWebViewController> deadController() =>
+            Future<InAppWebViewController>.error(
+              StateError('the webview is gone'),
+            );
+        bool userHolds = true;
+        final LiveBrowserEngine engine = LiveBrowserEngine(
+          control: () => userHolds,
+          controller: deadController,
+        );
 
       // Gated: every op answers its standard failure shape without
       // ever touching the controller.

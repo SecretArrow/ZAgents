@@ -119,7 +119,7 @@ class LiveBrowserController extends Notifier<LiveBrowserState> {
     _controllerCompleter = Completer<InAppWebViewController>();
     try {
       final LiveBrowserEngine engine = LiveBrowserEngine(
-        userHoldsControl: () => state.mode == LiveBrowserMode.user,
+        control: () => state.mode == LiveBrowserMode.user,
         controller: _controller,
         pickUserAgent: () {
           final AppSettings settings = ref.read(settingsProvider);

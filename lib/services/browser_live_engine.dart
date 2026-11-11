@@ -24,10 +24,11 @@ import 'browser_automation.dart';
 /// verbatim).
 class LiveBrowserEngine extends WebViewAutomation {
   LiveBrowserEngine({
-    required this._userHoldsControl,
+    required bool Function() control,
     required Future<InAppWebViewController> Function() controller,
     super.pickUserAgent,
-  }) : super(externalController: controller);
+  }) : _userHoldsControl = control,
+       super(externalController: controller);
 
   final bool Function() _userHoldsControl;
 
