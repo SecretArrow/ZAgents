@@ -414,9 +414,7 @@ void main() {
       final ProviderContainer container = await pumpComposer(
         tester,
         extra: <Override>[
-          chatControllerProvider.overrideWith(
-            _ActiveSessionChatController.new,
-          ),
+          chatControllerProvider.overrideWith(_ActiveSessionChatController.new),
         ],
       );
 

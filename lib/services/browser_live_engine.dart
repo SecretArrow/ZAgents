@@ -1,6 +1,5 @@
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 
-import '../models/user_agent.dart';
 import 'browser_automation.dart';
 
 /// Live-browser engine — v1.54.0.
@@ -25,11 +24,10 @@ import 'browser_automation.dart';
 /// verbatim).
 class LiveBrowserEngine extends WebViewAutomation {
   LiveBrowserEngine({
-    required bool Function() userHoldsControl,
+    required this._userHoldsControl,
     required Future<InAppWebViewController> Function() controller,
     super.pickUserAgent,
-  }) : _userHoldsControl = userHoldsControl,
-       super(externalController: controller);
+  }) : super(externalController: controller);
 
   final bool Function() _userHoldsControl;
 
@@ -105,10 +103,7 @@ class LiveBrowserEngine extends WebViewAutomation {
   }
 
   @override
-  Future<String> extractText({
-    int maxLength = 8000,
-    String? sessionId,
-  }) async {
+  Future<String> extractText({int maxLength = 8000, String? sessionId}) async {
     if (_userHoldsControl()) return _refusal;
     return super.extractText(maxLength: maxLength, sessionId: sessionId);
   }

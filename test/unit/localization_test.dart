@@ -535,10 +535,7 @@ void main() {
       expect(id.liveBrowserTitle, 'Browser Langsung');
       expect(id.liveBrowserModeUser, 'Anda');
       expect(id.liveBrowserRetry, 'Coba lagi');
-      expect(
-        es.liveBrowserUserHint,
-        startsWith('Tú'),
-      );
+      expect(es.liveBrowserUserHint, startsWith('Tú'));
       expect(es.liveBrowserTitle, 'Navegador en vivo');
       expect(es.liveBrowserModeAgent, 'IA');
     });

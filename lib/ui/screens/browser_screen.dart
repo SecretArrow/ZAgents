@@ -199,9 +199,8 @@ class _LiveBrowserScreenState extends ConsumerState<LiveBrowserScreen> {
         ),
       ],
       selected: <LiveBrowserMode>{mode},
-      onSelectionChanged: (Set<LiveBrowserMode> selection) => ref
-          .read(liveBrowserProvider.notifier)
-          .setMode(selection.first),
+      onSelectionChanged: (Set<LiveBrowserMode> selection) =>
+          ref.read(liveBrowserProvider.notifier).setMode(selection.first),
     );
   }
 
@@ -317,12 +316,11 @@ class _LiveBrowserScreenState extends ConsumerState<LiveBrowserScreen> {
       onWebViewCreated: _onWebViewCreated,
       onLoadStop: _syncUrl,
       // Keeps the bar in sync with redirects and SPA history pushes.
-      onUpdateVisitedHistory:
-          (
-            InAppWebViewController controller,
-            WebUri? url,
-            bool? isReload,
-          ) => _syncUrl(controller, url),
+      onUpdateVisitedHistory: (
+        InAppWebViewController controller,
+        WebUri? url,
+        bool? isReload,
+      ) => _syncUrl(controller, url),
       onProgressChanged: (InAppWebViewController controller, int progress) {
         if (!mounted) return;
         setState(() => _progress = progress);

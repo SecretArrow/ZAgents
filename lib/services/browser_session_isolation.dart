@@ -946,10 +946,7 @@ class ContextualBrowserAutomation implements BrowserAutomation {
     _evictForCap(sessionId);
     // Restore snapshot: a persistent context hibernated by a previous
     // screen instance (or an eviction) resumes with its captured state.
-    final NamedContextSnapshot? saved = await store.loadNamed(
-      sessionId,
-      name,
-    );
+    final NamedContextSnapshot? saved = await store.loadNamed(sessionId, name);
     final BrowserContextInfo? existing = contextRegistry.info(key);
     if (existing != null) {
       // Re-attach (previous screen instance): keep the registry row and
@@ -1006,17 +1003,18 @@ class ContextualBrowserAutomation implements BrowserAutomation {
     // caller's external one, never a headless _makeInner()). loaded=true
     // so _ensureLoaded never re-reads the file; the state is pre-applied
     // so the first op's _claimOrigin restores the context's cookies.
-    final _ContextSlot slot = _ContextSlot(
-      key: key,
-      inner: engine,
-      ephemeral: false,
-      namedContext: name,
-      namedPersistent: true,
-    )
-      ..sessionId = sessionId
-      ..namedCreatedAt = saved?.createdAt ?? info.createdAt
-      ..state = saved?.state ?? BrowserState()
-      ..loaded = true;
+    final _ContextSlot slot =
+        _ContextSlot(
+            key: key,
+            inner: engine,
+            ephemeral: false,
+            namedContext: name,
+            namedPersistent: true,
+          )
+          ..sessionId = sessionId
+          ..namedCreatedAt = saved?.createdAt ?? info.createdAt
+          ..state = saved?.state ?? BrowserState()
+          ..loaded = true;
     _slots[key] = slot;
     return _namedContextInfo(info);
   }
@@ -1076,8 +1074,7 @@ class ContextualBrowserAutomation implements BrowserAutomation {
         if (recorded == null || recorded.lastUrl != url) {
           try {
             final Map<String, String> jar = await cookies.readForUrl(url);
-            final OriginState merged =
-                recorded ?? OriginState(lastUrl: url);
+            final OriginState merged = recorded ?? OriginState(lastUrl: url);
             merged.lastUrl = url;
             merged.cookies
               ..clear()

@@ -6,8 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:zagents/di.dart';
 import 'package:zagents/main.dart';
 import 'package:zagents/models/models.dart';
-import 'package:zagents/services/agent_controller.dart'
-    show ChatController;
+import 'package:zagents/services/agent_controller.dart' show ChatController;
 import 'package:zagents/ui/screens/providers_screen.dart';
 
 import '../support/test_doubles.dart';

@@ -214,8 +214,7 @@ List<Map<String, dynamic>> buildAgentTools({
       },
       'context': <String, dynamic>{
         'type': 'string',
-        'description':
-            'Optional name of a context created with browser_context_create to act in (default context when omitted)',
+        'description': 'Optional name of a context created with browser_context_create to act in (default context when omitted)',
       },
     },
     const <String>[],
@@ -238,8 +237,7 @@ List<Map<String, dynamic>> buildAgentTools({
       },
       'context': <String, dynamic>{
         'type': 'string',
-        'description':
-            'Optional name of a context created with browser_context_create to act in (default context when omitted)',
+        'description': 'Optional name of a context created with browser_context_create to act in (default context when omitted)',
       },
     },
     <String>['text'],
@@ -255,8 +253,7 @@ List<Map<String, dynamic>> buildAgentTools({
     },
     'context': <String, dynamic>{
       'type': 'string',
-      'description':
-          'Optional name of a context created with browser_context_create to act in (default context when omitted)',
+      'description': 'Optional name of a context created with browser_context_create to act in (default context when omitted)',
     },
   }, const <String>[]),
   _fn(
@@ -265,8 +262,7 @@ List<Map<String, dynamic>> buildAgentTools({
     <String, dynamic>{
       'context': <String, dynamic>{
         'type': 'string',
-        'description':
-            'Optional name of a context created with browser_context_create to act in (default context when omitted)',
+        'description': 'Optional name of a context created with browser_context_create to act in (default context when omitted)',
       },
     },
     const <String>[],
@@ -281,8 +277,7 @@ List<Map<String, dynamic>> buildAgentTools({
       },
       'context': <String, dynamic>{
         'type': 'string',
-        'description':
-            'Optional name of a context created with browser_context_create to act in (default context when omitted)',
+        'description': 'Optional name of a context created with browser_context_create to act in (default context when omitted)',
       },
     },
     const <String>[],
@@ -297,8 +292,7 @@ List<Map<String, dynamic>> buildAgentTools({
       },
       'context': <String, dynamic>{
         'type': 'string',
-        'description':
-            'Optional name of a context created with browser_context_create to act in (default context when omitted)',
+        'description': 'Optional name of a context created with browser_context_create to act in (default context when omitted)',
       },
     },
     <String>['code'],

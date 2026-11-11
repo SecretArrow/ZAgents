@@ -345,11 +345,10 @@ void main() {
           'name': 'live',
         }, sessionId: 'chat-1');
         // Boot the named slot with a navigation first.
-        await executor.execute(
-          'browser_navigate',
-          <String, dynamic>{'url': 'https://a.test/', 'context': 'live'},
-          sessionId: 'chat-1',
-        );
+        await executor.execute('browser_navigate', <String, dynamic>{
+          'url': 'https://a.test/',
+          'context': 'live',
+        }, sessionId: 'chat-1');
         expect(h.shared.created, hasLength(1));
         final int before = h.shared.created.length;
         final ToolResult click = await executor.execute(
@@ -428,14 +427,8 @@ void main() {
                 'browser_scroll',
                 <String, dynamic>{'direction': 'up', 'context': 'live'},
               ),
-              (
-                'browser_screenshot',
-                <String, dynamic>{'context': 'live'},
-              ),
-              (
-                'browser_extract_text',
-                <String, dynamic>{'context': 'live'},
-              ),
+              ('browser_screenshot', <String, dynamic>{'context': 'live'}),
+              ('browser_extract_text', <String, dynamic>{'context': 'live'}),
               ('run_js', <String, dynamic>{'code': '1', 'context': 'live'}),
             ]) {
           final ToolResult result = await single.execute(

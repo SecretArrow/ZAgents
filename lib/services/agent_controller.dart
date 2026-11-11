@@ -2667,8 +2667,7 @@ class ChatController extends Notifier<ChatState> {
   /// zones such as UTC+05:30 format honestly, minutes included).
   static String systemWireDateTimeLine(DateTime now, {Duration? offset}) {
     final Duration zone = offset ?? now.timeZoneOffset;
-    final int totalMinutes =
-        zone.isNegative ? -zone.inMinutes : zone.inMinutes;
+    final int totalMinutes = zone.isNegative ? -zone.inMinutes : zone.inMinutes;
     String two(int n) => n.toString().padLeft(2, '0');
     final String zoneLabel =
         '${zone.isNegative ? '-' : '+'}'

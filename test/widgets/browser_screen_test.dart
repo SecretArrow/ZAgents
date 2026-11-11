@@ -42,9 +42,7 @@ class _RecordingContextualAutomation extends ContextualBrowserAutomation {
           '${dir.path}${Platform.pathSeparator}shots',
           writeScreenshot: false,
         ),
-        store: BrowserStateStore(
-          rootFor: (String? sessionId) async => dir,
-        ),
+        store: BrowserStateStore(rootFor: (String? sessionId) async => dir),
         cookies: const _NoopCookieGateway(),
       );
 
@@ -174,10 +172,7 @@ void main() {
                 zLocalizationsDelegate,
               ],
               supportedLocales: const <Locale>[Locale('en'), Locale('id')],
-              home: const LiveBrowserScreen(
-                sessionId: 'sess-1',
-                preview: true,
-              ),
+              home: const LiveBrowserScreen(sessionId: 'sess-1', preview: true),
             );
           },
         ),
@@ -187,15 +182,13 @@ void main() {
     return container;
   }
 
-  TextEditingController urlField(WidgetTester tester) =>
-      tester
-          .widget<TextField>(find.byKey(const Key('live-browser-url')))
-          .controller!;
+  TextEditingController urlField(WidgetTester tester) => tester
+      .widget<TextField>(find.byKey(const Key('live-browser-url')))
+      .controller!;
 
-  TextEditingController promptField(WidgetTester tester) =>
-      tester
-          .widget<TextField>(find.byKey(const Key('live-browser-prompt')))
-          .controller!;
+  TextEditingController promptField(WidgetTester tester) => tester
+      .widget<TextField>(find.byKey(const Key('live-browser-prompt')))
+      .controller!;
 
   testWidgets('renders the chrome, restores the last URL into the bar and '
       'starts in user mode (hint row, no prompt bar)', (
@@ -226,8 +219,9 @@ void main() {
     expect(find.byKey(const Key('live-browser-preview')), findsOneWidget);
   });
 
-  testWidgets('switching to AI swaps the hint row for the prompt bar',
-      (WidgetTester tester) async {
+  testWidgets('switching to AI swaps the hint row for the prompt bar', (
+    WidgetTester tester,
+  ) async {
     final ProviderContainer container = await pumpScreen(
       tester,
       automation: _RecordingContextualAutomation(tempDir),
@@ -315,10 +309,7 @@ void main() {
 
     await tester.tap(find.byKey(const Key('live-browser-mode-agent')));
     await tester.pumpAndSettle();
-    await tester.enterText(
-      find.byKey(const Key('live-browser-prompt')),
-      '   ',
-    );
+    await tester.enterText(find.byKey(const Key('live-browser-prompt')), '   ');
     await tester.tap(find.byKey(const Key('live-browser-send')));
     await tester.pumpAndSettle();
 
@@ -337,8 +328,10 @@ void main() {
     );
 
     expect(find.byKey(const Key('live-browser-attach-error')), findsOneWidget);
-    expect(find.text(const AppStringsEn().liveBrowserAttachFailed),
-        findsOneWidget);
+    expect(
+      find.text(const AppStringsEn().liveBrowserAttachFailed),
+      findsOneWidget,
+    );
     expect(find.byKey(const Key('live-browser-retry')), findsOneWidget);
     expect(find.byKey(const Key('live-browser-preview')), findsNothing);
     expect(container.read(liveBrowserProvider).attached, isFalse);

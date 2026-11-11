@@ -89,8 +89,8 @@ class LiveBrowserController extends Notifier<LiveBrowserState> {
   /// The controller seam handed to the engine: awaits the visible
   /// WebView's controller (see [onWebViewCreated]).
   Future<InAppWebViewController> _controller() {
-    final Completer<InAppWebViewController> completer =
-        _controllerCompleter ??= Completer<InAppWebViewController>();
+    final Completer<InAppWebViewController> completer = _controllerCompleter ??=
+        Completer<InAppWebViewController>();
     return completer.future;
   }
 
@@ -123,9 +123,7 @@ class LiveBrowserController extends Notifier<LiveBrowserState> {
         controller: _controller,
         pickUserAgent: () {
           final AppSettings settings = ref.read(settingsProvider);
-          return ref
-              .read(userAgentManagerProvider)
-              .resolve(settings.uaMode);
+          return ref.read(userAgentManagerProvider).resolve(settings.uaMode);
         },
       );
       final Map<String, dynamic> info = await automation.attachExternalContext(
@@ -166,8 +164,8 @@ class LiveBrowserController extends Notifier<LiveBrowserState> {
   /// Completes the engine's controller seam with the real WebView
   /// controller (called by the screen's onWebViewCreated).
   void onWebViewCreated(InAppWebViewController controller) {
-    final Completer<InAppWebViewController> completer =
-        _controllerCompleter ??= Completer<InAppWebViewController>();
+    final Completer<InAppWebViewController> completer = _controllerCompleter ??=
+        Completer<InAppWebViewController>();
     if (!completer.isCompleted) {
       completer.complete(controller);
     }

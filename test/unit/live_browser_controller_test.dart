@@ -46,9 +46,7 @@ class _RecordingContextualAutomation extends ContextualBrowserAutomation {
           '${dir.path}${Platform.pathSeparator}shots',
           writeScreenshot: false,
         ),
-        store: BrowserStateStore(
-          rootFor: (String? sessionId) async => dir,
-        ),
+        store: BrowserStateStore(rootFor: (String? sessionId) async => dir),
         cookies: const _NoopCookieGateway(),
       );
 
@@ -211,8 +209,7 @@ void main() {
       expect(state.attachError, contains('engine unavailable'));
     });
 
-    test('a non-contextual automation is refused with a clear error',
-        () async {
+    test('a non-contextual automation is refused with a clear error', () async {
       final ProviderContainer c = ProviderContainer(
         overrides: <Override>[
           settingsRepositoryProvider.overrideWithValue(
@@ -248,9 +245,7 @@ void main() {
       expect(c.read(liveBrowserProvider).mode, LiveBrowserMode.user);
       final LiveBrowserEngine engine =
           automation.attachEngines.single as LiveBrowserEngine;
-      final BrowserPageInfo refused = await engine.navigate(
-        'https://x.test/',
-      );
+      final BrowserPageInfo refused = await engine.navigate('https://x.test/');
       expect(refused.error, contains('user is driving'));
     });
 
@@ -312,20 +307,22 @@ void main() {
       expect(state.sessionId, isNull);
     });
 
-    test('a blank current URL is reported as null (nothing to restore)',
-        () async {
-      final _RecordingContextualAutomation automation =
-          _RecordingContextualAutomation(tempDir);
-      final ProviderContainer c = container(automation);
-      final LiveBrowserController controller = c.read(
-        liveBrowserProvider.notifier,
-      );
-      await controller.attach('sess-1');
+    test(
+      'a blank current URL is reported as null (nothing to restore)',
+      () async {
+        final _RecordingContextualAutomation automation =
+            _RecordingContextualAutomation(tempDir);
+        final ProviderContainer c = container(automation);
+        final LiveBrowserController controller = c.read(
+          liveBrowserProvider.notifier,
+        );
+        await controller.attach('sess-1');
 
-      await controller.detach('   ');
+        await controller.detach('   ');
 
-      expect(automation.detachLastUrls, <String?>[null]);
-    });
+        expect(automation.detachLastUrls, <String?>[null]);
+      },
+    );
 
     test('a never-created controller seam is errored so straggler ops '
         'fail fast instead of hanging', () async {
@@ -352,8 +349,7 @@ void main() {
       expect(await outcome, isA<StateError>());
     });
 
-    test('is idempotent: a second back press records nothing extra',
-        () async {
+    test('is idempotent: a second back press records nothing extra', () async {
       final _RecordingContextualAutomation automation =
           _RecordingContextualAutomation(tempDir);
       final ProviderContainer c = container(automation);
@@ -411,10 +407,7 @@ void main() {
         title: 'X Test',
       );
 
-      expect(
-        refusal,
-        'That chat is busy right now — try again in a moment.',
-      );
+      expect(refusal, 'That chat is busy right now — try again in a moment.');
       expect(chat.sentTo, <String?>['sess-9']);
       expect(chat.sentTexts.single, startsWith('[live browser | X Test]'));
       expect(chat.sentTexts.single, contains('context: "live"'));
@@ -478,8 +471,11 @@ void main() {
         en.liveBrowserRefusalNoModel,
       );
       expect(
-        LiveBrowserController.refusalMessage(en, 'chat waiting for module '
-            'setup'),
+        LiveBrowserController.refusalMessage(
+          en,
+          'chat waiting for module '
+          'setup',
+        ),
         en.liveBrowserRefusalSetup,
       );
       expect(

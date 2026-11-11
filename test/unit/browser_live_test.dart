@@ -270,140 +270,131 @@ void main() {
       },
     );
 
-    test(
-      're-attach while alive hibernates the old slot, keeps ONE row, '
-      'routes to the new engine',
-      () async {
-        final _Harness h = _Harness(store);
-        final _FakeEngine a = h.externalEngine(
-          siteCookies: <String, String>{'sid': 'A-login'},
-        );
-        await h.manager.attachExternalContext(
-          name: 'live',
-          sessionId: 'chat-1',
-          engine: a,
-        );
-        await h.manager.navigate(
-          'https://x.test/home',
-          sessionId: 'chat-1',
-          contextName: 'live',
-        );
+    test('re-attach while alive hibernates the old slot, keeps ONE row, '
+        'routes to the new engine', () async {
+      final _Harness h = _Harness(store);
+      final _FakeEngine a = h.externalEngine(
+        siteCookies: <String, String>{'sid': 'A-login'},
+      );
+      await h.manager.attachExternalContext(
+        name: 'live',
+        sessionId: 'chat-1',
+        engine: a,
+      );
+      await h.manager.navigate(
+        'https://x.test/home',
+        sessionId: 'chat-1',
+        contextName: 'live',
+      );
 
-        final _FakeEngine b = h.externalEngine();
-        final Map<String, dynamic> info = await h.manager.attachExternalContext(
-          name: 'live',
-          sessionId: 'chat-1',
-          engine: b,
-        );
-        // Async teardown of the old slot — let it land.
-        await Future<void>.delayed(const Duration(milliseconds: 50));
-        expect(info['name'], 'live');
-        expect(
-          info['originCount'],
-          1,
-          reason: 'B\'s slot carries A\'s captured state',
-        );
-        expect(a.disposed, isTrue, reason: 'the old engine was dropped');
-        // The hibernation file holds A's captured cookie.
-        final NamedContextSnapshot? saved = await store.loadNamed(
-          'chat-1',
-          'live',
-        );
-        expect(saved, isNotNull);
-        expect(
-          saved!.state.origins['https://x.test']!.cookies['sid'],
-          'A-login',
-        );
-        // The registry kept exactly ONE row (no double registration).
-        expect(h.manager.contextRegistry.list('chat-1'), hasLength(1));
+      final _FakeEngine b = h.externalEngine();
+      final Map<String, dynamic> info = await h.manager.attachExternalContext(
+        name: 'live',
+        sessionId: 'chat-1',
+        engine: b,
+      );
+      // Async teardown of the old slot — let it land.
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      expect(info['name'], 'live');
+      expect(
+        info['originCount'],
+        1,
+        reason: 'B\'s slot carries A\'s captured state',
+      );
+      expect(a.disposed, isTrue, reason: 'the old engine was dropped');
+      // The hibernation file holds A's captured cookie.
+      final NamedContextSnapshot? saved = await store.loadNamed(
+        'chat-1',
+        'live',
+      );
+      expect(saved, isNotNull);
+      expect(saved!.state.origins['https://x.test']!.cookies['sid'], 'A-login');
+      // The registry kept exactly ONE row (no double registration).
+      expect(h.manager.contextRegistry.list('chat-1'), hasLength(1));
 
-        // New ops route to B, never to A again.
-        await h.manager.click(
-          selector: 'a.next',
-          sessionId: 'chat-1',
-          contextName: 'live',
-        );
-        expect(b.calls, contains('click:a.next'));
-        expect(a.calls, isNot(contains('click:a.next')));
-        expect(h.shared.created, isEmpty);
-        h.manager.dispose();
-      },
-    );
+      // New ops route to B, never to A again.
+      await h.manager.click(
+        selector: 'a.next',
+        sessionId: 'chat-1',
+        contextName: 'live',
+      );
+      expect(b.calls, contains('click:a.next'));
+      expect(a.calls, isNot(contains('click:a.next')));
+      expect(h.shared.created, isEmpty);
+      h.manager.dispose();
+    });
   });
 
   group('detachExternalContext', () {
-    test(
-      'captures state under the mutex, hibernates with the caller URL, '
-      'keeps the row, and later ops revive headlessly',
-      () async {
-        final _Harness h = _Harness(store);
-        final _FakeEngine ext = h.externalEngine(
-          siteCookies: <String, String>{'sid': 'live-login'},
-        );
-        await h.manager.attachExternalContext(
+    test('captures state under the mutex, hibernates with the caller URL, '
+        'keeps the row, and later ops revive headlessly', () async {
+      final _Harness h = _Harness(store);
+      final _FakeEngine ext = h.externalEngine(
+        siteCookies: <String, String>{'sid': 'live-login'},
+      );
+      await h.manager.attachExternalContext(
+        name: 'live',
+        sessionId: 'chat-1',
+        engine: ext,
+      );
+      await h.manager.navigate(
+        'https://example.com/start',
+        sessionId: 'chat-1',
+        contextName: 'live',
+      );
+
+      // The user then browsed on to another page OUTSIDE engine ops —
+      // detach is told the URL the visible webview is showing.
+      final bool detached = await h.manager.detachExternalContext(
+        name: 'live',
+        sessionId: 'chat-1',
+        lastUrl: 'https://example.com/page',
+      );
+      expect(detached, isTrue);
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      expect(ext.disposed, isFalse, reason: 'the widget owns the webview');
+
+      // The hibernation file carries the caller-supplied lastUrl plus
+      // the captured state.
+      final NamedContextSnapshot? saved = await store.loadNamed(
+        'chat-1',
+        'live',
+      );
+      expect(saved, isNotNull);
+      expect(saved!.lastUrl, 'https://example.com/page');
+      expect(
+        saved.state.origins['https://example.com']!.cookies['sid'],
+        'live-login',
+      );
+      // The registry row SURVIVES (browser_context_list still shows it).
+      expect(h.manager.contextRegistry.list('chat-1'), hasLength(1));
+      // Nothing left to detach — the slot is gone.
+      expect(
+        await h.manager.detachExternalContext(
           name: 'live',
           sessionId: 'chat-1',
-          engine: ext,
-        );
-        await h.manager.navigate(
-          'https://example.com/start',
-          sessionId: 'chat-1',
-          contextName: 'live',
-        );
+        ),
+        isFalse,
+      );
 
-        // The user then browsed on to another page OUTSIDE engine ops —
-        // detach is told the URL the visible webview is showing.
-        final bool detached = await h.manager.detachExternalContext(
-          name: 'live',
-          sessionId: 'chat-1',
-          lastUrl: 'https://example.com/page',
-        );
-        expect(detached, isTrue);
-        await Future<void>.delayed(const Duration(milliseconds: 50));
-        expect(ext.disposed, isFalse, reason: 'the widget owns the webview');
-
-        // The hibernation file carries the caller-supplied lastUrl plus
-        // the captured state.
-        final NamedContextSnapshot? saved = await store.loadNamed(
-          'chat-1',
-          'live',
-        );
-        expect(saved, isNotNull);
-        expect(saved!.lastUrl, 'https://example.com/page');
-        expect(
-          saved.state.origins['https://example.com']!.cookies['sid'],
-          'live-login',
-        );
-        // The registry row SURVIVES (browser_context_list still shows it).
-        expect(h.manager.contextRegistry.list('chat-1'), hasLength(1));
-        // Nothing left to detach — the slot is gone.
-        expect(
-          await h.manager.detachExternalContext(
-            name: 'live',
-            sessionId: 'chat-1',
-          ),
-          isFalse,
-        );
-
-        // A later op revives the context HEADLESSLY: a fresh makeInner
-        // engine boots (creation count proves it) and _ensureLoaded
-        // restores the captured cookie into the shared jar — the revived
-        // engine has NO site cookies of its own, only the restore can
-        // supply 'sid'.
-        expect(h.shared.created, isEmpty);
-        await h.manager.navigate(
-          'https://example.com/revive',
-          sessionId: 'chat-1',
-          contextName: 'live',
-        );
-        expect(h.shared.created, hasLength(1));
-        expect(
-          h.shared.cookies.jar['https://example.com/start']!['sid'],
-          'live-login',
-        );
-        h.manager.dispose();
-      },
-    );
+      // A later op revives the context HEADLESSLY: a fresh makeInner
+      // engine boots (creation count proves it) and _ensureLoaded
+      // restores the captured cookie into the shared jar — the revived
+      // engine has NO site cookies of its own, only the restore can
+      // supply 'sid'.
+      expect(h.shared.created, isEmpty);
+      await h.manager.navigate(
+        'https://example.com/revive',
+        sessionId: 'chat-1',
+        contextName: 'live',
+      );
+      expect(h.shared.created, hasLength(1));
+      expect(
+        h.shared.cookies.jar['https://example.com/start']!['sid'],
+        'live-login',
+      );
+      h.manager.dispose();
+    });
 
     test('detach with no live slot or an unknown name returns false', () async {
       final _Harness h = _Harness(store);
@@ -435,153 +426,144 @@ void main() {
       h.manager.dispose();
     });
 
-    test(
-      'user-mode close still records the page — the gated capture falls '
-      'back to the shared jar (v1.54.0 fix)',
-      () async {
-        final _Harness h = _Harness(store);
-        // A real LiveBrowserEngine with the control gate SHUT (user
-        // mode): its interactive ops — including the capture JS — answer
-        // the refusal, exactly like on a device where the user holds
-        // control while closing the screen.
-        final LiveBrowserEngine gated = LiveBrowserEngine(
-          userHoldsControl: () => true,
-          controller: () async {
-            throw StateError('the webview is gone');
-          },
-        );
-        await h.manager.attachExternalContext(
-          name: 'live',
-          sessionId: 'chat-1',
-          engine: gated,
-        );
-        // The user browsed manually: the visible webview left fresh
-        // login cookies in the (process-global) jar for this page.
-        await h.shared.cookies.writeForUrl(
-          'https://example.com/profile',
-          <String, String>{'session': 'fresh-login'},
-        );
-        final bool detached = await h.manager.detachExternalContext(
-          name: 'live',
-          sessionId: 'chat-1',
-          lastUrl: 'https://example.com/profile',
-        );
-        expect(detached, isTrue);
-        final NamedContextSnapshot? saved = await store.loadNamed(
-          'chat-1',
-          'live',
-        );
-        expect(saved, isNotNull);
-        expect(saved!.lastUrl, 'https://example.com/profile');
-        final OriginState? o = saved.state.origins['https://example.com'];
-        expect(o, isNotNull, reason: 'the fallback must record the origin');
-        expect(o!.lastUrl, 'https://example.com/profile');
-        expect(
-          o.cookies['session'],
-          'fresh-login',
-          reason: 'jar cookies survive the gated capture',
-        );
-        h.manager.dispose();
-      },
-    );
+    test('user-mode close still records the page — the gated capture falls '
+        'back to the shared jar (v1.54.0 fix)', () async {
+      final _Harness h = _Harness(store);
+      // A real LiveBrowserEngine with the control gate SHUT (user
+      // mode): its interactive ops — including the capture JS — answer
+      // the refusal, exactly like on a device where the user holds
+      // control while closing the screen.
+      final LiveBrowserEngine gated = LiveBrowserEngine(
+        userHoldsControl: () => true,
+        controller: () async {
+          throw StateError('the webview is gone');
+        },
+      );
+      await h.manager.attachExternalContext(
+        name: 'live',
+        sessionId: 'chat-1',
+        engine: gated,
+      );
+      // The user browsed manually: the visible webview left fresh
+      // login cookies in the (process-global) jar for this page.
+      await h.shared.cookies.writeForUrl(
+        'https://example.com/profile',
+        <String, String>{'session': 'fresh-login'},
+      );
+      final bool detached = await h.manager.detachExternalContext(
+        name: 'live',
+        sessionId: 'chat-1',
+        lastUrl: 'https://example.com/profile',
+      );
+      expect(detached, isTrue);
+      final NamedContextSnapshot? saved = await store.loadNamed(
+        'chat-1',
+        'live',
+      );
+      expect(saved, isNotNull);
+      expect(saved!.lastUrl, 'https://example.com/profile');
+      final OriginState? o = saved.state.origins['https://example.com'];
+      expect(o, isNotNull, reason: 'the fallback must record the origin');
+      expect(o!.lastUrl, 'https://example.com/profile');
+      expect(
+        o.cookies['session'],
+        'fresh-login',
+        reason: 'jar cookies survive the gated capture',
+      );
+      h.manager.dispose();
+    });
   });
 
   group('LiveBrowserEngine control gate', () {
-    test(
-      'all 7 interactive ops refuse while the user holds control, then '
-      'delegate once control flips back',
-      () async {
-        // A controller source that errors immediately when FIRST touched.
-        // Built lazily on purpose: an eagerly-completed erroring future
-        // would surface as an unhandled async error during the gated
-        // phase below, when nobody has listened to it yet.
-        Future<InAppWebViewController> deadController() =>
-            Future<InAppWebViewController>.error(
-              StateError('the webview is gone'),
-            );
-        bool userHolds = true;
-        final LiveBrowserEngine engine = LiveBrowserEngine(
-          userHoldsControl: () => userHolds,
-          controller: deadController,
-        );
+    test('all 7 interactive ops refuse while the user holds control, then '
+        'delegate once control flips back', () async {
+      // A controller source that errors immediately when FIRST touched.
+      // Built lazily on purpose: an eagerly-completed erroring future
+      // would surface as an unhandled async error during the gated
+      // phase below, when nobody has listened to it yet.
+      Future<InAppWebViewController> deadController() =>
+          Future<InAppWebViewController>.error(
+            StateError('the webview is gone'),
+          );
+      bool userHolds = true;
+      final LiveBrowserEngine engine = LiveBrowserEngine(
+        userHoldsControl: () => userHolds,
+        controller: deadController,
+      );
 
-        // Gated: every op answers its standard failure shape without
-        // ever touching the controller.
-        final BrowserPageInfo nav = await engine.navigate('https://x.test/');
-        expect(nav.error, contains('user is driving'));
-        final Map<String, dynamic> click = await engine.click(selector: 'a');
-        expect(click['ok'], isFalse);
-        expect(click['error'], contains('user is driving'));
-        final Map<String, dynamic> type = await engine.type('hello');
-        expect(type['ok'], isFalse);
-        expect(type['error'], contains('user is driving'));
-        final Map<String, dynamic> scroll = await engine.scroll();
-        expect(scroll['ok'], isFalse);
-        expect(scroll['error'], contains('user is driving'));
-        expect(await engine.screenshot(saveDir: temp.path), isNull);
-        expect(await engine.extractText(), contains('user is driving'));
-        expect(await engine.runJs('1+1'), contains('user is driving'));
+      // Gated: every op answers its standard failure shape without
+      // ever touching the controller.
+      final BrowserPageInfo nav = await engine.navigate('https://x.test/');
+      expect(nav.error, contains('user is driving'));
+      final Map<String, dynamic> click = await engine.click(selector: 'a');
+      expect(click['ok'], isFalse);
+      expect(click['error'], contains('user is driving'));
+      final Map<String, dynamic> type = await engine.type('hello');
+      expect(type['ok'], isFalse);
+      expect(type['error'], contains('user is driving'));
+      final Map<String, dynamic> scroll = await engine.scroll();
+      expect(scroll['ok'], isFalse);
+      expect(scroll['error'], contains('user is driving'));
+      expect(await engine.screenshot(saveDir: temp.path), isNull);
+      expect(await engine.extractText(), contains('user is driving'));
+      expect(await engine.runJs('1+1'), contains('user is driving'));
 
-        // Control flips back: navigate now delegates PAST the gate — the
-        // errored controller future surfaces as the usual navigation
-        // failure, proving super.navigate ran.
-        userHolds = false;
-        final BrowserPageInfo delegated = await engine.navigate(
-          'https://x.test/',
-        );
-        expect(delegated.error, contains('Navigation failed'));
-        engine.dispose();
-      },
-    );
+      // Control flips back: navigate now delegates PAST the gate — the
+      // errored controller future surfaces as the usual navigation
+      // failure, proving super.navigate ran.
+      userHolds = false;
+      final BrowserPageInfo delegated = await engine.navigate(
+        'https://x.test/',
+      );
+      expect(delegated.error, contains('Navigation failed'));
+      engine.dispose();
+    });
   });
 
   group('named-context routing for every tool', () {
-    test(
-      'click/type/scroll/screenshot/extractText/runJs reach the external '
-      'slot\'s engine',
-      () async {
-        final _Harness h = _Harness(store);
-        final _FakeEngine ext = h.externalEngine();
-        await h.manager.attachExternalContext(
-          name: 'live',
-          sessionId: 'chat-1',
-          engine: ext,
-        );
-        await h.manager.click(
-          selector: 'a.next',
-          sessionId: 'chat-1',
-          contextName: 'live',
-        );
-        expect(ext.calls, contains('click:a.next'));
-        await h.manager.type(
-          'hello',
-          selector: 'input',
-          sessionId: 'chat-1',
-          contextName: 'live',
-        );
-        expect(ext.calls, contains('type:hello'));
-        await h.manager.scroll(
-          direction: 'up',
-          amount: 300,
-          sessionId: 'chat-1',
-          contextName: 'live',
-        );
-        expect(ext.calls, contains('scroll:up:300'));
-        await h.manager.screenshot(
-          saveDir: temp.path,
-          sessionId: 'chat-1',
-          contextName: 'live',
-        );
-        expect(ext.calls, contains('screenshot'));
-        await h.manager.extractText(sessionId: 'chat-1', contextName: 'live');
-        expect(ext.calls, contains('extractText'));
-        await h.manager.runJs('2+2', sessionId: 'chat-1', contextName: 'live');
-        expect(ext.calls, contains('runJs:2+2'));
-        // Everything ran on the EXTERNAL engine — no headless boot.
-        expect(h.shared.created, isEmpty);
-        h.manager.dispose();
-      },
-    );
+    test('click/type/scroll/screenshot/extractText/runJs reach the external '
+        'slot\'s engine', () async {
+      final _Harness h = _Harness(store);
+      final _FakeEngine ext = h.externalEngine();
+      await h.manager.attachExternalContext(
+        name: 'live',
+        sessionId: 'chat-1',
+        engine: ext,
+      );
+      await h.manager.click(
+        selector: 'a.next',
+        sessionId: 'chat-1',
+        contextName: 'live',
+      );
+      expect(ext.calls, contains('click:a.next'));
+      await h.manager.type(
+        'hello',
+        selector: 'input',
+        sessionId: 'chat-1',
+        contextName: 'live',
+      );
+      expect(ext.calls, contains('type:hello'));
+      await h.manager.scroll(
+        direction: 'up',
+        amount: 300,
+        sessionId: 'chat-1',
+        contextName: 'live',
+      );
+      expect(ext.calls, contains('scroll:up:300'));
+      await h.manager.screenshot(
+        saveDir: temp.path,
+        sessionId: 'chat-1',
+        contextName: 'live',
+      );
+      expect(ext.calls, contains('screenshot'));
+      await h.manager.extractText(sessionId: 'chat-1', contextName: 'live');
+      expect(ext.calls, contains('extractText'));
+      await h.manager.runJs('2+2', sessionId: 'chat-1', contextName: 'live');
+      expect(ext.calls, contains('runJs:2+2'));
+      // Everything ran on the EXTERNAL engine — no headless boot.
+      expect(h.shared.created, isEmpty);
+      h.manager.dispose();
+    });
 
     test(
       'unknown, foreign and anonymous context names are ArgumentErrors',
