@@ -356,14 +356,19 @@ class MainActivity : FlutterFragmentActivity() {
         }
     }
 
-    /// Opens the system "ignore battery optimizations" dialog (v1.28.0).
-    /// The REQUEST_IGNORE_BATTERY_OPTIMIZATIONS permission is declared in
-    /// the manifest; the user still decides — the dialog is dismissible.
+    /// Opens the system battery-optimization LIST screen (v1.28.0, hardened
+    /// v1.54.1). The app intentionally does NOT declare
+    /// REQUEST_IGNORE_BATTERY_OPTIMIZATIONS (a scanner-flagged risky
+    /// permission): ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS (the
+    /// one-tap direct dialog) requires it, so the tile routes the user to
+    /// ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS instead — the standard
+    /// list where the user picks ZAgents themselves and taps Allow. Same
+    /// outcome, zero special permissions. A check against
+    /// isIgnoringBatteryOptimizations() refreshes the tile on return.
     private fun requestIgnoreBatteryOptimization(): Boolean {
         return try {
             val intent = Intent(
-                android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
-                android.net.Uri.parse("package:$packageName"),
+                android.provider.Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS,
             ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             startActivity(intent)
             true

@@ -70,7 +70,6 @@ class LocalModelState {
     this.installed = const <LocalModelEntry>[],
     this.serverPort = 11434, this.contextSize = 2048,
     this.threads = 0,             // 0 = auto
-    this.autoStartOnBoot = false, // Fase 2
   });
   // copyWith / toJson / fromJson
 }
@@ -147,7 +146,7 @@ class LocalModelState {
   `class LocalModelsController extends Notifier<LocalModelState>` — methods
   `addInstalled(LocalModelEntry)`, `removeInstalled(String id)` (also delete
   file), `markUsed(String id)`, `setServerConfig({int? port, int? contextSize,
-  int? threads})`, `setAutoStartOnBoot(bool)`; persists via repository.
+  int? threads})`; persists via repository.
 
 - **`local_model_io.dart`**
   `class LocalModelIo` — `Future<LocalModelEntry?> importFromFile({required
@@ -269,15 +268,15 @@ final localModelIoProvider = Provider<LocalModelIo>((ref) => LocalModelIo());
 - **Battery guard (Kotlin)**: while `LlmServerService` hosts a live process it
   registers a runtime `ACTION_BATTERY_LOW` receiver; on critical battery it
   stops the child + service (llama-server is heavy). Unregistered on teardown.
-- **Boot start (Kotlin)**: `BootReceiver` (RECEIVE_BOOT_COMPLETED) reads the
-  Flutter SharedPreferences store (`FlutterSharedPreferences`, key
-  `flutter.zagents.localai.v1`, JSON via `org.json`): when
-  `autoStartOnBoot` is true, the runtime exists and the most recently used
-  installed model (max `lastUsedAtMs`, fallback first) is present under
-  `<getExternalFilesDir(null)>/local_models/<fileName>`, it starts
-  `LlmServerService` ACTION_START with that model + stored
-  `serverPort`/`contextSize`/`threads`. Defensive: any failure → no-op
-  (optionally a notification). Model alias = model `name` field.
+- **Boot start (Kotlin)** — REMOVED in v1.54.1. The v1.52.0 `BootReceiver`
+  (RECEIVE_BOOT_COMPLETED + manifest receiver) never shipped a UI toggle,
+  so `autoStartOnBoot` was unreachable from the app while the declared
+  boot-persistence path compounded the exec-binary signal for Play
+  Protect heuristics. Hardening removed the receiver, the permission and
+  the `autoStartOnBoot` state field (old stored JSON with the key still
+  loads — fromJson ignores unknown keys). To revive the feature, re-add
+  the receiver with `android:enabled="false"` + a PackageManager
+  component toggle driven by a real UI switch.
 - Dart side: `LlmServerPlatform.batteryStatus()` added to the abstract
   platform + fake; `LlmServerState` unchanged (battery polled by the UI,
   not persisted state).

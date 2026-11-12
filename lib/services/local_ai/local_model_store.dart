@@ -157,11 +157,6 @@ class LocalModelsController extends Notifier<LocalModelState> {
     );
   }
 
-  /// Fase 2 — auto-start the active model on boot.
-  Future<void> setAutoStartOnBoot(bool enabled) async {
-    await _persist(state.copyWith(autoStartOnBoot: enabled));
-  }
-
   /// Fase 2 (v1.52.0) — stores the fetched remote-catalog overlay. An
   /// empty list clears it (the “Reset” action); persists like
   /// [setServerConfig] so the overlay survives restarts and reappears

@@ -148,7 +148,6 @@ class LocalModelState {
     this.serverPort = 11434,
     this.contextSize = 2048,
     this.threads = 0,
-    this.autoStartOnBoot = false,
     this.remoteCatalog = const <CatalogModelEntry>[],
   });
 
@@ -166,9 +165,6 @@ class LocalModelState {
   /// (`availableProcessors / 2`, min 1).
   final int threads;
 
-  /// Fase 2 — start the active model automatically after boot.
-  final bool autoStartOnBoot;
-
   /// Fase 2 (v1.52.0) — the last fetched remote catalog, overlaid onto
   /// the built-in [kLocalAiCatalog] by `mergeCatalog` in the Catalog tab.
   /// Empty until the first successful refresh; cleared by “Reset”.
@@ -179,14 +175,12 @@ class LocalModelState {
     int? serverPort,
     int? contextSize,
     int? threads,
-    bool? autoStartOnBoot,
     List<CatalogModelEntry>? remoteCatalog,
   }) => LocalModelState(
     installed: installed ?? this.installed,
     serverPort: serverPort ?? this.serverPort,
     contextSize: contextSize ?? this.contextSize,
     threads: threads ?? this.threads,
-    autoStartOnBoot: autoStartOnBoot ?? this.autoStartOnBoot,
     remoteCatalog: remoteCatalog ?? this.remoteCatalog,
   );
 
@@ -195,7 +189,6 @@ class LocalModelState {
     'serverPort': serverPort,
     'contextSize': contextSize,
     'threads': threads,
-    'autoStartOnBoot': autoStartOnBoot,
     'remoteCatalog': [
       for (final CatalogModelEntry e in remoteCatalog) catalogEntryToJson(e),
     ],
@@ -210,7 +203,6 @@ class LocalModelState {
         serverPort: json['serverPort'] as int? ?? 11434,
         contextSize: json['contextSize'] as int? ?? 2048,
         threads: json['threads'] as int? ?? 0,
-        autoStartOnBoot: json['autoStartOnBoot'] as bool? ?? false,
         remoteCatalog:
             (json['remoteCatalog'] as List<dynamic>? ?? const <dynamic>[])
                 .whereType<Map<String, dynamic>>()

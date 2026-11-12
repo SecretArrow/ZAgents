@@ -97,7 +97,6 @@ void main() {
       expect(state.serverPort, 11434);
       expect(state.contextSize, 2048);
       expect(state.threads, 0);
-      expect(state.autoStartOnBoot, isFalse);
     });
 
     test('survives toJson → fromJson with entries and config', () {
@@ -106,14 +105,12 @@ void main() {
         serverPort: 8080,
         contextSize: 8192,
         threads: 4,
-        autoStartOnBoot: true,
       );
       final LocalModelState restored = LocalModelState.fromJson(state.toJson());
       expect(restored.installed.single.id, 'm-1');
       expect(restored.serverPort, 8080);
       expect(restored.contextSize, 8192);
       expect(restored.threads, 4);
-      expect(restored.autoStartOnBoot, isTrue);
     });
 
     test('tolerant fromJson: non-map entries are skipped, missing config '
@@ -140,7 +137,6 @@ void main() {
       expect(next.serverPort, 11434);
       expect(next.threads, 6);
       expect(next.contextSize, 2048);
-      expect(next.autoStartOnBoot, isFalse);
       expect(next.remoteCatalog, isEmpty);
     });
 

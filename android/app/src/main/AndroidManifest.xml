@@ -7,20 +7,24 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC"/>
     <uses-permission android:name="android.permission.WAKE_LOCK"/>
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
-    <!-- Background reliability (v1.28.0): lets the user grant a battery
-         optimization exemption via the system dialog (Settings →
-         Background reliability). The user still decides. -->
-    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS"/>
+    <!-- Background reliability (v1.28.0, hardened v1.54.1): the app never
+         declares REQUEST_IGNORE_BATTERY_OPTIMIZATIONS (a scanner-flagged
+         risky permission). The Settings → Background reliability tile opens
+         the system battery-optimization LIST instead
+         (ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS needs no permission);
+         the user still opts in by picking ZAgents themselves. -->
     <!-- App lock: biometric unlock (local_auth). -->
     <uses-permission android:name="android.permission.USE_BIOMETRIC"/>
     <!-- v1.44.0 speech dictation (runtime-requested, never forced) -->
     <uses-permission android:name="android.permission.RECORD_AUDIO"/>
-    <!-- Local AI boot start (v1.52.0): opt-in auto-start of the llama
-         server after reboot (autoStartOnBoot in the Flutter prefs store,
-         see BootReceiver.kt). BOOT_COMPLETED is a protected system
-         broadcast, so the receiver can stay exported="false" — only the
-         system can trigger it, no other app can spoof a boot start. -->
-    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
+    <!-- v1.54.1 — cleartext (plain HTTP) stays enabled BY DESIGN: it is a
+         functional requirement, not an oversight. External Ollama on the
+         LAN is plain HTTP by default (Ollama serves no TLS), the web
+         fetcher must be able to read plain-HTTP pages, and the browser
+         UI must open http:// URLs. Locking cleartext to 127.0.0.1 would
+         break all three. Everything else about the app is hardened:
+         no boot receiver, no risky battery permission, allowBackup off.
+    -->
     <application
         android:label="@string/app_name"
         android:usesCleartextTraffic="true"
@@ -65,19 +69,6 @@
             android:name=".LlmServerService"
             android:exported="false"
             android:foregroundServiceType="dataSync"/>
-        <!-- Local AI boot start (v1.52.0): manifest-registered on purpose —
-             it must run in a fresh app process BEFORE any Flutter engine
-             exists, reading the Flutter SharedPreferences store directly
-             (BootReceiver.kt). exported="false" is safe because
-             BOOT_COMPLETED is a protected broadcast (system-only). -->
-        <receiver
-            android:name=".BootReceiver"
-            android:enabled="true"
-            android:exported="false">
-            <intent-filter>
-                <action android:name="android.intent.action.BOOT_COMPLETED"/>
-            </intent-filter>
-        </receiver>
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
         <meta-data

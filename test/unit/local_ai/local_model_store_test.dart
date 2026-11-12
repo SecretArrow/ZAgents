@@ -25,7 +25,6 @@ void main() {
         serverPort: 1234,
         contextSize: 4096,
         threads: 2,
-        autoStartOnBoot: true,
       );
       await repo.save(state);
 
@@ -34,7 +33,6 @@ void main() {
       expect(reloaded.serverPort, 1234);
       expect(reloaded.contextSize, 4096);
       expect(reloaded.threads, 2);
-      expect(reloaded.autoStartOnBoot, isTrue);
     });
 
     test('starts from an optional seed', () {
@@ -56,7 +54,6 @@ void main() {
       expect(state.serverPort, 11434);
       expect(state.contextSize, 2048);
       expect(state.threads, 0);
-      expect(state.autoStartOnBoot, isFalse);
     });
 
     test('save → load roundtrip keeps entries and config', () async {
@@ -83,7 +80,6 @@ void main() {
           serverPort: 8080,
           contextSize: 8192,
           threads: 4,
-          autoStartOnBoot: true,
         ),
       );
 
@@ -96,7 +92,6 @@ void main() {
       expect(reloaded.serverPort, 8080);
       expect(reloaded.contextSize, 8192);
       expect(reloaded.threads, 4);
-      expect(reloaded.autoStartOnBoot, isTrue);
     });
 
     test('corrupted JSON degrades to defaults instead of crashing', () async {
@@ -134,7 +129,6 @@ void main() {
       expect(state.serverPort, 11434);
       expect(state.contextSize, 2048);
       expect(state.threads, 0);
-      expect(state.autoStartOnBoot, isFalse);
     });
   });
 
@@ -214,16 +208,14 @@ void main() {
       expect(used, greaterThan(0));
     });
 
-    test('setServerConfig and setAutoStartOnBoot persist', () async {
+    test('setServerConfig persists', () async {
       await controller.setServerConfig(port: 1234, contextSize: 8192);
       await controller.setServerConfig(threads: 6);
-      await controller.setAutoStartOnBoot(true);
 
       final LocalModelState state = repo.load();
       expect(state.serverPort, 1234);
       expect(state.contextSize, 8192);
       expect(state.threads, 6);
-      expect(state.autoStartOnBoot, isTrue);
     });
 
     test('setServerConfig keeps untouched fields', () async {
